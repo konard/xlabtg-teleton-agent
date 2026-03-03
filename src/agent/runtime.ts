@@ -57,6 +57,12 @@ import type { ToolContext } from "./tools/types.js";
 import { appendToDailyLog, writeSessionEndSummary } from "../memory/daily-logs.js";
 import { saveSessionMemory } from "../session/memory-hook.js";
 import { createLogger } from "../utils/logger.js";
+import type { createHookRunner } from "../sdk/hooks/runner.js";
+import type {
+  BeforeToolCallEvent,
+  AfterToolCallEvent,
+  BeforePromptBuildEvent,
+} from "../sdk/hooks/types.js";
 
 const log = createLogger("Agent");
 
@@ -157,6 +163,7 @@ export class AgentRuntime {
   private contextBuilder: ContextBuilder | null = null;
   private toolRegistry: ToolRegistry | null = null;
   private embedder: EmbeddingProvider | null = null;
+  private hookRunner?: ReturnType<typeof createHookRunner>;
 
   constructor(config: Config, soul?: string, toolRegistry?: ToolRegistry) {
     this.config = config;
@@ -178,6 +185,10 @@ export class AgentRuntime {
     } catch {
       this.compactionManager = new CompactionManager(DEFAULT_COMPACTION_CONFIG);
     }
+  }
+
+  setHookRunner(runner: ReturnType<typeof createHookRunner>): void {
+    this.hookRunner = runner;
   }
 
   initializeContextBuilder(embedder: EmbeddingProvider, vectorEnabled: boolean): void {
@@ -207,6 +218,8 @@ export class AgentRuntime {
       replyContext,
     } = opts;
 
+    const effectiveIsGroup = isGroup ?? false;
+
     try {
       let session = getOrCreateSession(chatId);
       const now = timestamp ?? Date.now();
@@ -214,6 +227,15 @@ export class AgentRuntime {
       const resetPolicy = this.config.agent.session_reset_policy;
       if (shouldResetSession(session, resetPolicy)) {
         log.info(`🔄 Auto-resetting session based on policy`);
+
+        // Hook: session_end (before reset)
+        if (this.hookRunner) {
+          await this.hookRunner.runObservingHook("session_end", {
+            sessionId: session.sessionId,
+            chatId,
+            messageCount: session.messageCount,
+          });
+        }
 
         if (transcriptExists(session.sessionId)) {
           try {
@@ -240,10 +262,20 @@ export class AgentRuntime {
       }
 
       let context: Context = loadContextFromTranscript(session.sessionId);
-      if (context.messages.length > 0) {
+      const isNewSession = context.messages.length === 0;
+      if (!isNewSession) {
         log.info(`📖 Loading existing session: ${session.sessionId}`);
       } else {
         log.info(`🆕 Starting new session: ${session.sessionId}`);
+      }
+
+      // Hook: session_start
+      if (this.hookRunner) {
+        await this.hookRunner.runObservingHook("session_start", {
+          sessionId: session.sessionId,
+          chatId,
+          isResume: !isNewSession,
+        });
       }
 
       const previousTimestamp = session.updatedAt;
@@ -257,7 +289,7 @@ export class AgentRuntime {
         timestamp: now,
         previousTimestamp,
         body: userMessage,
-        isGroup: isGroup ?? false,
+        isGroup: effectiveIsGroup,
         hasMedia,
         mediaType,
         messageId,
@@ -337,11 +369,28 @@ export class AgentRuntime {
         ? `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}\n\n${relevantContext}`
         : `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}`;
 
+      // Hook: before_prompt_build
+      let hookAdditionalContext = "";
+      if (this.hookRunner) {
+        const promptEvent: BeforePromptBuildEvent = {
+          chatId,
+          sessionId: session.sessionId,
+          isGroup: effectiveIsGroup,
+          additionalContext: "",
+        };
+        await this.hookRunner.runModifyingHook("before_prompt_build", promptEvent);
+        // Sanitize hook context to prevent prompt injection (H1 remediation)
+        hookAdditionalContext = sanitizeForContext(promptEvent.additionalContext);
+      }
+
       const compactionConfig = this.compactionManager.getConfig();
       const needsMemoryFlush =
         compactionConfig.enabled &&
         compactionConfig.memoryFlushEnabled &&
         context.messages.length > Math.floor((compactionConfig.maxMessages ?? 200) * 0.75);
+
+      const finalContext =
+        additionalContext + (hookAdditionalContext ? `\n\n${hookAdditionalContext}` : "");
 
       const systemPrompt = buildSystemPrompt({
         soul: this.soul,
@@ -350,7 +399,7 @@ export class AgentRuntime {
         senderId: toolContext?.senderId,
         ownerName: this.config.telegram.owner_name,
         ownerUsername: this.config.telegram.owner_username,
-        context: additionalContext,
+        context: finalContext,
         includeMemory: !isGroup,
         includeStrategy: !isGroup,
         memoryFlushWarning: needsMemoryFlush,
@@ -402,7 +451,7 @@ export class AgentRuntime {
           tools = await this.toolRegistry.getForContextWithRAG(
             userMessage,
             queryEmbedding,
-            isGroup ?? false,
+            effectiveIsGroup,
             providerMeta.toolLimit,
             chatId,
             isAdmin
@@ -410,7 +459,7 @@ export class AgentRuntime {
           log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
         } else {
           tools = this.toolRegistry?.getForContext(
-            isGroup ?? false,
+            effectiveIsGroup,
             providerMeta.toolLimit,
             chatId,
             isAdmin
@@ -561,10 +610,57 @@ export class AgentRuntime {
           const fullContext: ToolContext = {
             ...toolContext,
             chatId,
-            isGroup: isGroup ?? false,
+            isGroup: effectiveIsGroup,
           };
 
-          const result = await this.toolRegistry.execute(block, fullContext);
+          // Hook: before_tool_call
+          let toolParams = block.arguments ?? {};
+          let blocked = false;
+          let blockReason = "";
+
+          if (this.hookRunner) {
+            const beforeEvent: BeforeToolCallEvent = {
+              toolName: block.name,
+              params: { ...toolParams },
+              chatId,
+              isGroup: effectiveIsGroup,
+              block: false,
+              blockReason: "",
+            };
+            await this.hookRunner.runModifyingHook("before_tool_call", beforeEvent);
+            if (beforeEvent.block) {
+              blocked = true;
+              blockReason = beforeEvent.blockReason || "Blocked by plugin hook";
+            } else {
+              toolParams = beforeEvent.params;
+            }
+          }
+
+          let result: { success: boolean; data?: unknown; error?: string };
+
+          if (blocked) {
+            result = { success: false, error: blockReason };
+          } else {
+            const startTime = Date.now();
+            result = await this.toolRegistry.execute(
+              { ...block, arguments: toolParams },
+              fullContext
+            );
+            const durationMs = Date.now() - startTime;
+
+            // Hook: after_tool_call
+            if (this.hookRunner) {
+              const afterEvent: AfterToolCallEvent = {
+                toolName: block.name,
+                params: toolParams,
+                result: { success: result.success, data: result.data, error: result.error },
+                durationMs,
+                chatId,
+                isGroup: effectiveIsGroup,
+              };
+              await this.hookRunner.runObservingHook("after_tool_call", afterEvent);
+            }
+          }
 
           log.debug(`${block.name}: ${result.success ? "✓" : "✗"} ${result.error || ""}`);
           iterationToolNames.push(`${block.name} ${result.success ? "✓" : "✗"}`);
