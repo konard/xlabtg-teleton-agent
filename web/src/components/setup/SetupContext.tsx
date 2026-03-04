@@ -46,6 +46,7 @@ export interface WizardData {
   mnemonicSaved: boolean;
   authSessionId: string;
   telegramUser: { id: number; firstName: string; username: string } | null;
+  authMode: 'qr' | 'phone';
   skipConnect: boolean;
   webuiEnabled: boolean;
   execMode: 'off' | 'yolo';
@@ -88,6 +89,7 @@ const DEFAULTS: WizardData = {
   mnemonicSaved: false,
   authSessionId: '',
   telegramUser: null,
+  authMode: 'qr',
   skipConnect: false,
   webuiEnabled: false,
   execMode: 'off',
@@ -126,12 +128,10 @@ export function validateStep(step: number, data: WizardData): boolean {
       if (!data.walletAddress) return false;
       return data.mnemonicSaved;
     case 4:
-      // Telegram
-      return (
-        data.apiId > 0 &&
-        data.apiHash.length >= 10 &&
-        data.phone.startsWith('+')
-      );
+      // Telegram — phone required only for phone auth mode
+      if (data.apiId <= 0 || data.apiHash.length < 10) return false;
+      if (data.authMode === 'phone') return data.phone.startsWith('+');
+      return true;
     case 5:
       return data.telegramUser !== null || data.skipConnect;
     default:

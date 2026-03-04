@@ -21,22 +21,32 @@ const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CODE_ATTEMPTS = 5;
 const MAX_PASSWORD_ATTEMPTS = 3;
 
-interface AuthSession {
+interface AuthSessionBase {
   id: string;
   client: TelegramClient;
-  phone: string;
-  phoneCodeHash: string; // NEVER sent to frontend
-  state: "code_sent" | "2fa_required" | "authenticated" | "failed";
+  state: "code_sent" | "qr_waiting" | "2fa_required" | "authenticated" | "failed";
   passwordHint?: string;
-  fragmentUrl?: string;
-  codeLength?: number;
-  codeAttempts: number;
   passwordAttempts: number;
   createdAt: number;
   apiId: number;
   apiHash: string;
   timer: ReturnType<typeof setTimeout>;
 }
+
+interface PhoneAuthSession extends AuthSessionBase {
+  type: "phone";
+  phone: string;
+  phoneCodeHash: string; // NEVER sent to frontend
+  fragmentUrl?: string;
+  codeLength?: number;
+  codeAttempts: number;
+}
+
+interface QrAuthSession extends AuthSessionBase {
+  type: "qr";
+}
+
+type AuthSession = PhoneAuthSession | QrAuthSession;
 
 export class TelegramAuthManager {
   private session: AuthSession | null = null;
@@ -106,6 +116,7 @@ export class TelegramAuthManager {
     const expiresAt = Date.now() + SESSION_TTL_MS;
 
     this.session = {
+      type: "phone",
       id,
       client,
       phone,
@@ -137,7 +148,7 @@ export class TelegramAuthManager {
     passwordHint?: string;
   }> {
     const session = this.getSession(authSessionId);
-    if (!session) return { status: "expired" };
+    if (!session || session.type !== "phone") return { status: "expired" };
 
     if (session.codeAttempts >= MAX_CODE_ATTEMPTS) {
       return { status: "too_many_attempts" };
@@ -240,7 +251,7 @@ export class TelegramAuthManager {
     codeLength?: number;
   } | null> {
     const session = this.getSession(authSessionId);
-    if (!session || session.state !== "code_sent") return null;
+    if (!session || session.type !== "phone" || session.state !== "code_sent") return null;
 
     const result = await session.client.invoke(
       new Api.auth.ResendCode({
@@ -277,6 +288,146 @@ export class TelegramAuthManager {
 
     // SentCodeSuccess means already authenticated
     return { codeDelivery: "sms" };
+  }
+
+  /**
+   * Start QR code authentication session
+   */
+  async startQrSession(
+    apiId: number,
+    apiHash: string
+  ): Promise<{
+    authSessionId: string;
+    token: string;
+    expires: number;
+    expiresAt: number;
+  }> {
+    await this.cleanup();
+
+    const gramLogger = new Logger(LogLevel.NONE);
+    const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
+      connectionRetries: 3,
+      floodSleepThreshold: 0,
+      baseLogger: gramLogger,
+    });
+
+    await client.connect();
+
+    const result = await client.invoke(
+      new Api.auth.ExportLoginToken({
+        apiId,
+        apiHash,
+        exceptIds: [],
+      })
+    );
+
+    if (!(result instanceof Api.auth.LoginToken)) {
+      await client.disconnect();
+      throw new Error("Unexpected QR auth response");
+    }
+
+    const id = randomBytes(16).toString("hex");
+    const expiresAt = Date.now() + SESSION_TTL_MS;
+
+    this.session = {
+      type: "qr",
+      id,
+      client,
+      state: "qr_waiting",
+      passwordAttempts: 0,
+      createdAt: Date.now(),
+      apiId,
+      apiHash,
+      timer: setTimeout(() => void this.cleanup(), SESSION_TTL_MS),
+    };
+
+    log.info("QR code authentication session started");
+    return {
+      authSessionId: id,
+      token: result.token.toString("base64url"),
+      expires: result.expires,
+      expiresAt,
+    };
+  }
+
+  /**
+   * Refresh QR token / check if scanned
+   */
+  async refreshQrToken(authSessionId: string): Promise<{
+    status: "waiting" | "authenticated" | "2fa_required" | "expired";
+    token?: string;
+    expires?: number;
+    user?: { id: number; firstName: string; username?: string };
+    passwordHint?: string;
+  }> {
+    const session = this.getSession(authSessionId);
+    if (!session || session.type !== "qr") return { status: "expired" };
+
+    if (session.state === "2fa_required") {
+      return { status: "2fa_required", passwordHint: session.passwordHint };
+    }
+
+    try {
+      const result = await session.client.invoke(
+        new Api.auth.ExportLoginToken({
+          apiId: session.apiId,
+          apiHash: session.apiHash,
+          exceptIds: [],
+        })
+      );
+
+      // QR was scanned — auth complete
+      if (result instanceof Api.auth.LoginTokenSuccess) {
+        session.state = "authenticated";
+        const user = this.extractUser(result.authorization);
+        await this.saveSession(session);
+        log.info("QR code authentication successful");
+        return { status: "authenticated", user };
+      }
+
+      // DC migration needed
+      if (result instanceof Api.auth.LoginTokenMigrateTo) {
+        await (session.client as unknown as { _switchDC(dc: number): Promise<void> })._switchDC(
+          result.dcId
+        );
+        const imported = await session.client.invoke(
+          new Api.auth.ImportLoginToken({ token: result.token })
+        );
+        if (imported instanceof Api.auth.LoginTokenSuccess) {
+          session.state = "authenticated";
+          const user = this.extractUser(imported.authorization);
+          await this.saveSession(session);
+          log.info("QR code authentication successful (after DC migration)");
+          return { status: "authenticated", user };
+        }
+      }
+
+      // Still waiting — return fresh token
+      if (result instanceof Api.auth.LoginToken) {
+        return {
+          status: "waiting",
+          token: result.token.toString("base64url"),
+          expires: result.expires,
+        };
+      }
+
+      return { status: "waiting" };
+    } catch (err: unknown) {
+      const error = err as { errorMessage?: string };
+
+      if (error.errorMessage === "SESSION_PASSWORD_NEEDED") {
+        session.state = "2fa_required";
+        try {
+          const passwordResult = await session.client.invoke(new Api.account.GetPassword());
+          session.passwordHint = passwordResult.hint ?? undefined;
+        } catch {
+          // No hint available
+        }
+        return { status: "2fa_required", passwordHint: session.passwordHint };
+      }
+
+      throw err;
+    }
   }
 
   /**

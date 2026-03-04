@@ -22,10 +22,12 @@ export function TelegramStep({ data, onChange }: StepProps) {
               <li>Copy <strong>App api_id</strong> (a number) and <strong>App api_hash</strong> (a hex string)</li>
             </ol>
           </div>
-          <div className="guide-section">
-            <strong>Phone Number</strong>
-            <p>The phone number linked to your Telegram account, with country code (e.g. +33612345678).</p>
-          </div>
+          {data.authMode === 'phone' && (
+            <div className="guide-section">
+              <strong>Phone Number</strong>
+              <p>The phone number linked to your Telegram account, with country code (e.g. +33612345678).</p>
+            </div>
+          )}
         </div>
       </details>
 
@@ -53,19 +55,73 @@ export function TelegramStep({ data, onChange }: StepProps) {
         )}
       </div>
 
+      {/* Auth mode toggle */}
       <div className="form-group">
-        <label>Phone Number</label>
-        <input
-          type="text"
-          value={data.phone}
-          onChange={(e) => onChange({ ...data, phone: e.target.value })}
-          placeholder="+33612345678"
-          className="w-full"
-        />
-        {data.phone.length > 0 && !data.phone.startsWith('+') && (
-          <div className="helper-text">Phone number must start with "+"</div>
-        )}
+        <label>Login method</label>
+        <div style={{
+          display: 'flex',
+          gap: '4px',
+          background: 'var(--surface)',
+          borderRadius: '8px',
+          padding: '4px',
+        }}>
+          <button
+            type="button"
+            onClick={() => onChange({ ...data, authMode: 'qr', phone: '' })}
+            style={{
+              flex: 1,
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              background: data.authMode === 'qr' ? 'var(--accent, #6c5ce7)' : 'transparent',
+              color: data.authMode === 'qr' ? '#fff' : 'var(--text-muted, #999)',
+              fontWeight: data.authMode === 'qr' ? 600 : 400,
+              transition: 'all 0.2s',
+            }}
+          >
+            QR Code
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ ...data, authMode: 'phone' })}
+            style={{
+              flex: 1,
+              padding: '8px 16px',
+              border: 'none',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              background: data.authMode === 'phone' ? 'var(--accent, #6c5ce7)' : 'transparent',
+              color: data.authMode === 'phone' ? '#fff' : 'var(--text-muted, #999)',
+              fontWeight: data.authMode === 'phone' ? 600 : 400,
+              transition: 'all 0.2s',
+            }}
+          >
+            Phone Number
+          </button>
+        </div>
+        <div className="text-muted" style={{ fontSize: '0.85em', marginTop: '6px' }}>
+          {data.authMode === 'qr'
+            ? 'Scan a QR code with your Telegram app to connect instantly.'
+            : 'Receive a verification code via SMS or Telegram app.'}
+        </div>
       </div>
+
+      {data.authMode === 'phone' && (
+        <div className="form-group">
+          <label>Phone Number</label>
+          <input
+            type="text"
+            value={data.phone}
+            onChange={(e) => onChange({ ...data, phone: e.target.value })}
+            placeholder="+33612345678"
+            className="w-full"
+          />
+          {data.phone.length > 0 && !data.phone.startsWith('+') && (
+            <div className="helper-text">Phone number must start with &quot;+&quot;</div>
+          )}
+        </div>
+      )}
 
     </div>
   );

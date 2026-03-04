@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react';
+import { QRCodeSVG } from 'qrcode.react';
 import { setup } from '../../lib/api';
 import type { StepProps } from '../../pages/Setup';
 
@@ -20,7 +21,7 @@ function LottiePlayer({ loader, size }: { loader: () => Promise<object>; size: n
 }
 
 export function ConnectStep({ data, onChange }: StepProps) {
-  const [phase, setPhase] = useState<'idle' | 'code_sent' | '2fa' | 'done'>('idle');
+  const [phase, setPhase] = useState<'idle' | 'code_sent' | 'qr_waiting' | '2fa' | 'done'>('idle');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [code, setCode] = useState('');
@@ -30,7 +31,11 @@ export function ConnectStep({ data, onChange }: StepProps) {
   const [fragmentUrl, setFragmentUrl] = useState("");
   const [canResend, setCanResend] = useState(false);
   const [floodWait, setFloodWait] = useState(0);
+  const [qrToken, setQrToken] = useState('');
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const isQr = data.authMode === 'qr';
 
   // Countdown for flood wait
   useEffect(() => {
@@ -47,7 +52,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [floodWait > 0]);
 
-  // Show resend after 30s
+  // Show resend after 30s (phone flow only)
   useEffect(() => {
     if (phase !== 'code_sent') return;
     const t = setTimeout(() => setCanResend(true), 30000);
@@ -58,6 +63,67 @@ export function ConnectStep({ data, onChange }: StepProps) {
   useEffect(() => {
     if (data.telegramUser) setPhase('done');
   }, []);
+
+  // Cleanup QR polling on unmount
+  useEffect(() => {
+    return () => {
+      if (qrPollRef.current) clearInterval(qrPollRef.current);
+    };
+  }, []);
+
+  // ── QR flow ─────────────────────────────────────────────────────
+
+  const handleQrStart = async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const result = await setup.startQr(data.apiId, data.apiHash);
+      onChange({ ...data, authSessionId: result.authSessionId });
+      setQrToken(result.token);
+      setPhase('qr_waiting');
+      startQrPolling(result.authSessionId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes('FLOOD') || msg.includes('Rate limited')) {
+        const seconds = parseInt(msg.match(/(\d+)/)?.[1] || '60');
+        setFloodWait(seconds);
+      }
+      setError(msg);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const startQrPolling = useCallback((sessionId: string) => {
+    if (qrPollRef.current) clearInterval(qrPollRef.current);
+    qrPollRef.current = setInterval(async () => {
+      try {
+        const result = await setup.refreshQr(sessionId);
+        if (result.status === 'authenticated' && result.user) {
+          if (qrPollRef.current) clearInterval(qrPollRef.current);
+          qrPollRef.current = null;
+          onChange({ ...data, telegramUser: { ...result.user, username: result.user.username ?? '' }, skipConnect: false });
+          setPhase('done');
+        } else if (result.status === '2fa_required') {
+          if (qrPollRef.current) clearInterval(qrPollRef.current);
+          qrPollRef.current = null;
+          setPasswordHint(result.passwordHint || '');
+          setPhase('2fa');
+        } else if (result.status === 'expired') {
+          if (qrPollRef.current) clearInterval(qrPollRef.current);
+          qrPollRef.current = null;
+          setPhase('idle');
+          setError('Session expired. Please try again.');
+        } else if (result.status === 'waiting' && result.token) {
+          setQrToken(result.token);
+        }
+      } catch {
+        // Silently retry on next poll
+      }
+    }, 5000);
+  }, [data, onChange]);
+
+  // ── Phone flow ──────────────────────────────────────────────────
 
   const handleConnect = async () => {
     setLoading(true);
@@ -89,19 +155,20 @@ export function ConnectStep({ data, onChange }: StepProps) {
     try {
       const result = await setup.verifyCode(data.authSessionId, value);
       if (result.status === 'authenticated' && result.user) {
-        onChange({ ...data, telegramUser: result.user, skipConnect: false });
+        onChange({ ...data, telegramUser: { ...result.user, username: result.user.username ?? '' }, skipConnect: false });
         setPhase('done');
       } else if (result.status === '2fa_required') {
         setPasswordHint(result.passwordHint || '');
         setPhase('2fa');
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      setError(msg);
+      setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
   };
+
+  // ── Shared ──────────────────────────────────────────────────────
 
   const handlePassword = async () => {
     setLoading(true);
@@ -109,7 +176,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
     try {
       const result = await setup.verifyPassword(data.authSessionId, password);
       if (result.status === 'authenticated' && result.user) {
-        onChange({ ...data, telegramUser: result.user, skipConnect: false });
+        onChange({ ...data, telegramUser: { ...result.user, username: result.user.username ?? '' }, skipConnect: false });
         setPhase('done');
       }
     } catch (err) {
@@ -139,21 +206,59 @@ export function ConnectStep({ data, onChange }: StepProps) {
     <div className="step-content">
       <h2 className="step-title">Connect your Agent to Telegram</h2>
       <p className="step-description">
-        Authenticate with your Telegram account. This lets the agent send and receive messages as you.
+        {isQr
+          ? 'Scan the QR code with your Telegram app to authenticate instantly.'
+          : 'Authenticate with your Telegram account. This lets the agent send and receive messages as you.'}
       </p>
 
       {error && <div className="alert error">{error}</div>}
 
-      {phase === 'idle' && (
+      {/* ── QR: idle → show button ───────────────────────── */}
+      {phase === 'idle' && isQr && (
+        <div className="text-center" style={{ padding: '20px 0' }}>
+          <LottiePlayer loader={runAnimation} size={200} />
+          <button onClick={handleQrStart} disabled={loading || floodWait > 0} type="button" className="btn-lg">
+            {loading ? <><span className="spinner sm" /> Connecting...</> : floodWait > 0 ? `Wait ${floodWait}s` : 'Show QR Code'}
+          </button>
+        </div>
+      )}
+
+      {/* ── QR: waiting for scan ─────────────────────────── */}
+      {phase === 'qr_waiting' && (
+        <div className="text-center" style={{ padding: '20px 0' }}>
+          <div style={{ display: 'inline-block', padding: '16px', background: '#fff', borderRadius: '12px', marginBottom: '16px' }}>
+            <QRCodeSVG
+              value={`tg://login?token=${qrToken}`}
+              size={256}
+              level="M"
+              marginSize={4}
+              title="Scan with Telegram to log in"
+            />
+          </div>
+          <div className="text-muted" style={{ marginBottom: '8px' }}>
+            Open <strong>Telegram</strong> on your phone
+          </div>
+          <div className="text-muted" style={{ marginBottom: '16px', fontSize: '0.9em' }}>
+            Settings &rarr; Devices &rarr; Link Desktop Device
+          </div>
+          <div className="text-muted" style={{ fontSize: '0.85em', opacity: 0.7 }}>
+            <span className="spinner sm" style={{ marginRight: '6px' }} />
+            Waiting for scan...
+          </div>
+        </div>
+      )}
+
+      {/* ── Phone: idle → connect button ─────────────────── */}
+      {phase === 'idle' && !isQr && (
         <div className="text-center" style={{ padding: '20px 0' }}>
           <LottiePlayer loader={runAnimation} size={200} />
           <button onClick={handleConnect} disabled={loading || floodWait > 0} type="button" className="btn-lg">
             {loading ? <><span className="spinner sm" /> Connecting...</> : floodWait > 0 ? `Wait ${floodWait}s` : 'Connect to Telegram'}
           </button>
-          {/* Telegram connection is required for agent to function */}
         </div>
       )}
 
+      {/* ── Phone: code sent ─────────────────────────────── */}
       {phase === 'code_sent' && (
         <div className="text-center" style={{ padding: '20px 0' }}>
           <LottiePlayer loader={codeAnimation} size={180} />
@@ -164,7 +269,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
                 <strong>Anonymous number detected (+888)</strong>
                 <p className="text-muted" style={{ margin: '8px 0' }}>
                   Your number is an anonymous number purchased on Fragment. To receive the login code,
-                  open Fragment.com, connect your TON wallet, and navigate to "My Assets" to find the code.
+                  open Fragment.com, connect your TON wallet, and navigate to &quot;My Assets&quot; to find the code.
                 </p>
                 {fragmentUrl && (
                   <a
@@ -218,6 +323,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
         </div>
       )}
 
+      {/* ── 2FA (shared by both flows) ───────────────────── */}
       {phase === '2fa' && (
         <div style={{ padding: '20px 0' }}>
           <div className="text-muted text-center" style={{ marginBottom: '12px' }}>
@@ -246,6 +352,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
         </div>
       )}
 
+      {/* ── Done ─────────────────────────────────────────── */}
       {phase === 'done' && data.telegramUser && (
         <div className="alert success text-center" style={{ padding: '20px' }}>
           Connected as <strong>{data.telegramUser.firstName}</strong>

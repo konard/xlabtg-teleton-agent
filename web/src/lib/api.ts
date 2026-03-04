@@ -730,6 +730,30 @@ export const setup = {
       body: JSON.stringify({ authSessionId }),
     }),
 
+  startQr: (apiId: number, apiHash: string) =>
+    fetchSetupAPI<{ authSessionId: string; token: string; expires: number; expiresAt: number }>('/setup/telegram/qr-start', {
+      method: 'POST',
+      body: JSON.stringify({ apiId, apiHash }),
+    }),
+
+  refreshQr: (authSessionId: string) =>
+    fetchSetupAPI<{
+      status: "waiting" | "authenticated" | "2fa_required" | "expired";
+      token?: string;
+      expires?: number;
+      user?: { id: number; firstName: string; username?: string };
+      passwordHint?: string;
+    }>('/setup/telegram/qr-refresh', {
+      method: 'POST',
+      body: JSON.stringify({ authSessionId }),
+    }),
+
+  cancelSession: (authSessionId: string) =>
+    fetchSetupAPI<void>('/setup/telegram/session', {
+      method: 'DELETE',
+      body: JSON.stringify({ authSessionId }),
+    }),
+
   saveConfig: (config: SetupConfig) =>
     fetchSetupAPI<{ path: string }>('/setup/config/save', {
       method: 'POST',

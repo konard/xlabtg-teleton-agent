@@ -397,6 +397,56 @@ export function createSetupRoutes(): Hono {
     }
   });
 
+  // ── POST /telegram/qr-start ────────────────────────────────────
+  app.post("/telegram/qr-start", async (c) => {
+    try {
+      const body = await c.req.json<{ apiId: number; apiHash: string }>();
+      if (!body.apiId || !body.apiHash) {
+        return c.json({ success: false, error: "Missing apiId or apiHash" }, 400);
+      }
+
+      const result = await authManager.startQrSession(body.apiId, body.apiHash);
+      return c.json({ success: true, data: result });
+    } catch (err: unknown) {
+      const error = err as { errorMessage?: string; seconds?: number; message?: string };
+      if (error.seconds) {
+        return c.json(
+          { success: false, error: `Rate limited. Please wait ${error.seconds} seconds.` },
+          429
+        );
+      }
+      return c.json(
+        { success: false, error: error.errorMessage || error.message || String(err) },
+        500
+      );
+    }
+  });
+
+  // ── POST /telegram/qr-refresh ─────────────────────────────────
+  app.post("/telegram/qr-refresh", async (c) => {
+    try {
+      const body = await c.req.json<{ authSessionId: string }>();
+      if (!body.authSessionId) {
+        return c.json({ success: false, error: "Missing authSessionId" }, 400);
+      }
+
+      const result = await authManager.refreshQrToken(body.authSessionId);
+      return c.json({ success: true, data: result });
+    } catch (err: unknown) {
+      const error = err as { errorMessage?: string; seconds?: number; message?: string };
+      if (error.seconds) {
+        return c.json(
+          { success: false, error: `Rate limited. Please wait ${error.seconds} seconds.` },
+          429
+        );
+      }
+      return c.json(
+        { success: false, error: error.errorMessage || error.message || String(err) },
+        500
+      );
+    }
+  });
+
   // ── DELETE /telegram/session ──────────────────────────────────────
   app.delete("/telegram/session", async (c) => {
     try {
