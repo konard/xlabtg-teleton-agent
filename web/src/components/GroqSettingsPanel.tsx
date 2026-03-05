@@ -24,16 +24,13 @@ const DEFAULT_STT_MODELS: ModelOption[] = [
 ];
 
 const DEFAULT_TTS_MODELS: ModelOption[] = [
-  { value: 'playai-tts', name: 'PlayAI TTS', description: 'English TTS, 23 voices' },
-  { value: 'playai-tts-arabic', name: 'PlayAI TTS Arabic', description: 'Arabic TTS' },
+  { value: 'canopylabs/orpheus-v1-english', name: 'Orpheus TTS English', description: 'English TTS, Orpheus v1' },
+  { value: 'canopylabs/orpheus-arabic-saudi', name: 'Orpheus TTS Arabic (Saudi)', description: 'Arabic (Saudi) TTS, Orpheus' },
 ];
 
 const DEFAULT_VOICES = [
-  'Arista-PlayAI', 'Atlas-PlayAI', 'Basil-PlayAI', 'Brixton-PlayAI', 'Calum-PlayAI',
-  'Celeste-PlayAI', 'Cheyenne-PlayAI', 'Chip-PlayAI', 'Cillian-PlayAI', 'Deedee-PlayAI',
-  'Eleanor-PlayAI', 'Fritz-PlayAI', 'Gail-PlayAI', 'George-PlayAI', 'Jasper-PlayAI',
-  'Jennifer-PlayAI', 'Judy-PlayAI', 'Mamaw-PlayAI', 'Mason-PlayAI', 'Mikail-PlayAI',
-  'Mitch-PlayAI', 'Quinn-PlayAI', 'Thunder-PlayAI',
+  'tara', 'leah', 'jess', 'leo', 'dan', 'mia', 'zac', 'zoe',
+  'ahmad', 'nadia',
 ];
 
 export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: GroqSettingsPanelProps) {
@@ -75,8 +72,8 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
   if (!isGroqProvider) return null;
 
   const sttModel = getLocal('groq.stt_model') || 'whisper-large-v3-turbo';
-  const ttsModel = getLocal('groq.tts_model') || 'playai-tts';
-  const ttsVoice = getLocal('groq.tts_voice') || 'Fritz-PlayAI';
+  const ttsModel = getLocal('groq.tts_model') || 'canopylabs/orpheus-v1-english';
+  const ttsVoice = getLocal('groq.tts_voice') || 'tara';
   const ttsFormat = getLocal('groq.tts_format') || 'mp3';
   const sttLanguage = getLocal('groq.stt_language') || '';
   const rateLimitMode = getLocal('groq.rate_limit_mode') || 'auto';
@@ -85,7 +82,7 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
     <div className="card">
       <div className="section-title">
         Groq Multi-Modal Settings
-        <InfoTip text="Configure Groq's native STT (Whisper) and TTS (PlayAI) capabilities" />
+        <InfoTip text="Configure Groq's native STT (Whisper) and TTS (Orpheus) capabilities" />
       </div>
 
       <div style={{ display: 'grid', gap: '16px' }}>
@@ -139,7 +136,7 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
 
         {/* TTS Model */}
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>TTS Model <InfoTip text="PlayAI model for text-to-speech synthesis" /></label>
+          <label>TTS Model <InfoTip text="Orpheus model for text-to-speech synthesis" /></label>
           <Select
             value={ttsModel}
             options={ttsModels.map((m) => m.value)}
@@ -155,7 +152,7 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
 
         {/* TTS Voice */}
         <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>TTS Voice <InfoTip text="Voice for text-to-speech (PlayAI voices)" /></label>
+          <label>TTS Voice <InfoTip text="Voice for text-to-speech (Orpheus voices)" /></label>
           <Select
             value={ttsVoice}
             options={voices}

@@ -58,7 +58,7 @@ describe("Groq model catalog", () => {
   it("has TTS models", () => {
     const models = getGroqTtsModels();
     expect(models.length).toBeGreaterThan(0);
-    expect(models.some((m) => m.value.includes("playai"))).toBe(true);
+    expect(models.some((m) => m.value.includes("orpheus"))).toBe(true);
   });
 
   it("all model options have value, name, and description", () => {
@@ -91,8 +91,8 @@ describe("Groq config schema", () => {
       },
       groq: {
         stt_model: "whisper-large-v3-turbo",
-        tts_model: "playai-tts",
-        tts_voice: "Fritz-PlayAI",
+        tts_model: "canopylabs/orpheus-v1-english",
+        tts_voice: "tara",
         tts_format: "mp3",
         rate_limit_mode: "auto",
       },
@@ -101,8 +101,8 @@ describe("Groq config schema", () => {
     expect(result.success).toBe(true);
     if (result.success) {
       expect(result.data.groq?.stt_model).toBe("whisper-large-v3-turbo");
-      expect(result.data.groq?.tts_model).toBe("playai-tts");
-      expect(result.data.groq?.tts_voice).toBe("Fritz-PlayAI");
+      expect(result.data.groq?.tts_model).toBe("canopylabs/orpheus-v1-english");
+      expect(result.data.groq?.tts_voice).toBe("tara");
       expect(result.data.groq?.tts_format).toBe("mp3");
       expect(result.data.groq?.rate_limit_mode).toBe("auto");
     }

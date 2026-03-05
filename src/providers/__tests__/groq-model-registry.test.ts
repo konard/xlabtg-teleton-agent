@@ -86,9 +86,9 @@ describe("Groq Model Registry", () => {
     expect(ids.some((id) => id.includes("whisper"))).toBe(true);
   });
 
-  it("getGroqTtsModelIds includes playai models", () => {
+  it("getGroqTtsModelIds includes orpheus models", () => {
     const ids = getGroqTtsModelIds();
-    expect(ids.some((id) => id.includes("playai"))).toBe(true);
+    expect(ids.some((id) => id.includes("orpheus"))).toBe(true);
   });
 
   it("all models have required fields", () => {

@@ -137,20 +137,20 @@ export const GROQ_MODEL_REGISTRY: GroqModelEntry[] = [
     asph: 7200,
   },
 
-  // ─── TTS Models ───────────────────────────────────────────────────────────
+  // ─── TTS Models (Orpheus) ─────────────────────────────────────────────────
   {
-    id: "playai-tts",
+    id: "canopylabs/orpheus-v1-english",
     type: "tts",
-    displayName: "PlayAI TTS",
+    displayName: "Orpheus TTS English",
     rpm: 10,
     tpm: 0,
     tpd: 0,
     asph: 3600,
   },
   {
-    id: "playai-tts-arabic",
+    id: "canopylabs/orpheus-arabic-saudi",
     type: "tts",
-    displayName: "PlayAI TTS Arabic",
+    displayName: "Orpheus TTS Arabic (Saudi)",
     rpm: 10,
     tpm: 0,
     tpd: 0,

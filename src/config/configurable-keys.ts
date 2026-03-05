@@ -609,7 +609,8 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     type: "string",
     category: "Agent",
     label: "Groq TTS Model",
-    description: "Groq PlayAI model for text-to-speech",
+    description:
+      "Groq Orpheus model for text-to-speech (e.g. canopylabs/orpheus-v1-english, canopylabs/orpheus-arabic-saudi)",
     sensitive: false,
     hotReload: "instant",
     validate: noValidation,
@@ -620,7 +621,7 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     type: "string",
     category: "Agent",
     label: "Groq TTS Voice",
-    description: "Voice name for Groq TTS (e.g. Fritz-PlayAI, Celeste-PlayAI)",
+    description: "Voice name for Groq Orpheus TTS (e.g. tara, leah, jess, leo)",
     sensitive: false,
     hotReload: "instant",
     validate: noValidation,

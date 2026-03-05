@@ -162,8 +162,8 @@ export function createGroqRoutes(deps: WebUIServerDeps) {
     try {
       const audioBuffer = await groqSpeak(body.text, {
         apiKey,
-        model: body.model || "playai-tts",
-        voice: body.voice || "Fritz-PlayAI",
+        model: body.model || "canopylabs/orpheus-v1-english",
+        voice: body.voice || "tara",
         responseFormat: (body.responseFormat as "mp3") || "mp3",
         speed: body.speed,
       });

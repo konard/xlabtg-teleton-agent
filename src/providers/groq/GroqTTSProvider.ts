@@ -1,8 +1,8 @@
 /**
  * Groq Text-to-Speech Provider
  *
- * Sends text to Groq's /audio/speech endpoint (PlayAI TTS models).
- * Supports: playai-tts, playai-tts-arabic.
+ * Sends text to Groq's /audio/speech endpoint (Orpheus TTS models).
+ * Supports: canopylabs/orpheus-v1-english, canopylabs/orpheus-arabic-saudi.
  */
 
 import { createLogger } from "../../utils/logger.js";
@@ -11,32 +11,23 @@ import { GROQ_API_BASE } from "./GroqSTTProvider.js";
 
 const log = createLogger("GroqTTS");
 
-/** Available voices for PlayAI TTS */
-export const GROQ_TTS_VOICES = [
-  "Arista-PlayAI",
-  "Atlas-PlayAI",
-  "Basil-PlayAI",
-  "Brixton-PlayAI",
-  "Calum-PlayAI",
-  "Celeste-PlayAI",
-  "Cheyenne-PlayAI",
-  "Chip-PlayAI",
-  "Cillian-PlayAI",
-  "Deedee-PlayAI",
-  "Eleanor-PlayAI",
-  "Fritz-PlayAI",
-  "Gail-PlayAI",
-  "George-PlayAI",
-  "Jasper-PlayAI",
-  "Jennifer-PlayAI",
-  "Judy-PlayAI",
-  "Mamaw-PlayAI",
-  "Mason-PlayAI",
-  "Mikail-PlayAI",
-  "Mitch-PlayAI",
-  "Quinn-PlayAI",
-  "Thunder-PlayAI",
+/** Available voices for Orpheus TTS English */
+export const GROQ_TTS_VOICES_ENGLISH = [
+  "tara",
+  "leah",
+  "jess",
+  "leo",
+  "dan",
+  "mia",
+  "zac",
+  "zoe",
 ] as const;
+
+/** Available voices for Orpheus TTS Arabic */
+export const GROQ_TTS_VOICES_ARABIC = ["ahmad", "nadia"] as const;
+
+/** All available TTS voices */
+export const GROQ_TTS_VOICES = [...GROQ_TTS_VOICES_ENGLISH, ...GROQ_TTS_VOICES_ARABIC] as const;
 
 export type GroqTTSVoice = (typeof GROQ_TTS_VOICES)[number];
 
@@ -46,7 +37,7 @@ export type GroqTTSFormat = "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
 export interface GroqSpeechOptions {
   /** API key for Groq */
   apiKey: string;
-  /** TTS model ID (e.g. "playai-tts") */
+  /** TTS model ID (e.g. "canopylabs/orpheus-v1-english") */
   model?: string;
   /** Voice to use */
   voice?: string;
@@ -66,8 +57,8 @@ export interface GroqSpeechOptions {
 export async function groqSpeak(text: string, options: GroqSpeechOptions): Promise<Buffer> {
   const {
     apiKey,
-    model = "playai-tts",
-    voice = "Fritz-PlayAI",
+    model = "canopylabs/orpheus-v1-english",
+    voice = "tara",
     responseFormat = "mp3",
     speed,
   } = options;

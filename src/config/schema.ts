@@ -302,12 +302,14 @@ export const ConfigSchema = z.object({
         .describe("Groq STT model (e.g. whisper-large-v3, whisper-large-v3-turbo)"),
       tts_model: z
         .string()
-        .default("playai-tts")
-        .describe("Groq TTS model (e.g. playai-tts, playai-tts-arabic)"),
+        .default("canopylabs/orpheus-v1-english")
+        .describe(
+          "Groq TTS model (e.g. canopylabs/orpheus-v1-english, canopylabs/orpheus-arabic-saudi)"
+        ),
       tts_voice: z
         .string()
-        .default("Fritz-PlayAI")
-        .describe("Groq TTS voice name (e.g. Fritz-PlayAI, Celeste-PlayAI)"),
+        .default("tara")
+        .describe("Groq TTS voice name (e.g. tara, leah, jess, leo)"),
       tts_format: z
         .enum(["mp3", "opus", "aac", "flac", "wav", "pcm"])
         .default("mp3")
