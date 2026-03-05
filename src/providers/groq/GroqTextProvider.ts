@@ -142,17 +142,13 @@ export async function groqListModels(apiKey: string): Promise<GroqModelListEntry
 }
 
 /**
- * Test a Groq API key by making a minimal chat completion request.
+ * Test a Groq API key by calling GET /models.
  * Returns an error message string on failure, or null on success.
+ * Using /models avoids 422 errors caused by invalid model or body schema issues.
  */
 export async function testGroqApiKey(apiKey: string): Promise<string | null> {
   try {
-    await groqComplete({
-      apiKey,
-      model: "llama-3.1-8b-instant",
-      messages: [{ role: "user", content: "hi" }],
-      maxTokens: 5,
-    });
+    await groqListModels(apiKey);
     return null;
   } catch (err) {
     return err instanceof Error ? err.message : String(err);

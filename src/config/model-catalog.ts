@@ -59,17 +59,17 @@ export const GROQ_STT_MODELS: ModelOption[] = [
   },
 ];
 
-/** Groq TTS (Text-to-Speech) models — PlayAI variants */
+/** Groq TTS (Text-to-Speech) models — Orpheus variants */
 export const GROQ_TTS_MODELS: ModelOption[] = [
   {
-    value: "playai-tts",
-    name: "PlayAI TTS",
-    description: "English TTS, 23 voices, $0.059/hr",
+    value: "canopylabs/orpheus-v1-english",
+    name: "Orpheus TTS English",
+    description: "English TTS, Orpheus v1, multiple voices",
   },
   {
-    value: "playai-tts-arabic",
-    name: "PlayAI TTS Arabic",
-    description: "Arabic TTS, dedicated voices, $0.059/hr",
+    value: "canopylabs/orpheus-arabic-saudi",
+    name: "Orpheus TTS Arabic (Saudi)",
+    description: "Arabic (Saudi) TTS, Orpheus model",
   },
 ];
 
