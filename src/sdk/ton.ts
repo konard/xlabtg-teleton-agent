@@ -10,6 +10,7 @@ import type {
   JettonBalance,
   JettonInfo,
   JettonSendResult,
+  SignedTransfer,
   NftItem,
   JettonPrice,
   JettonHolder,
@@ -39,7 +40,7 @@ import {
   WalletContractV5R1,
   internal,
 } from "@ton/ton";
-import { Address as TonAddress, beginCell, SendMode } from "@ton/core";
+import { Address as TonAddress, beginCell, SendMode, storeMessage } from "@ton/core";
 import { withTxLock } from "../ton/tx-lock.js";
 import { formatTransactions } from "../ton/format-transactions.js";
 
@@ -518,6 +519,239 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         log.error("ton.getJettonWalletAddress() failed:", err);
         return null;
       }
+    },
+
+    // ─── Signed Transfers (no broadcast) ──────────────────────────
+
+    async createTransfer(to: string, amount: number, comment?: string): Promise<SignedTransfer> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new PluginSDKError("Amount must be a positive number", "OPERATION_FAILED");
+      }
+
+      try {
+        TonAddress.parse(to);
+      } catch {
+        throw new PluginSDKError("Invalid TON address format", "INVALID_ADDRESS");
+      }
+
+      try {
+        const keyPair = await getKeyPair();
+        if (!keyPair) {
+          throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+        }
+
+        const boc = await withTxLock(async () => {
+          const wallet = WalletContractV5R1.create({
+            workchain: 0,
+            publicKey: keyPair.publicKey,
+          });
+          const client = await getCachedTonClient();
+          const contract = client.open(wallet);
+          const seqno = await contract.getSeqno();
+
+          const transferCell = wallet.createTransfer({
+            seqno,
+            secretKey: keyPair.secretKey,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            messages: [
+              internal({
+                to: TonAddress.parse(to),
+                value: tonToNano(amount),
+                body: comment || "",
+                bounce: false,
+              }),
+            ],
+          });
+
+          // Wrap in external message (broadcastable BOC)
+          const extMsg = beginCell()
+            .store(
+              storeMessage({
+                info: {
+                  type: "external-in" as const,
+                  dest: wallet.address,
+                  importFee: 0n,
+                },
+                init: seqno === 0 ? wallet.init : undefined,
+                body: transferCell,
+              })
+            )
+            .endCell();
+
+          return extMsg.toBoc().toString("base64");
+        });
+
+        return {
+          boc,
+          publicKey: walletData.publicKey,
+          walletVersion: "v5r1",
+        };
+      } catch (err) {
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to create transfer: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    async createJettonTransfer(
+      jettonAddress: string,
+      to: string,
+      amount: number,
+      opts?: { comment?: string }
+    ): Promise<SignedTransfer> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new PluginSDKError("Amount must be a positive number", "OPERATION_FAILED");
+      }
+
+      try {
+        TonAddress.parse(to);
+      } catch {
+        throw new PluginSDKError("Invalid recipient address", "INVALID_ADDRESS");
+      }
+
+      try {
+        // Get sender's jetton wallet from balances
+        const jettonsResponse = await tonapiFetch(
+          `/accounts/${encodeURIComponent(walletData.address)}/jettons`
+        );
+        if (!jettonsResponse.ok) {
+          throw new PluginSDKError(
+            `Failed to fetch jetton balances: ${jettonsResponse.status}`,
+            "OPERATION_FAILED"
+          );
+        }
+
+        const jettonsData = await jettonsResponse.json();
+        const jettonBalance = findJettonBalance(jettonsData.balances ?? [], jettonAddress);
+
+        if (!jettonBalance) {
+          throw new PluginSDKError(
+            `You don't own any of this jetton: ${jettonAddress}`,
+            "OPERATION_FAILED"
+          );
+        }
+
+        const senderJettonWallet = jettonBalance.wallet_address.address;
+        const decimals = jettonBalance.jetton.decimals ?? 9;
+        const currentBalance = BigInt(jettonBalance.balance);
+        const amountStr = amount.toFixed(decimals);
+        const [whole, frac = ""] = amountStr.split(".");
+        const amountInUnits = BigInt(whole + (frac + "0".repeat(decimals)).slice(0, decimals));
+
+        if (amountInUnits > currentBalance) {
+          const balStr = formatTokenBalance(currentBalance, decimals);
+          throw new PluginSDKError(
+            `Insufficient balance. Have ${balStr}, need ${amount}`,
+            "OPERATION_FAILED"
+          );
+        }
+
+        const comment = opts?.comment;
+
+        // Build forward payload (comment)
+        let forwardPayload = beginCell().endCell();
+        if (comment) {
+          forwardPayload = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
+        }
+
+        // TEP-74 transfer message body
+        const JETTON_TRANSFER_OP = 0xf8a7ea5;
+        const messageBody = beginCell()
+          .storeUint(JETTON_TRANSFER_OP, 32)
+          .storeUint(0, 64) // query_id
+          .storeCoins(amountInUnits)
+          .storeAddress(TonAddress.parse(to))
+          .storeAddress(TonAddress.parse(walletData.address)) // response_destination
+          .storeBit(false) // no custom_payload
+          .storeCoins(comment ? tonToNano("0.01") : BigInt(1)) // forward_ton_amount
+          .storeBit(comment ? 1 : 0)
+          .storeRef(comment ? forwardPayload : beginCell().endCell())
+          .endCell();
+
+        const keyPair = await getKeyPair();
+        if (!keyPair) {
+          throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+        }
+
+        const boc = await withTxLock(async () => {
+          const wallet = WalletContractV5R1.create({
+            workchain: 0,
+            publicKey: keyPair.publicKey,
+          });
+          const client = await getCachedTonClient();
+          const walletContract = client.open(wallet);
+          const seqno = await walletContract.getSeqno();
+
+          const transferCell = wallet.createTransfer({
+            seqno,
+            secretKey: keyPair.secretKey,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            messages: [
+              internal({
+                to: TonAddress.parse(senderJettonWallet),
+                value: tonToNano("0.05"),
+                body: messageBody,
+                bounce: true,
+              }),
+            ],
+          });
+
+          // Wrap in external message (broadcastable BOC)
+          const extMsg = beginCell()
+            .store(
+              storeMessage({
+                info: {
+                  type: "external-in" as const,
+                  dest: wallet.address,
+                  importFee: 0n,
+                },
+                init: seqno === 0 ? wallet.init : undefined,
+                body: transferCell,
+              })
+            )
+            .endCell();
+
+          return extMsg.toBoc().toString("base64");
+        });
+
+        return {
+          boc,
+          publicKey: walletData.publicKey,
+          walletVersion: "v5r1",
+        };
+      } catch (err) {
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to create jetton transfer: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    getPublicKey(): string | null {
+      try {
+        const wallet = loadWallet();
+        return wallet?.publicKey ?? null;
+      } catch (err) {
+        log.error("ton.getPublicKey() failed:", err);
+        return null;
+      }
+    },
+
+    getWalletVersion(): string {
+      return "v5r1";
     },
 
     // ─── NFT ─────────────────────────────────────────────────────

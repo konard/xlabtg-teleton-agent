@@ -5,8 +5,15 @@
  * The CLI binary exposes an HTTP proxy on 127.0.0.1:<port> for .ton sites.
  */
 
-import { spawn, type ChildProcess } from "child_process";
-import { existsSync, chmodSync, createWriteStream } from "fs";
+import { spawn, execSync, type ChildProcess } from "child_process";
+import {
+  existsSync,
+  chmodSync,
+  createWriteStream,
+  readFileSync,
+  writeFileSync,
+  unlinkSync,
+} from "fs";
 import { mkdir } from "fs/promises";
 import { join } from "path";
 import { pipeline } from "stream/promises";
@@ -17,6 +24,7 @@ const log = createLogger("TonProxy");
 
 const GITHUB_REPO = "xssnick/Tonutils-Proxy";
 const BINARY_DIR = join(TELETON_ROOT, "bin");
+const PID_FILE = join(TELETON_ROOT, "ton-proxy.pid");
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 const KILL_GRACE_MS = 5_000;
@@ -95,12 +103,81 @@ export class TonProxyManager {
     log.info(`TON Proxy installed: ${dest} (${tag})`);
   }
 
+  /** Kill any orphan proxy process from a previous session */
+  private killOrphan(): void {
+    // Check PID file first
+    if (existsSync(PID_FILE)) {
+      try {
+        const pid = parseInt(readFileSync(PID_FILE, "utf-8").trim(), 10);
+        if (pid && !isNaN(pid)) {
+          try {
+            process.kill(pid, 0); // check if alive
+            log.warn(`Killing orphan TON Proxy (PID ${pid}) from previous session`);
+            process.kill(pid, "SIGTERM");
+          } catch {
+            // Process already dead — clean up stale PID file
+          }
+        }
+        unlinkSync(PID_FILE);
+      } catch {
+        // PID file read/parse error — ignore
+      }
+    }
+
+    // Also check if port is in use (belt & suspenders)
+    try {
+      const out = execSync(`ss -tlnp 2>/dev/null | grep ':${this.config.port} ' || true`, {
+        encoding: "utf-8",
+        timeout: 3000,
+      });
+      const pidMatch = out.match(/pid=(\d+)/);
+      if (pidMatch) {
+        const pid = parseInt(pidMatch[1], 10);
+        log.warn(`Port ${this.config.port} occupied by PID ${pid}, killing it`);
+        try {
+          process.kill(pid, "SIGTERM");
+        } catch {
+          // Already dead
+        }
+        // Give it a moment to release the port
+        execSync("sleep 0.5");
+      }
+    } catch {
+      // ss not available or other error — skip
+    }
+  }
+
+  /** Write PID to file for orphan detection */
+  private writePidFile(pid: number): void {
+    try {
+      writeFileSync(PID_FILE, String(pid), { mode: 0o600 });
+    } catch {
+      log.warn("Failed to write TON Proxy PID file");
+    }
+  }
+
+  /** Remove PID file */
+  private removePidFile(): void {
+    try {
+      if (existsSync(PID_FILE)) unlinkSync(PID_FILE);
+    } catch {
+      // ignore
+    }
+  }
+
   /** Start the proxy process */
   async start(): Promise<void> {
     if (this.isRunning()) {
       log.warn("TON Proxy is already running");
       return;
     }
+
+    // Reset restart counter for fresh start
+    this.restartCount = 0;
+    this.maxRestarts = 3;
+
+    // Kill any orphan process from a previous session
+    this.killOrphan();
 
     if (!this.isInstalled()) {
       await this.install();
@@ -130,6 +207,7 @@ export class TonProxyManager {
     this.process.on("exit", (code, signal) => {
       log.info(`TON Proxy exited (code=${code}, signal=${signal})`);
       this.process = null;
+      this.removePidFile();
 
       // Auto-restart on unexpected exit (up to maxRestarts)
       if (code !== 0 && code !== null && this.restartCount < this.maxRestarts) {
@@ -164,6 +242,7 @@ export class TonProxyManager {
       });
     });
 
+    if (this.process?.pid) this.writePidFile(this.process.pid);
     log.info(`TON Proxy running on 127.0.0.1:${port} (PID ${this.process?.pid})`);
   }
 
@@ -194,6 +273,7 @@ export class TonProxyManager {
       this.process.on("exit", () => {
         clearTimeout(forceKill);
         this.process = null;
+        this.removePidFile();
         resolve();
       });
 

@@ -335,9 +335,19 @@ export async function chatWithContext(
 export function loadContextFromTranscript(sessionId: string, systemPrompt?: string): Context {
   const messages = readTranscript(sessionId) as Message[];
 
+  // Deduplicate toolResult messages by toolCallId (prevents API 400 on corrupted transcripts)
+  const seenToolCallIds = new Set<string>();
+  const deduped = messages.filter((msg) => {
+    if (msg.role !== "toolResult") return true;
+    const id = (msg as { toolCallId: string }).toolCallId;
+    if (seenToolCallIds.has(id)) return false;
+    seenToolCallIds.add(id);
+    return true;
+  });
+
   return {
     systemPrompt,
-    messages,
+    messages: deduped,
   };
 }
 

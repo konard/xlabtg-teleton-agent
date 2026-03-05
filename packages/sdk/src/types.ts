@@ -134,6 +134,19 @@ export interface JettonSendResult {
   seqno: number;
 }
 
+/**
+ * Signed transfer ready for off-chain transmission (e.g. x402 payment).
+ * Contains the signed BOC and wallet identity metadata.
+ */
+export interface SignedTransfer {
+  /** Base64-encoded BOC (Bag of Cells) — signed external message */
+  boc: string;
+  /** Hex-encoded ed25519 public key of the signing wallet */
+  publicKey: string;
+  /** Wallet contract version (e.g. "v5r1") */
+  walletVersion: string;
+}
+
 /** NFT item information */
 export interface NftItem {
   /** NFT item contract address */
@@ -825,6 +838,56 @@ export interface TonSDK {
    * @returns Jetton wallet address, or null if not found.
    */
   getJettonWalletAddress(ownerAddress: string, jettonAddress: string): Promise<string | null>;
+
+  // ─── Signed Transfers (no broadcast) ────────────────────────
+
+  /**
+   * Create a signed TON transfer without broadcasting it.
+   *
+   * Returns a signed BOC that can be transmitted off-chain (e.g. as an
+   * x402 `X-PAYMENT` header). The server or recipient broadcasts the BOC.
+   *
+   * WARNING: The BOC becomes invalid if any other transaction is sent from
+   * this wallet before the BOC is broadcast (seqno collision).
+   *
+   * @param to — Recipient TON address
+   * @param amount — Amount in TON (e.g. 0.05)
+   * @param comment — Optional transaction comment/memo
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
+   */
+  createTransfer(to: string, amount: number, comment?: string): Promise<SignedTransfer>;
+
+  /**
+   * Create a signed jetton transfer without broadcasting it.
+   *
+   * Returns a signed BOC encoding a TEP-74 jetton transfer message.
+   *
+   * WARNING: Same seqno caveat as createTransfer.
+   *
+   * @param jettonAddress — Jetton master contract address
+   * @param to — Recipient TON address
+   * @param amount — Amount in human-readable units (e.g. 100 for 100 USDT)
+   * @param opts — Optional comment for the transfer
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
+   */
+  createJettonTransfer(
+    jettonAddress: string,
+    to: string,
+    amount: number,
+    opts?: { comment?: string }
+  ): Promise<SignedTransfer>;
+
+  /**
+   * Get the wallet's public key.
+   * @returns Hex-encoded ed25519 public key, or null if wallet not initialized.
+   */
+  getPublicKey(): string | null;
+
+  /**
+   * Get the wallet contract version.
+   * @returns Wallet version string (e.g. "v5r1").
+   */
+  getWalletVersion(): string;
 
   // ─── NFT ───────────────────────────────────────────────────
 

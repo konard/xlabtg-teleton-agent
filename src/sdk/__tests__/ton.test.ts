@@ -47,6 +47,7 @@ vi.mock("@ton/core", () => ({
   Address: { parse: mocks.addressParse },
   beginCell: mocks.beginCell,
   SendMode: { PAY_GAS_SEPARATELY: 1, IGNORE_ERRORS: 2 },
+  storeMessage: vi.fn(() => vi.fn()),
 }));
 
 vi.mock("@ton/ton", () => ({
@@ -1275,6 +1276,285 @@ describe("createTonSDK", () => {
   });
 
   // ═══════════════════════════════════════════════════════════════
+  // SIGNED TRANSFERS (no broadcast)
+  // ═══════════════════════════════════════════════════════════════
+
+  describe("Signed transfer methods", () => {
+    const MOCK_PUBLIC_KEY = "a".repeat(64);
+    const mockWalletData = {
+      version: "w5r1" as const,
+      address: VALID_ADDRESS,
+      publicKey: MOCK_PUBLIC_KEY,
+      mnemonic: Array(24).fill("test"),
+      createdAt: "2025-01-01T00:00:00.000Z",
+    };
+    const mockKeyPair = {
+      publicKey: Buffer.from(MOCK_PUBLIC_KEY, "hex"),
+      secretKey: Buffer.alloc(64),
+    };
+
+    const mockBocBuffer = Buffer.from("mock-signed-boc");
+    const mockCell = {
+      toBoc: vi.fn().mockReturnValue(mockBocBuffer),
+    };
+
+    describe("getPublicKey()", () => {
+      it("returns hex public key when wallet is initialized", () => {
+        (loadWallet as Mock).mockReturnValue(mockWalletData);
+        expect(sdk.getPublicKey()).toBe(MOCK_PUBLIC_KEY);
+      });
+
+      it("returns null when wallet is not initialized", () => {
+        (loadWallet as Mock).mockReturnValue(null);
+        expect(sdk.getPublicKey()).toBeNull();
+      });
+
+      it("returns null and logs error on exception", () => {
+        (loadWallet as Mock).mockImplementation(() => {
+          throw new Error("file not found");
+        });
+        expect(sdk.getPublicKey()).toBeNull();
+        expect(mockLog.error).toHaveBeenCalledWith("ton.getPublicKey() failed:", expect.any(Error));
+      });
+    });
+
+    describe("getWalletVersion()", () => {
+      it("returns v5r1", () => {
+        expect(sdk.getWalletVersion()).toBe("v5r1");
+      });
+    });
+
+    describe("createTransfer()", () => {
+      beforeEach(() => {
+        (loadWallet as Mock).mockReturnValue(mockWalletData);
+        (getKeyPair as Mock).mockResolvedValue(mockKeyPair);
+        mocks.walletV5R1Create.mockReturnValue({
+          address: { toString: () => VALID_ADDRESS },
+          init: undefined,
+          createTransfer: vi.fn().mockReturnValue(mockCell),
+        });
+        const mockContract = {
+          getSeqno: vi.fn().mockResolvedValue(42),
+        };
+        (getCachedTonClient as Mock).mockResolvedValue({
+          open: vi.fn().mockReturnValue(mockContract),
+        });
+        mocks.toNano.mockReturnValue(BigInt(50000000));
+        mocks.internal.mockReturnValue({});
+        // Mock beginCell chain for external message wrapping
+        const extCellMock = { toBoc: vi.fn().mockReturnValue(mockBocBuffer) };
+        const extBuilderMock = {
+          store: vi.fn().mockReturnThis(),
+          endCell: vi.fn().mockReturnValue(extCellMock),
+        };
+        mocks.beginCell.mockReturnValue(extBuilderMock);
+      });
+
+      it("returns signed transfer with boc, publicKey, walletVersion", async () => {
+        const result = await sdk.createTransfer(VALID_ADDRESS, 0.05, "hello");
+
+        expect(result).toEqual({
+          boc: mockBocBuffer.toString("base64"),
+          publicKey: MOCK_PUBLIC_KEY,
+          walletVersion: "v5r1",
+        });
+      });
+
+      it("works without comment", async () => {
+        const result = await sdk.createTransfer(VALID_ADDRESS, 1);
+
+        expect(result.boc).toBe(mockBocBuffer.toString("base64"));
+        expect(result.publicKey).toBe(MOCK_PUBLIC_KEY);
+        expect(result.walletVersion).toBe("v5r1");
+      });
+
+      it("throws WALLET_NOT_INITIALIZED when wallet missing", async () => {
+        (loadWallet as Mock).mockReturnValue(null);
+        await expect(sdk.createTransfer(VALID_ADDRESS, 1)).rejects.toMatchObject({
+          code: "WALLET_NOT_INITIALIZED",
+        });
+      });
+
+      it("throws INVALID_ADDRESS for bad address", async () => {
+        mocks.addressParse.mockImplementation(() => {
+          throw new Error("bad address");
+        });
+        await expect(sdk.createTransfer("garbage", 1)).rejects.toMatchObject({
+          code: "INVALID_ADDRESS",
+        });
+      });
+
+      it("throws OPERATION_FAILED for non-positive amount", async () => {
+        await expect(sdk.createTransfer(VALID_ADDRESS, 0)).rejects.toMatchObject({
+          code: "OPERATION_FAILED",
+        });
+        await expect(sdk.createTransfer(VALID_ADDRESS, -1)).rejects.toMatchObject({
+          code: "OPERATION_FAILED",
+        });
+      });
+
+      it("throws OPERATION_FAILED for NaN amount", async () => {
+        await expect(sdk.createTransfer(VALID_ADDRESS, NaN)).rejects.toMatchObject({
+          code: "OPERATION_FAILED",
+        });
+      });
+
+      it("throws OPERATION_FAILED when getKeyPair returns null", async () => {
+        (getKeyPair as Mock).mockResolvedValue(null);
+        await expect(sdk.createTransfer(VALID_ADDRESS, 1)).rejects.toMatchObject({
+          code: "OPERATION_FAILED",
+          message: expect.stringContaining("key derivation"),
+        });
+      });
+
+      it("does NOT call sendTransfer (no broadcast)", async () => {
+        const mockWallet = {
+          address: { toString: () => VALID_ADDRESS },
+          init: undefined,
+          createTransfer: vi.fn().mockReturnValue(mockCell),
+        };
+        mocks.walletV5R1Create.mockReturnValue(mockWallet);
+
+        await sdk.createTransfer(VALID_ADDRESS, 1);
+
+        expect(mockWallet.createTransfer).toHaveBeenCalled();
+        // Verify the mock contract does NOT have sendTransfer called
+        const client = await getCachedTonClient();
+        const contract = client.open({});
+        expect(contract.sendTransfer).toBeUndefined();
+      });
+    });
+
+    describe("createJettonTransfer()", () => {
+      const jettonAddr = "EQJettonMaster";
+      const recipientAddr = "EQRecipient";
+      const cellMock = {
+        toBoc: vi.fn().mockReturnValue(mockBocBuffer),
+      };
+
+      beforeEach(() => {
+        (loadWallet as Mock).mockReturnValue(mockWalletData);
+        (getKeyPair as Mock).mockResolvedValue(mockKeyPair);
+
+        mocks.addressParse.mockImplementation((addr: string) => ({
+          toString: () => addr,
+        }));
+
+        // Mock beginCell chain (supports both jetton body building and external message wrapping)
+        const builderMock = {
+          storeUint: vi.fn().mockReturnThis(),
+          storeCoins: vi.fn().mockReturnThis(),
+          storeAddress: vi.fn().mockReturnThis(),
+          storeBit: vi.fn().mockReturnThis(),
+          storeRef: vi.fn().mockReturnThis(),
+          storeStringTail: vi.fn().mockReturnThis(),
+          store: vi.fn().mockReturnThis(),
+          endCell: vi.fn().mockReturnValue(cellMock),
+        };
+        mocks.beginCell.mockReturnValue(builderMock);
+        mocks.toNano.mockReturnValue(BigInt(1));
+        mocks.internal.mockReturnValue({});
+
+        const mockWallet = {
+          address: { toString: () => VALID_ADDRESS },
+          init: undefined,
+          createTransfer: vi.fn().mockReturnValue(cellMock),
+        };
+        mocks.walletV5R1Create.mockReturnValue(mockWallet);
+
+        const mockContract = {
+          getSeqno: vi.fn().mockResolvedValue(10),
+        };
+        (getCachedTonClient as Mock).mockResolvedValue({
+          open: vi.fn().mockReturnValue(mockContract),
+        });
+
+        // Mock TonAPI jetton balances
+        (tonapiFetch as Mock).mockResolvedValue(
+          mockResponse({
+            balances: [
+              {
+                balance: "100000000000", // 100 tokens (9 decimals)
+                wallet_address: { address: "EQJettonWallet" },
+                jetton: { address: jettonAddr, decimals: 9 },
+              },
+            ],
+          })
+        );
+      });
+
+      it("returns signed transfer for jetton", async () => {
+        const result = await sdk.createJettonTransfer(jettonAddr, recipientAddr, 10);
+
+        expect(result).toEqual({
+          boc: mockBocBuffer.toString("base64"),
+          publicKey: MOCK_PUBLIC_KEY,
+          walletVersion: "v5r1",
+        });
+      });
+
+      it("throws WALLET_NOT_INITIALIZED when wallet missing", async () => {
+        (loadWallet as Mock).mockReturnValue(null);
+        await expect(sdk.createJettonTransfer(jettonAddr, recipientAddr, 10)).rejects.toMatchObject(
+          { code: "WALLET_NOT_INITIALIZED" }
+        );
+      });
+
+      it("throws INVALID_ADDRESS for bad recipient", async () => {
+        mocks.addressParse.mockImplementation(() => {
+          throw new Error("bad address");
+        });
+        await expect(sdk.createJettonTransfer(jettonAddr, "garbage", 10)).rejects.toMatchObject({
+          code: "INVALID_ADDRESS",
+        });
+      });
+
+      it("throws OPERATION_FAILED when jetton not in balances", async () => {
+        mocks.addressParse.mockImplementation((addr: string) => ({
+          toString: () => addr,
+        }));
+        (tonapiFetch as Mock).mockResolvedValue(mockResponse({ balances: [] }));
+
+        await expect(sdk.createJettonTransfer(jettonAddr, recipientAddr, 10)).rejects.toMatchObject(
+          {
+            code: "OPERATION_FAILED",
+            message: expect.stringContaining("don't own"),
+          }
+        );
+      });
+
+      it("throws OPERATION_FAILED on insufficient balance", async () => {
+        (tonapiFetch as Mock).mockResolvedValue(
+          mockResponse({
+            balances: [
+              {
+                balance: "5000000000", // 5 tokens
+                wallet_address: { address: "EQJettonWallet" },
+                jetton: { address: jettonAddr, decimals: 9 },
+              },
+            ],
+          })
+        );
+
+        await expect(
+          sdk.createJettonTransfer(jettonAddr, recipientAddr, 100)
+        ).rejects.toMatchObject({
+          code: "OPERATION_FAILED",
+          message: expect.stringContaining("Insufficient balance"),
+        });
+      });
+
+      it("throws OPERATION_FAILED when getKeyPair returns null", async () => {
+        (getKeyPair as Mock).mockResolvedValue(null);
+        await expect(sdk.createJettonTransfer(jettonAddr, recipientAddr, 1)).rejects.toMatchObject({
+          code: "OPERATION_FAILED",
+          message: expect.stringContaining("key derivation"),
+        });
+      });
+    });
+  });
+
+  // ═══════════════════════════════════════════════════════════════
   // ERROR HANDLING PATTERNS
   // ═══════════════════════════════════════════════════════════════
 
@@ -1314,6 +1594,23 @@ describe("createTonSDK", () => {
       (loadWallet as Mock).mockReturnValue(null);
       try {
         await sdk.sendJetton("EQ", "EQ", 1);
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PluginSDKError);
+      }
+
+      // createTransfer
+      (loadWallet as Mock).mockReturnValue(null);
+      try {
+        await sdk.createTransfer(VALID_ADDRESS, 1);
+        expect.unreachable("should have thrown");
+      } catch (err) {
+        expect(err).toBeInstanceOf(PluginSDKError);
+      }
+
+      // createJettonTransfer
+      try {
+        await sdk.createJettonTransfer("EQ", "EQ", 1);
         expect.unreachable("should have thrown");
       } catch (err) {
         expect(err).toBeInstanceOf(PluginSDKError);
