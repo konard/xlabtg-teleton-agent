@@ -153,6 +153,15 @@ After sending, the tool returns a pseudo-hash in the format `seqno_timestamp_amo
 | `amount` | `number` | Yes | Amount in TON (e.g., `1.5`) |
 | `comment` | `string` | No | Transaction memo/comment |
 
+### Signed Transfers (x402)
+
+The SDK also supports signing transfers without broadcasting them, useful for the x402 payment protocol and other pre-signed transaction workflows:
+
+- `sdk.ton.createTransfer(to, amount, comment?)` -- returns a `SignedTransfer` with the signed BOC
+- `sdk.ton.createJettonTransfer(jettonAddress, to, amount, opts?)` -- same for jetton transfers
+
+These methods produce a ready-to-broadcast transaction that can be submitted later by a third party.
+
 ### Gas Fees
 
 TON transfer fees are extremely low (typically 0.005-0.01 TON). Gas is paid separately from the transfer amount.

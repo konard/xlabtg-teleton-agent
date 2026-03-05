@@ -391,6 +391,10 @@ Interact with the TON blockchain.
 | `sendJetton(jetton, to, amount, opts?)` | `Promise<JettonSendResult>` | Send jettons |
 | `getNftItems(owner?)` | `Promise<NftItem[]>` | List NFTs owned |
 | `getNftInfo(address)` | `Promise<NftItem \| null>` | Get NFT metadata |
+| `createTransfer(to, amount, comment?)` | `Promise<SignedTransfer>` | Sign a TON transfer without broadcasting (for x402 payment protocol) |
+| `createJettonTransfer(jettonAddress, to, amount, opts?)` | `Promise<SignedTransfer>` | Sign a jetton transfer without broadcasting |
+| `getPublicKey()` | `string \| null` | Get wallet's hex-encoded public key |
+| `getWalletVersion()` | `string` | Get wallet contract version (e.g. `"v5r1"`) |
 | `toNano(amount)` | `bigint` | Convert TON to nanoTON |
 | `fromNano(nano)` | `string` | Convert nanoTON to TON |
 | `validateAddress(address)` | `boolean` | Check if a TON address is valid |

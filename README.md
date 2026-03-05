@@ -15,13 +15,13 @@
 
 ---
 
-<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 125+ built-in tools, supports 11 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
+<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 125+ built-in tools, supports 15 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
 
 ### Key Highlights
 
 - **Full Telegram access** - Operates as a real user via MTProto (GramJS), not a limited bot
 - **Agentic loop** - Up to 5 iterations of tool calling per message, the agent thinks, acts, observes, and repeats
-- **Multi-Provider LLM** - Anthropic, Claude Code, OpenAI, Google Gemini, xAI Grok, Groq, OpenRouter, Moonshot, Mistral, Cocoon, Local (11 providers)
+- **Multi-Provider LLM** - Anthropic, Claude Code, OpenAI, Google Gemini, xAI Grok, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local (15 providers)
 - **TON Blockchain** - Built-in W5R1 wallet, send/receive TON & jettons, swap on STON.fi and DeDust, NFTs, DNS domains
 - **Persistent memory** - Hybrid RAG (sqlite-vec + FTS5), auto-compaction with AI summarization, daily logs
 - **125+ built-in tools** - Messaging, media, blockchain, DEX trading, deals, DNS, exec, journaling, and more
@@ -52,7 +52,7 @@
 
 | Capability              | Description                                                                                                                 |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-Provider LLM**  | Switch between Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cocoon, or Local — Dashboard validates API key before switching |
+| **Multi-Provider LLM**  | Switch between Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, or Local — Dashboard validates API key before switching |
 | **RAG + Hybrid Search** | Local ONNX embeddings (384d) or Voyage AI (512d/1024d) with FTS5 keyword + sqlite-vec cosine similarity, fused via RRF      |
 | **Auto-Compaction**     | AI-summarized context management prevents overflow, preserves key information in `memory/*.md` files                        |
 | **Observation Masking** | Compresses old tool results to one-line summaries, saving ~90% context window                                               |
@@ -66,6 +66,7 @@
 | **Tool RAG**            | Semantic tool selection (enabled by default) - sends only the top-K most relevant tools per message (hybrid vector + FTS5, configurable `top_k`, `always_include` patterns) |
 | **MCP Client**          | Connect external MCP tool servers (stdio, SSE, or Streamable HTTP) - auto-discovery, namespaced tools, managed via CLI or WebUI |
 | **System Execution**    | YOLO mode — 4 system tools (shell, file read/write, process list) with audit logging, configurable timeout, admin-only scope (off by default) |
+| **TON Proxy**           | Browse .ton domains via Tonutils-Proxy HTTP proxy, auto-downloads binary from GitHub, PID-based orphan cleanup, configurable port |
 | **Sandboxed Workspace** | Secure file system with recursive URL decoding, symlink detection, and immutable config files                               |
 
 ---
@@ -73,7 +74,7 @@
 ## Prerequisites
 
 - **Node.js 20.0.0+** - [Download](https://nodejs.org/)
-- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
+- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
 - **Telegram Account** - Dedicated account recommended for security
 - **Telegram API Credentials** - From [my.telegram.org/apps](https://my.telegram.org/apps)
 - **Your Telegram User ID** - Message [@userinfobot](https://t.me/userinfobot)
@@ -111,7 +112,7 @@ teleton setup
 ```
 
 The wizard will configure:
-- LLM provider selection (11 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cocoon, Local)
+- LLM provider selection (15 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local)
 - Telegram authentication (API credentials, phone, login code)
 - Access policies (DM/group response rules)
 - Admin user ID
@@ -154,7 +155,7 @@ The `teleton setup` wizard generates a fully configured `~/.teleton/config.yaml`
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cocoon | local
+  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
   api_key: "sk-ant-api03-..."
   model: "claude-opus-4-6"
   utility_model: "claude-haiku-4-5-20251001"  # for summarization, compaction, vision
@@ -184,6 +185,11 @@ webui:                       # Optional: Web dashboard
   host: "127.0.0.1"          # Localhost only (security)
   # auth_token: "..."        # Auto-generated if omitted
 
+ton_proxy:                   # Optional: .ton domain proxy
+  enabled: false             # Enable Tonutils-Proxy
+  port: 8080                 # HTTP proxy port
+  # binary_path: "..."       # Custom binary path (auto-downloaded if omitted)
+
 # capabilities:                # System execution (YOLO mode, off by default)
 #   exec:
 #     mode: "off"              # off | yolo
@@ -205,6 +211,10 @@ All models are defined in `src/config/model-catalog.ts` and shared across the CL
 | **OpenRouter** | Claude Opus/Sonnet, GPT-5, Gemini, DeepSeek R1/V3, Qwen3 Coder/Max/235B, Nemotron, Sonar Pro, MiniMax, Grok 4 |
 | **Moonshot** | Kimi K2.5, Kimi K2 Thinking |
 | **Mistral** | Devstral Small/Medium, Mistral Large, Magistral Small |
+| **Cerebras** | Qwen 3 235B, GPT OSS 120B, ZAI GLM-4.7, Llama 3.1 8B |
+| **ZAI** | GLM-5, GLM-4.7, GLM-4.7 Flash (free), GLM-4.6, GLM-4.5 Flash (free), GLM-4.5V |
+| **MiniMax** | MiniMax M2.5, MiniMax M2.5 Fast, MiniMax M2.1, MiniMax M2 |
+| **Hugging Face** | DeepSeek V3.2, DeepSeek R1, Qwen3 235B, Qwen3 Coder 480B, Qwen3 Next 80B, Kimi K2.5, GLM-4.7 Flash, GLM-5 |
 | **Cocoon** | Qwen/Qwen3-32B (decentralized, pays in TON) |
 | **Local** | Auto-detected (Ollama, vLLM, LM Studio) |
 
@@ -308,7 +318,7 @@ Teleton includes an **optional web dashboard** for monitoring and configuration.
 
 ### Features
 
-- **Dashboard**: System status, uptime, model info, session count, memory stats, live token usage tracking, provider switching with API key validation
+- **Dashboard**: System status, uptime, model info, session count, memory stats, live token usage tracking, provider switching with API key validation, tabbed configuration editor
 - **Tools Management**: View all tools grouped by module, toggle enable/disable, change scope per tool
 - **Plugin Marketplace**: Install, update, and manage plugins from registry with secrets management
 - **Soul Editor**: Edit SOUL.md, SECURITY.md, STRATEGY.md, MEMORY.md with unsaved changes warning
@@ -316,6 +326,7 @@ Teleton includes an **optional web dashboard** for monitoring and configuration.
 - **Live Logs**: Real-time log streaming via Server-Sent Events
 - **Workspace**: File browser with inline text editor
 - **MCP Servers**: Add/remove external tool servers, manage API keys (env vars), view connection status
+- **TON Proxy**: Start/stop Tonutils-Proxy, install/uninstall binary, view status
 - **Tasks**: Scheduled task management with status, dependencies, and bulk actions
 
 ### Usage
@@ -411,7 +422,7 @@ All admin commands support `/`, `!`, or `.` prefix:
 
 | Layer | Technology |
 |-------|------------|
-| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (11 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cocoon, Local) |
+| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
 | Telegram Userbot | [GramJS](https://gram.js.org/) Layer 222 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |
@@ -476,6 +487,10 @@ src/
 │   ├── wallet-service.ts   # W5R1 wallet, PBKDF2 key caching, encrypted storage
 │   ├── transfer.ts         # TON send operations
 │   └── payment-verifier.ts # On-chain payment verification with replay protection
+├── ton-proxy/             # TON Proxy module (Tonutils-Proxy lifecycle)
+│   ├── manager.ts         # Binary download, start/stop, PID file, health checks
+│   ├── module.ts          # Module lifecycle integration
+│   └── tools.ts           # ton_proxy_status tool
 ├── sdk/                    # Plugin SDK (v1.0.0)
 │   ├── index.ts            # SDK factory (createPluginSDK, all objects frozen)
 │   ├── ton.ts              # TON service for plugins
@@ -489,11 +504,11 @@ src/
 │   └── loader.ts           # 10 sections: soul + security + strategy + memory + context + ...
 ├── config/                 # Configuration
 │   ├── schema.ts           # Zod schemas + validation
-│   ├── providers.ts        # Multi-provider LLM registry (11 providers)
-│   └── model-catalog.ts    # Shared model catalog (60+ models across all providers)
+│   ├── providers.ts        # Multi-provider LLM registry (15 providers)
+│   └── model-catalog.ts    # Shared model catalog (70+ models across all providers)
 ├── webui/                  # Optional web dashboard
 │   ├── server.ts           # Hono server, auth middleware, static serving
-│   └── routes/             # 11 API route groups (status, tools, logs, memory, soul, plugins, mcp, tasks, workspace, config, marketplace)
+│   └── routes/             # 12 API route groups (status, tools, logs, memory, soul, plugins, mcp, tasks, workspace, config, marketplace, ton-proxy)
 ├── constants/              # Centralized limits, timeouts, API endpoints
 ├── utils/                  # Logger, sanitize, retry, fetch
 ├── workspace/              # Path validator (anti-traversal, anti-symlink)
@@ -629,6 +644,7 @@ When `tools` is a function, the SDK provides namespaced access to core services:
 | | **NFT**: `getNftItems()`, `getNftInfo()` |
 | | **DEX** (`sdk.ton.dex`): `quote()`, `swap()`, `quoteSTONfi()`, `quoteDeDust()`, `swapSTONfi()`, `swapDeDust()` |
 | | **DNS** (`sdk.ton.dns`): `check()`, `resolve()`, `getAuctions()`, `startAuction()`, `bid()`, `link()`, `unlink()`, `setSiteRecord()` |
+| | **Signed Transfers** (`sdk.ton`): `createTransfer()`, `createJettonTransfer()`, `getPublicKey()`, `getWalletVersion()` |
 | | **Utils**: `toNano()`, `fromNano()`, `validateAddress()` |
 | `sdk.telegram` | **Messages**: `sendMessage()`, `editMessage()`, `deleteMessage()`, `forwardMessage()`, `pinMessage()`, `searchMessages()`, `scheduleMessage()`, `getScheduledMessages()`, `deleteScheduledMessage()`, `sendScheduledNow()`, `getReplies()` |
 | | **Media**: `sendPhoto()`, `sendVideo()`, `sendVoice()`, `sendFile()`, `sendGif()`, `sendSticker()`, `downloadMedia()` |
@@ -718,6 +734,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 - [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Model Context Protocol client
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) - Vector search for SQLite
 - [Hono](https://hono.dev/) - Lightweight web framework
+- [Tonutils-Proxy](https://github.com/xssnick/Tonutils-Proxy) - TON Proxy for .ton sites
 
 ---
 

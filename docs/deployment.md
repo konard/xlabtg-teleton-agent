@@ -26,7 +26,7 @@ Before deploying, make sure you have:
 1. **Node.js 20+** (required by the `engines` field in `package.json`)
 2. **npm** (ships with Node.js)
 3. **Telegram API credentials** -- obtain `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
-4. **LLM API key** -- from your chosen provider (Anthropic, OpenAI, Google, xAI, Groq, or OpenRouter)
+4. **LLM API key** -- from your chosen provider (Anthropic, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, or Cocoon)
 5. **Build tools** (only for source/Docker builds) -- `python3`, `make`, `g++` for native modules (`better-sqlite3`)
 
 ---

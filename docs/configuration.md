@@ -16,6 +16,7 @@ Run `teleton setup` to generate a config file interactively, or copy `config.exa
 - [storage](#storage)
 - [dev](#dev)
 - [plugins](#plugins)
+- [ton_proxy](#ton_proxy)
 - [tonapi_key](#tonapi_key)
 - [meta](#meta)
 - [Environment Variable Overrides](#environment-variable-overrides)
@@ -28,7 +29,7 @@ LLM provider and agentic loop configuration.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `openai`, `google`, `xai`, `groq`, `openrouter`. |
+| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`. |
 | `agent.api_key` | `string` | **(required)** | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
 | `agent.model` | `string` | `"claude-opus-4-5-20251101"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
 | `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-3-5-haiku-20241022` for Anthropic, `gpt-4o-mini` for OpenAI). |
@@ -73,11 +74,20 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 | Provider | Default Model | Default Utility Model |
 |----------|--------------|----------------------|
 | `anthropic` | `claude-opus-4-5-20251101` | `claude-3-5-haiku-20241022` |
+| `claude-code` | `claude-opus-4-5-20251101` | `claude-3-5-haiku-20241022` |
 | `openai` | `gpt-4o` | `gpt-4o-mini` |
 | `google` | `gemini-2.5-flash` | `gemini-2.0-flash-lite` |
 | `xai` | `grok-3` | `grok-3-mini-fast` |
 | `groq` | `llama-3.3-70b-versatile` | `llama-3.1-8b-instant` |
 | `openrouter` | `anthropic/claude-opus-4.5` | `google/gemini-2.5-flash-lite` |
+| `moonshot` | `moonshot-v1-128k` | `moonshot-v1-8k` |
+| `mistral` | `mistral-large-latest` | `mistral-small-latest` |
+| `cerebras` | `llama-3.3-70b` | `llama-3.1-8b` |
+| `zai` | `zai-large` | `zai-small` |
+| `minimax` | `MiniMax-Text-01` | `MiniMax-Text-01` |
+| `huggingface` | `meta-llama/Llama-3.3-70B-Instruct` | `meta-llama/Llama-3.1-8B-Instruct` |
+| `cocoon` | *(proxy-only, no model selection)* | *(proxy-only)* |
+| `local` | *(depends on local server)* | *(depends on local server)* |
 
 ---
 
@@ -281,6 +291,27 @@ Plugin secrets (API keys, tokens) should NOT be stored here. Use the `/plugin se
 
 ---
 
+## ton_proxy
+
+Optional TON Proxy configuration. When enabled, the agent runs a Tonutils-Proxy instance for accessing TON Sites and ADNL resources.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `ton_proxy.enabled` | `boolean` | `false` | Enable the TON Proxy module. |
+| `ton_proxy.port` | `number` | `8080` | Local HTTP proxy port. |
+| `ton_proxy.auto_start` | `boolean` | `true` | Automatically start the proxy when the agent starts. |
+
+### Example
+
+```yaml
+ton_proxy:
+  enabled: true
+  port: 8080
+  auto_start: true
+```
+
+---
+
 ## tonapi_key
 
 | Key | Type | Default | Description |
@@ -343,6 +374,12 @@ Each provider has a dedicated environment variable. Only the key for the configu
 | `XAI_API_KEY` | xAI (Grok) | `xai-...` |
 | `GROQ_API_KEY` | Groq | `gsk_...` |
 | `OPENROUTER_API_KEY` | OpenRouter | `sk-or-...` |
+| `MOONSHOT_API_KEY` | Moonshot | `sk-...` |
+| `MISTRAL_API_KEY` | Mistral | — |
+| `CEREBRAS_API_KEY` | Cerebras | `csk-...` |
+| `ZAI_API_KEY` | ZAI | — |
+| `MINIMAX_API_KEY` | MiniMax | — |
+| `HUGGINGFACE_API_KEY` | Hugging Face | `hf_...` |
 
 > The `TELETON_API_KEY` override takes precedence over all provider-specific env vars.
 
@@ -436,6 +473,11 @@ plugins:
   casino:
     enabled: true
     min_bet: 0.1
+
+# ton_proxy:
+#   enabled: false
+#   port: 8080
+#   auto_start: true
 
 # tonapi_key: "AF..."
 ```
