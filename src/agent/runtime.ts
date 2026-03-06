@@ -10,6 +10,7 @@ import {
   CONTEXT_OVERFLOW_SUMMARY_MESSAGES,
   RATE_LIMIT_MAX_RETRIES,
   SERVER_ERROR_MAX_RETRIES,
+  TOOL_CONCURRENCY_LIMIT,
 } from "../constants/limits.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import {
@@ -541,6 +542,19 @@ export class AgentRuntime {
       const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
       const accumulatedTexts: string[] = [];
       const accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalCost: 0 };
+      const seenToolSignatures = new Set<string>();
+
+      interface ToolPlan {
+        block: ToolCall;
+        blocked: boolean;
+        blockReason: string;
+        params: Record<string, unknown>;
+      }
+      interface ToolExecResult {
+        result: { success: boolean; data?: unknown; error?: string };
+        durationMs: number;
+        execError?: { message: string; stack?: string };
+      }
 
       while (iteration < maxIterations) {
         iteration++;
@@ -695,17 +709,19 @@ export class AgentRuntime {
 
         const iterationToolNames: string[] = [];
 
+        const fullContext: ToolContext = {
+          ...toolContext,
+          chatId,
+          isGroup: effectiveIsGroup,
+        };
+
+        // Phase 1: Run tool:before hooks sequentially (hooks may cross-reference)
+        const toolPlans: ToolPlan[] = [];
+
         for (const block of toolCalls) {
           if (block.type !== "toolCall") continue;
 
-          const fullContext: ToolContext = {
-            ...toolContext,
-            chatId,
-            isGroup: effectiveIsGroup,
-          };
-
-          // Hook: tool:before
-          let toolParams = block.arguments ?? {};
+          let toolParams = (block.arguments ?? {}) as Record<string, unknown>;
           let blocked = false;
           let blockReason = "";
 
@@ -723,88 +739,106 @@ export class AgentRuntime {
               blocked = true;
               blockReason = beforeEvent.blockReason || "Blocked by plugin hook";
             } else {
-              toolParams = structuredClone(beforeEvent.params);
+              toolParams = structuredClone(beforeEvent.params) as Record<string, unknown>;
             }
           }
 
-          let result: { success: boolean; data?: unknown; error?: string };
+          toolPlans.push({ block, blocked, blockReason, params: toolParams });
+        }
 
-          if (blocked) {
-            result = { success: false, error: blockReason };
+        // Phase 2: Execute tools with concurrency limit (blocked tools resolve instantly)
+        const execResults: ToolExecResult[] = new Array(toolPlans.length);
+        {
+          let cursor = 0;
+          const runWorker = async (): Promise<void> => {
+            while (cursor < toolPlans.length) {
+              const idx = cursor++;
+              const plan = toolPlans[idx];
 
-            // Hook: tool:after fires even on blocks (improvement #5)
-            if (this.hookRunner) {
-              const afterEvent: AfterToolCallEvent = {
-                toolName: block.name,
-                params: structuredClone(toolParams),
-                result: { success: false, error: blockReason },
-                durationMs: 0,
-                chatId,
-                isGroup: effectiveIsGroup,
-                blocked: true,
-                blockReason,
-              };
-              await this.hookRunner.runObservingHook("tool:after", afterEvent);
-            }
-          } else {
-            const startTime = Date.now();
-            try {
-              result = await this.toolRegistry.execute(
-                { ...block, arguments: toolParams },
-                fullContext
-              );
-            } catch (execErr) {
-              const durationMs = Date.now() - startTime;
-              const errMsg = execErr instanceof Error ? execErr.message : String(execErr);
-              const errStack = execErr instanceof Error ? execErr.stack : undefined;
-              result = { success: false, error: errMsg };
-
-              // Hook: tool:error
-              if (this.hookRunner) {
-                const errorEvent: ToolErrorEvent = {
-                  toolName: block.name,
-                  params: structuredClone(toolParams),
-                  error: errMsg,
-                  // Note: stack traces are exposed to plugins for debugging — accepted tradeoff
-                  stack: errStack,
-                  chatId,
-                  isGroup: effectiveIsGroup,
-                  durationMs,
+              if (plan.blocked) {
+                execResults[idx] = {
+                  result: { success: false, error: plan.blockReason },
+                  durationMs: 0,
                 };
-                await this.hookRunner.runObservingHook("tool:error", errorEvent);
+                continue;
+              }
+
+              const startTime = Date.now();
+              try {
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- registry checked at line 687
+                const result = await this.toolRegistry!.execute(
+                  { ...plan.block, arguments: plan.params },
+                  fullContext
+                );
+                execResults[idx] = { result, durationMs: Date.now() - startTime };
+              } catch (execErr) {
+                const errMsg = execErr instanceof Error ? execErr.message : String(execErr);
+                const errStack = execErr instanceof Error ? execErr.stack : undefined;
+                execResults[idx] = {
+                  result: { success: false, error: errMsg },
+                  durationMs: Date.now() - startTime,
+                  execError: { message: errMsg, stack: errStack },
+                };
               }
             }
-            const durationMs = Date.now() - startTime;
+          };
+          const workers = Math.min(TOOL_CONCURRENCY_LIMIT, toolPlans.length);
+          await Promise.all(Array.from({ length: workers }, () => runWorker()));
+        }
 
-            // Hook: tool:after
-            if (this.hookRunner) {
-              const afterEvent: AfterToolCallEvent = {
-                toolName: block.name,
-                params: structuredClone(toolParams),
-                result: { success: result.success, data: result.data, error: result.error },
-                durationMs,
-                chatId,
-                isGroup: effectiveIsGroup,
-              };
-              await this.hookRunner.runObservingHook("tool:after", afterEvent);
-            }
+        // Phase 3: Process results in original order (hooks, context, transcript)
+        for (let i = 0; i < toolPlans.length; i++) {
+          const plan = toolPlans[i];
+          const { block } = plan;
+          const exec = execResults[i];
+
+          // Hook: tool:error (if execution threw)
+          if (exec.execError && this.hookRunner) {
+            const errorEvent: ToolErrorEvent = {
+              toolName: block.name,
+              params: structuredClone(plan.params),
+              error: exec.execError.message,
+              stack: exec.execError.stack,
+              chatId,
+              isGroup: effectiveIsGroup,
+              durationMs: exec.durationMs,
+            };
+            await this.hookRunner.runObservingHook("tool:error", errorEvent);
           }
 
-          log.debug(`${block.name}: ${result.success ? "✓" : "✗"} ${result.error || ""}`);
-          iterationToolNames.push(`${block.name} ${result.success ? "✓" : "✗"}`);
+          // Hook: tool:after (fires for all cases including blocks)
+          if (this.hookRunner) {
+            const afterEvent: AfterToolCallEvent = {
+              toolName: block.name,
+              params: structuredClone(plan.params),
+              result: {
+                success: exec.result.success,
+                data: exec.result.data,
+                error: exec.result.error,
+              },
+              durationMs: exec.durationMs,
+              chatId,
+              isGroup: effectiveIsGroup,
+              ...(plan.blocked ? { blocked: true, blockReason: plan.blockReason } : {}),
+            };
+            await this.hookRunner.runObservingHook("tool:after", afterEvent);
+          }
+
+          log.debug(`${block.name}: ${exec.result.success ? "✓" : "✗"} ${exec.result.error || ""}`);
+          iterationToolNames.push(`${block.name} ${exec.result.success ? "✓" : "✗"}`);
 
           totalToolCalls.push({
             name: block.name,
             input: block.arguments,
           });
 
-          let resultText = JSON.stringify(result);
+          let resultText = JSON.stringify(exec.result);
           if (resultText.length > MAX_TOOL_RESULT_SIZE) {
             log.warn(`⚠️ Tool result too large (${resultText.length} chars), truncating...`);
-            const data = result.data as Record<string, unknown> | undefined;
+            const data = exec.result.data as Record<string, unknown> | undefined;
             if (data?.summary || data?.message) {
               resultText = JSON.stringify({
-                success: result.success,
+                success: exec.result.success,
                 data: {
                   summary: data.summary || data.message,
                   _truncated: true,
@@ -813,12 +847,28 @@ export class AgentRuntime {
                 },
               });
             } else {
-              resultText = resultText.slice(0, MAX_TOOL_RESULT_SIZE) + "\n...[TRUNCATED]";
+              // Build a valid JSON summary instead of raw-slicing (which breaks JSON)
+              const summarized: Record<string, unknown> = {
+                _truncated: true,
+                _originalSize: resultText.length,
+                _message: "Full data truncated. Use limit parameter for smaller results.",
+              };
+              if (data && typeof data === "object") {
+                for (const [key, value] of Object.entries(data)) {
+                  if (Array.isArray(value)) {
+                    summarized[key] = `[${value.length} items]`;
+                  } else if (typeof value === "string" && value.length > 500) {
+                    summarized[key] = value.slice(0, 500) + "...[truncated]";
+                  } else {
+                    summarized[key] = value;
+                  }
+                }
+              }
+              resultText = JSON.stringify({ success: exec.result.success, data: summarized });
             }
           }
 
           if (provider === "cocoon") {
-            // Cocoon/Qwen3: tool results as <tool_response> in a user message
             const { wrapToolResult } = await import("../cocoon/tool-adapter.js");
             const cocoonResultMsg: UserMessage = {
               role: "user",
@@ -843,7 +893,7 @@ export class AgentRuntime {
                   text: resultText,
                 },
               ],
-              isError: !result.success,
+              isError: !exec.result.success,
               timestamp: Date.now(),
             };
             context.messages.push(toolResultMsg);
@@ -852,6 +902,22 @@ export class AgentRuntime {
         }
 
         log.info(`🔄 ${iteration}/${maxIterations} → ${iterationToolNames.join(", ")}`);
+
+        // Stall detection: break early if all tool calls are duplicates from prior iterations
+        const iterSignatures = toolPlans.map(
+          (p) => `${p.block.name}:${JSON.stringify(p.params, Object.keys(p.params).sort())}`
+        );
+        const allDuplicates =
+          iterSignatures.length > 0 && iterSignatures.every((sig) => seenToolSignatures.has(sig));
+        for (const sig of iterSignatures) seenToolSignatures.add(sig);
+
+        if (allDuplicates) {
+          log.warn(
+            `🔁 Loop stall detected: all ${iterSignatures.length} tool call(s) are repeats — breaking early`
+          );
+          finalResponse = response;
+          break;
+        }
 
         if (iteration === maxIterations) {
           log.info(`⚠️ Max iterations reached (${maxIterations})`);
@@ -874,14 +940,8 @@ export class AgentRuntime {
         context.messages.push(response.message);
       }
 
-      const newSessionId = await this.compactionManager.checkAndCompact(
-        session.sessionId,
-        context,
-        getEffectiveApiKey(this.config.agent.provider, this.config.agent.api_key),
-        chatId,
-        this.config.agent.provider as SupportedProvider,
-        this.config.agent.utility_model
-      );
+      // Post-loop compaction deferred: the pre-loop check at the start of the next
+      // processMessage() will handle it, avoiding AI summarization latency on response delivery.
 
       const sessionUpdate: Parameters<typeof updateSession>[1] = {
         updatedAt: Date.now(),
@@ -895,9 +955,6 @@ export class AgentRuntime {
           accumulatedUsage.cacheWrite,
         outputTokens: (session.outputTokens ?? 0) + accumulatedUsage.output,
       };
-      if (newSessionId) {
-        sessionUpdate.sessionId = newSessionId;
-      }
       updateSession(chatId, sessionUpdate);
 
       if (accumulatedUsage.input > 0 || accumulatedUsage.output > 0) {

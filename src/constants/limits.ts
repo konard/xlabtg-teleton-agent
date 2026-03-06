@@ -72,6 +72,9 @@ export const EMBEDDING_CACHE_EVICTION_RATIO = 0.1;
 export const WEB_FETCH_MAX_TEXT_LENGTH = 20_000; // default text truncation
 export const WEB_SEARCH_MAX_RESULTS = 10; // max allowed count
 
+// ─── Tool Execution ─────────────────────────────────────────────
+export const TOOL_CONCURRENCY_LIMIT = 2;
+
 // ─── Tool RAG ──────────────────────────────────────────────────
 export const TOOL_RAG_DEFAULT_TOP_K = 25;
 export const TOOL_RAG_MIN_SCORE = 0.1;
