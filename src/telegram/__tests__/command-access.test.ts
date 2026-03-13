@@ -200,3 +200,175 @@ describe("AdminHandler.handleCommand — unknown_command_reply", () => {
     expect(result).toBe("🏓 Pong!");
   });
 });
+
+// ── negative chat IDs (Telegram groups/channels) ───────────────────────
+
+describe("AdminHandler.isCommandAllowed — negative chat IDs", () => {
+  it("allows message from a negative chat ID when it is in allowed_chat_ids", () => {
+    const h = makeHandler({ allowed_chat_ids: [-100123456] });
+    expect(h.isCommandAllowed(200, "-100123456")).toBe(true);
+  });
+
+  it("blocks message from a negative chat ID not in allowed_chat_ids", () => {
+    const h = makeHandler({ allowed_chat_ids: [-100999888] });
+    expect(h.isCommandAllowed(200, "-100123456")).toBe(false);
+  });
+});
+
+// ── hybrid mode (Mode 5): both lists non-empty → AND logic ────────────
+
+describe("AdminHandler.isCommandAllowed — hybrid mode", () => {
+  it("allows when user AND chat both match", () => {
+    const h = makeHandler({ allowed_user_ids: [200], allowed_chat_ids: [42] });
+    expect(h.isCommandAllowed(200, "42")).toBe(true);
+  });
+
+  it("blocks when user matches but chat does not", () => {
+    const h = makeHandler({ allowed_user_ids: [200], allowed_chat_ids: [99] });
+    expect(h.isCommandAllowed(200, "42")).toBe(false);
+  });
+
+  it("blocks when chat matches but user does not", () => {
+    const h = makeHandler({ allowed_user_ids: [300], allowed_chat_ids: [42] });
+    expect(h.isCommandAllowed(200, "42")).toBe(false);
+  });
+
+  it("blocks when neither user nor chat matches", () => {
+    const h = makeHandler({ allowed_user_ids: [300], allowed_chat_ids: [99] });
+    expect(h.isCommandAllowed(200, "42")).toBe(false);
+  });
+});
+
+// ── /commands admin command ────────────────────────────────────────────
+
+describe("AdminHandler.handleCommand — /commands", () => {
+  it("shows current settings when no subcommand given", async () => {
+    const h = makeHandler();
+    const result = await h.handleCommand(
+      { command: "commands", args: [], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("Command Access Settings");
+    expect(result).toContain("Commands enabled:");
+  });
+
+  it("enables commands", async () => {
+    const h = makeHandler({ commands_enabled: false });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["enable"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("enabled");
+  });
+
+  it("disables commands", async () => {
+    const h = makeHandler({ commands_enabled: true });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["disable"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("disabled");
+  });
+
+  it("sets admin_only on", async () => {
+    const h = makeHandler({ admin_only_commands: false });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["admin_only", "on"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("ON");
+  });
+
+  it("sets admin_only off", async () => {
+    const h = makeHandler({ admin_only_commands: true });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["admin_only", "off"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("OFF");
+  });
+
+  it("sets unknown_reply on", async () => {
+    const h = makeHandler({ unknown_command_reply: false });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["unknown_reply", "on"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("ON");
+  });
+
+  it("sets unknown_reply off", async () => {
+    const h = makeHandler({ unknown_command_reply: true });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["unknown_reply", "off"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("OFF");
+  });
+
+  it("adds user to allow_user list", async () => {
+    const h = makeHandler({ allowed_user_ids: [] });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["allow_user", "999"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("999");
+    expect(result).toContain("added");
+  });
+
+  it("removes user from allow_user list", async () => {
+    const h = makeHandler({ allowed_user_ids: [999] });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["allow_user", "remove", "999"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("999");
+    expect(result).toContain("removed");
+  });
+
+  it("adds negative chat ID to allow_chat list", async () => {
+    const h = makeHandler({ allowed_chat_ids: [] });
+    const result = await h.handleCommand(
+      { command: "commands", args: ["allow_chat", "-100123456"], chatId: "1", senderId: 100 },
+      "1",
+      100
+    );
+    expect(result).toContain("-100123456");
+    expect(result).toContain("added");
+  });
+
+  it("removes chat from allow_chat list", async () => {
+    const h = makeHandler({ allowed_chat_ids: [-100123456] });
+    const result = await h.handleCommand(
+      {
+        command: "commands",
+        args: ["allow_chat", "remove", "-100123456"],
+        chatId: "1",
+        senderId: 100,
+      },
+      "1",
+      100
+    );
+    expect(result).toContain("-100123456");
+    expect(result).toContain("removed");
+  });
+
+  it("non-admin is denied", async () => {
+    const h = makeHandler();
+    const result = await h.handleCommand(
+      { command: "commands", args: ["enable"], chatId: "1", senderId: 999 },
+      "1",
+      999
+    );
+    expect(result).toContain("Admin access required");
+  });
+});

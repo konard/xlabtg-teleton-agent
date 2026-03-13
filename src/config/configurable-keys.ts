@@ -59,6 +59,12 @@ function positiveInteger(v: string) {
   return undefined;
 }
 
+function anyInteger(v: string) {
+  const n = Number(v);
+  if (!Number.isInteger(n)) return "Must be an integer";
+  return undefined;
+}
+
 function validateUrl(v: string) {
   if (v === "") return undefined; // empty to reset
   if (v.startsWith("http://") || v.startsWith("https://")) return undefined;
@@ -506,10 +512,11 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     itemType: "number",
     category: "Telegram",
     label: "Command Allowed Chats",
-    description: "Chat IDs where commands are allowed (empty = no extra restriction)",
+    description:
+      "Chat IDs where commands are allowed (empty = no extra restriction; negative IDs for groups/channels)",
     sensitive: false,
     hotReload: "instant",
-    validate: positiveInteger,
+    validate: anyInteger,
     mask: identity,
     parse: (v) => Number(v),
   },

@@ -67,7 +67,7 @@ export const CommandAccessSchema = z.object({
     .describe("Globally enable or disable all Telegram command handling"),
   admin_only_commands: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe("Restrict all commands to admin users only (admins always bypass this)"),
   allowed_user_ids: z
     .array(z.number())
@@ -79,7 +79,7 @@ export const CommandAccessSchema = z.object({
     .describe("Chat IDs where commands are allowed (empty = no extra restriction)"),
   unknown_command_reply: z
     .boolean()
-    .default(true)
+    .default(false)
     .describe("Send 'Use /help for available commands.' reply for unrecognized commands"),
 });
 
