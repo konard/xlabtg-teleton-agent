@@ -59,6 +59,12 @@ function positiveInteger(v: string) {
   return undefined;
 }
 
+function anyInteger(v: string) {
+  const n = Number(v);
+  if (!Number.isInteger(n)) return "Must be an integer";
+  return undefined;
+}
+
 function validateUrl(v: string) {
   if (v === "") return undefined; // empty to reset
   if (v.startsWith("http://") || v.startsWith("https://")) return undefined;
@@ -453,6 +459,64 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     sensitive: false,
     hotReload: "instant",
     validate: positiveInteger,
+    mask: identity,
+    parse: (v) => Number(v),
+  },
+  "telegram.command_access.commands_enabled": {
+    type: "boolean",
+    category: "Telegram",
+    label: "Commands Enabled",
+    description: "Globally enable or disable all Telegram command handling",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
+  "telegram.command_access.admin_only_commands": {
+    type: "boolean",
+    category: "Telegram",
+    label: "Admin-Only Commands",
+    description: "Restrict all commands to admin users only",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
+  "telegram.command_access.unknown_command_reply": {
+    type: "boolean",
+    category: "Telegram",
+    label: "Unknown Command Reply",
+    description: "Send reply for unrecognized commands (Use /help for available commands.)",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
+  "telegram.command_access.allowed_user_ids": {
+    type: "array",
+    itemType: "number",
+    category: "Telegram",
+    label: "Command Allowed Users",
+    description: "User IDs allowed to run commands (empty = no extra restriction)",
+    sensitive: false,
+    hotReload: "instant",
+    validate: positiveInteger,
+    mask: identity,
+    parse: (v) => Number(v),
+  },
+  "telegram.command_access.allowed_chat_ids": {
+    type: "array",
+    itemType: "number",
+    category: "Telegram",
+    label: "Command Allowed Chats",
+    description:
+      "Chat IDs where commands are allowed (empty = no extra restriction; negative IDs for groups/channels)",
+    sensitive: false,
+    hotReload: "instant",
+    validate: anyInteger,
     mask: identity,
     parse: (v) => Number(v),
   },

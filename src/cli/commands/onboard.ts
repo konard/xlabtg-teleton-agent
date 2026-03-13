@@ -35,7 +35,7 @@ import { join } from "path";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { TelegramUserClient } from "../../telegram/client.js";
 import YAML from "yaml";
-import { type Config, DealsConfigSchema } from "../../config/schema.js";
+import { type Config, CommandAccessSchema, DealsConfigSchema } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
 import {
   generateWallet,
@@ -969,6 +969,7 @@ async function runInteractiveOnboarding(
       debounce_ms: 1500,
       bot_token: botToken,
       bot_username: botUsername,
+      command_access: CommandAccessSchema.parse({}),
     },
     storage: {
       sessions_file: `${workspace.root}/sessions.json`,
@@ -1149,6 +1150,7 @@ async function runNonInteractiveOnboarding(
       debounce_ms: 1500,
       bot_token: undefined,
       bot_username: undefined,
+      command_access: CommandAccessSchema.parse({}),
     },
     storage: {
       sessions_file: `${workspace.root}/sessions.json`,

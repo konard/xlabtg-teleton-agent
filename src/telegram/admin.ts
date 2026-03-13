@@ -49,6 +49,37 @@ export class AdminHandler {
     return this.config.admin_ids.includes(userId);
   }
 
+  /**
+   * Check whether a user/chat is permitted to run commands, according to
+   * telegram.command_access settings.  Admins always bypass all restrictions.
+   */
+  isCommandAllowed(userId: number, chatId: string): boolean {
+    // Admins always have access
+    if (this.isAdmin(userId)) return true;
+
+    const ca = this.config.command_access;
+
+    // Global kill-switch
+    if (!ca.commands_enabled) return false;
+
+    // Admin-only mode
+    if (ca.admin_only_commands) return false;
+
+    // User allowlist (non-empty means restrict to listed users)
+    if (ca.allowed_user_ids.length > 0 && !ca.allowed_user_ids.includes(userId)) return false;
+
+    // Chat allowlist (non-empty means restrict to listed chats)
+    const numericChatId = Number(chatId);
+    if (
+      ca.allowed_chat_ids.length > 0 &&
+      !isNaN(numericChatId) &&
+      !ca.allowed_chat_ids.includes(numericChatId)
+    )
+      return false;
+
+    return true;
+  }
+
   isPaused(): boolean {
     return this.paused;
   }
@@ -115,10 +146,15 @@ export class AdminHandler {
         return this.handlePluginCommand(command);
       case "help":
         return this.handleHelpCommand();
+      case "commands":
+        return this.handleCommandsCommand(command);
       case "ping":
         return "🏓 Pong!";
       default:
-        return `❓ Unknown command: /${command.command}\n\nUse /help for available commands.`;
+        if (this.config.command_access.unknown_command_reply) {
+          return `❓ Unknown command: /${command.command}\n\nUse /help for available commands.`;
+        }
+        return "";
     }
   }
 
@@ -525,6 +561,99 @@ export class AdminHandler {
     }
   }
 
+  private handleCommandsCommand(command: AdminCommand): string {
+    const ca = this.config.command_access;
+    const sub = command.args[0]?.toLowerCase();
+
+    if (!sub) {
+      // Show current settings
+      return (
+        `🔒 **Command Access Settings**\n\n` +
+        `Commands enabled: ${ca.commands_enabled ? "✅ ON" : "❌ OFF"}\n` +
+        `Admin-only: ${ca.admin_only_commands ? "✅ ON" : "❌ OFF"}\n` +
+        `Unknown command reply: ${ca.unknown_command_reply ? "✅ ON" : "❌ OFF"}\n` +
+        `Allowed users: ${ca.allowed_user_ids.length > 0 ? ca.allowed_user_ids.join(", ") : "(none — unrestricted)"}\n` +
+        `Allowed chats: ${ca.allowed_chat_ids.length > 0 ? ca.allowed_chat_ids.join(", ") : "(none — unrestricted)"}\n\n` +
+        `Usage:\n` +
+        `/commands enable|disable\n` +
+        `/commands admin_only on|off\n` +
+        `/commands unknown_reply on|off\n` +
+        `/commands allow_user <id>\n` +
+        `/commands allow_user remove <id>\n` +
+        `/commands allow_chat <id>\n` +
+        `/commands allow_chat remove <id>`
+      );
+    }
+
+    if (sub === "enable") {
+      ca.commands_enabled = true;
+      return "✅ Commands **enabled**";
+    }
+
+    if (sub === "disable") {
+      ca.commands_enabled = false;
+      return "❌ Commands **disabled**";
+    }
+
+    if (sub === "admin_only") {
+      const val = command.args[1]?.toLowerCase();
+      if (val !== "on" && val !== "off") {
+        return `❌ Usage: /commands admin_only on|off\nCurrent: ${ca.admin_only_commands ? "on" : "off"}`;
+      }
+      ca.admin_only_commands = val === "on";
+      return val === "on"
+        ? "🔐 Admin-only commands **ON** — only admins can run commands"
+        : "✅ Admin-only commands **OFF** — all users can run commands (subject to other restrictions)";
+    }
+
+    if (sub === "unknown_reply") {
+      const val = command.args[1]?.toLowerCase();
+      if (val !== "on" && val !== "off") {
+        return `❌ Usage: /commands unknown_reply on|off\nCurrent: ${ca.unknown_command_reply ? "on" : "off"}`;
+      }
+      ca.unknown_command_reply = val === "on";
+      return val === "on"
+        ? "✅ Unknown command reply **ON**"
+        : "❌ Unknown command reply **OFF** — unrecognized commands will be silently ignored";
+    }
+
+    if (sub === "allow_user") {
+      const action = command.args[1]?.toLowerCase();
+      if (action === "remove") {
+        const id = parseInt(command.args[2], 10);
+        if (isNaN(id)) return "❌ Usage: /commands allow_user remove <id>";
+        const idx = ca.allowed_user_ids.indexOf(id);
+        if (idx === -1) return `⚠️ User ${id} was not in the allowlist`;
+        ca.allowed_user_ids.splice(idx, 1);
+        return `✅ User **${id}** removed from allowed users\nAllowed: ${ca.allowed_user_ids.length > 0 ? ca.allowed_user_ids.join(", ") : "(none — unrestricted)"}`;
+      }
+      const id = parseInt(command.args[1], 10);
+      if (isNaN(id)) return "❌ Usage: /commands allow_user <id>";
+      if (ca.allowed_user_ids.includes(id)) return `⚠️ User ${id} is already in the allowlist`;
+      ca.allowed_user_ids.push(id);
+      return `✅ User **${id}** added to allowed users\nAllowed: ${ca.allowed_user_ids.join(", ")}`;
+    }
+
+    if (sub === "allow_chat") {
+      const action = command.args[1]?.toLowerCase();
+      if (action === "remove") {
+        const id = parseInt(command.args[2], 10);
+        if (isNaN(id)) return "❌ Usage: /commands allow_chat remove <id>";
+        const idx = ca.allowed_chat_ids.indexOf(id);
+        if (idx === -1) return `⚠️ Chat ${id} was not in the allowlist`;
+        ca.allowed_chat_ids.splice(idx, 1);
+        return `✅ Chat **${id}** removed from allowed chats\nAllowed: ${ca.allowed_chat_ids.length > 0 ? ca.allowed_chat_ids.join(", ") : "(none — unrestricted)"}`;
+      }
+      const id = parseInt(command.args[1], 10);
+      if (isNaN(id)) return "❌ Usage: /commands allow_chat <id>";
+      if (ca.allowed_chat_ids.includes(id)) return `⚠️ Chat ${id} is already in the allowlist`;
+      ca.allowed_chat_ids.push(id);
+      return `✅ Chat **${id}** added to allowed chats\nAllowed: ${ca.allowed_chat_ids.join(", ")}`;
+    }
+
+    return `❌ Unknown subcommand: "${sub}"\n\nRun /commands for help.`;
+  }
+
   private handleHelpCommand(): string {
     return `🤖 **Teleton Admin Commands**
 
@@ -539,6 +668,9 @@ Set max agentic iterations
 
 **/policy** <dm|group> <value>
 Change access policy
+
+**/commands** [enable|disable|admin_only|unknown_reply|allow_user|allow_chat]
+Manage command access control settings
 
 **/strategy** [buy|sell <percent>]
 View or change trading thresholds
