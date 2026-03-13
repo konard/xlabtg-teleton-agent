@@ -49,6 +49,37 @@ export class AdminHandler {
     return this.config.admin_ids.includes(userId);
   }
 
+  /**
+   * Check whether a user/chat is permitted to run commands, according to
+   * telegram.command_access settings.  Admins always bypass all restrictions.
+   */
+  isCommandAllowed(userId: number, chatId: string): boolean {
+    // Admins always have access
+    if (this.isAdmin(userId)) return true;
+
+    const ca = this.config.command_access;
+
+    // Global kill-switch
+    if (!ca.commands_enabled) return false;
+
+    // Admin-only mode
+    if (ca.admin_only_commands) return false;
+
+    // User allowlist (non-empty means restrict to listed users)
+    if (ca.allowed_user_ids.length > 0 && !ca.allowed_user_ids.includes(userId)) return false;
+
+    // Chat allowlist (non-empty means restrict to listed chats)
+    const numericChatId = Number(chatId);
+    if (
+      ca.allowed_chat_ids.length > 0 &&
+      !isNaN(numericChatId) &&
+      !ca.allowed_chat_ids.includes(numericChatId)
+    )
+      return false;
+
+    return true;
+  }
+
   isPaused(): boolean {
     return this.paused;
   }
@@ -118,7 +149,10 @@ export class AdminHandler {
       case "ping":
         return "🏓 Pong!";
       default:
-        return `❓ Unknown command: /${command.command}\n\nUse /help for available commands.`;
+        if (this.config.command_access.unknown_command_reply) {
+          return `❓ Unknown command: /${command.command}\n\nUse /help for available commands.`;
+        }
+        return "";
     }
   }
 

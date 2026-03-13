@@ -60,6 +60,29 @@ export const AgentConfigSchema = z.object({
   session_reset_policy: SessionResetPolicySchema.default(SessionResetPolicySchema.parse({})),
 });
 
+export const CommandAccessSchema = z.object({
+  commands_enabled: z
+    .boolean()
+    .default(true)
+    .describe("Globally enable or disable all Telegram command handling"),
+  admin_only_commands: z
+    .boolean()
+    .default(false)
+    .describe("Restrict all commands to admin users only (admins always bypass this)"),
+  allowed_user_ids: z
+    .array(z.number())
+    .default([])
+    .describe("User IDs allowed to run commands (empty = no extra restriction)"),
+  allowed_chat_ids: z
+    .array(z.number())
+    .default([])
+    .describe("Chat IDs where commands are allowed (empty = no extra restriction)"),
+  unknown_command_reply: z
+    .boolean()
+    .default(true)
+    .describe("Send 'Use /help for available commands.' reply for unrecognized commands"),
+});
+
 export const TelegramConfigSchema = z.object({
   api_id: z.number(),
   api_hash: z.string(),
@@ -92,6 +115,9 @@ export const TelegramConfigSchema = z.object({
     .string()
     .optional()
     .describe("Bot username without @ (e.g., 'teleton_deals_bot')"),
+  command_access: CommandAccessSchema.default(CommandAccessSchema.parse({})).describe(
+    "Configurable command access control settings"
+  ),
 });
 
 export const StorageConfigSchema = z.object({
@@ -332,6 +358,7 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
+export type CommandAccessConfig = z.infer<typeof CommandAccessSchema>;
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;
 export type SessionResetPolicy = z.infer<typeof SessionResetPolicySchema>;
 export type DealsConfig = z.infer<typeof DealsConfigSchema>;

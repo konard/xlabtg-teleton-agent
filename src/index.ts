@@ -712,7 +712,10 @@ ${blue}  ┌──────────────────────�
 
       // Check if this is an admin command
       const adminCmd = this.adminHandler.parseCommand(message.text);
-      if (adminCmd && this.adminHandler.isAdmin(message.senderId)) {
+      const commandAllowed = adminCmd
+        ? this.adminHandler.isCommandAllowed(message.senderId, message.chatId)
+        : false;
+      if (adminCmd && commandAllowed) {
         // /boot passes through to the agent with bootstrap instructions
         if (adminCmd.command === "boot") {
           const bootstrapContent = this.adminHandler.getBootstrapContent();
@@ -757,15 +760,20 @@ ${blue}  ┌──────────────────────�
             message.isGroup
           );
 
-          await this.bridge.sendMessage({
-            chatId: message.chatId,
-            text: response,
-            replyToId: message.id,
-          });
+          if (response) {
+            await this.bridge.sendMessage({
+              chatId: message.chatId,
+              text: response,
+              replyToId: message.id,
+            });
+          }
 
           return;
         }
       }
+
+      // Silently drop commands that are not allowed (prevents LLM from seeing them)
+      if (adminCmd && !commandAllowed) return;
 
       // Skip if paused (admin commands still work above)
       if (this.adminHandler.isPaused()) return;
