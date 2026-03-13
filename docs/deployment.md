@@ -12,6 +12,7 @@ This guide covers every method of deploying Teleton Agent, from a quick global i
 - [Method 3: Docker Compose](#method-3-docker-compose)
 - [Method 4: From Source](#method-4-from-source)
 - [systemd Service (VPS)](#systemd-service-vps)
+- [Remote Management (API)](#remote-management-api)
 - [Environment Variables](#environment-variables)
 - [Health Check](#health-check)
 - [Backup Strategy](#backup-strategy)
@@ -313,6 +314,63 @@ sudo journalctl -u teleton -f
 
 ---
 
+## Remote Management (API)
+
+The Management API provides an HTTPS control plane for administering a deployed agent without SSH. See the full [Management API documentation](management-api.md) for endpoint details.
+
+### Enable on an existing deployment
+
+Add to `config.yaml`:
+
+```yaml
+api:
+  enabled: true
+  port: 7778
+```
+
+Or via environment:
+
+```bash
+TELETON_API_ENABLED=true teleton start
+```
+
+The API key is generated on first start and printed to the log. Use `--json-credentials` to capture it programmatically.
+
+### Bootstrap a fresh VPS (no config needed)
+
+```bash
+teleton start --api --json-credentials > /tmp/creds.json
+```
+
+This starts the API server without any configuration. Use the `/v1/setup/*` endpoints to configure the agent remotely, then `POST /v1/agent/start` to boot it.
+
+### systemd with API
+
+Update the service file to expose the API:
+
+```ini
+Environment=TELETON_API_ENABLED=true
+# Optionally output credentials to journal on first start:
+# Environment=TELETON_JSON_CREDENTIALS=true
+```
+
+### Docker with API
+
+Expose port `7778` alongside the WebUI:
+
+```bash
+docker run -d \
+  --name teleton \
+  --restart unless-stopped \
+  -e TELETON_API_ENABLED=true \
+  -v teleton-data:/data \
+  -p 7777:7777 \
+  -p 7778:7778 \
+  ghcr.io/tonresistor/teleton-agent
+```
+
+---
+
 ## Environment Variables
 
 Complete list of environment variables recognized by Teleton Agent:
@@ -327,6 +385,9 @@ Complete list of environment variables recognized by Teleton Agent:
 | `TELETON_WEBUI_ENABLED` | Enable WebUI (`"true"` / `"false"`) | from config |
 | `TELETON_WEBUI_PORT` | WebUI port | `7777` |
 | `TELETON_WEBUI_HOST` | WebUI bind address | `127.0.0.1` |
+| `TELETON_API_ENABLED` | Enable Management API | `false` |
+| `TELETON_API_PORT` | Management API HTTPS port | `7778` |
+| `TELETON_JSON_CREDENTIALS` | Output API credentials as JSON on startup | `false` |
 | `DEBUG` | Enable debug logging | unset |
 | `VERBOSE` | Enable verbose logging | unset |
 | `NODE_ENV` | Node.js environment | `"development"` |

@@ -17,6 +17,7 @@ Run `teleton setup` to generate a config file interactively, or copy `config.exa
 - [dev](#dev)
 - [plugins](#plugins)
 - [ton_proxy](#ton_proxy)
+- [api](#api)
 - [tonapi_key](#tonapi_key)
 - [meta](#meta)
 - [Environment Variable Overrides](#environment-variable-overrides)
@@ -312,6 +313,29 @@ ton_proxy:
 
 ---
 
+## api
+
+HTTPS Management API for remote agent administration. See the full [Management API documentation](management-api.md) for endpoint details, authentication, and examples.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `api.enabled` | `boolean` | `false` | Enable the HTTPS Management API server. |
+| `api.port` | `number` | `7778` | HTTPS server port (1-65535). |
+| `api.key_hash` | `string` | `""` | SHA-256 hash of the API key. Auto-generated on first start — do not set manually. |
+| `api.allowed_ips` | `string[]` | `[]` | IP whitelist. Empty array allows all authenticated requests. |
+
+### Example
+
+```yaml
+api:
+  enabled: true
+  port: 7778
+  allowed_ips:
+    - "203.0.113.10"
+```
+
+---
+
 ## tonapi_key
 
 | Key | Type | Default | Description |
@@ -361,6 +385,8 @@ Environment variables override values set in `config.yaml`. They are applied aft
 | `TELETON_WEBUI_ENABLED` | `webui.enabled` | Enable WebUI (`"true"` or `"false"`). |
 | `TELETON_WEBUI_PORT` | `webui.port` | WebUI server port. |
 | `TELETON_WEBUI_HOST` | `webui.host` | WebUI bind address. |
+| `TELETON_API_ENABLED` | `api.enabled` | Enable Management API (`"true"` or `"false"`). |
+| `TELETON_API_PORT` | `api.port` | Management API HTTPS port. |
 
 ### LLM Provider API Keys
 

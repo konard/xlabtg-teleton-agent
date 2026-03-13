@@ -75,6 +75,7 @@
 | **MCP Client**          | stdio, SSE, Streamable HTTP, auto-discovery, CLI or WebUI               |
 | **System Execution**    | YOLO mode: shell, files, processes (off by default, admin-only)          |
 | **TON Proxy**           | Browse .ton domains via HTTP proxy, auto-installed                       |
+| **Management API**      | HTTPS control plane for remote admin, bootstrap mode, lifecycle control  |
 | **Sandboxed Workspace** | Path traversal protection, symlink detection, immutable configs          |
 
 ---
@@ -536,7 +537,12 @@ src/
 │   └── model-catalog.ts    # Shared model catalog (70+ models across all providers)
 ├── webui/                  # Optional web dashboard
 │   ├── server.ts           # Hono server, auth middleware, static serving
-│   └── routes/             # 12 API route groups (status, tools, logs, memory, soul, plugins, mcp, tasks, workspace, config, marketplace, ton-proxy)
+│   └── routes/             # 14 route groups (status, tools, logs, memory, soul, plugins, mcp, tasks, workspace, config, marketplace, hooks, ton-proxy, setup)
+├── api/                    # Management API (HTTPS control plane)
+│   ├── server.ts           # Hono HTTPS server, TLS, middleware stack
+│   ├── bootstrap.ts        # API-only mode (no config needed)
+│   ├── middleware/          # Auth, rate-limit, audit, request-id
+│   └── routes/             # Agent lifecycle, system, logs, memory, auth
 ├── constants/              # Centralized limits, timeouts, API endpoints
 ├── utils/                  # Logger, sanitize, retry, fetch
 ├── workspace/              # Path validator (anti-traversal, anti-symlink)
@@ -621,6 +627,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 | [Plugin Development](docs/plugins.md) | Step-by-step plugin tutorial |
 | [Telegram Setup](docs/telegram-setup.md) | API credentials, policies, 2FA, admin commands |
 | [TON Wallet](docs/ton-wallet.md) | Wallet setup, DEX trading, security |
+| [Management API](docs/management-api.md) | HTTPS API, bootstrap mode, authentication, endpoints |
 
 ---
 
