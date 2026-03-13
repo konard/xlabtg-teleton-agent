@@ -6,6 +6,7 @@ import { PillBar } from '../components/PillBar';
 import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
 import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
 import { GroqSettingsPanel } from '../components/GroqSettingsPanel';
+import { CommandControlsPanel } from '../components/CommandControlsPanel';
 import { Select } from '../components/Select';
 import { ArrayInput } from '../components/ArrayInput';
 import { EditableField } from '../components/EditableField';
@@ -15,6 +16,7 @@ import { InfoTip } from '../components/InfoTip';
 const TABS = [
   { id: 'llm', label: 'LLM' },
   { id: 'telegram', label: 'Telegram' },
+  { id: 'commands', label: 'Commands' },
   { id: 'api-keys', label: 'API Keys' },
   { id: 'advanced', label: 'Advanced' },
 ];
@@ -156,6 +158,17 @@ export function Config() {
           onArraySave={handleArraySave}
           extended={true}
         />
+      )}
+
+      {/* Commands Tab */}
+      {activeTab === 'commands' && (
+        <div className="card">
+          <CommandControlsPanel
+            getLocal={config.getLocal}
+            saveConfig={config.saveConfig}
+            onArraySave={handleArraySave}
+          />
+        </div>
       )}
 
       {/* API Keys Tab */}
