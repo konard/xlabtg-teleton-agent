@@ -1325,11 +1325,13 @@ describe("createTonSDK", () => {
     });
 
     describe("createTransfer()", () => {
+      const MOCK_RAW_ADDRESS = "0:ed1691307050047117b998b561d8de82d31fbf84910ced6eb5fc92e7485ef8a7";
+
       beforeEach(() => {
         (loadWallet as Mock).mockReturnValue(mockWalletData);
         (getKeyPair as Mock).mockResolvedValue(mockKeyPair);
         mocks.walletV5R1Create.mockReturnValue({
-          address: { toString: () => VALID_ADDRESS },
+          address: { toString: () => VALID_ADDRESS, toRawString: () => MOCK_RAW_ADDRESS },
           init: undefined,
           createTransfer: vi.fn().mockReturnValue(mockCell),
         });
@@ -1354,6 +1356,11 @@ describe("createTonSDK", () => {
         const result = await sdk.createTransfer(VALID_ADDRESS, 0.05, "hello");
 
         expect(result).toEqual({
+          signedBoc: mockBocBuffer.toString("base64"),
+          walletPublicKey: MOCK_PUBLIC_KEY,
+          walletAddress: MOCK_RAW_ADDRESS,
+          seqno: 42,
+          validUntil: expect.any(Number),
           boc: mockBocBuffer.toString("base64"),
           publicKey: MOCK_PUBLIC_KEY,
           walletVersion: "v5r1",
@@ -1363,6 +1370,12 @@ describe("createTonSDK", () => {
       it("works without comment", async () => {
         const result = await sdk.createTransfer(VALID_ADDRESS, 1);
 
+        expect(result.signedBoc).toBe(mockBocBuffer.toString("base64"));
+        expect(result.walletPublicKey).toBe(MOCK_PUBLIC_KEY);
+        expect(result.walletAddress).toBe(MOCK_RAW_ADDRESS);
+        expect(result.seqno).toBe(42);
+        expect(result.validUntil).toBeGreaterThan(0);
+        // backward compat aliases
         expect(result.boc).toBe(mockBocBuffer.toString("base64"));
         expect(result.publicKey).toBe(MOCK_PUBLIC_KEY);
         expect(result.walletVersion).toBe("v5r1");
@@ -1409,7 +1422,7 @@ describe("createTonSDK", () => {
 
       it("does NOT call sendTransfer (no broadcast)", async () => {
         const mockWallet = {
-          address: { toString: () => VALID_ADDRESS },
+          address: { toString: () => VALID_ADDRESS, toRawString: () => MOCK_RAW_ADDRESS },
           init: undefined,
           createTransfer: vi.fn().mockReturnValue(mockCell),
         };
@@ -1456,7 +1469,7 @@ describe("createTonSDK", () => {
         mocks.internal.mockReturnValue({});
 
         const mockWallet = {
-          address: { toString: () => VALID_ADDRESS },
+          address: { toString: () => VALID_ADDRESS, toRawString: () => "0:raw-jetton-wallet" },
           init: undefined,
           createTransfer: vi.fn().mockReturnValue(cellMock),
         };
@@ -1487,6 +1500,11 @@ describe("createTonSDK", () => {
         const result = await sdk.createJettonTransfer(jettonAddr, recipientAddr, 10);
 
         expect(result).toEqual({
+          signedBoc: mockBocBuffer.toString("base64"),
+          walletPublicKey: MOCK_PUBLIC_KEY,
+          walletAddress: "0:raw-jetton-wallet",
+          seqno: 10,
+          validUntil: expect.any(Number),
           boc: mockBocBuffer.toString("base64"),
           publicKey: MOCK_PUBLIC_KEY,
           walletVersion: "v5r1",
