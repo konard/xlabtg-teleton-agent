@@ -27,7 +27,7 @@ export interface DealMessage {
 
 /**
  * Convert styled button definitions to GramJS TL markup (with colors + copy buttons)
- * Uses native Layer 222 constructors (KeyboardButtonStyle, KeyboardButtonCopy)
+ * Uses native Layer 223 constructors (KeyboardButtonStyle, KeyboardButtonCopy)
  */
 export function toTLMarkup(buttons: StyledButtonDef[][]): Api.ReplyInlineMarkup {
   return new Api.ReplyInlineMarkup({

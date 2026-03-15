@@ -78,7 +78,6 @@
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
     "commander": "^14.0.3",
-    "crypto-js": "^4.2.0",
     "grammy": "^1.40.0",
     "hono": "^4.11.9",
     "hono-rate-limiter": "^0.5.3",

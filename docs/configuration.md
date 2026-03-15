@@ -14,11 +14,19 @@ Run `teleton setup` to generate a config file interactively, or copy `config.exa
 - [deals](#deals)
 - [webui](#webui)
 - [storage](#storage)
+- [logging](#logging)
+- [heartbeat](#heartbeat)
+- [tool_rag](#tool_rag)
+- [capabilities](#capabilities)
+- [mcp](#mcp)
 - [dev](#dev)
 - [plugins](#plugins)
 - [ton_proxy](#ton_proxy)
 - [api](#api)
+- [cocoon](#cocoon)
 - [tonapi_key](#tonapi_key)
+- [toncenter_api_key](#toncenter_api_key)
+- [tavily_api_key](#tavily_api_key)
 - [meta](#meta)
 - [Environment Variable Overrides](#environment-variable-overrides)
 
@@ -31,9 +39,10 @@ LLM provider and agentic loop configuration.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`. |
-| `agent.api_key` | `string` | **(required)** | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
-| `agent.model` | `string` | `"claude-opus-4-5-20251101"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
-| `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-3-5-haiku-20241022` for Anthropic, `gpt-4o-mini` for OpenAI). |
+| `agent.api_key` | `string` | `""` | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
+| `agent.model` | `string` | `"claude-opus-4-6"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
+| `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-haiku-4-5-20251001` for Anthropic, `gpt-4o-mini` for OpenAI). |
+| `agent.base_url` | `string` | *optional* | Base URL for local LLM server (e.g., `http://localhost:11434/v1`). Must be a valid URL. |
 | `agent.max_tokens` | `number` | `4096` | Maximum tokens in each LLM response. |
 | `agent.temperature` | `number` | `0.7` | Sampling temperature (0.0 = deterministic, 1.0 = creative). |
 | `agent.system_prompt` | `string \| null` | `null` | Additional system prompt text appended to the default SOUL.md personality. Set to `null` to use only the built-in soul. |
@@ -56,8 +65,8 @@ Controls when conversation sessions are cleared, giving the agent a fresh memory
 agent:
   provider: "anthropic"
   api_key: "sk-ant-..."
-  model: "claude-opus-4-5-20251101"
-  utility_model: "claude-3-5-haiku-20241022"
+  model: "claude-opus-4-6"
+  utility_model: "claude-haiku-4-5-20251001"
   max_tokens: 4096
   temperature: 0.7
   max_agentic_iterations: 5
@@ -74,21 +83,21 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 
 | Provider | Default Model | Default Utility Model |
 |----------|--------------|----------------------|
-| `anthropic` | `claude-opus-4-5-20251101` | `claude-3-5-haiku-20241022` |
-| `claude-code` | `claude-opus-4-5-20251101` | `claude-3-5-haiku-20241022` |
-| `openai` | `gpt-4o` | `gpt-4o-mini` |
+| `anthropic` | `claude-opus-4-6` | `claude-haiku-4-5-20251001` |
+| `claude-code` | `claude-opus-4-6` | `claude-haiku-4-5-20251001` |
+| `openai` | `gpt-5.4` | `gpt-4o-mini` |
 | `google` | `gemini-2.5-flash` | `gemini-2.0-flash-lite` |
 | `xai` | `grok-3` | `grok-3-mini-fast` |
 | `groq` | `llama-3.3-70b-versatile` | `llama-3.1-8b-instant` |
 | `openrouter` | `anthropic/claude-opus-4.5` | `google/gemini-2.5-flash-lite` |
-| `moonshot` | `moonshot-v1-128k` | `moonshot-v1-8k` |
-| `mistral` | `mistral-large-latest` | `mistral-small-latest` |
-| `cerebras` | `llama-3.3-70b` | `llama-3.1-8b` |
-| `zai` | `zai-large` | `zai-small` |
-| `minimax` | `MiniMax-Text-01` | `MiniMax-Text-01` |
-| `huggingface` | `meta-llama/Llama-3.3-70B-Instruct` | `meta-llama/Llama-3.1-8B-Instruct` |
-| `cocoon` | *(proxy-only, no model selection)* | *(proxy-only)* |
-| `local` | *(depends on local server)* | *(depends on local server)* |
+| `moonshot` | `k2p5` | `k2p5` |
+| `mistral` | `devstral-small-2507` | `ministral-8b-latest` |
+| `cerebras` | `qwen-3-235b-a22b-instruct-2507` | `llama3.1-8b` |
+| `zai` | `glm-4.7` | `glm-4.7-flash` |
+| `minimax` | `MiniMax-M2.5` | `MiniMax-M2` |
+| `huggingface` | `deepseek-ai/DeepSeek-V3.2` | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
+| `cocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
+| `local` | `auto` | `auto` |
 
 ---
 
@@ -103,7 +112,7 @@ Telegram client and messaging behavior.
 | `telegram.phone` | `string` | **(required)** | Phone number linked to the Telegram account, in international format (e.g., `"+1234567890"`). |
 | `telegram.session_name` | `string` | `"teleton_session"` | Name of the GramJS session file (stored in `session_path`). |
 | `telegram.session_path` | `string` | `"~/.teleton"` | Directory where the Telegram session file is stored. |
-| `telegram.dm_policy` | `enum` | `"pairing"` | Who can interact via direct messages. See [DM Policies](#dm-policies) below. |
+| `telegram.dm_policy` | `enum` | `"allowlist"` | Who can interact via direct messages. See [DM Policies](#dm-policies) below. |
 | `telegram.allow_from` | `number[]` | `[]` | List of Telegram user IDs allowed to DM the agent (used when `dm_policy` is `"allowlist"`). |
 | `telegram.group_policy` | `enum` | `"open"` | Who can interact in groups. See [Group Policies](#group-policies) below. |
 | `telegram.group_allow_from` | `number[]` | `[]` | List of group IDs the agent will respond in (used when `group_policy` is `"allowlist"`). |
@@ -125,9 +134,9 @@ Telegram client and messaging behavior.
 
 | Value | Behavior |
 |-------|----------|
-| `"pairing"` | Users must pair with the agent first (mutual consent). Default and recommended. |
-| `"allowlist"` | Only users listed in `allow_from` can interact. |
+| `"allowlist"` | Only users listed in `allow_from` can interact. Default. |
 | `"open"` | Anyone can DM the agent. Use with caution. |
+| `"admin-only"` | Only users in `admin_ids` can interact via DM. |
 | `"disabled"` | DMs are completely ignored. |
 
 ### Group Policies
@@ -136,6 +145,7 @@ Telegram client and messaging behavior.
 |-------|----------|
 | `"open"` | Agent responds in any group it is a member of. Default. |
 | `"allowlist"` | Only responds in groups listed in `group_allow_from`. |
+| `"admin-only"` | Only responds when triggered by users in `admin_ids`. |
 | `"disabled"` | Group messages are completely ignored. |
 
 ### Example
@@ -145,7 +155,7 @@ telegram:
   api_id: 12345678
   api_hash: "0123456789abcdef0123456789abcdef"
   phone: "+1234567890"
-  dm_policy: "pairing"
+  dm_policy: "allowlist"
   group_policy: "open"
   require_mention: true
   admin_ids: [123456789]
@@ -187,7 +197,7 @@ Configuration for the peer-to-peer deals/escrow system.
 |-----|------|---------|-------------|
 | `deals.enabled` | `boolean` | `true` | Enable the deals module. |
 | `deals.expiry_seconds` | `number` | `120` | Time in seconds before an unaccepted deal expires. |
-| `deals.buy_max_floor_percent` | `number` | `100` | Maximum price as a percentage of floor price for buy deals. |
+| `deals.buy_max_floor_percent` | `number` | `95` | Maximum price as a percentage of floor price for buy deals. |
 | `deals.sell_min_floor_percent` | `number` | `105` | Minimum price as a percentage of floor price for sell deals. |
 | `deals.poll_interval_ms` | `number` | `5000` | How frequently (in milliseconds) the system polls for payment verification on active deals. |
 | `deals.max_verification_retries` | `number` | `12` | Maximum number of payment verification attempts before timing out. |
@@ -242,12 +252,150 @@ Legacy file paths (sessions and memory are now stored in SQLite). These fields e
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `storage.history_limit` | `number` | `100` | Maximum number of messages retained in a conversation session's history. |
+| `storage.sessions_file` | `string` | `"~/.teleton/sessions.json"` | Path to the sessions file (legacy, superseded by SQLite in v0.5+). |
+| `storage.memory_file` | `string` | `"~/.teleton/memory.json"` | Path to the memory file (legacy, superseded by SQLite in v0.5+). |
 
 ### Example
 
 ```yaml
 storage:
   history_limit: 100
+```
+
+---
+
+## logging
+
+Structured logging configuration (Pino).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `logging.level` | `enum` | `"info"` | Log level. One of: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. |
+| `logging.pretty` | `boolean` | `true` | Enable pino-pretty formatting (human-readable, colored output). |
+
+### Example
+
+```yaml
+logging:
+  level: "info"
+  pretty: true
+```
+
+---
+
+## heartbeat
+
+Periodic heartbeat timer that triggers the agent to check for pending tasks.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `heartbeat.enabled` | `boolean` | `true` | Enable the periodic heartbeat timer. |
+| `heartbeat.interval_ms` | `number` | `1800000` | Heartbeat interval in milliseconds. Minimum `60000` (60 seconds), default `1800000` (30 minutes). |
+| `heartbeat.prompt` | `string` | `"Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION."` | Prompt sent to the agent on each heartbeat tick. |
+| `heartbeat.self_configurable` | `boolean` | `false` | Allow the agent to modify heartbeat config at runtime via `config_set`. |
+
+### Example
+
+```yaml
+heartbeat:
+  enabled: true
+  interval_ms: 1800000
+  prompt: "Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION."
+  self_configurable: false
+```
+
+---
+
+## tool_rag
+
+Semantic tool retrieval configuration. When enabled, the agent uses embedding-based search to select the most relevant tools for each LLM call, reducing prompt size and improving performance.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `tool_rag.enabled` | `boolean` | `true` | Enable semantic tool retrieval (Tool RAG). |
+| `tool_rag.top_k` | `number` | `25` | Maximum number of tools to retrieve per LLM call. |
+| `tool_rag.always_include` | `string[]` | `["telegram_send_message", "telegram_reply_message", "telegram_send_photo", "telegram_send_document", "journal_*", "workspace_*", "web_*"]` | Tool name patterns always included regardless of relevance score. Supports prefix glob with `*`. |
+| `tool_rag.skip_unlimited_providers` | `boolean` | `false` | Skip Tool RAG for providers with no tool limit (e.g., Anthropic). When `true`, all tools are sent to those providers. |
+
+### Example
+
+```yaml
+tool_rag:
+  enabled: true
+  top_k: 25
+  always_include:
+    - "telegram_send_message"
+    - "telegram_reply_message"
+    - "journal_*"
+    - "web_*"
+  skip_unlimited_providers: false
+```
+
+---
+
+## capabilities
+
+Controls optional agent capabilities that require explicit opt-in.
+
+### capabilities.exec
+
+System command execution (shell access). Disabled by default for security.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `capabilities.exec.mode` | `enum` | `"off"` | Exec mode: `off` (disabled) or `yolo` (full system access). |
+| `capabilities.exec.scope` | `enum` | `"admin-only"` | Who can trigger exec tools. One of: `admin-only`, `allowlist`, `all`. |
+| `capabilities.exec.allowlist` | `number[]` | `[]` | Telegram user IDs allowed to use exec (when `scope` is `"allowlist"`). |
+| `capabilities.exec.limits.timeout` | `number` | `120` | Max seconds per command execution (1-3600). |
+| `capabilities.exec.limits.max_output` | `number` | `50000` | Max characters of stdout/stderr captured per command (1000-500000). |
+| `capabilities.exec.audit.log_commands` | `boolean` | `true` | Log every command to SQLite audit table. |
+
+### Example
+
+```yaml
+capabilities:
+  exec:
+    mode: "yolo"
+    scope: "admin-only"
+    limits:
+      timeout: 120
+      max_output: 50000
+    audit:
+      log_commands: true
+```
+
+---
+
+## mcp
+
+Model Context Protocol (MCP) server configuration. Supports both stdio (command-based) and SSE/HTTP (URL-based) transports.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `mcp.servers` | `record` | `{}` | Map of server name to server configuration. Each server needs either `command` (stdio) or `url` (SSE/HTTP). |
+
+Each server entry supports:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `command` | `string` | *optional* | Stdio command (e.g., `npx @modelcontextprotocol/server-filesystem /tmp`). |
+| `args` | `string[]` | *optional* | Explicit args array (overrides command splitting). |
+| `env` | `record` | *optional* | Environment variables for stdio server. |
+| `url` | `string` | *optional* | SSE/HTTP endpoint URL (alternative to `command`). |
+| `scope` | `enum` | `"always"` | Tool scope. One of: `always`, `dm-only`, `group-only`, `admin-only`. |
+| `enabled` | `boolean` | `true` | Enable/disable this server. |
+
+### Example
+
+```yaml
+mcp:
+  servers:
+    filesystem:
+      command: "npx @modelcontextprotocol/server-filesystem /tmp"
+      scope: "admin-only"
+    remote-api:
+      url: "https://mcp.example.com/sse"
+      enabled: true
 ```
 
 ---
@@ -298,9 +446,9 @@ Optional TON Proxy configuration. When enabled, the agent runs a Tonutils-Proxy 
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `ton_proxy.enabled` | `boolean` | `false` | Enable the TON Proxy module. |
-| `ton_proxy.port` | `number` | `8080` | Local HTTP proxy port. |
-| `ton_proxy.auto_start` | `boolean` | `true` | Automatically start the proxy when the agent starts. |
+| `ton_proxy.enabled` | `boolean` | `false` | Enable the TON Proxy module. When `true`, the proxy starts with the agent. |
+| `ton_proxy.port` | `number` | `8080` | Local HTTP proxy port (1-65535). |
+| `ton_proxy.binary_path` | `string` | *optional* | Custom path to `tonutils-proxy-cli` binary. If omitted, the binary is auto-downloaded on first run. |
 
 ### Example
 
@@ -308,7 +456,7 @@ Optional TON Proxy configuration. When enabled, the agent runs a Tonutils-Proxy 
 ton_proxy:
   enabled: true
   port: 8080
-  auto_start: true
+  # binary_path: "/usr/local/bin/tonutils-proxy-cli"
 ```
 
 ---
@@ -336,6 +484,25 @@ api:
 
 ---
 
+## cocoon
+
+Cocoon Network configuration. The Cocoon provider is a decentralized LLM proxy that pays in TON. It requires an external `cocoon-cli` process running on the specified port.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `cocoon.port` | `number` | `10000` | HTTP port of the `cocoon-cli` proxy (1-65535). |
+
+The `cocoon` section is optional. Only needed when `agent.provider` is set to `"cocoon"`.
+
+### Example
+
+```yaml
+cocoon:
+  port: 10000
+```
+
+---
+
 ## tonapi_key
 
 | Key | Type | Default | Description |
@@ -346,6 +513,34 @@ api:
 
 ```yaml
 tonapi_key: "AF..."
+```
+
+---
+
+## toncenter_api_key
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `toncenter_api_key` | `string` | *optional* | TonCenter API key for a dedicated RPC endpoint. Free at [toncenter.com](https://toncenter.com). |
+
+### Example
+
+```yaml
+toncenter_api_key: "abc123..."
+```
+
+---
+
+## tavily_api_key
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `tavily_api_key` | `string` | *optional* | Tavily API key for web search and extract tools. Free at [tavily.com](https://tavily.com). |
+
+### Example
+
+```yaml
+tavily_api_key: "tvly-..."
 ```
 
 ---
@@ -372,7 +567,8 @@ Environment variables override values set in `config.yaml`. They are applied aft
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TELETON_HOME` | `~/.teleton` | Root directory for all teleton data (config, wallet, session, workspace, plugins, secrets, database). |
-| `TELETON_LOG` | _(unset)_ | Set to `"verbose"` to enable verbose logging. Can also be toggled at runtime via `/verbose`. |
+| `TELETON_LOG` | _(unset)_ | Set to `"verbose"` to enable verbose logging (maps to `debug` level). Can also be toggled at runtime via `/verbose`. |
+| `TELETON_LOG_LEVEL` | _(unset)_ | Explicit log level override. One of: `trace`, `debug`, `info`, `warn`, `error`, `fatal`. Takes priority over `TELETON_LOG`. |
 
 ### Config Overrides
 
@@ -387,6 +583,10 @@ Environment variables override values set in `config.yaml`. They are applied aft
 | `TELETON_WEBUI_HOST` | `webui.host` | WebUI bind address. |
 | `TELETON_API_ENABLED` | `api.enabled` | Enable Management API (`"true"` or `"false"`). |
 | `TELETON_API_PORT` | `api.port` | Management API HTTPS port. |
+| `TELETON_BASE_URL` | `agent.base_url` | Base URL for local LLM server (must be a valid URL). |
+| `TELETON_TAVILY_API_KEY` | `tavily_api_key` | Tavily API key for web search tools. |
+| `TELETON_TONAPI_KEY` | `tonapi_key` | TonAPI key for blockchain queries. |
+| `TELETON_TONCENTER_API_KEY` | `toncenter_api_key` | TonCenter API key for RPC endpoint. |
 
 ### LLM Provider API Keys
 
@@ -395,17 +595,17 @@ Each provider has a dedicated environment variable. Only the key for the configu
 | Variable | Provider | Key Format |
 |----------|----------|------------|
 | `ANTHROPIC_API_KEY` | Anthropic (Claude) | `sk-ant-...` |
-| `OPENAI_API_KEY` | OpenAI (GPT-4o) | `sk-proj-...` |
+| `OPENAI_API_KEY` | OpenAI (GPT-5.4) | `sk-proj-...` |
 | `GOOGLE_API_KEY` | Google (Gemini) | `AIza...` |
 | `XAI_API_KEY` | xAI (Grok) | `xai-...` |
 | `GROQ_API_KEY` | Groq | `gsk_...` |
 | `OPENROUTER_API_KEY` | OpenRouter | `sk-or-...` |
 | `MOONSHOT_API_KEY` | Moonshot | `sk-...` |
-| `MISTRAL_API_KEY` | Mistral | — |
+| `MISTRAL_API_KEY` | Mistral | -- |
 | `CEREBRAS_API_KEY` | Cerebras | `csk-...` |
-| `ZAI_API_KEY` | ZAI | — |
-| `MINIMAX_API_KEY` | MiniMax | — |
-| `HUGGINGFACE_API_KEY` | Hugging Face | `hf_...` |
+| `ZAI_API_KEY` | ZAI | -- |
+| `MINIMAX_API_KEY` | MiniMax | -- |
+| `HF_TOKEN` | HuggingFace | `hf_...` |
 
 > The `TELETON_API_KEY` override takes precedence over all provider-specific env vars.
 
@@ -429,10 +629,10 @@ Used by `telegram_send_voice` for text-to-speech. The default TTS provider (`pip
 
 Configuration values are resolved in this order (highest priority first):
 
-1. **Environment variables** (`TELETON_*` overrides)
-2. **CLI flags** (`--webui`, `--webui-port`, `-c`)
+1. **CLI flags** (`--webui`, `--webui-port`, `-c`) (highest)
+2. **Environment variables** (`TELETON_*` overrides)
 3. **Config file** (`config.yaml`)
-4. **Schema defaults** (Zod schema default values)
+4. **Schema defaults** (Zod schema default values, lowest)
 
 ### Example (Docker)
 
@@ -458,7 +658,7 @@ meta:
 agent:
   provider: "anthropic"
   api_key: "sk-ant-..."
-  model: "claude-opus-4-5-20251101"
+  model: "claude-opus-4-6"
   max_tokens: 4096
   temperature: 0.7
   max_agentic_iterations: 5
@@ -472,7 +672,7 @@ telegram:
   api_id: 12345678
   api_hash: "0123456789abcdef0123456789abcdef"
   phone: "+1234567890"
-  dm_policy: "pairing"
+  dm_policy: "allowlist"
   group_policy: "open"
   require_mention: true
   admin_ids: [123456789]
@@ -492,6 +692,18 @@ webui:
   port: 7777
   host: "127.0.0.1"
 
+logging:
+  level: "info"
+  pretty: true
+
+heartbeat:
+  enabled: true
+  interval_ms: 1800000
+
+tool_rag:
+  enabled: true
+  top_k: 25
+
 dev:
   hot_reload: false
 
@@ -503,7 +715,8 @@ plugins:
 # ton_proxy:
 #   enabled: false
 #   port: 8080
-#   auto_start: true
 
 # tonapi_key: "AF..."
+# toncenter_api_key: "abc123..."
+# tavily_api_key: "tvly-..."
 ```

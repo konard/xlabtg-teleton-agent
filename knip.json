@@ -24,7 +24,6 @@
   },
   "ignoreDependencies": [
     "pino-pretty",
-    "crypto-js",
     "lottie-react",
     "@teleton-agent/sdk",
     "@grammyjs/types",

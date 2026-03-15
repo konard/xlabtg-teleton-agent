@@ -15,7 +15,7 @@
 
 ---
 
-<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 125+ built-in tools, supports 15 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
+<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 135+ built-in tools, supports 15 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
 
 ### Key Highlights
 
@@ -28,7 +28,7 @@
 <tr>
 <td align="center"><br><b><ins>TON Blockchain</ins></b><br>Wallet, jettons, DEX swaps, DNS, NFTs<br><br></td>
 <td align="center"><br><b><ins>Persistent Memory</ins></b><br>Hybrid RAG, vector + keyword, auto-compaction<br><br></td>
-<td align="center"><br><b><ins>125+ Built-in Tools</ins></b><br>Messaging, media, crypto, DEX, DNS, files<br><br></td>
+<td align="center"><br><b><ins>135+ Built-in Tools</ins></b><br>Messaging, media, crypto, DEX, DNS, files<br><br></td>
 </tr>
 <tr>
 <td align="center"><br><b><ins>Plugin SDK</ins></b><br>Custom tools, isolated DBs, secrets, hooks<br><br></td>
@@ -45,7 +45,7 @@
 
 | Category      | Tools | Description                                                    |
 | ------------- | ----- | -------------------------------------------------------------- |
-| Telegram      | 77    | Messages, media, chats, polls, stickers, gifts, stars, stories |
+| Telegram      | 80    | Messages, media, chats, polls, stickers, gifts, stars, stories |
 | TON & Jettons | 15    | Wallet, send/receive, balances, prices, NFTs, DEX router       |
 | STON.fi DEX   | 5     | Swap, quote, search, trending, pools                           |
 | DeDust DEX    | 5     | Swap, quote, pools, prices, token analytics                    |
@@ -55,6 +55,7 @@
 | Web           | 2     | Search and page extraction via Tavily                          |
 | Workspace     | 6     | Sandboxed file operations, path traversal protection           |
 | Exec          | 4     | Shell, files, processes (off by default, admin-only)           |
+| Bot           | 1     | Inline bot message sending for plugin interactions             |
 
 ### Advanced Capabilities
 
@@ -77,6 +78,7 @@
 | **TON Proxy**           | Browse .ton domains via HTTP proxy, auto-installed                       |
 | **Management API**      | HTTPS control plane for remote admin, bootstrap mode, lifecycle control  |
 | **Sandboxed Workspace** | Path traversal protection, symlink detection, immutable configs          |
+| **Heartbeat**           | Autonomous periodic wake-up, HEARTBEAT.md task checklist, configurable intervals |
 
 ---
 
@@ -289,15 +291,18 @@ Optional web dashboard, localhost only, token auth. Start with `teleton start --
 </tr>
 <tr>
 <td align="center"><br><b>Memory Search</b><br>Vector + keyword hybrid<br><br></td>
-<td align="center"><br><b>Live Logs</b><br>Real-time SSE streaming<br><br></td>
+<td align="center"><br><b>Live Logs (in Dashboard)</b><br>Real-time SSE streaming<br><br></td>
 <td align="center"><br><b>Workspace</b><br>File browser + editor<br><br></td>
 <td align="center"><br><b>MCP Servers</b><br>Add, remove, configure<br><br></td>
 </tr>
 <tr>
-<td align="center"><br><b>TON Proxy</b><br>Start/stop, auto-install<br><br></td>
+<td align="center"><br><b>TON Proxy (in Config)</b><br>Start/stop, auto-install<br><br></td>
 <td align="center"><br><b>Tasks</b><br>Schedule, dependencies, bulk<br><br></td>
 <td align="center"><br><b>Setup Wizard</b><br>QR code + phone auth<br><br></td>
 <td align="center"><br><b>Config</b><br>Provider switch, key validation<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b>Hooks</b><br>Plugin hook registrations<br><br></td>
 </tr>
 </table>
 
@@ -437,7 +442,7 @@ The SDK provides namespaced access to core services:
 | `sdk.config`       | Sanitized app config (no API keys)                                                                                                                                                                                                                                                                   |
 | `sdk.pluginConfig` | Plugin-specific config from `config.yaml`                                                                                                                                                                                                                                                            |
 | `sdk.log`          | `info()`, `warn()`, `error()`, `debug()`                                                                                                                                                                                                                                                             |
-| `sdk.on()`         | Register hooks: `message:receive`, `response:before/after/error`, `tool:error`, `prompt:after`, `agent:start/stop`                                                                                                                                                                                   |
+| `sdk.on()`         | Register hooks: `tool:before`, `tool:after`, `tool:error`, `prompt:before`, `prompt:after`, `session:start`, `session:end`, `message:receive`, `response:before`, `response:after`, `response:error`, `agent:start`, `agent:stop`                                                                    |
 
 **Lifecycle hooks**: `migrate(db)`, `start(ctx)`, `stop()`, `onMessage(event)`, `onCallbackQuery(event)`
 
@@ -452,7 +457,7 @@ The SDK provides namespaced access to core services:
 | Layer | Technology |
 |-------|------------|
 | LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
-| Telegram Userbot | [GramJS](https://gram.js.org/) Layer 222 fork (MTProto) |
+| Telegram Userbot | [GramJS](https://gram.js.org/) Layer 223 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |
 | DeFi | STON.fi SDK, DeDust SDK |
@@ -460,7 +465,6 @@ The SDK provides namespaced access to core services:
 | Vector Search | [sqlite-vec](https://github.com/asg017/sqlite-vec) (cosine similarity) |
 | Full-Text Search | SQLite FTS5 (BM25 ranking) |
 | Embeddings | [@huggingface/transformers](https://www.npmjs.com/package/@huggingface/transformers) (local ONNX) or Voyage AI |
-| Token Counting | [js-tiktoken](https://github.com/dqbd/tiktoken) |
 | MCP Client | [@modelcontextprotocol/sdk](https://modelcontextprotocol.io/) (stdio + SSE + Streamable HTTP) |
 | WebUI | [Hono](https://hono.dev/) (API) + React + Vite (frontend) |
 | Language | TypeScript 5.7, Node.js 20+ |
@@ -473,13 +477,13 @@ src/
 ├── agent/                  # Core agent runtime
 │   ├── runtime.ts          # Agentic loop (5 iterations, tool calling, masking, compaction)
 │   ├── client.ts           # Multi-provider LLM client
-│   └── tools/              # 125+ built-in tools
-│       ├── register-all.ts # Central tool registration (8 categories, 121 tools)
+│   └── tools/              # 135+ built-in tools
+│       ├── register-all.ts # Central tool registration (9 categories)
 │       ├── registry.ts     # Tool registry, scope filtering, provider limits
 │       ├── module-loader.ts    # Built-in module loading (deals + exec)
 │       ├── plugin-loader.ts    # External plugin discovery, validation, hot-reload
 │       ├── mcp-loader.ts       # MCP client (stdio/SSE), tool discovery, lifecycle
-│       ├── telegram/       # Telegram operations (77 tools)
+│       ├── telegram/       # Telegram operations (80 tools)
 │       ├── ton/            # TON blockchain + jettons + DEX router (15 tools)
 │       ├── stonfi/         # STON.fi DEX (5 tools)
 │       ├── dedust/         # DeDust DEX (5 tools)
@@ -549,7 +553,7 @@ src/
 ├── templates/              # Workspace template files (SOUL.md, etc.)
 └── cli/                    # CLI commands (setup, config, doctor, mcp)
 
-web/                        # React + Vite frontend (10 pages)
+web/                        # React + Vite frontend (11 pages)
 packages/sdk/               # Published @teleton-agent/sdk
 ```
 
