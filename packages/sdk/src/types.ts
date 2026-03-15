@@ -139,11 +139,23 @@ export interface JettonSendResult {
  * Contains the signed BOC and wallet identity metadata.
  */
 export interface SignedTransfer {
-  /** Base64-encoded BOC (Bag of Cells) — signed external message */
+  /** Base64-encoded signed external message BOC */
+  signedBoc: string;
+  /** Hex-encoded ed25519 public key */
+  walletPublicKey: string;
+  /** Raw wallet address (0:hex format) */
+  walletAddress: string;
+  /** Wallet sequence number used in this transfer */
+  seqno: number;
+  /** Unix timestamp when this transfer expires */
+  validUntil: number;
+
+  // Backward compatibility aliases (deprecated)
+  /** @deprecated Use signedBoc */
   boc: string;
-  /** Hex-encoded ed25519 public key of the signing wallet */
+  /** @deprecated Use walletPublicKey */
   publicKey: string;
-  /** Wallet contract version (e.g. "v5r1") */
+  /** @deprecated V5R1 only — no v2 equivalent needed */
   walletVersion: string;
 }
 

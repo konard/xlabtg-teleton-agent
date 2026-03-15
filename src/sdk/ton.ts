@@ -545,7 +545,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
         }
 
-        const boc = await withTxLock(async () => {
+        const txResult = await withTxLock(async () => {
           const wallet = WalletContractV5R1.create({
             workchain: 0,
             publicKey: keyPair.publicKey,
@@ -554,8 +554,11 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           const contract = client.open(wallet);
           const seqno = await contract.getSeqno();
 
+          const validUntil = Math.floor(Date.now() / 1000) + 120;
+
           const transferCell = wallet.createTransfer({
             seqno,
+            timeout: validUntil,
             secretKey: keyPair.secretKey,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             messages: [
@@ -583,11 +586,19 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
             )
             .endCell();
 
-          return extMsg.toBoc().toString("base64");
+          const boc = extMsg.toBoc().toString("base64");
+          return { boc, seqno, validUntil, walletAddress: wallet.address.toRawString() };
         });
 
         return {
-          boc,
+          // v2 fields
+          signedBoc: txResult.boc,
+          walletPublicKey: walletData.publicKey,
+          walletAddress: txResult.walletAddress,
+          seqno: txResult.seqno,
+          validUntil: txResult.validUntil,
+          // backward compat (deprecated)
+          boc: txResult.boc,
           publicKey: walletData.publicKey,
           walletVersion: "v5r1",
         };
@@ -685,7 +696,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
         }
 
-        const boc = await withTxLock(async () => {
+        const txResult = await withTxLock(async () => {
           const wallet = WalletContractV5R1.create({
             workchain: 0,
             publicKey: keyPair.publicKey,
@@ -694,8 +705,11 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           const walletContract = client.open(wallet);
           const seqno = await walletContract.getSeqno();
 
+          const validUntil = Math.floor(Date.now() / 1000) + 120;
+
           const transferCell = wallet.createTransfer({
             seqno,
+            timeout: validUntil,
             secretKey: keyPair.secretKey,
             sendMode: SendMode.PAY_GAS_SEPARATELY,
             messages: [
@@ -723,11 +737,19 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
             )
             .endCell();
 
-          return extMsg.toBoc().toString("base64");
+          const boc = extMsg.toBoc().toString("base64");
+          return { boc, seqno, validUntil, walletAddress: wallet.address.toRawString() };
         });
 
         return {
-          boc,
+          // v2 fields
+          signedBoc: txResult.boc,
+          walletPublicKey: walletData.publicKey,
+          walletAddress: txResult.walletAddress,
+          seqno: txResult.seqno,
+          validUntil: txResult.validUntil,
+          // backward compat (deprecated)
+          boc: txResult.boc,
           publicKey: walletData.publicKey,
           walletVersion: "v5r1",
         };
