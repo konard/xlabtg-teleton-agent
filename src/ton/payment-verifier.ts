@@ -85,6 +85,7 @@ export async function verifyPayment(
       if (inMsg?.info.type !== "internal") continue;
 
       const tonAmount = parseFloat(fromNano(inMsg.info.value.coins));
+      if (!Number.isFinite(tonAmount)) continue;
       const fromRaw = inMsg.info.src;
       const txTime = tx.now * 1000;
       const txHash = tx.hash().toString("hex");

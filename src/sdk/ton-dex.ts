@@ -379,7 +379,14 @@ export function createDexSDK(log: PluginLogger): DexSDK {
       } else {
         const stonfiOut = parseFloat(stonfi.expectedOutput);
         const dedustOut = parseFloat(dedust.expectedOutput);
-        if (stonfiOut >= dedustOut) {
+        if (!Number.isFinite(stonfiOut) && !Number.isFinite(dedustOut)) {
+          throw new PluginSDKError("Failed to parse DEX quotes", "OPERATION_FAILED");
+        }
+        if (!Number.isFinite(stonfiOut)) {
+          recommended = "dedust";
+        } else if (!Number.isFinite(dedustOut)) {
+          recommended = "stonfi";
+        } else if (stonfiOut >= dedustOut) {
           recommended = "stonfi";
           if (dedustOut > 0) {
             savings = `${(((stonfiOut - dedustOut) / dedustOut) * 100).toFixed(2)}%`;

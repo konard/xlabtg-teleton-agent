@@ -8,6 +8,15 @@ import type { ReceivedGift } from "./types.js";
 import { DEFAULT_GIFTS_QUERY_LIMIT } from "../constants/limits.js";
 import { createLogger } from "../utils/logger.js";
 
+interface GiftEntry {
+  msgId: string;
+  slug: string;
+  title?: string;
+  fromId?: string;
+  fromUsername?: string;
+  date?: number;
+}
+
 const log = createLogger("Deal");
 
 export class GiftDetector {
@@ -32,8 +41,8 @@ export class GiftDetector {
         return [];
       }
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TonAPI gifts response is untyped
-      const gifts = (result.data as any).gifts || [];
+      const data = result.data as { gifts?: GiftEntry[] };
+      const gifts = data.gifts || [];
 
       // Get cached set of seen gifts for this user
       const seenSet = this.seenGifts.get(userId) || new Set<string>();

@@ -17,6 +17,11 @@ const log = createLogger("Session");
 
 const SESSIONS_DIR = join(TELETON_ROOT, "sessions");
 
+// ── In-memory transcript cache ──────────────────────────────────
+// Avoids re-reading + re-parsing JSONL from disk on every message.
+// Invalidated on delete/archive; updated on append.
+const transcriptCache = new Map<string, (Message | AssistantMessage)[]>();
+
 export function getTranscriptPath(sessionId: string): string {
   return join(SESSIONS_DIR, `${sessionId}.jsonl`);
 }
@@ -37,6 +42,12 @@ export function appendToTranscript(sessionId: string, message: Message | Assista
     appendFileSync(transcriptPath, line, { encoding: "utf-8", mode: 0o600 });
   } catch (error) {
     log.error({ err: error }, `Failed to append to transcript ${sessionId}`);
+  }
+
+  // Update in-memory cache (append without re-sanitizing the whole array)
+  const cached = transcriptCache.get(sessionId);
+  if (cached) {
+    cached.push(message);
   }
 }
 
@@ -114,6 +125,10 @@ function sanitizeMessages(
 }
 
 export function readTranscript(sessionId: string): (Message | AssistantMessage)[] {
+  // Return shallow copy of cached array (callers may mutate via push)
+  const cached = transcriptCache.get(sessionId);
+  if (cached) return [...cached];
+
   const transcriptPath = getTranscriptPath(sessionId);
 
   if (!existsSync(transcriptPath)) {
@@ -141,7 +156,9 @@ export function readTranscript(sessionId: string): (Message | AssistantMessage)[
       log.warn(`${corruptCount} corrupt line(s) skipped in transcript ${sessionId}`);
     }
 
-    return sanitizeMessages(messages);
+    const sanitized = sanitizeMessages(messages);
+    transcriptCache.set(sessionId, sanitized);
+    return sanitized;
   } catch (error) {
     log.error({ err: error }, `Failed to read transcript ${sessionId}`);
     return [];
@@ -170,6 +187,7 @@ export function deleteTranscript(sessionId: string): boolean {
 
   try {
     unlinkSync(transcriptPath);
+    transcriptCache.delete(sessionId);
     log.info(`Deleted transcript: ${sessionId}`);
     return true;
   } catch (error) {
@@ -192,6 +210,7 @@ export function archiveTranscript(sessionId: string): boolean {
 
   try {
     renameSync(transcriptPath, archivePath);
+    transcriptCache.delete(sessionId);
     log.info(`Archived transcript: ${sessionId} → ${timestamp}.archived`);
     return true;
   } catch (error) {

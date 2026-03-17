@@ -43,6 +43,11 @@ function setEnv(key: string, value: string) {
 beforeEach(() => {
   mkdirSync(TEST_DIR, { recursive: true });
   setEnv("CLAUDE_CONFIG_DIR", TEST_DIR);
+  // Default: OAuth refresh endpoint returns an error (tests rely on disk fallback)
+  vi.stubGlobal(
+    "fetch",
+    vi.fn().mockResolvedValue({ ok: false, status: 500, statusText: "Internal Server Error" })
+  );
 });
 
 afterEach(async () => {
@@ -51,6 +56,7 @@ afterEach(async () => {
   try {
     rmSync(TEST_DIR, { recursive: true, force: true });
   } catch {}
+  vi.unstubAllGlobals();
   // Reset module to clear cached state
   vi.resetModules();
 });
@@ -132,9 +138,9 @@ describe("claude-code-credentials", () => {
     const key1 = mod.getClaudeCodeApiKey();
     expect(key1).toBe("sk-ant-oat01-test-token-abc123");
 
-    // Write new token and force refresh
+    // Write new token and force refresh (OAuth fails → disk fallback)
     writeCredsFile(validCredentials({ accessToken: "sk-ant-oat01-new-token" }));
-    const key2 = mod.refreshClaudeCodeApiKey();
+    const key2 = await mod.refreshClaudeCodeApiKey();
     expect(key2).toBe("sk-ant-oat01-new-token");
   });
 
@@ -181,7 +187,7 @@ describe("claude-code-credentials", () => {
   // T12
   it("refreshClaudeCodeApiKey returns null when no credentials available", async () => {
     const mod = await importModule();
-    const result = mod.refreshClaudeCodeApiKey();
+    const result = await mod.refreshClaudeCodeApiKey();
     expect(result).toBeNull();
   });
 

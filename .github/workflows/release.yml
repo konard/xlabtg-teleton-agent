@@ -27,6 +27,9 @@ jobs:
       - run: npm run build
       - run: node dist/cli/index.js --help
 
+      - name: Run tests
+        run: npx vitest run
+
       - uses: actions/upload-artifact@v4
         with:
           name: dist

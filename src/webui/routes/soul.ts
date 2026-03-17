@@ -6,7 +6,7 @@ import { WORKSPACE_ROOT } from "../../workspace/paths.js";
 import { clearPromptCache } from "../../soul/loader.js";
 import { getErrorMessage } from "../../utils/errors.js";
 
-const SOUL_FILES = ["SOUL.md", "SECURITY.md", "STRATEGY.md", "MEMORY.md"] as const;
+const SOUL_FILES = ["SOUL.md", "SECURITY.md", "STRATEGY.md", "MEMORY.md", "HEARTBEAT.md"] as const;
 type SoulFile = (typeof SOUL_FILES)[number];
 
 function isSoulFile(filename: string): filename is SoulFile {

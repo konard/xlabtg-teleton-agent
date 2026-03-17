@@ -1,6 +1,6 @@
 import { pipeline, env, type FeatureExtractionPipeline } from "@huggingface/transformers";
-import { join } from "node:path";
-import { mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { mkdirSync, writeFileSync, renameSync, statSync, unlinkSync } from "node:fs";
 import type { EmbeddingProvider } from "./provider.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { createLogger } from "../../utils/logger.js";
@@ -16,6 +16,60 @@ try {
 }
 env.cacheDir = modelCacheDir;
 
+/** Minimum valid file sizes — detects truncated/corrupt cache from FileCache.put() bug */
+const MIN_FILE_SIZES: Record<string, number> = { "onnx/model.onnx": 1_000_000 };
+
+function isCacheFileValid(filePath: string, fileName: string): boolean {
+  try {
+    return statSync(filePath).size >= (MIN_FILE_SIZES[fileName] ?? 1);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Pre-download model files to cache directory using native fetch.
+ * Workaround for @huggingface/transformers v3.x FileCache.put() bug:
+ * the library downloads the model (Response 200) but silently fails to
+ * write it to disk, causing "Unable to get model file path or buffer".
+ * By pre-populating the cache, pipeline() finds the files via FileCache.match()
+ * and never hits the broken put() path.
+ *
+ * Safety: validates existing files by size (catches corrupt/truncated cache),
+ * uses atomic write-then-rename (prevents partial files on crash).
+ */
+async function ensureModelCached(model: string): Promise<void> {
+  const files = ["config.json", "tokenizer_config.json", "tokenizer.json", "onnx/model.onnx"];
+  const baseUrl = `https://huggingface.co/${model}/resolve/main`;
+
+  for (const file of files) {
+    const localPath = join(modelCacheDir, model, file);
+
+    if (isCacheFileValid(localPath, file)) continue;
+
+    // Remove corrupt/partial file before re-downloading
+    try {
+      unlinkSync(localPath);
+    } catch {
+      /* not found is fine */
+    }
+
+    log.info(`Downloading ${model}/${file}...`);
+    mkdirSync(dirname(localPath), { recursive: true });
+
+    const res = await fetch(`${baseUrl}/${file}`, { redirect: "follow" });
+    if (!res.ok) {
+      throw new Error(`Failed to download ${model}/${file}: ${res.status} ${res.statusText}`);
+    }
+    const buffer = Buffer.from(await res.arrayBuffer());
+
+    // Atomic write: tmp → rename (crash-safe, no partial files)
+    const tmpPath = localPath + ".tmp";
+    writeFileSync(tmpPath, buffer, { mode: 0o600 });
+    renameSync(tmpPath, localPath);
+  }
+}
+
 let extractorPromise: Promise<FeatureExtractionPipeline> | null = null;
 
 function getExtractor(model: string): Promise<FeatureExtractionPipeline> {
@@ -25,6 +79,9 @@ function getExtractor(model: string): Promise<FeatureExtractionPipeline> {
       dtype: "fp32",
       // Explicit cache_dir to avoid any env race condition
       cache_dir: modelCacheDir,
+      // Prevent pthread_setaffinity_np EINVAL on VPS/containers with restricted CPU sets.
+      // ONNX Runtime skips thread affinity when thread counts are explicit.
+      session_options: { intraOpNumThreads: 1, interOpNumThreads: 1 },
     })
       .then((ext) => {
         log.info(`Local embedding model ready`);
@@ -58,17 +115,16 @@ export class LocalEmbeddingProvider implements EmbeddingProvider {
    * Pre-download and load the model at startup.
    * If loading fails, retries once then marks provider as disabled (FTS5-only).
    * Call this once during app init — avoids retry spam on every message.
-   * @returns true if model loaded successfully, false if fallback to noop
    */
   async warmup(): Promise<boolean> {
     for (let attempt = 1; attempt <= 2; attempt++) {
       try {
+        await ensureModelCached(this.model);
         await getExtractor(this.model);
         return true;
       } catch {
         if (attempt === 1) {
           log.warn(`Embedding model load failed (attempt 1), retrying...`);
-          // Small delay before retry
           await new Promise((r) => setTimeout(r, 1000));
         } else {
           log.warn(

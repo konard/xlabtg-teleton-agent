@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
+import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { createLogger } from "../../../../utils/logger.js";
 
 const log = createLogger("Tools");
@@ -51,8 +52,7 @@ export const telegramSetCollectiblePriceExecutor: ToolExecutor<SetCollectiblePri
       new Api.payments.UpdateStarGiftPrice({
         stargift: new Api.InputSavedStarGiftUser({ msgId }),
         resellAmount: new Api.StarsAmount({
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-          amount: BigInt(isListing ? price : 0) as any,
+          amount: toLong(isListing ? price : 0),
           nanos: 0,
         }),
       })

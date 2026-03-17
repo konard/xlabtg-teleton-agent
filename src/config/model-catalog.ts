@@ -100,6 +100,16 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: "gpt-5", name: "GPT-5", description: "Most capable, 400K ctx, $1.25/M" },
     { value: "gpt-5-pro", name: "GPT-5 Pro", description: "Extended thinking, 400K ctx" },
     { value: "gpt-5-mini", name: "GPT-5 Mini", description: "Fast & cheap, 400K ctx" },
+    {
+      value: "gpt-5.4",
+      name: "GPT-5.4",
+      description: "Latest frontier, reasoning, openai-responses API",
+    },
+    {
+      value: "gpt-5.4-pro",
+      name: "GPT-5.4 Pro",
+      description: "Extended thinking, openai-responses API",
+    },
     { value: "gpt-5.1", name: "GPT-5.1", description: "Latest gen, 400K ctx" },
     { value: "gpt-4o", name: "GPT-4o", description: "Balanced, 128K ctx, $2.50/M" },
     { value: "gpt-4.1", name: "GPT-4.1", description: "1M ctx, $2/M" },
@@ -109,6 +119,12 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: "codex-mini-latest", name: "Codex Mini", description: "Coding specialist" },
   ],
   google: [
+    { value: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro", description: "Preview, latest gen" },
+    {
+      value: "gemini-3.1-flash-lite-preview",
+      name: "Gemini 3.1 Flash Lite",
+      description: "Preview, fast & cheap",
+    },
     { value: "gemini-3-pro-preview", name: "Gemini 3 Pro", description: "Preview, most capable" },
     { value: "gemini-3-flash-preview", name: "Gemini 3 Flash", description: "Preview, fast" },
     { value: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Stable, 1M ctx, $1.25/M" },

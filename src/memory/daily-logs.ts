@@ -33,7 +33,7 @@ export function appendToDailyLog(content: string, date: Date = new Date()): void
 
     if (!existsSync(logPath)) {
       const header = `# Daily Log - ${formatDate(date)}\n\n`;
-      appendFileSync(logPath, header, "utf-8");
+      appendFileSync(logPath, header, { encoding: "utf-8", mode: 0o600 });
     }
 
     const entry = `## ${timestamp}\n\n${content}\n\n---\n\n`;

@@ -395,7 +395,7 @@ export class MarketplaceService {
         const fileRes = await fetch(item.download_url);
         if (!fileRes.ok) throw new Error(`Failed to download ${item.name}: ${fileRes.status}`);
         const content = await fileRes.text();
-        writeFileSync(target, content, "utf-8");
+        writeFileSync(target, content, { encoding: "utf-8", mode: 0o600 });
       }
     }
   }

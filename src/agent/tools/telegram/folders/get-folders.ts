@@ -38,8 +38,7 @@ export const telegramGetFoldersExecutor: ToolExecutor<{}> = async (
       .filter((filter): filter is Api.DialogFilter => filter.className === "DialogFilter")
       .map((filter) => ({
         id: filter.id,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-        title: (filter.title as any)?.text ?? filter.title,
+        title: filter.title.text,
         emoji: filter.emoticon || null,
         pinnedPeersCount: filter.pinnedPeers?.length || 0,
         includedPeersCount: filter.includePeers?.length || 0,

@@ -92,8 +92,7 @@ export class TaskStore {
     const now = Math.floor(Date.now() / 1000);
 
     const updateFields: string[] = [];
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic SQL parameter values
-    const updateValues: any[] = [];
+    const updateValues: (string | number)[] = [];
 
     if (updates.description !== undefined) {
       updateFields.push("description = ?");
@@ -173,8 +172,7 @@ export class TaskStore {
 
   listTasks(filter?: { status?: TaskStatus; createdBy?: string }): Task[] {
     let sql = `SELECT * FROM tasks WHERE 1=1`;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- dynamic SQL parameter values
-    const params: any[] = [];
+    const params: (string | number)[] = [];
 
     if (filter?.status) {
       sql += ` AND status = ?`;

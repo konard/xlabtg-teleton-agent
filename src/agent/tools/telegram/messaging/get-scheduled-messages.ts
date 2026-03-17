@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
+import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { createLogger } from "../../../../utils/logger.js";
 
 const log = createLogger("Tools");
@@ -33,8 +34,7 @@ export const telegramGetScheduledMessagesExecutor: ToolExecutor<
     const result = await gramJsClient.invoke(
       new Api.messages.GetScheduledHistory({
         peer: entity,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-        hash: 0n as any,
+        hash: toLong(0n),
       })
     );
 

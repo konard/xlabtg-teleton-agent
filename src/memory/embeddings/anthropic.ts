@@ -27,7 +27,7 @@ export class AnthropicEmbeddingProvider implements EmbeddingProvider {
   }
 
   async embedQuery(text: string): Promise<number[]> {
-    const result = await this.embed([text]);
+    const result = await this.embed([text], "query");
     return result[0] ?? [];
   }
 
@@ -46,7 +46,10 @@ export class AnthropicEmbeddingProvider implements EmbeddingProvider {
     return results;
   }
 
-  private async embed(texts: string[]): Promise<number[][]> {
+  private async embed(
+    texts: string[],
+    inputType: "query" | "document" = "document"
+  ): Promise<number[][]> {
     const response = await fetchWithTimeout(`${this.baseUrl}/embeddings`, {
       method: "POST",
       headers: {
@@ -56,7 +59,7 @@ export class AnthropicEmbeddingProvider implements EmbeddingProvider {
       body: JSON.stringify({
         input: texts,
         model: this.model,
-        input_type: "document",
+        input_type: inputType,
       }),
     });
 

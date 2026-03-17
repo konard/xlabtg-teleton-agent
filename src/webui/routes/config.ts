@@ -18,7 +18,6 @@ import {
 import { setTonapiKey } from "../../constants/api-endpoints.js";
 import { setToncenterApiKey, invalidateEndpointCache } from "../../ton/endpoint.js";
 import { invalidateTonClientCache } from "../../ton/wallet-service.js";
-
 /** Side-effects to run when specific config keys change at runtime. */
 const CONFIG_SIDE_EFFECTS: Record<string, (value: string | undefined) => void> = {
   tonapi_key: (v) => setTonapiKey(v),
@@ -102,6 +101,20 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         } as APIResponse,
         400
       );
+    }
+
+    // Guard: heartbeat.* keys require self_configurable to be true
+    if (key.startsWith("heartbeat.") && key !== "heartbeat.self_configurable") {
+      const config = deps.agent.getConfig();
+      if (config.heartbeat?.self_configurable !== true) {
+        return c.json(
+          {
+            success: false,
+            error: `Heartbeat config is locked (self_configurable: false). Set heartbeat.self_configurable to true first.`,
+          } as APIResponse,
+          403
+        );
+      }
     }
 
     let body: { value?: unknown };
@@ -251,6 +264,20 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         } as APIResponse,
         400
       );
+    }
+
+    // Guard: heartbeat.* keys require self_configurable to be true
+    if (key.startsWith("heartbeat.") && key !== "heartbeat.self_configurable") {
+      const config = deps.agent.getConfig();
+      if (config.heartbeat?.self_configurable !== true) {
+        return c.json(
+          {
+            success: false,
+            error: `Heartbeat config is locked (self_configurable: false). Set heartbeat.self_configurable to true first.`,
+          } as APIResponse,
+          403
+        );
+      }
     }
 
     try {

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
-import { HybridSearch } from "./hybrid.js";
+import { HybridSearch, parseTemporalIntent } from "./hybrid.js";
 import { MessageStore } from "../feed/messages.js";
 import { createLogger } from "../../utils/logger.js";
 import { FEED_MESSAGE_MAX_CHARS } from "../../constants/limits.js";
@@ -86,37 +86,53 @@ export class ContextBuilder {
       content: m.text ?? "",
     }));
 
-    const relevantKnowledge: string[] = [];
-    if (includeAgentMemory) {
-      try {
-        const knowledgeResults = await this.hybridSearch.searchKnowledge(query, queryEmbedding, {
-          limit: maxRelevantChunks,
-        });
-        relevantKnowledge.push(...reorderForEdges(knowledgeResults.map((r) => r.text)));
-      } catch (error) {
-        log.warn({ err: error }, "Knowledge search failed");
-      }
-    }
-
     const recentTextsSet = new Set(
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- filtered for non-null text above
       recentTgMessages.filter((m) => m.text && m.text.length > 0).map((m) => m.text!)
     );
 
+    // Run knowledge + feed searches in parallel (independent queries)
+    const knowledgePromise = includeAgentMemory
+      ? this.hybridSearch
+          .searchKnowledge(query, queryEmbedding, { limit: maxRelevantChunks })
+          .catch((error) => {
+            log.warn({ err: error }, "Knowledge search failed");
+            return [] as { text: string }[];
+          })
+      : Promise.resolve([] as { text: string }[]);
+
+    const { afterTimestamp } = parseTemporalIntent(query);
+
+    const feedPromise = includeFeedHistory
+      ? this.hybridSearch
+          .searchMessages(query, queryEmbedding, {
+            chatId,
+            limit: maxRelevantChunks,
+            afterTimestamp,
+          })
+          .catch((error) => {
+            log.warn({ err: error }, "Feed search failed");
+            return [] as { text: string; source?: string }[];
+          })
+      : Promise.resolve([] as { text: string; source?: string }[]);
+
+    const [knowledgeResults, feedResults] = await Promise.all([knowledgePromise, feedPromise]);
+
+    const relevantKnowledge: string[] = [];
+    if (knowledgeResults.length > 0) {
+      relevantKnowledge.push(...reorderForEdges(knowledgeResults.map((r) => r.text)));
+    }
+
     const relevantFeed: string[] = [];
     if (includeFeedHistory) {
-      try {
-        const feedResults = await this.hybridSearch.searchMessages(query, queryEmbedding, {
-          chatId,
-          limit: maxRelevantChunks,
-        });
-        for (const r of feedResults) {
-          if (!recentTextsSet.has(r.text)) {
-            relevantFeed.push(truncateFeedMessage(r.text));
-          }
+      for (const r of feedResults) {
+        if (!recentTextsSet.has(r.text)) {
+          relevantFeed.push(truncateFeedMessage(r.text));
         }
+      }
 
-        if (searchAllChats) {
+      if (searchAllChats) {
+        try {
           const globalResults = await this.hybridSearch.searchMessages(query, queryEmbedding, {
             limit: maxRelevantChunks,
           });
@@ -127,9 +143,9 @@ export class ContextBuilder {
               relevantFeed.push(`[From chat ${r.source}]: ${truncated}`);
             }
           }
+        } catch (error) {
+          log.warn({ err: error }, "Global feed search failed");
         }
-      } catch (error) {
-        log.warn({ err: error }, "Feed search failed");
       }
 
       if (relevantFeed.length === 0 && recentTgMessages.length > 0) {

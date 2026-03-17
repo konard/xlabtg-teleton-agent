@@ -44,7 +44,7 @@ This starts the agent in watch mode with automatic restarts on file changes.
 
 - **Node.js 20.0.0+** ([download](https://nodejs.org/))
 - **npm 9+** (ships with Node.js)
-- An LLM API key (Anthropic, OpenAI, Google, xAI, Groq, or OpenRouter)
+- An LLM API key from any [supported provider](README.md#supported-providers) (Anthropic, OpenAI, Google, xAI, Groq, OpenRouter, Mistral, and more)
 - Telegram API credentials from [my.telegram.org/apps](https://my.telegram.org/apps)
 
 ### Useful Commands
@@ -63,22 +63,19 @@ This starts the agent in watch mode with automatic restarts on file changes.
 
 ## Branch Strategy
 
-- **`main`** is the stable release branch. Tags and releases are cut from `main` only.
-- **`dev`** is the integration branch for ongoing work.
-- Feature branches are created from `dev` and merged back into `dev` via squash merge.
-- `dev` is periodically squash-merged into `main` for releases.
+All work happens on **`main`**. There is no `dev` branch.
 
-```
-feature/my-change  -->  dev  -->  main  -->  v0.6.0 (tag)
-```
+- **`main`** is the only branch. Tags and releases are cut from `main` directly.
+- External contributors should fork the repo and open PRs against `main`.
+- PRs are squash-merged to keep history clean.
 
 ## Making Changes
 
 1. **Fork** the repository and clone your fork.
-2. **Create a branch** from `dev`:
+2. **Create a branch** from `main`:
    ```bash
-   git checkout dev
-   git pull origin dev
+   git checkout main
+   git pull origin main
    git checkout -b feature/my-change
    ```
 3. **Make your changes.** Keep commits focused on a single logical change.
@@ -98,11 +95,11 @@ feature/my-change  -->  dev  -->  main  -->  v0.6.0 (tag)
 ## Pull Request Process
 
 1. Push your branch to your fork.
-2. Open a Pull Request **against `dev`** (not `main`).
+2. Open a Pull Request **against `main`**.
 3. Fill out the PR template completely.
 4. Ensure all CI checks pass (type checking, linting, tests).
 5. A maintainer will review your PR. Address any requested changes.
-6. Once approved, your PR will be squash-merged into `dev`.
+6. Once approved, your PR will be squash-merged into `main`.
 
 ### PR Guidelines
 

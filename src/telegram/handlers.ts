@@ -9,6 +9,7 @@ import { readOffset, writeOffset } from "./offset-store.js";
 import { PendingHistory } from "../memory/pending-history.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
+import { isSilentReply } from "../constants/tokens.js";
 import { telegramTranscribeAudioExecutor } from "../agent/tools/telegram/media/transcribe-audio.js";
 import { TYPING_REFRESH_MS } from "../constants/timeouts.js";
 import { createLogger } from "../utils/logger.js";
@@ -445,7 +446,13 @@ export class MessageHandler {
           const telegramSendCalled =
             hasToolCalls && response.toolCalls?.some((tc) => TELEGRAM_SEND_TOOLS.has(tc.name));
 
-          if (!telegramSendCalled && response.content && response.content.trim().length > 0) {
+          if (isSilentReply(response.content)) {
+            log.debug("Silent reply suppressed");
+          } else if (
+            !telegramSendCalled &&
+            response.content &&
+            response.content.trim().length > 0
+          ) {
             // Agent returned text but didn't use the send tool - send it manually
             let responseText = response.content;
 

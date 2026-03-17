@@ -11,9 +11,9 @@
  */
 
 import { TelegramClient, Api } from "telegram";
+import { toLong } from "../utils/gramjs-bigint.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
-import { toLong } from "../utils/gramjs-bigint.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { dirname } from "path";
 import { GRAMJS_RETRY_DELAY_MS, GRAMJS_CONNECT_RETRY_DELAY_MS } from "../constants/timeouts.js";
@@ -36,19 +36,15 @@ export function decodeInlineMessageId(encoded: string): Api.TypeInputBotInlineMe
   if (buf.length === 20) {
     return new Api.InputBotInlineMessageID({
       dcId: buf.readInt32LE(0),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat
-      id: buf.readBigInt64LE(4) as any,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat
-      accessHash: buf.readBigInt64LE(12) as any,
+      id: toLong(buf.readBigInt64LE(4)),
+      accessHash: toLong(buf.readBigInt64LE(12)),
     });
   } else if (buf.length === 24) {
     return new Api.InputBotInlineMessageID64({
       dcId: buf.readInt32LE(0),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat
-      ownerId: buf.readBigInt64LE(4) as any,
+      ownerId: toLong(buf.readBigInt64LE(4)),
       id: buf.readInt32LE(12),
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat
-      accessHash: buf.readBigInt64LE(16) as any,
+      accessHash: toLong(buf.readBigInt64LE(16)),
     });
   }
 

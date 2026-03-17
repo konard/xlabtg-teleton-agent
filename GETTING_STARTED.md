@@ -9,7 +9,7 @@ Complete guide to installing, configuring, and running your Teleton AI agent.
 | Requirement | Details |
 |-------------|---------|
 | **Node.js 20+** | [Download](https://nodejs.org/) - check with `node --version` |
-| **LLM API Key** | [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), or [OpenRouter](https://openrouter.ai/) |
+| **LLM API Key** | [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), or any of 15 supported providers |
 | **Telegram Account** | Dedicated account recommended (agent has full control) |
 | **Telegram API Credentials** | `api_id` + `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps) |
 | **Telegram User ID** | Message [@userinfobot](https://t.me/userinfobot) to get yours |
@@ -52,7 +52,7 @@ teleton setup
 
 The interactive wizard configures everything:
 
-1. **LLM Provider** - Choose between 6 providers (Anthropic, OpenAI, Google, xAI, Groq, OpenRouter)
+1. **LLM Provider** - Choose between 15 providers (Anthropic, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, and more)
 2. **Telegram Auth** - API credentials, phone number, login code, 2FA password
 3. **Access Policies** - DM policy (open/allowlist/pairing/disabled), group policy, mention rules
 4. **Admin** - Your Telegram User ID, owner name/username
@@ -98,7 +98,7 @@ You should see:
 ✅ Knowledge indexed
 ✅ Telegram: @your_agent connected
 ✅ TON Blockchain: connected
-✅ Agent is ready! (112 tools)
+✅ Agent is ready! (124 tools)
 ```
 
 **Verify:** Send `/ping` to your agent on Telegram.
@@ -113,7 +113,7 @@ Configuration is in `~/.teleton/config.yaml`. The setup wizard generates everyth
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter
+  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
   model: "claude-opus-4-5-20251101"
   max_tokens: 4096
   temperature: 0.7
@@ -142,7 +142,7 @@ agent:
   model: "gpt-4o"
 ```
 
-Supported: `anthropic`, `openai`, `google`, `xai`, `groq`, `openrouter`
+Supported: `anthropic`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`
 
 ---
 
@@ -172,11 +172,11 @@ Admin commands are only available to users listed in `admin_ids`. All commands w
 
 ## Tool Categories
 
-Teleton has **112 tools** across these categories:
+Teleton has **~124 tools** across these categories:
 
 | Category | Count | Highlights |
 |----------|-------|------------|
-| **Telegram** | 66 | Messaging, media, chats, groups, polls, stickers, gifts, stars, stories, contacts, folders, profile, memory, tasks |
+| **Telegram** | 77 | Messaging, media, chats, groups, polls, stickers, gifts, stars, stories, contacts, folders, profile, memory, tasks |
 | **TON & Jettons** | 15 | W5R1 wallet, send/receive TON & jettons, balances, prices, holders, history, charts, NFTs, DEX quotes |
 | **STON.fi DEX** | 5 | Swap, quote, search, trending tokens, liquidity pools |
 | **DeDust DEX** | 5 | Swap, quote, pools, prices, token info |
@@ -333,7 +333,7 @@ Restart the agent — the plugin is auto-loaded:
 ✅ 122 tools loaded (1 from plugins)
 ```
 
-Plugins receive the same `context` as built-in tools: `bridge`, `db`, `chatId`, `senderId`, `config`.
+Plugins receive a full SDK with 108 methods across 9 namespaces: `sdk.ton`, `sdk.telegram`, `sdk.bot`, `sdk.secrets`, `sdk.storage`, `sdk.log`, and more. This includes TON wallet operations like `createTransfer`, `createJettonTransfer`, `getPublicKey`, and `getWalletVersion` for signing transactions without broadcasting.
 
 ### Adding Tools (from source)
 
@@ -344,7 +344,7 @@ For contributors, create a TypeScript tool in `src/agent/tools/` and register it
 ```
 src/
 ├── index.ts        # Main application entry point (TeletonApp)
-├── agent/          # LLM runtime, tool registry, 112 tool implementations
+├── agent/          # LLM runtime, tool registry, ~124 tool implementations
 │   └── tools/      # telegram/, ton/, stonfi/, dedust/, dns/, journal/, workspace/
 ├── telegram/       # GramJS bridge, message handlers, admin commands, debouncing
 ├── memory/         # SQLite database, RAG search (FTS5 + vector), compaction
@@ -352,6 +352,7 @@ src/
 ├── deals/          # Deal proposals, strategy checker, config
 ├── bot/            # Grammy + GramJS bot for styled inline deal buttons
 ├── sdk/            # Plugin SDK (v1.0.0) — TON, Telegram services for plugins
+├── ton-proxy/      # TON Proxy module (Tonutils-Proxy integration)
 ├── session/        # Session persistence, transcripts
 ├── soul/           # System prompt assembly (SOUL + STRATEGY + SECURITY)
 ├── config/         # Zod schema, YAML loader, provider registry

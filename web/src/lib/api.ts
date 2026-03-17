@@ -688,6 +688,24 @@ export const api = {
     }>>('/groq/health');
   },
 
+  // ── TON Proxy ──────────────────────────────────────────────────────
+
+  async getTonProxyStatus() {
+    return fetchAPI<APIResponse<{ running: boolean; installed: boolean; port: number; enabled: boolean; pid?: number }>>('/ton-proxy');
+  },
+
+  async startTonProxy() {
+    return fetchAPI<APIResponse<{ running: boolean; installed: boolean; port: number; enabled: boolean; pid?: number }>>('/ton-proxy/start', { method: 'POST' });
+  },
+
+  async stopTonProxy() {
+    return fetchAPI<APIResponse<{ running: boolean; installed: boolean; port: number; enabled: boolean; pid?: number }>>('/ton-proxy/stop', { method: 'POST' });
+  },
+
+  async uninstallTonProxy() {
+    return fetchAPI<APIResponse<{ running: boolean; installed: boolean; port: number; enabled: boolean }>>('/ton-proxy/uninstall', { method: 'POST' });
+  },
+
   connectLogs(onLog: (entry: LogEntry) => void, onError?: (error: Event) => void) {
     const url = `${API_BASE}/logs/stream`;
     const eventSource = new EventSource(url);

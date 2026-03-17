@@ -10,11 +10,17 @@ import type {
   JettonBalance,
   JettonInfo,
   JettonSendResult,
+  SignedTransfer,
   NftItem,
   JettonPrice,
   JettonHolder,
   JettonHistory,
   PluginLogger,
+  TonMessage,
+  TonSendOptions,
+  TonTransferResult,
+  GetMethodResult,
+  TonSender,
 } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
 import {
@@ -39,9 +45,11 @@ import {
   WalletContractV5R1,
   internal,
 } from "@ton/ton";
-import { Address as TonAddress, beginCell, SendMode } from "@ton/core";
+import { Address as TonAddress, beginCell, SendMode, storeMessage } from "@ton/core";
+import type { TupleItem, Cell as TonCell } from "@ton/core";
 import { withTxLock } from "../ton/tx-lock.js";
 import { formatTransactions } from "../ton/format-transactions.js";
+import { isHttpError } from "../utils/errors.js";
 
 /** Format a raw BigInt token balance to a human-readable string. */
 function formatTokenBalance(rawBalance: bigint, decimals: number): string {
@@ -463,10 +471,9 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
               return seq;
             } catch (err) {
               lastErr = err;
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- HTTP error shape varies across TON client libraries
-              const status = (err as any)?.status || (err as any)?.response?.status;
-              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- HTTP error response data is untyped
-              const respData = (err as any)?.response?.data;
+              const httpErr = isHttpError(err) ? err : undefined;
+              const status = httpErr?.status || httpErr?.response?.status;
+              const respData = httpErr?.response?.data;
               if (status === 429 || (status && status >= 500)) {
                 invalidateTonClientCache();
                 if (attempt < MAX_SEND_ATTEMPTS) {
@@ -486,8 +493,8 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         return { success: true, seqno };
       } catch (err) {
         // Invalidate node cache on 429/5xx so next attempt picks a fresh node
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- HTTP error shape varies across TON client libraries
-        const status = (err as any)?.status || (err as any)?.response?.status;
+        const outerHttpErr = isHttpError(err) ? err : undefined;
+        const status = outerHttpErr?.status || outerHttpErr?.response?.status;
         if (status === 429 || (status && status >= 500)) {
           invalidateTonClientCache();
         }
@@ -518,6 +525,261 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         log.error("ton.getJettonWalletAddress() failed:", err);
         return null;
       }
+    },
+
+    // ─── Signed Transfers (no broadcast) ──────────────────────────
+
+    async createTransfer(to: string, amount: number, comment?: string): Promise<SignedTransfer> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new PluginSDKError("Amount must be a positive number", "OPERATION_FAILED");
+      }
+
+      try {
+        TonAddress.parse(to);
+      } catch {
+        throw new PluginSDKError("Invalid TON address format", "INVALID_ADDRESS");
+      }
+
+      try {
+        const keyPair = await getKeyPair();
+        if (!keyPair) {
+          throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+        }
+
+        const txResult = await withTxLock(async () => {
+          const wallet = WalletContractV5R1.create({
+            workchain: 0,
+            publicKey: keyPair.publicKey,
+          });
+          const client = await getCachedTonClient();
+          const contract = client.open(wallet);
+          const seqno = await contract.getSeqno();
+
+          const validUntil = Math.floor(Date.now() / 1000) + 120;
+
+          const transferCell = wallet.createTransfer({
+            seqno,
+            timeout: validUntil,
+            secretKey: keyPair.secretKey,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            messages: [
+              internal({
+                to: TonAddress.parse(to),
+                value: tonToNano(amount),
+                body: comment || "",
+                bounce: false,
+              }),
+            ],
+          });
+
+          // Wrap in external message (broadcastable BOC)
+          const extMsg = beginCell()
+            .store(
+              storeMessage({
+                info: {
+                  type: "external-in" as const,
+                  dest: wallet.address,
+                  importFee: 0n,
+                },
+                init: seqno === 0 ? wallet.init : undefined,
+                body: transferCell,
+              })
+            )
+            .endCell();
+
+          const boc = extMsg.toBoc().toString("base64");
+          return { boc, seqno, validUntil, walletAddress: wallet.address.toRawString() };
+        });
+
+        return {
+          // v2 fields
+          signedBoc: txResult.boc,
+          walletPublicKey: walletData.publicKey,
+          walletAddress: txResult.walletAddress,
+          seqno: txResult.seqno,
+          validUntil: txResult.validUntil,
+          // backward compat (deprecated)
+          boc: txResult.boc,
+          publicKey: walletData.publicKey,
+          walletVersion: "v5r1",
+        };
+      } catch (err) {
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to create transfer: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    async createJettonTransfer(
+      jettonAddress: string,
+      to: string,
+      amount: number,
+      opts?: { comment?: string }
+    ): Promise<SignedTransfer> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      if (!Number.isFinite(amount) || amount <= 0) {
+        throw new PluginSDKError("Amount must be a positive number", "OPERATION_FAILED");
+      }
+
+      try {
+        TonAddress.parse(to);
+      } catch {
+        throw new PluginSDKError("Invalid recipient address", "INVALID_ADDRESS");
+      }
+
+      try {
+        // Get sender's jetton wallet from balances
+        const jettonsResponse = await tonapiFetch(
+          `/accounts/${encodeURIComponent(walletData.address)}/jettons`
+        );
+        if (!jettonsResponse.ok) {
+          throw new PluginSDKError(
+            `Failed to fetch jetton balances: ${jettonsResponse.status}`,
+            "OPERATION_FAILED"
+          );
+        }
+
+        const jettonsData = await jettonsResponse.json();
+        const jettonBalance = findJettonBalance(jettonsData.balances ?? [], jettonAddress);
+
+        if (!jettonBalance) {
+          throw new PluginSDKError(
+            `You don't own any of this jetton: ${jettonAddress}`,
+            "OPERATION_FAILED"
+          );
+        }
+
+        const senderJettonWallet = jettonBalance.wallet_address.address;
+        const decimals = jettonBalance.jetton.decimals ?? 9;
+        const currentBalance = BigInt(jettonBalance.balance);
+        const amountStr = amount.toFixed(decimals);
+        const [whole, frac = ""] = amountStr.split(".");
+        const amountInUnits = BigInt(whole + (frac + "0".repeat(decimals)).slice(0, decimals));
+
+        if (amountInUnits > currentBalance) {
+          const balStr = formatTokenBalance(currentBalance, decimals);
+          throw new PluginSDKError(
+            `Insufficient balance. Have ${balStr}, need ${amount}`,
+            "OPERATION_FAILED"
+          );
+        }
+
+        const comment = opts?.comment;
+
+        // Build forward payload (comment)
+        let forwardPayload = beginCell().endCell();
+        if (comment) {
+          forwardPayload = beginCell().storeUint(0, 32).storeStringTail(comment).endCell();
+        }
+
+        // TEP-74 transfer message body
+        const JETTON_TRANSFER_OP = 0xf8a7ea5;
+        const messageBody = beginCell()
+          .storeUint(JETTON_TRANSFER_OP, 32)
+          .storeUint(0, 64) // query_id
+          .storeCoins(amountInUnits)
+          .storeAddress(TonAddress.parse(to))
+          .storeAddress(TonAddress.parse(walletData.address)) // response_destination
+          .storeBit(false) // no custom_payload
+          .storeCoins(comment ? tonToNano("0.01") : BigInt(1)) // forward_ton_amount
+          .storeBit(comment ? 1 : 0)
+          .storeRef(comment ? forwardPayload : beginCell().endCell())
+          .endCell();
+
+        const keyPair = await getKeyPair();
+        if (!keyPair) {
+          throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+        }
+
+        const txResult = await withTxLock(async () => {
+          const wallet = WalletContractV5R1.create({
+            workchain: 0,
+            publicKey: keyPair.publicKey,
+          });
+          const client = await getCachedTonClient();
+          const walletContract = client.open(wallet);
+          const seqno = await walletContract.getSeqno();
+
+          const validUntil = Math.floor(Date.now() / 1000) + 120;
+
+          const transferCell = wallet.createTransfer({
+            seqno,
+            timeout: validUntil,
+            secretKey: keyPair.secretKey,
+            sendMode: SendMode.PAY_GAS_SEPARATELY,
+            messages: [
+              internal({
+                to: TonAddress.parse(senderJettonWallet),
+                value: tonToNano("0.05"),
+                body: messageBody,
+                bounce: true,
+              }),
+            ],
+          });
+
+          // Wrap in external message (broadcastable BOC)
+          const extMsg = beginCell()
+            .store(
+              storeMessage({
+                info: {
+                  type: "external-in" as const,
+                  dest: wallet.address,
+                  importFee: 0n,
+                },
+                init: seqno === 0 ? wallet.init : undefined,
+                body: transferCell,
+              })
+            )
+            .endCell();
+
+          const boc = extMsg.toBoc().toString("base64");
+          return { boc, seqno, validUntil, walletAddress: wallet.address.toRawString() };
+        });
+
+        return {
+          // v2 fields
+          signedBoc: txResult.boc,
+          walletPublicKey: walletData.publicKey,
+          walletAddress: txResult.walletAddress,
+          seqno: txResult.seqno,
+          validUntil: txResult.validUntil,
+          // backward compat (deprecated)
+          boc: txResult.boc,
+          publicKey: walletData.publicKey,
+          walletVersion: "v5r1",
+        };
+      } catch (err) {
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to create jetton transfer: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    getPublicKey(): string | null {
+      try {
+        const wallet = loadWallet();
+        return wallet?.publicKey ?? null;
+      } catch (err) {
+        log.error("ton.getPublicKey() failed:", err);
+        return null;
+      }
+    },
+
+    getWalletVersion(): string {
+      return "v5r1";
     },
 
     // ─── NFT ─────────────────────────────────────────────────────
@@ -712,15 +974,15 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           const geckoData = await geckoResponse.json();
           const attrs = geckoData.data?.attributes;
           if (attrs) {
-            if (attrs.volume_usd?.h24) {
-              volume24h = `$${parseFloat(attrs.volume_usd.h24).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-            }
-            if (attrs.fdv_usd) {
-              fdv = `$${parseFloat(attrs.fdv_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-            }
-            if (attrs.market_cap_usd) {
-              marketCap = `$${parseFloat(attrs.market_cap_usd).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
-            }
+            const fmtUsd = (raw: string): string => {
+              const val = parseFloat(raw);
+              return Number.isFinite(val)
+                ? `$${val.toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                : "N/A";
+            };
+            if (attrs.volume_usd?.h24) volume24h = fmtUsd(attrs.volume_usd.h24);
+            if (attrs.fdv_usd) fdv = fmtUsd(attrs.fdv_usd);
+            if (attrs.market_cap_usd) marketCap = fmtUsd(attrs.market_cap_usd);
           }
         }
 
@@ -743,6 +1005,291 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         log.debug("ton.getJettonHistory() failed:", err);
         return null;
       }
+    },
+
+    // ─── Low-level Transfer ─────────────────────────────────────────
+
+    async getSeqno(): Promise<number> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      try {
+        const keyPair = await getKeyPair();
+        if (!keyPair) {
+          throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+        }
+
+        const wallet = WalletContractV5R1.create({
+          workchain: 0,
+          publicKey: keyPair.publicKey,
+        });
+        const client = await getCachedTonClient();
+        const contract = client.open(wallet);
+        return await contract.getSeqno();
+      } catch (err) {
+        const httpErr = isHttpError(err) ? err : undefined;
+        const status = httpErr?.status || httpErr?.response?.status;
+        if (status === 429 || (status !== undefined && status >= 500)) {
+          invalidateTonClientCache();
+        }
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to get seqno: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    async runGetMethod(
+      address: string,
+      method: string,
+      stack?: TupleItem[]
+    ): Promise<GetMethodResult> {
+      try {
+        TonAddress.parse(address);
+      } catch {
+        throw new PluginSDKError("Invalid TON address format", "INVALID_ADDRESS");
+      }
+
+      try {
+        const client = await getCachedTonClient();
+        const result = await client.runMethodWithError(
+          TonAddress.parse(address),
+          method,
+          stack ?? []
+        );
+
+        // Extract TupleItem[] from TupleReader (items are private)
+        const items: TupleItem[] = [];
+        while (result.stack.remaining > 0) {
+          items.push(result.stack.pop());
+        }
+
+        return { exitCode: result.exit_code, stack: items };
+      } catch (err) {
+        const httpErr = isHttpError(err) ? err : undefined;
+        const status = httpErr?.status || httpErr?.response?.status;
+        if (status === 429 || (status !== undefined && status >= 500)) {
+          invalidateTonClientCache();
+        }
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to run get method: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    async send(
+      to: string,
+      value: number,
+      opts?: {
+        body?: TonCell | string;
+        bounce?: boolean;
+        stateInit?: { code: TonCell; data: TonCell };
+        sendMode?: number;
+      }
+    ): Promise<TonTransferResult> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      try {
+        TonAddress.parse(to);
+      } catch {
+        throw new PluginSDKError("Invalid TON address format", "INVALID_ADDRESS");
+      }
+
+      if (!Number.isFinite(value) || value < 0) {
+        throw new PluginSDKError("Amount must be a non-negative number", "OPERATION_FAILED");
+      }
+
+      if (opts?.sendMode !== undefined && (opts.sendMode < 0 || opts.sendMode > 3)) {
+        throw new PluginSDKError("Unsafe sendMode", "OPERATION_FAILED");
+      }
+
+      const keyPair = await getKeyPair();
+      if (!keyPair) {
+        throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+      }
+
+      try {
+        const seqno = await withTxLock(async () => {
+          const wallet = WalletContractV5R1.create({
+            workchain: 0,
+            publicKey: keyPair.publicKey,
+          });
+          const client = await getCachedTonClient();
+          const contract = client.open(wallet);
+          const seq = await contract.getSeqno();
+
+          await contract.sendTransfer({
+            seqno: seq,
+            secretKey: keyPair.secretKey,
+            sendMode: opts?.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
+            messages: [
+              internal({
+                to: TonAddress.parse(to),
+                value: tonToNano(value.toString()),
+                body: opts?.body,
+                bounce: opts?.bounce ?? true,
+                init: opts?.stateInit,
+              }),
+            ],
+          });
+
+          return seq;
+        });
+
+        return { hash: `${seqno}_${Date.now()}_send`, seqno };
+      } catch (err) {
+        const httpErr = isHttpError(err) ? err : undefined;
+        const status = httpErr?.status || httpErr?.response?.status;
+        if (status === 429 || (status !== undefined && status >= 500)) {
+          invalidateTonClientCache();
+        }
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to send: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    async sendMessages(messages: TonMessage[], opts?: TonSendOptions): Promise<TonTransferResult> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      if (messages.length < 1) {
+        throw new PluginSDKError("At least one message required", "OPERATION_FAILED");
+      }
+
+      if (messages.length > 255) {
+        throw new PluginSDKError("Maximum 255 messages per transfer", "OPERATION_FAILED");
+      }
+
+      if (opts?.sendMode !== undefined && (opts.sendMode < 0 || opts.sendMode > 3)) {
+        throw new PluginSDKError("Unsafe sendMode", "OPERATION_FAILED");
+      }
+
+      for (const m of messages) {
+        try {
+          TonAddress.parse(m.to);
+        } catch {
+          throw new PluginSDKError(`Invalid TON address format: ${m.to}`, "INVALID_ADDRESS");
+        }
+
+        if (!Number.isFinite(m.value) || m.value < 0) {
+          throw new PluginSDKError("Amount must be a non-negative number", "OPERATION_FAILED");
+        }
+      }
+
+      const keyPair = await getKeyPair();
+      if (!keyPair) {
+        throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+      }
+
+      try {
+        const seqno = await withTxLock(async () => {
+          const wallet = WalletContractV5R1.create({
+            workchain: 0,
+            publicKey: keyPair.publicKey,
+          });
+          const client = await getCachedTonClient();
+          const contract = client.open(wallet);
+          const seq = await contract.getSeqno();
+
+          await contract.sendTransfer({
+            seqno: seq,
+            secretKey: keyPair.secretKey,
+            sendMode: opts?.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
+            messages: messages.map((m) =>
+              internal({
+                to: TonAddress.parse(m.to),
+                value: tonToNano(m.value.toString()),
+                body: m.body,
+                bounce: m.bounce ?? true,
+                init: m.stateInit,
+              })
+            ),
+          });
+
+          return seq;
+        });
+
+        return { hash: `${seqno}_${Date.now()}_sendMessages`, seqno };
+      } catch (err) {
+        const httpErr = isHttpError(err) ? err : undefined;
+        const status = httpErr?.status || httpErr?.response?.status;
+        if (status === 429 || (status !== undefined && status >= 500)) {
+          invalidateTonClientCache();
+        }
+        if (err instanceof PluginSDKError) throw err;
+        throw new PluginSDKError(
+          `Failed to send messages: ${err instanceof Error ? err.message : String(err)}`,
+          "OPERATION_FAILED"
+        );
+      }
+    },
+
+    async createSender(): Promise<TonSender> {
+      const walletData = loadWallet();
+      if (!walletData) {
+        throw new PluginSDKError("Wallet not initialized", "WALLET_NOT_INITIALIZED");
+      }
+
+      const keyPair = await getKeyPair();
+      if (!keyPair) {
+        throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+      }
+
+      const wallet = WalletContractV5R1.create({
+        workchain: 0,
+        publicKey: keyPair.publicKey,
+      });
+
+      return {
+        address: wallet.address,
+        send: async (args) => {
+          if (args.sendMode !== undefined && (args.sendMode < 0 || args.sendMode > 3)) {
+            throw new PluginSDKError("Unsafe sendMode", "OPERATION_FAILED");
+          }
+          try {
+            await withTxLock(async () => {
+              const client = await getCachedTonClient();
+              const contract = client.open(wallet);
+              const seqno = await contract.getSeqno();
+
+              await contract.sendTransfer({
+                seqno,
+                secretKey: keyPair.secretKey,
+                sendMode: args.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
+                messages: [
+                  internal({
+                    to: args.to,
+                    value: args.value,
+                    body: args.body,
+                    bounce: args.bounce ?? true,
+                    init: args.init ?? undefined,
+                  }),
+                ],
+              });
+            });
+          } catch (err) {
+            const httpErr = isHttpError(err) ? err : undefined;
+            const status = httpErr?.status || httpErr?.response?.status;
+            if (status === 429 || (status !== undefined && status >= 500)) {
+              invalidateTonClientCache();
+            }
+            throw err;
+          }
+        },
+      };
     },
 
     // ─── Sub-namespaces ───────────────────────────────────────────

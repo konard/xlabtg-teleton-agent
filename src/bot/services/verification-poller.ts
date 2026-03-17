@@ -7,6 +7,7 @@ import type Database from "better-sqlite3";
 import type { TelegramBridge } from "../../telegram/bridge.js";
 import type { DealBot } from "../index.js";
 import type { DealContext } from "../types.js";
+import type { ToolContext } from "../../agent/tools/types.js";
 import { getDealsAwaitingVerification, updateUserStats } from "./deal-service.js";
 import {
   buildSendingMessage,
@@ -18,6 +19,13 @@ import { getWalletAddress } from "../../ton/wallet-service.js";
 import { executeDeal } from "../../deals/executor.js";
 import { DEALS_CONFIG } from "../../deals/config.js";
 import { createLogger } from "../../utils/logger.js";
+
+interface VerifyGiftEntry {
+  slug: string;
+  fromId?: string;
+  date?: number;
+  msgId?: string;
+}
 
 const log = createLogger("Poller");
 
@@ -188,16 +196,13 @@ export class VerificationPoller {
       const { telegramGetMyGiftsExecutor } =
         await import("../../agent/tools/telegram/gifts/get-my-gifts.js");
 
-      // Build minimal tool context — eslint-disable-next-line won't work here because `as any` is on closing brace
-      /* eslint-disable @typescript-eslint/no-explicit-any -- minimal tool context for internal executor call */
-      const toolContext = {
+      const toolContext: ToolContext = {
         bridge: this.bridge,
         db: this.db,
         chatId: deal.chatId,
         isGroup: false,
         senderId: deal.userId,
-      } as any;
-      /* eslint-enable @typescript-eslint/no-explicit-any */
+      };
 
       const result = await telegramGetMyGiftsExecutor(
         { userId: botUserId.toString(), limit: 50 },
@@ -208,18 +213,17 @@ export class VerificationPoller {
         return { verified: false };
       }
 
-      /* eslint-disable @typescript-eslint/no-explicit-any -- dynamic tool result / gift object shape */
-      const gifts = (result.data as any).gifts || [];
+      const verifyData = result.data as { gifts?: VerifyGiftEntry[] };
+      const gifts = verifyData.gifts || [];
 
       // Find matching gift from user after deal creation
       const matchingGift = gifts.find(
-        (g: any) =>
+        (g) =>
           g.slug === deal.userGivesGiftSlug &&
           Number(g.fromId) === deal.userId &&
           g.date &&
           g.date >= deal.createdAt
       );
-      /* eslint-enable @typescript-eslint/no-explicit-any */
 
       if (matchingGift) {
         return {

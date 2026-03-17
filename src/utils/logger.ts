@@ -122,12 +122,20 @@ const rootLogger = pino(
       paths: [
         "apiKey",
         "api_key",
+        "api_hash",
+        "accessToken",
+        "access_token",
+        "refresh_token",
         "password",
         "secret",
         "token",
         "mnemonic",
         "*.apiKey",
         "*.api_key",
+        "*.api_hash",
+        "*.accessToken",
+        "*.access_token",
+        "*.refresh_token",
         "*.password",
         "*.secret",
         "*.token",
@@ -179,10 +187,14 @@ export function initLoggerFromConfig(logging: { level?: string }): void {
 export function setLogLevel(level: LogLevel): void {
   rootLogger.level = level;
   // Update stdout stream level so more-permissive changes actually take effect
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pino multistream internal API
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- pino multistream internal API (no public alternative)
   const streams = (multiStream as any).streams;
   if (Array.isArray(streams) && streams[0]) {
     streams[0].level = pino.levels.values[level] ?? 30;
+  } else {
+    process.stderr.write(
+      `[Logger] setLogLevel: pino multistream internal API changed, stdout level not updated\n`
+    );
   }
   _verbose = level === "debug" || level === "trace";
 }

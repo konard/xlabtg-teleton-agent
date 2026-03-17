@@ -1,7 +1,11 @@
-import { writeFile, mkdir } from "fs/promises";
+import { writeFile, mkdir, readdir, readFile, unlink } from "fs/promises";
 import { join } from "path";
 import { complete, type Context } from "@mariozechner/pi-ai";
-import { summarizeViaClaude, formatMessagesForSummary } from "../memory/ai-summarization.js";
+import {
+  summarizeViaClaude,
+  summarizeWithFallback,
+  formatMessagesForSummary,
+} from "../memory/ai-summarization.js";
 import { getUtilityModel } from "../agent/client.js";
 import type { SupportedProvider } from "../config/providers.js";
 import { createLogger } from "../utils/logger.js";
@@ -9,6 +13,7 @@ import {
   SESSION_SLUG_RECENT_MESSAGES,
   SESSION_SLUG_MAX_TOKENS,
   DEFAULT_MAX_SUMMARY_TOKENS,
+  DEFAULT_CONTEXT_WINDOW,
 } from "../constants/limits.js";
 
 const log = createLogger("Session");
@@ -152,5 +157,97 @@ This session was compacted and migrated to a new session ID. The summary above p
     log.info(`Session memory saved: ${relPath}`);
   } catch (error) {
     log.error({ err: error }, "Failed to save session memory");
+  }
+}
+
+const CONSOLIDATION_THRESHOLD = 20;
+const CONSOLIDATION_BATCH = 10;
+
+/**
+ * Consolidate old session memory files when they exceed a threshold.
+ * Reads the oldest session files, LLM-summarizes them into a single file,
+ * and deletes the originals to prevent unbounded accumulation.
+ */
+export async function consolidateOldMemoryFiles(params: {
+  apiKey: string;
+  provider?: SupportedProvider;
+  utilityModel?: string;
+}): Promise<{ consolidated: number }> {
+  try {
+    const { TELETON_ROOT } = await import("../workspace/paths.js");
+    const memoryDir = join(TELETON_ROOT, "memory");
+
+    let entries: string[];
+    try {
+      entries = await readdir(memoryDir);
+    } catch {
+      return { consolidated: 0 };
+    }
+
+    // Session files match YYYY-MM-DD-slug.md (not plain YYYY-MM-DD.md daily logs)
+    const sessionFiles = entries
+      .filter((f) => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) && !f.startsWith("consolidated-"))
+      .sort();
+
+    if (sessionFiles.length < CONSOLIDATION_THRESHOLD) {
+      return { consolidated: 0 };
+    }
+
+    const batch = sessionFiles.slice(0, CONSOLIDATION_BATCH);
+    log.info(`Consolidating ${batch.length} old session memory files...`);
+
+    const contents: string[] = [];
+    for (const file of batch) {
+      const text = await readFile(join(memoryDir, file), "utf-8");
+      contents.push(`--- ${file} ---\n${text}`);
+    }
+
+    const combined = contents.join("\n\n");
+    let summary: string;
+    try {
+      const result = await summarizeWithFallback({
+        messages: [{ role: "user", content: combined, timestamp: Date.now() }],
+        apiKey: params.apiKey,
+        contextWindow: DEFAULT_CONTEXT_WINDOW,
+        maxSummaryTokens: DEFAULT_MAX_SUMMARY_TOKENS,
+        customInstructions:
+          "Consolidate these session memories into a single comprehensive summary. Preserve key facts, decisions, patterns, and important context. Remove redundancy. Organize by topic.",
+        provider: params.provider,
+        utilityModel: params.utilityModel,
+      });
+      summary = result.summary;
+    } catch (error) {
+      log.warn({ err: error }, "Consolidation summary failed, skipping");
+      return { consolidated: 0 };
+    }
+
+    const dateOf = (f: string) => f.slice(0, 10);
+    const dateRange = `${dateOf(batch[0])}_to_${dateOf(batch[batch.length - 1])}`;
+    const outFile = `consolidated-${dateRange}.md`;
+    const outContent = `# Consolidated Session Memories
+
+## Period
+${batch[0]} → ${batch[batch.length - 1]}
+
+## Summary
+
+${summary}
+
+---
+
+*Consolidated from ${batch.length} session files by Teleton memory consolidation*
+`;
+
+    await writeFile(join(memoryDir, outFile), outContent, "utf-8");
+
+    for (const file of batch) {
+      await unlink(join(memoryDir, file));
+    }
+
+    log.info(`Consolidated ${batch.length} files → ${outFile}`);
+    return { consolidated: batch.length };
+  } catch (error) {
+    log.error({ err: error }, "Memory consolidation failed");
+    return { consolidated: 0 };
   }
 }

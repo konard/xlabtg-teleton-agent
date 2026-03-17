@@ -22,8 +22,7 @@ export function toSimpleMessage(msg: any): SimpleMessage {
   return {
     id: msg.id,
     text: msg.message ?? "",
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS fromId is a union of untyped peer types
-    senderId: Number((msg.fromId as any)?.userId ?? (msg.fromId as any)?.channelId ?? 0),
+    senderId: Number(msg.fromId?.userId ?? msg.fromId?.channelId ?? 0),
     timestamp: new Date(msg.date * 1000),
   };
 }

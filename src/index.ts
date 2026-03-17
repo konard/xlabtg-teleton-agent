@@ -34,6 +34,7 @@ import {
   type McpConnection,
 } from "./agent/tools/mcp-loader.js";
 import { getErrorMessage } from "./utils/errors.js";
+import { isHeartbeatOk, isSilentReply } from "./constants/tokens.js";
 import { UserHookEvaluator } from "./agent/hooks/user-hook-evaluator.js";
 import { createLogger, initLoggerFromConfig } from "./utils/logger.js";
 import { AgentLifecycle } from "./agent/lifecycle.js";
@@ -42,6 +43,7 @@ import { PluginRateLimiter } from "./bot/rate-limiter.js";
 import { setBotPreMiddleware, getDealBot } from "./deals/module.js";
 import type { TaskDependencyResolver } from "./telegram/task-dependency-resolver.js";
 import type { WebUIServer } from "./webui/server.js";
+import type { ApiServer } from "./api/server.js";
 
 const log = createLogger("App");
 
@@ -59,14 +61,18 @@ export class TeletonApp {
   private memory: MemorySystem;
   private sdkDeps: SDKDependencies;
   private webuiServer: WebUIServer | null = null;
+  private apiServer: ApiServer | null = null;
   private pluginWatcher: PluginWatcher | null = null;
   private mcpConnections: McpConnection[] = [];
   private callbackHandlerRegistered = false;
+  private messageHandlersRegistered = false;
   private lifecycle = new AgentLifecycle();
   private hookRunner?: ReturnType<typeof createHookRunner>;
   private userHookEvaluator: UserHookEvaluator | null = null;
   private startTime: number = 0;
   private messagesProcessed: number = 0;
+  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
+  private heartbeatRunning = false;
 
   private configPath: string;
 
@@ -153,6 +159,57 @@ export class TeletonApp {
    */
   getLifecycle(): AgentLifecycle {
     return this.lifecycle;
+  }
+
+  // --- Public accessors for API-only bootstrap mode ---
+
+  getAgent(): AgentRuntime {
+    return this.agent;
+  }
+
+  getBridge(): TelegramBridge {
+    return this.bridge;
+  }
+
+  getMemory(): MemorySystem {
+    return this.memory;
+  }
+
+  getToolRegistry(): ToolRegistry {
+    return this.toolRegistry;
+  }
+
+  getPlugins(): { name: string; version: string }[] {
+    return this.modules
+      .filter((m) => this.toolRegistry.isPluginModule(m.name))
+      .map((m) => ({ name: m.name, version: m.version ?? "0.0.0" }));
+  }
+
+  getWebuiConfig() {
+    return this.config.webui;
+  }
+
+  getConfigPath(): string {
+    return this.configPath;
+  }
+
+  /** Start agent subsystems without WebUI/API servers. For bootstrap mode. */
+  async startAgentSubsystems(): Promise<void> {
+    this.lifecycle.registerCallbacks(
+      () => this.startAgent(),
+      () => this.stopAgent()
+    );
+    await this.lifecycle.start();
+  }
+
+  /** Stop agent subsystems and close database. For bootstrap mode. */
+  async stopAgentSubsystems(): Promise<void> {
+    await this.lifecycle.stop();
+    try {
+      closeDatabase();
+    } catch (e) {
+      log.error({ err: e }, "Database close failed");
+    }
   }
 
   /**
@@ -242,6 +299,80 @@ ${blue}  ┌──────────────────────�
       } catch (error) {
         log.error({ err: error }, "❌ Failed to start WebUI server");
         log.warn("⚠️ Continuing without WebUI...");
+      }
+    }
+
+    // Start Management API server if enabled (before agent — survives agent stop/restart)
+    if (this.config.api?.enabled) {
+      try {
+        const { ApiServer: ApiServerClass } = await import("./api/server.js");
+        // Build MCP server info getter (same pattern as WebUI)
+        const mcpServers = () =>
+          Object.entries(this.config.mcp.servers).map(([name, serverConfig]) => {
+            const type = serverConfig.command
+              ? ("stdio" as const)
+              : serverConfig.url
+                ? ("streamable-http" as const)
+                : ("sse" as const);
+            const target = serverConfig.command ?? serverConfig.url ?? "";
+            const connected = this.mcpConnections.some((c) => c.serverName === name);
+            const moduleName = `mcp_${name}`;
+            const moduleTools = this.toolRegistry.getModuleTools(moduleName);
+            return {
+              name,
+              type,
+              target,
+              scope: serverConfig.scope ?? "always",
+              enabled: serverConfig.enabled ?? true,
+              connected,
+              toolCount: moduleTools.length,
+              tools: moduleTools.map((t) => t.name),
+              envKeys: Object.keys(serverConfig.env ?? {}),
+            };
+          });
+
+        const builtinNames = this.modules.map((m) => m.name);
+        const pluginContext: PluginContext = {
+          bridge: this.bridge,
+          db: getDatabase().getDb(),
+          config: this.config,
+        };
+
+        this.apiServer = new ApiServerClass(
+          {
+            agent: this.agent,
+            bridge: this.bridge,
+            memory: this.memory,
+            toolRegistry: this.toolRegistry,
+            plugins: this.modules
+              .filter((m) => this.toolRegistry.isPluginModule(m.name))
+              .map((m) => ({ name: m.name, version: m.version ?? "0.0.0" })),
+            mcpServers,
+            config: this.config.webui,
+            configPath: this.configPath,
+            lifecycle: this.lifecycle,
+            marketplace: {
+              modules: this.modules,
+              config: this.config,
+              sdkDeps: this.sdkDeps,
+              pluginContext,
+              loadedModuleNames: builtinNames,
+              rewireHooks: () => this.wirePluginEventHooks(),
+            },
+            userHookEvaluator: this.userHookEvaluator,
+          },
+          this.config.api
+        );
+        await this.apiServer.start();
+
+        // Output credentials if requested via --json-credentials flag
+        if (process.env.TELETON_JSON_CREDENTIALS === "true") {
+          const creds = this.apiServer.getCredentials();
+          process.stdout.write(JSON.stringify(creds) + "\n");
+        }
+      } catch (error) {
+        log.error({ err: error }, "Failed to start Management API server");
+        log.warn("Continuing without Management API...");
       }
     }
 
@@ -359,20 +490,53 @@ ${blue}  ┌──────────────────────�
     const { pruneOldSessions } = await import("./session/store.js");
     pruneOldSessions(30);
 
+    // Harden permissions on existing files (one-shot, idempotent)
+    const { hardenExistingPermissions } = await import("./workspace/harden-permissions.js");
+    hardenExistingPermissions();
+
+    // Ensure heartbeat config exists in YAML (so users can see/edit it)
+    {
+      const raw = readRawConfig(this.configPath);
+      if (raw && !raw.heartbeat) {
+        raw.heartbeat = {
+          enabled: this.config.heartbeat.enabled,
+          interval_ms: this.config.heartbeat.interval_ms,
+          self_configurable: this.config.heartbeat.self_configurable,
+        };
+        writeRawConfig(raw, this.configPath);
+        log.info("Config: heartbeat section added to config.yaml");
+      }
+    }
+
     // Warmup embedding model (pre-download at startup, not on first message)
     if (this.memory.embedder.warmup) {
       await this.memory.embedder.warmup();
     }
 
     // Index knowledge base (MEMORY.md, memory/*.md)
-    const indexResult = await this.memory.knowledge.indexAll();
-
-    // Rebuild FTS indexes to ensure search works
+    // Force re-index if embedding dimensions changed (model switch)
     const db = getDatabase();
+    const forceReindex = db.didDimensionsChange();
+    const indexResult = await this.memory.knowledge.indexAll({ force: forceReindex });
     let ftsResult = { knowledge: 0, messages: 0 };
     if (indexResult.indexed > 0) {
       ftsResult = db.rebuildFtsIndexes();
     }
+
+    // Consolidate old session memory files (non-blocking — runs after startup)
+    import("./session/memory-hook.js")
+      .then(({ consolidateOldMemoryFiles }) =>
+        consolidateOldMemoryFiles({
+          apiKey: this.config.agent.api_key,
+          provider: this.config.agent.provider as SupportedProvider,
+          utilityModel: this.config.agent.utility_model,
+        })
+      )
+      .then((r) => {
+        if (r.consolidated > 0)
+          log.info(`🧹 Consolidated ${r.consolidated} old session memory files`);
+      })
+      .catch((error) => log.warn({ err: error }, "Memory consolidation skipped"));
 
     // Index tools for Tool RAG
     const toolIndex = this.toolRegistry.getToolIndex();
@@ -577,6 +741,21 @@ ${blue}  ┌──────────────────────�
       await this.hookRunner.runObservingHook("agent:start", agentStartEvent);
     }
 
+    // Start heartbeat timer if enabled
+    if (this.config.heartbeat.enabled) {
+      const hbInterval = this.config.heartbeat.interval_ms;
+      const adminChatId = this.config.telegram.admin_ids[0];
+      if (adminChatId) {
+        this.heartbeatTimer = setInterval(() => {
+          void this.runHeartbeat();
+        }, hbInterval);
+        this.heartbeatTimer.unref();
+        log.info(
+          `Heartbeat enabled: every ${Math.round(hbInterval / 60000)}min → admin ${adminChatId}`
+        );
+      }
+    }
+
     // Initialize message debouncer with bypass logic
     this.debouncer = new MessageDebouncer(
       {
@@ -607,25 +786,28 @@ ${blue}  ┌──────────────────────�
       }
     );
 
-    // Register event handler for new messages (with debouncing)
-    this.bridge.onNewMessage(async (message) => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- debouncer always initialized before handlers register
-        await this.debouncer!.enqueue(message);
-      } catch (error) {
-        log.error({ err: error }, "Error enqueueing message");
-      }
-    });
+    // Register GramJS event handlers ONCE (survive agent restart via WebUI)
+    if (!this.messageHandlersRegistered) {
+      this.bridge.onNewMessage(async (message) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- debouncer always initialized before handlers register
+          await this.debouncer!.enqueue(message);
+        } catch (error) {
+          log.error({ err: error }, "Error enqueueing message");
+        }
+      });
 
-    // Register event handler for gift service messages (offers, gifts received)
-    this.bridge.onServiceMessage(async (message) => {
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- debouncer always initialized before handlers register
-        await this.debouncer!.enqueue(message);
-      } catch (error) {
-        log.error({ err: error }, "Error enqueueing service message");
-      }
-    });
+      this.bridge.onServiceMessage(async (message) => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- debouncer always initialized before handlers register
+          await this.debouncer!.enqueue(message);
+        } catch (error) {
+          log.error({ err: error }, "Error enqueueing service message");
+        }
+      });
+
+      this.messageHandlersRegistered = true;
+    }
   }
 
   /**
@@ -1045,6 +1227,15 @@ ${blue}  ┌──────────────────────�
       }
     }
 
+    // Stop Management API server (if running)
+    if (this.apiServer) {
+      try {
+        await this.apiServer.stop();
+      } catch (e) {
+        log.error({ err: e }, "⚠️ Management API stop failed");
+      }
+    }
+
     // Close database last (shared with WebUI)
     try {
       closeDatabase();
@@ -1054,10 +1245,75 @@ ${blue}  ┌──────────────────────�
   }
 
   /**
+   * Run a single heartbeat tick — modeled on handleScheduledTask().
+   * Calls processMessage() directly, bypasses MessageHandler.
+   */
+  private async runHeartbeat(): Promise<void> {
+    if (this.heartbeatRunning) {
+      log.debug("Heartbeat tick skipped (previous still running)");
+      return;
+    }
+    const cfg = this.config.heartbeat;
+    if (!cfg?.enabled) return;
+
+    const adminChatId = this.config.telegram.admin_ids[0];
+    if (!adminChatId) return;
+
+    this.heartbeatRunning = true;
+    try {
+      const { getDatabase } = await import("./memory/index.js");
+      const sessionChatId = `telegram:direct:${adminChatId}`;
+      const telegramChatId = String(adminChatId);
+      const toolContext = {
+        bridge: this.bridge,
+        db: getDatabase().getDb(),
+        chatId: sessionChatId,
+        isGroup: false,
+        senderId: adminChatId,
+        config: this.config,
+      };
+
+      const response = await this.agent.processMessage({
+        chatId: sessionChatId,
+        userMessage: cfg.prompt,
+        userName: "heartbeat",
+        timestamp: Date.now(),
+        isGroup: false,
+        toolContext,
+        isHeartbeat: true,
+      });
+
+      if (
+        response.content &&
+        !isHeartbeatOk(response.content) &&
+        !isSilentReply(response.content)
+      ) {
+        await this.bridge.sendMessage({
+          chatId: telegramChatId,
+          text: response.content,
+        });
+        log.info("Heartbeat: alert sent to owner");
+      } else {
+        log.debug("Heartbeat: NO_ACTION (suppressed)");
+      }
+    } catch (err) {
+      log.error({ err }, "Heartbeat error");
+    } finally {
+      this.heartbeatRunning = false;
+    }
+  }
+
+  /**
    * Stop agent subsystems (watcher, MCP, debouncer, handler, modules, bridge).
    * Called by lifecycle.stop() — do NOT call directly.
    */
   private async stopAgent(): Promise<void> {
+    // Stop heartbeat timer
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+      this.heartbeatTimer = null;
+    }
+
     // Hook: agent:stop — fire BEFORE disconnecting anything
     if (this.hookRunner) {
       try {

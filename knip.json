@@ -10,7 +10,8 @@
         "src/telegram/index.ts",
         "src/telegram/callbacks/index.ts",
         "src/sdk/hooks/index.ts",
-        "src/constants/index.ts"
+        "src/constants/index.ts",
+        "src/api/**/*.ts"
       ],
       "project": ["src/**/*.ts"],
       "ignore": ["src/**/__tests__/**", "src/telegram/media-utils.ts"]
@@ -23,7 +24,6 @@
   },
   "ignoreDependencies": [
     "pino-pretty",
-    "crypto-js",
     "lottie-react",
     "@teleton-agent/sdk",
     "@grammyjs/types",
