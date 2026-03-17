@@ -4,6 +4,292 @@ import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 
 type Tab = 'installed' | 'marketplace';
+type DetailsTab = 'overview' | 'tools' | 'secrets';
+
+// ── Author badge with GitHub avatar ─────────────────────────────────────────
+
+function AuthorBadge({ author, verified = false }: { author: string; verified?: boolean }) {
+  const isGitHub = author && !author.includes(' ') && author !== 'unknown';
+  const avatarUrl = isGitHub ? `https://github.com/${author}.png?size=16` : null;
+  const [avatarError, setAvatarError] = useState(false);
+
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', color: 'var(--text-secondary)' }}>
+      {avatarUrl && !avatarError ? (
+        <img
+          src={avatarUrl}
+          alt={author}
+          width={14}
+          height={14}
+          style={{ borderRadius: '50%', verticalAlign: 'middle' }}
+          onError={() => setAvatarError(true)}
+        />
+      ) : (
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.5 }} aria-hidden="true">
+          <path d="M12 12c2.7 0 4.8-2.1 4.8-4.8S14.7 2.4 12 2.4 7.2 4.5 7.2 7.2 9.3 12 12 12zm0 2.4c-3.2 0-9.6 1.6-9.6 4.8v2.4h19.2v-2.4c0-3.2-6.4-4.8-9.6-4.8z" />
+        </svg>
+      )}
+      <span>@{author}</span>
+      {verified && (
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="var(--green)" aria-label="Verified author">
+          <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
+        </svg>
+      )}
+    </span>
+  );
+}
+
+// ── Source badge ─────────────────────────────────────────────────────────────
+
+function SourceBadge({ source, label }: { source: MarketplacePlugin['source']; label: string }) {
+  const styles: React.CSSProperties =
+    source === 'official'
+      ? { background: 'rgba(80,200,120,0.12)', color: 'var(--green)', border: '1px solid rgba(80,200,120,0.25)' }
+      : source === 'community'
+      ? { background: 'rgba(110,168,254,0.10)', color: 'var(--blue, #6ea8fe)', border: '1px solid rgba(110,168,254,0.2)' }
+      : { background: 'rgba(255,200,80,0.10)', color: '#f5c842', border: '1px solid rgba(255,200,80,0.2)' };
+
+  return (
+    <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, ...styles }}>
+      {label}
+    </span>
+  );
+}
+
+// ── Plugin Details Modal ──────────────────────────────────────────────────────
+
+function PluginDetailsModal({
+  plugin,
+  onClose,
+  onInstall,
+  onUninstall,
+  onUpdate,
+  operating,
+}: {
+  plugin: MarketplacePlugin;
+  onClose: () => void;
+  onInstall: (id: string) => void;
+  onUninstall: (id: string) => void;
+  onUpdate: (id: string) => void;
+  operating: string | null;
+}) {
+  const [detailsTab, setDetailsTab] = useState<DetailsTab>('overview');
+  const [secretsInfo, setSecretsInfo] = useState<PluginSecretsInfo | null>(null);
+  const [loadingSecrets, setLoadingSecrets] = useState(false);
+  const isOp = operating === plugin.id;
+  const busy = !!operating;
+
+  useEffect(() => {
+    if (detailsTab === 'secrets' && plugin.secrets && Object.keys(plugin.secrets).length > 0) {
+      setLoadingSecrets(true);
+      api.getPluginSecrets(plugin.id)
+        .then(res => setSecretsInfo(res.data))
+        .catch(() => {})
+        .finally(() => setLoadingSecrets(false));
+    }
+  }, [detailsTab, plugin.id, plugin.secrets]);
+
+  const hasSecrets = plugin.secrets && Object.keys(plugin.secrets).length > 0;
+
+  return (
+    <div className="modal-overlay" onClick={onClose}>
+      <div
+        className="modal"
+        onClick={(e) => e.stopPropagation()}
+        style={{ maxWidth: '640px', width: '100%', maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}
+      >
+        {/* Header */}
+        <div style={{ marginBottom: '4px' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                <h2 style={{ marginBottom: 0 }}>{plugin.name}</h2>
+                <SourceBadge source={plugin.source} label={plugin.sourceLabel} />
+                {plugin.status === 'installed' && (
+                  <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(80,200,120,0.12)', color: 'var(--green)', border: '1px solid rgba(80,200,120,0.25)' }}>
+                    Installed
+                  </span>
+                )}
+                {plugin.status === 'updatable' && (
+                  <span style={{ fontSize: '11px', padding: '1px 6px', borderRadius: '4px', background: 'rgba(255,200,80,0.10)', color: '#f5c842', border: '1px solid rgba(255,200,80,0.2)' }}>
+                    Update available
+                  </span>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginTop: '6px', flexWrap: 'wrap' }}>
+                {plugin.author && plugin.author !== 'unknown' && (
+                  <AuthorBadge author={plugin.author} verified={plugin.source === 'official'} />
+                )}
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>v{plugin.remoteVersion}</span>
+                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>{plugin.toolCount} tools</span>
+              </div>
+            </div>
+            <button
+              onClick={onClose}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: '4px', fontSize: '18px', lineHeight: 1, flexShrink: 0 }}
+            >
+              &#x2715;
+            </button>
+          </div>
+        </div>
+
+        {/* Tab bar */}
+        <div className="tabs" style={{ marginBottom: '12px', borderBottom: '1px solid var(--separator)', paddingBottom: '0' }}>
+          <button className={`tab ${detailsTab === 'overview' ? 'active' : ''}`} onClick={() => setDetailsTab('overview')}>Overview</button>
+          <button className={`tab ${detailsTab === 'tools' ? 'active' : ''}`} onClick={() => setDetailsTab('tools')}>
+            Tools
+            {plugin.tools && plugin.tools.length > 0 && (
+              <span className="tab-count">{plugin.tools.length}</span>
+            )}
+          </button>
+          {hasSecrets && (
+            <button className={`tab ${detailsTab === 'secrets' ? 'active' : ''}`} onClick={() => setDetailsTab('secrets')}>
+              Secrets
+              <span className="tab-count">{Object.keys(plugin.secrets!).length}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Tab content */}
+        <div style={{ overflowY: 'auto', flex: 1 }}>
+          {detailsTab === 'overview' && (
+            <div>
+              {plugin.description && (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px', lineHeight: '1.6' }}>
+                  {plugin.description}
+                </p>
+              )}
+              <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '6px 16px', fontSize: '12px', marginBottom: '16px' }}>
+                {plugin.author && plugin.author !== 'unknown' && (
+                  <>
+                    <span style={{ color: 'var(--text-secondary)' }}>Author</span>
+                    <AuthorBadge author={plugin.author} verified={plugin.source === 'official'} />
+                  </>
+                )}
+                <span style={{ color: 'var(--text-secondary)' }}>Source</span>
+                <span><SourceBadge source={plugin.source} label={plugin.sourceLabel} /></span>
+                <span style={{ color: 'var(--text-secondary)' }}>Version</span>
+                <span>v{plugin.remoteVersion}</span>
+                {plugin.installedVersion && (
+                  <>
+                    <span style={{ color: 'var(--text-secondary)' }}>Installed</span>
+                    <span>v{plugin.installedVersion}</span>
+                  </>
+                )}
+                <span style={{ color: 'var(--text-secondary)' }}>Tools</span>
+                <span>{plugin.toolCount}</span>
+              </div>
+              {plugin.tags && plugin.tags.length > 0 && (
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '6px', letterSpacing: '0.5px' }}>Tags</div>
+                  <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                    {plugin.tags.map((t) => (
+                      <span key={t} style={{ fontSize: '11px', padding: '2px 8px', borderRadius: '6px', background: 'var(--surface)', color: 'var(--text-tertiary)', border: '1px solid var(--separator)' }}>
+                        {t}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {plugin.secrets && Object.keys(plugin.secrets).some(k => plugin.secrets![k].required) && (
+                <div style={{ padding: '10px 12px', borderRadius: '8px', background: 'rgba(255,200,80,0.06)', border: '1px solid rgba(255,200,80,0.15)', fontSize: '12px' }}>
+                  <strong style={{ color: '#f5c842' }}>API Keys Required</strong>
+                  <p style={{ color: 'var(--text-secondary)', marginTop: '3px' }}>
+                    This plugin requires API keys to function. You'll be prompted to configure them after installation.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {detailsTab === 'tools' && (
+            <div>
+              {plugin.tools && plugin.tools.length > 0 ? (
+                <div style={{ display: 'grid', gap: '6px' }}>
+                  {plugin.tools.map((tool) => (
+                    <div key={tool.name} className="tool-row" style={{ padding: '8px 12px' }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <code style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text)' }}>{tool.name}</code>
+                        {tool.description && (
+                          <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '2px 0 0 0' }}>{tool.description}</p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>No tool details available.</p>
+              )}
+            </div>
+          )}
+
+          {detailsTab === 'secrets' && hasSecrets && (
+            <div>
+              {loadingSecrets ? (
+                <p style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Loading secrets info...</p>
+              ) : (
+                <div style={{ display: 'grid', gap: '8px' }}>
+                  {Object.entries(plugin.secrets!).map(([key, decl]) => {
+                    const isConfigured = secretsInfo?.configured.includes(key);
+                    return (
+                      <div key={key} className="tool-row" style={{ padding: '10px 12px' }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <code style={{ fontSize: '12px', fontWeight: 600 }}>{key}</code>
+                            {decl.required && <span style={{ fontSize: '10px', color: 'var(--text-secondary)' }}>required</span>}
+                            <span className={`badge ${isConfigured ? 'always' : 'warn'}`} style={{ fontSize: '10px' }}>
+                              {isConfigured ? 'Set' : 'Not set'}
+                            </span>
+                          </div>
+                          <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', margin: '3px 0 0 0' }}>{decl.description}</p>
+                          {decl.env && (
+                            <code style={{ fontSize: '10px', color: 'var(--text-tertiary)', opacity: 0.7, display: 'block', marginTop: '2px' }}>
+                              Env: {decl.env}
+                            </code>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginTop: '4px' }}>
+                    Configure secrets from the Installed tab after installation.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        {/* Footer actions */}
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', marginTop: '16px', paddingTop: '12px', borderTop: '1px solid var(--separator)' }}>
+          <button className="btn-ghost" onClick={onClose}>Close</button>
+          {plugin.status === 'available' && (
+            <button className="btn-sm" onClick={() => { onInstall(plugin.id); onClose(); }} disabled={busy}>
+              {isOp ? 'Installing...' : 'Install'}
+            </button>
+          )}
+          {plugin.status === 'updatable' && (
+            <>
+              <button className="btn-sm" onClick={() => { onUpdate(plugin.id); onClose(); }} disabled={busy}>
+                {isOp ? 'Updating...' : `Update to v${plugin.remoteVersion}`}
+              </button>
+              <button className="btn-danger btn-sm" onClick={() => { onUninstall(plugin.id); onClose(); }} disabled={busy}>
+                Uninstall
+              </button>
+            </>
+          )}
+          {plugin.status === 'installed' && (
+            <button className="btn-danger btn-sm" onClick={() => { onUninstall(plugin.id); onClose(); }} disabled={busy}>
+              Uninstall
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Main Plugins page ─────────────────────────────────────────────────────────
 
 export function Plugins() {
   const [tab, setTab] = useState<Tab>('installed');
@@ -39,13 +325,18 @@ export function Plugins() {
   const [newSourceUrl, setNewSourceUrl] = useState('');
   const [newSourceLabel, setNewSourceLabel] = useState('');
   const [sourceError, setSourceError] = useState<string | null>(null);
-  const [sourceFilter, setSourceFilter] = useState('');
+
+  // Active source filters (checkboxes — replaces the legacy dropdown filter)
+  const [activeSourceFilters, setActiveSourceFilters] = useState<Set<string>>(new Set());
 
   // Inline secrets state (installed tab)
   const [expandedSecrets, setExpandedSecrets] = useState<string | null>(null);
   const [secretsInfo, setSecretsInfo] = useState<PluginSecretsInfo | null>(null);
   const [editingSecret, setEditingSecret] = useState<string | null>(null);
   const [secretInput, setSecretInput] = useState('');
+
+  // Plugin details modal state
+  const [detailsPlugin, setDetailsPlugin] = useState<MarketplacePlugin | null>(null);
 
   const loadData = () => {
     setLoading(true);
@@ -284,6 +575,19 @@ export function Plugins() {
     };
   };
 
+  // Toggle a source label in the active source filters
+  const toggleSourceFilter = (label: string) => {
+    setActiveSourceFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) {
+        next.delete(label);
+      } else {
+        next.add(label);
+      }
+      return next;
+    });
+  };
+
   // Filter marketplace plugins
   const parsed = parseSearch(search);
   const filteredMarketplace = marketplace.filter((p) => {
@@ -299,7 +603,8 @@ export function Plugins() {
     if (tagFilter && !p.tags.includes(tagFilter)) {
       return false;
     }
-    if (sourceFilter && p.sourceLabel !== sourceFilter) {
+    // Checkbox source filter
+    if (activeSourceFilters.size > 0 && !activeSourceFilters.has(p.sourceLabel)) {
       return false;
     }
     return true;
@@ -308,12 +613,6 @@ export function Plugins() {
   const allTags = Array.from(new Set(marketplace.flatMap((p) => p.tags))).sort();
   const allSourceLabels = Array.from(new Set(marketplace.map((p) => p.sourceLabel))).sort();
   const updatableCount = marketplace.filter((p) => p.status === 'updatable').length;
-
-  const sourceBadgeStyle = (source: MarketplacePlugin['source']): React.CSSProperties => {
-    if (source === 'official') return { background: 'rgba(80,200,120,0.12)', color: 'var(--green)', border: '1px solid rgba(80,200,120,0.25)' };
-    if (source === 'community') return { background: 'rgba(110,168,254,0.10)', color: 'var(--blue, #6ea8fe)', border: '1px solid rgba(110,168,254,0.2)' };
-    return { background: 'rgba(255,200,80,0.10)', color: '#f5c842', border: '1px solid rgba(255,200,80,0.2)' };
-  };
 
   const handleAddSource = async () => {
     setSourceError(null);
@@ -477,15 +776,6 @@ export function Plugins() {
               style={{ minWidth: '120px' }}
             />
           )}
-          {tab === 'marketplace' && allSourceLabels.length > 1 && (
-            <Select
-              value={sourceFilter}
-              options={['', ...allSourceLabels]}
-              labels={['All sources', ...allSourceLabels]}
-              onChange={(v) => setSourceFilter(v)}
-              style={{ minWidth: '120px' }}
-            />
-          )}
           {tab === 'installed' && updatableCount > 0 && (
             <button
               className="btn-sm"
@@ -614,6 +904,50 @@ export function Plugins() {
         </div>
       )}
 
+      {/* ── Source filter checkboxes (marketplace tab, when multiple sources) ── */}
+      {tab === 'marketplace' && allSourceLabels.length > 1 && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '10px', flexWrap: 'wrap' }}>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', marginRight: '2px' }}>Filter by source:</span>
+          {allSourceLabels.map((label) => {
+            const isActive = activeSourceFilters.has(label);
+            const srcEntry = sources.find(s => s.label === label);
+            const isOfficial = srcEntry?.isOfficial;
+            return (
+              <button
+                key={label}
+                onClick={() => toggleSourceFilter(label)}
+                style={{
+                  fontSize: '11px',
+                  padding: '2px 8px',
+                  borderRadius: '10px',
+                  cursor: 'pointer',
+                  fontWeight: isActive ? 600 : 400,
+                  border: isActive
+                    ? (isOfficial ? '1px solid rgba(80,200,120,0.5)' : '1px solid rgba(255,200,80,0.5)')
+                    : '1px solid var(--separator)',
+                  background: isActive
+                    ? (isOfficial ? 'rgba(80,200,120,0.15)' : 'rgba(255,200,80,0.12)')
+                    : 'transparent',
+                  color: isActive
+                    ? (isOfficial ? 'var(--green)' : '#f5c842')
+                    : 'var(--text-secondary)',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+          {activeSourceFilters.size > 0 && (
+            <button
+              onClick={() => setActiveSourceFilters(new Set())}
+              style={{ fontSize: '11px', color: 'var(--text-tertiary)', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 4px' }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      )}
+
       {/* ── Installed tab ── */}
       {tab === 'installed' && (
         <div className="card" style={{ padding: 0 }}>
@@ -668,20 +1002,28 @@ export function Plugins() {
                         className="file-row"
                       >
                         <td style={{ padding: '10px 14px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                             <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
                               {isExpanded ? '\u25BC' : '\u25B6'}
                             </span>
                             <span style={{ fontWeight: 600 }}>{plugin.name}</span>
+                            {marketEntry?.source && (
+                              <SourceBadge source={marketEntry.source} label={marketEntry.sourceLabel} />
+                            )}
                             {noneEnabled && module && module.tools.length > 0 && (
                               <span className="badge warn">Disabled</span>
                             )}
                           </div>
-                          {plugin.description && (
-                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '22px' }}>
-                              {plugin.description}
-                            </div>
-                          )}
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', paddingLeft: '22px', flexWrap: 'wrap' }}>
+                            {plugin.description && (
+                              <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                {plugin.description}
+                              </span>
+                            )}
+                            {marketEntry?.author && marketEntry.author !== 'unknown' && (
+                              <AuthorBadge author={marketEntry.author} verified={marketEntry.source === 'official'} />
+                            )}
+                          </div>
                         </td>
                         <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                           {module ? <span className="badge count">{module.toolCount}</span> : <span style={{ color: 'var(--text-tertiary)' }}>—</span>}
@@ -800,6 +1142,14 @@ export function Plugins() {
                                   onClick={() => toggleSecrets(marketEntry.id)}
                                 >
                                   {expandedSecrets === marketEntry.id ? 'Hide Secrets' : 'Manage Secrets'}
+                                </button>
+                              )}
+                              {marketEntry && (
+                                <button
+                                  className="btn-ghost btn-sm"
+                                  onClick={() => setDetailsPlugin(marketEntry)}
+                                >
+                                  View Details
                                 </button>
                               )}
                               {isUpdatable && marketEntry && (
@@ -934,6 +1284,18 @@ export function Plugins() {
         </div>
       )}
 
+      {/* ── Plugin Details Modal ── */}
+      {detailsPlugin && (
+        <PluginDetailsModal
+          plugin={detailsPlugin}
+          onClose={() => setDetailsPlugin(null)}
+          onInstall={handleInstall}
+          onUninstall={handleUninstall}
+          onUpdate={handleUpdate}
+          operating={operating}
+        />
+      )}
+
       {/* ── Marketplace tab ── */}
       {tab === 'marketplace' && (
         <div className="card" style={{ padding: 0 }}>
@@ -941,7 +1303,7 @@ export function Plugins() {
             <div style={{ padding: '20px', textAlign: 'center' }}>Loading marketplace...</div>
           ) : filteredMarketplace.length === 0 ? (
             <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              {search || tagFilter ? 'No plugins match your search' : 'Marketplace is empty'}
+              {search || tagFilter || activeSourceFilters.size > 0 ? 'No plugins match your search' : 'Marketplace is empty'}
             </div>
           ) : (() => {
             const sorted = [...filteredMarketplace].sort((a, b) => {
@@ -955,7 +1317,7 @@ export function Plugins() {
                     <th style={{ textAlign: 'left', padding: '8px 14px' }}>Plugin</th>
                     <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Tools</th>
                     <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Version</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', width: 140 }}></th>
+                    <th style={{ textAlign: 'right', padding: '8px 14px', width: 170 }}></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -980,25 +1342,28 @@ export function Plugins() {
                           className="file-row"
                         >
                           <td style={{ padding: '10px 14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                               <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
                                 {isExpanded ? '\u25BC' : '\u25B6'}
                               </span>
                               <span style={{ fontWeight: 600 }}>{plugin.name}</span>
                               {plugin.source && (
-                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, ...sourceBadgeStyle(plugin.source) }}>
-                                  {plugin.sourceLabel}
-                                </span>
+                                <SourceBadge source={plugin.source} label={plugin.sourceLabel} />
                               )}
                               {hasRequiredSecrets && plugin.status === 'available' && (
                                 <span className="badge warn">API Key</span>
                               )}
                             </div>
-                            {plugin.author && plugin.author !== 'unknown' && (
-                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '22px' }}>
-                                by {plugin.author}
-                              </div>
-                            )}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '3px', paddingLeft: '22px', flexWrap: 'wrap' }}>
+                              {plugin.description && (
+                                <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                                  {plugin.description}
+                                </span>
+                              )}
+                              {plugin.author && plugin.author !== 'unknown' && (
+                                <AuthorBadge author={plugin.author} verified={plugin.source === 'official'} />
+                              )}
+                            </div>
                           </td>
                           <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                             <span className="badge count">{plugin.toolCount}</span>
@@ -1007,26 +1372,35 @@ export function Plugins() {
                             v{plugin.remoteVersion}
                           </td>
                           <td style={{ textAlign: 'right', padding: '8px 14px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                            {plugin.status === 'available' && (
-                              <button className="btn-sm" onClick={() => handleInstall(plugin.id)} disabled={busy}>
-                                {isOp ? 'Installing...' : 'Install'}
+                            <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end', alignItems: 'center' }}>
+                              <button
+                                className="btn-ghost btn-sm"
+                                onClick={(e) => { e.stopPropagation(); setDetailsPlugin(plugin); }}
+                                style={{ fontSize: '11px' }}
+                              >
+                                Details
                               </button>
-                            )}
-                            {plugin.status === 'installed' && (
-                              <button className="btn-danger btn-sm" onClick={() => handleUninstall(plugin.id)} disabled={busy}>
-                                {isOp ? 'Removing...' : 'Uninstall'}
-                              </button>
-                            )}
-                            {plugin.status === 'updatable' && (
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                <button className="btn-sm" onClick={() => handleUpdate(plugin.id)} disabled={busy}>
-                                  {isOp ? 'Updating...' : 'Update'}
+                              {plugin.status === 'available' && (
+                                <button className="btn-sm" onClick={() => handleInstall(plugin.id)} disabled={busy}>
+                                  {isOp ? 'Installing...' : 'Install'}
                                 </button>
+                              )}
+                              {plugin.status === 'installed' && (
                                 <button className="btn-danger btn-sm" onClick={() => handleUninstall(plugin.id)} disabled={busy}>
-                                  Uninstall
+                                  {isOp ? 'Removing...' : 'Uninstall'}
                                 </button>
-                              </div>
-                            )}
+                              )}
+                              {plugin.status === 'updatable' && (
+                                <>
+                                  <button className="btn-sm" onClick={() => handleUpdate(plugin.id)} disabled={busy}>
+                                    {isOp ? 'Updating...' : 'Update'}
+                                  </button>
+                                  <button className="btn-danger btn-sm" onClick={() => handleUninstall(plugin.id)} disabled={busy}>
+                                    Uninstall
+                                  </button>
+                                </>
+                              )}
+                            </div>
                           </td>
                         </tr>
                         {isExpanded && (
@@ -1034,12 +1408,16 @@ export function Plugins() {
                             <td colSpan={5} style={{ padding: '0 14px 14px 14px' }}>
                               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px 12px', fontSize: '12px', padding: '8px 0' }}>
                                 <span style={{ color: 'var(--text-secondary)' }}>Author</span>
-                                <span>{plugin.author}</span>
+                                <span>
+                                  {plugin.author && plugin.author !== 'unknown' ? (
+                                    <AuthorBadge author={plugin.author} verified={plugin.source === 'official'} />
+                                  ) : (
+                                    <span style={{ color: 'var(--text-tertiary)' }}>Unknown</span>
+                                  )}
+                                </span>
                                 <span style={{ color: 'var(--text-secondary)' }}>Source</span>
                                 <span>
-                                  <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, ...sourceBadgeStyle(plugin.source) }}>
-                                    {plugin.sourceLabel}
-                                  </span>
+                                  <SourceBadge source={plugin.source} label={plugin.sourceLabel} />
                                 </span>
                                 <span style={{ color: 'var(--text-secondary)' }}>Description</span>
                                 <span style={{ color: 'var(--text-secondary)' }}>{plugin.description}</span>
@@ -1064,6 +1442,11 @@ export function Plugins() {
                                   </>
                                 )}
                               </div>
+                              <div style={{ marginTop: '8px' }}>
+                                <button className="btn-ghost btn-sm" onClick={() => setDetailsPlugin(plugin)}>
+                                  View Full Details
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         )}
@@ -1079,4 +1462,3 @@ export function Plugins() {
     </div>
   );
 }
-
