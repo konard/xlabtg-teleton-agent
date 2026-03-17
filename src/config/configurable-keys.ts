@@ -33,6 +33,8 @@ export interface ConfigKeyMeta {
   options?: string[];
   optionLabels?: Record<string, string>;
   itemType?: "string" | "number";
+  /** Default value displayed in UI when the key is not explicitly set in config */
+  defaultValue?: string;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -473,6 +475,7 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     validate: enumValidator(["true", "false"]),
     mask: identity,
     parse: (v) => v === "true",
+    defaultValue: "true",
   },
   "telegram.command_access.admin_only_commands": {
     type: "boolean",
@@ -484,6 +487,7 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     validate: enumValidator(["true", "false"]),
     mask: identity,
     parse: (v) => v === "true",
+    defaultValue: "true",
   },
   "telegram.command_access.unknown_command_reply": {
     type: "boolean",
@@ -495,6 +499,7 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     validate: enumValidator(["true", "false"]),
     mask: identity,
     parse: (v) => v === "true",
+    defaultValue: "false",
   },
   "telegram.command_access.allowed_user_ids": {
     type: "array",

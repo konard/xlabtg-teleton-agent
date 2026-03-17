@@ -39,6 +39,66 @@ function createTestApp(mockConfig: Record<string, any>) {
   return app;
 }
 
+describe("GET /api/config — defaultValue for unset boolean keys", () => {
+  let app: ReturnType<typeof createTestApp>;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    app = createTestApp({});
+  });
+
+  it("returns defaultValue for commands_enabled when not set in config", async () => {
+    mockReadRawConfig.mockReturnValue({ telegram: {} });
+
+    const res = await app.request("/api/config");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    const keyData = json.data.find(
+      (k: any) => k.key === "telegram.command_access.commands_enabled"
+    );
+    expect(keyData.set).toBe(false);
+    expect(keyData.value).toBe("true");
+  });
+
+  it("returns defaultValue for admin_only_commands when not set in config", async () => {
+    mockReadRawConfig.mockReturnValue({ telegram: {} });
+
+    const res = await app.request("/api/config");
+    const json = await res.json();
+    const keyData = json.data.find(
+      (k: any) => k.key === "telegram.command_access.admin_only_commands"
+    );
+    expect(keyData.set).toBe(false);
+    expect(keyData.value).toBe("true");
+  });
+
+  it("returns defaultValue 'false' for unknown_command_reply when not set", async () => {
+    mockReadRawConfig.mockReturnValue({ telegram: {} });
+
+    const res = await app.request("/api/config");
+    const json = await res.json();
+    const keyData = json.data.find(
+      (k: any) => k.key === "telegram.command_access.unknown_command_reply"
+    );
+    expect(keyData.set).toBe(false);
+    expect(keyData.value).toBe("false");
+  });
+
+  it("returns actual value (not default) when key is explicitly set in config", async () => {
+    mockReadRawConfig.mockReturnValue({
+      telegram: { command_access: { commands_enabled: false } },
+    });
+
+    const res = await app.request("/api/config");
+    const json = await res.json();
+    const keyData = json.data.find(
+      (k: any) => k.key === "telegram.command_access.commands_enabled"
+    );
+    expect(keyData.set).toBe(true);
+    expect(keyData.value).toBe("false");
+  });
+});
+
 describe("GET /api/config — array keys", () => {
   let app: ReturnType<typeof createTestApp>;
 

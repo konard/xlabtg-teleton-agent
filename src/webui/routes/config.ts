@@ -61,7 +61,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
           ? meta.type === "array"
             ? JSON.stringify(rawValue)
             : meta.mask(String(rawValue))
-          : null;
+          : (meta.defaultValue ?? null);
         return {
           key,
           label: meta.label,
