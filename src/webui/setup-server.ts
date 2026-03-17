@@ -169,7 +169,13 @@ export class SetupServer {
 
   private setupStaticServing(): void {
     const webDist = findWebDist();
-    if (!webDist) return;
+    if (!webDist) {
+      log.warn(
+        "Web UI build not found (dist/web/index.html missing) — run `npm run build:web` to build the frontend"
+      );
+      return;
+    }
+    log.info(`Serving UI from: ${webDist}`);
 
     const indexHtml = readFileSync(join(webDist, "index.html"), "utf-8");
 

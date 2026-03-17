@@ -353,6 +353,7 @@ export class WebUIServer {
     // Serve static files in production (if built)
     const webDist = findWebDist();
     if (webDist) {
+      log.info(`Serving UI from: ${webDist}`);
       const indexHtml = readFileSync(join(webDist, "index.html"), "utf-8");
 
       const mimeTypes: Record<string, string> = {
@@ -402,6 +403,10 @@ export class WebUIServer {
           "Cache-Control": "no-cache, no-store, must-revalidate",
         });
       });
+    } else {
+      log.warn(
+        "Web UI build not found (dist/web/index.html missing) — run `npm run build:web` to build the frontend"
+      );
     }
 
     // Error handler
