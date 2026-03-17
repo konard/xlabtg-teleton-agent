@@ -35,7 +35,12 @@ import { join } from "path";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { TelegramUserClient } from "../../telegram/client.js";
 import YAML from "yaml";
-import { type Config, CommandAccessSchema, DealsConfigSchema } from "../../config/schema.js";
+import {
+  type Config,
+  CommandAccessSchema,
+  DealsConfigSchema,
+  MarketplaceConfigSchema,
+} from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
 import {
   generateWallet,
@@ -1020,6 +1025,7 @@ async function runInteractiveOnboarding(
       self_configurable: false,
     },
     plugins: {},
+    marketplace: MarketplaceConfigSchema.parse({}),
     ...(selectedProvider === "cocoon" ? { cocoon: { port: cocoonInstance } } : {}),
     tonapi_key: tonapiKey,
     toncenter_api_key: toncenterApiKey,
@@ -1209,6 +1215,7 @@ async function runNonInteractiveOnboarding(
     },
     mcp: { servers: {} },
     plugins: {},
+    marketplace: MarketplaceConfigSchema.parse({}),
     tavily_api_key: options.tavilyApiKey,
   };
 

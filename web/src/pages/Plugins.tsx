@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { api, ToolInfo, ModuleInfo, PluginManifest, MarketplacePlugin, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
+import { api, ToolInfo, ModuleInfo, PluginManifest, MarketplacePlugin, MarketplaceSource, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 
@@ -33,6 +33,14 @@ export function Plugins() {
   // Installed tab accordion
   const [expandedPlugin, setExpandedPlugin] = useState<string | null>(null);
 
+  // Source management state
+  const [sources, setSources] = useState<MarketplaceSource[]>([]);
+  const [showAddSource, setShowAddSource] = useState(false);
+  const [newSourceUrl, setNewSourceUrl] = useState('');
+  const [newSourceLabel, setNewSourceLabel] = useState('');
+  const [sourceError, setSourceError] = useState<string | null>(null);
+  const [sourceFilter, setSourceFilter] = useState('');
+
   // Inline secrets state (installed tab)
   const [expandedSecrets, setExpandedSecrets] = useState<string | null>(null);
   const [secretsInfo, setSecretsInfo] = useState<PluginSecretsInfo | null>(null);
@@ -56,9 +64,10 @@ export function Plugins() {
 
   const loadMarketplace = (refresh = false) => {
     setMarketLoading(true);
-    return api.getMarketplace(refresh)
-      .then((res) => {
-        setMarketplace(res.data);
+    return Promise.all([api.getMarketplace(refresh), api.getMarketplaceSources().catch(() => ({ data: [] }))])
+      .then(([mpRes, srcRes]) => {
+        setMarketplace(mpRes.data);
+        setSources(srcRes.data);
         setMarketLoading(false);
       })
       .catch((err) => {
@@ -259,22 +268,88 @@ export function Plugins() {
     }
   };
 
+  // Parse search query: supports `author:name`, `source:official|community|custom`, plain text
+  const parseSearch = (raw: string) => {
+    const authorMatch = raw.match(/(?:^|\s)author:(\S+)/i);
+    const sourceMatch = raw.match(/(?:^|\s)source:(\S+)/i);
+    const plain = raw
+      .replace(/(?:^|\s)author:\S+/gi, '')
+      .replace(/(?:^|\s)source:\S+/gi, '')
+      .trim()
+      .toLowerCase();
+    return {
+      author: authorMatch?.[1]?.toLowerCase() ?? '',
+      source: sourceMatch?.[1]?.toLowerCase() ?? '',
+      text: plain,
+    };
+  };
+
   // Filter marketplace plugins
+  const parsed = parseSearch(search);
   const filteredMarketplace = marketplace.filter((p) => {
-    if (search) {
-      const q = search.toLowerCase();
-      if (!p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) {
-        return false;
-      }
+    if (parsed.text && !p.name.toLowerCase().includes(parsed.text) && !p.description.toLowerCase().includes(parsed.text)) {
+      return false;
+    }
+    if (parsed.author && !p.author.toLowerCase().includes(parsed.author)) {
+      return false;
+    }
+    if (parsed.source && p.source !== parsed.source) {
+      return false;
     }
     if (tagFilter && !p.tags.includes(tagFilter)) {
+      return false;
+    }
+    if (sourceFilter && p.sourceLabel !== sourceFilter) {
       return false;
     }
     return true;
   });
 
   const allTags = Array.from(new Set(marketplace.flatMap((p) => p.tags))).sort();
+  const allSourceLabels = Array.from(new Set(marketplace.map((p) => p.sourceLabel))).sort();
   const updatableCount = marketplace.filter((p) => p.status === 'updatable').length;
+
+  const sourceBadgeStyle = (source: MarketplacePlugin['source']): React.CSSProperties => {
+    if (source === 'official') return { background: 'rgba(80,200,120,0.12)', color: 'var(--green)', border: '1px solid rgba(80,200,120,0.25)' };
+    if (source === 'community') return { background: 'rgba(110,168,254,0.10)', color: 'var(--blue, #6ea8fe)', border: '1px solid rgba(110,168,254,0.2)' };
+    return { background: 'rgba(255,200,80,0.10)', color: '#f5c842', border: '1px solid rgba(255,200,80,0.2)' };
+  };
+
+  const handleAddSource = async () => {
+    setSourceError(null);
+    if (!newSourceUrl.trim()) { setSourceError('URL is required'); return; }
+    try {
+      new URL(newSourceUrl.trim());
+    } catch { setSourceError('Invalid URL'); return; }
+    try {
+      await api.addMarketplaceSource(newSourceUrl.trim(), newSourceLabel.trim() || undefined);
+      setNewSourceUrl('');
+      setNewSourceLabel('');
+      setShowAddSource(false);
+      await loadMarketplace(true);
+    } catch (err) {
+      setSourceError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleRemoveSource = async (url: string) => {
+    if (!confirm(`Remove source "${url}"?`)) return;
+    try {
+      await api.removeMarketplaceSource(url);
+      await loadMarketplace(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const handleToggleSource = async (url: string, enabled: boolean) => {
+    try {
+      await api.toggleMarketplaceSource(url, enabled);
+      await loadMarketplace(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   if (loading) return <div className="loading">Loading...</div>;
 
@@ -402,6 +477,15 @@ export function Plugins() {
               style={{ minWidth: '120px' }}
             />
           )}
+          {tab === 'marketplace' && allSourceLabels.length > 1 && (
+            <Select
+              value={sourceFilter}
+              options={['', ...allSourceLabels]}
+              labels={['All sources', ...allSourceLabels]}
+              onChange={(v) => setSourceFilter(v)}
+              style={{ minWidth: '120px' }}
+            />
+          )}
           {tab === 'installed' && updatableCount > 0 && (
             <button
               className="btn-sm"
@@ -434,10 +518,101 @@ export function Plugins() {
               >
                 {marketLoading ? 'Refreshing...' : 'Refresh'}
               </button>
+              <button
+                className="btn-ghost"
+                onClick={() => setShowAddSource((v) => !v)}
+                style={{ whiteSpace: 'nowrap' }}
+                title="Manage plugin registry sources"
+              >
+                Sources
+              </button>
             </>
           )}
         </div>
       </div>
+
+      {/* ── Sources panel (marketplace tab) ── */}
+      {tab === 'marketplace' && showAddSource && (
+        <div className="card" style={{ padding: '14px', marginBottom: '14px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px' }}>
+            <span style={{ fontWeight: 600, fontSize: '13px' }}>Plugin Registry Sources</span>
+            <button className="btn-ghost btn-sm" onClick={() => { setShowAddSource(false); setSourceError(null); }}>Close</button>
+          </div>
+          {sourceError && (
+            <div className="alert error" style={{ marginBottom: '8px', fontSize: '12px' }}>{sourceError}</div>
+          )}
+          {/* Existing sources */}
+          <div style={{ display: 'grid', gap: '6px', marginBottom: '12px' }}>
+            {sources.map((src) => (
+              <div key={src.url} className="tool-row" style={{ padding: '8px 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span
+                  style={{
+                    fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 600,
+                    ...(src.isOfficial
+                      ? { background: 'rgba(80,200,120,0.12)', color: 'var(--green)', border: '1px solid rgba(80,200,120,0.25)' }
+                      : { background: 'rgba(255,200,80,0.10)', color: '#f5c842', border: '1px solid rgba(255,200,80,0.2)' }),
+                  }}
+                >
+                  {src.isOfficial ? 'Official' : 'Custom'}
+                </span>
+                <span style={{ flex: 1, minWidth: 0 }}>
+                  <span style={{ fontWeight: 600, fontSize: '13px' }}>{src.label}</span>
+                  {src.label !== src.url && (
+                    <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', marginLeft: '6px' }}>{src.url}</span>
+                  )}
+                </span>
+                {!src.isOfficial && (
+                  <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
+                    <label className="toggle" title={src.enabled ? 'Disable' : 'Enable'}>
+                      <input type="checkbox" checked={src.enabled} onChange={() => handleToggleSource(src.url, !src.enabled)} />
+                      <span className="toggle-track" />
+                      <span className="toggle-thumb" />
+                    </label>
+                    <button
+                      className="btn-danger btn-sm"
+                      onClick={() => handleRemoveSource(src.url)}
+                      style={{ fontSize: '11px' }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                )}
+                {src.isOfficial && (
+                  <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>built-in</span>
+                )}
+              </div>
+            ))}
+          </div>
+          {/* Add new source */}
+          <div style={{ borderTop: '1px solid var(--separator)', paddingTop: '10px', display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ flex: '2 1 200px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>Registry URL</label>
+              <input
+                type="url"
+                placeholder="https://raw.githubusercontent.com/owner/repo/main/registry.json"
+                value={newSourceUrl}
+                onChange={(e) => setNewSourceUrl(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddSource(); }}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div style={{ flex: '1 1 120px' }}>
+              <label style={{ fontSize: '11px', color: 'var(--text-secondary)', display: 'block', marginBottom: '3px' }}>Label (optional)</label>
+              <input
+                type="text"
+                placeholder="My registry"
+                value={newSourceLabel}
+                onChange={(e) => setNewSourceLabel(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') handleAddSource(); }}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <button className="btn-sm" onClick={handleAddSource} style={{ flexShrink: 0, alignSelf: 'flex-end', marginBottom: '0px' }}>
+              Add Source
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Installed tab ── */}
       {tab === 'installed' && (
@@ -810,10 +985,20 @@ export function Plugins() {
                                 {isExpanded ? '\u25BC' : '\u25B6'}
                               </span>
                               <span style={{ fontWeight: 600 }}>{plugin.name}</span>
+                              {plugin.source && (
+                                <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, ...sourceBadgeStyle(plugin.source) }}>
+                                  {plugin.sourceLabel}
+                                </span>
+                              )}
                               {hasRequiredSecrets && plugin.status === 'available' && (
                                 <span className="badge warn">API Key</span>
                               )}
                             </div>
+                            {plugin.author && plugin.author !== 'unknown' && (
+                              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '22px' }}>
+                                by {plugin.author}
+                              </div>
+                            )}
                           </td>
                           <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                             <span className="badge count">{plugin.toolCount}</span>
@@ -850,6 +1035,12 @@ export function Plugins() {
                               <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px 12px', fontSize: '12px', padding: '8px 0' }}>
                                 <span style={{ color: 'var(--text-secondary)' }}>Author</span>
                                 <span>{plugin.author}</span>
+                                <span style={{ color: 'var(--text-secondary)' }}>Source</span>
+                                <span>
+                                  <span style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', fontWeight: 600, ...sourceBadgeStyle(plugin.source) }}>
+                                    {plugin.sourceLabel}
+                                  </span>
+                                </span>
                                 <span style={{ color: 'var(--text-secondary)' }}>Description</span>
                                 <span style={{ color: 'var(--text-secondary)' }}>{plugin.description}</span>
                                 {plugin.tags.length > 0 && (

@@ -1,7 +1,13 @@
 import { Hono } from "hono";
-import type { WebUIServerDeps, APIResponse, MarketplacePlugin } from "../types.js";
+import type {
+  WebUIServerDeps,
+  APIResponse,
+  MarketplacePlugin,
+  MarketplaceSource,
+} from "../types.js";
 import { MarketplaceService, ConflictError } from "../services/marketplace.js";
 import { writePluginSecret, deletePluginSecret, listPluginSecretKeys } from "../../sdk/secrets.js";
+import { readRawConfig, writeRawConfig } from "../../config/configurable-keys.js";
 
 const VALID_ID = /^[a-z0-9][a-z0-9-]*$/;
 const VALID_KEY = /^[a-zA-Z][a-zA-Z0-9_]*$/;
@@ -210,6 +216,142 @@ export function createMarketplaceRoutes(deps: WebUIServerDeps) {
       return c.json<APIResponse<{ key: string; set: boolean }>>({
         success: true,
         data: { key, set: false },
+      });
+    } catch (err) {
+      return c.json<APIResponse>(
+        { success: false, error: err instanceof Error ? err.message : String(err) },
+        500
+      );
+    }
+  });
+
+  // ── Source management ────────────────────────────────────────────────
+
+  // GET /sources — list all sources (official + configured custom)
+  app.get("/sources", (c) => {
+    const svc = getService();
+    if (!svc) {
+      return c.json<APIResponse>({ success: false, error: "Marketplace not configured" }, 501);
+    }
+    return c.json<APIResponse<MarketplaceSource[]>>({ success: true, data: svc.listSources() });
+  });
+
+  // POST /sources — add a custom registry source
+  app.post("/sources", async (c) => {
+    if (!deps.marketplace) {
+      return c.json<APIResponse>({ success: false, error: "Marketplace not configured" }, 501);
+    }
+
+    try {
+      const body = await c.req.json<{ url: string; label?: string }>();
+      if (!body.url) {
+        return c.json<APIResponse>({ success: false, error: "Missing url" }, 400);
+      }
+
+      // Validate URL
+      try {
+        new URL(body.url);
+      } catch {
+        return c.json<APIResponse>({ success: false, error: "Invalid URL" }, 400);
+      }
+
+      const raw = readRawConfig(deps.configPath);
+      if (!raw.marketplace) raw.marketplace = {};
+      if (!Array.isArray(raw.marketplace.extra_sources)) raw.marketplace.extra_sources = [];
+
+      // Prevent duplicates
+      const exists = raw.marketplace.extra_sources.some((s: { url: string }) => s.url === body.url);
+      if (exists) {
+        return c.json<APIResponse>({ success: false, error: "Source already exists" }, 409);
+      }
+
+      const newSource = { url: body.url, label: body.label ?? body.url, enabled: true };
+      raw.marketplace.extra_sources.push(newSource);
+      writeRawConfig(raw, deps.configPath);
+
+      // Patch the live config so the running service picks it up immediately
+      deps.marketplace.config.marketplace.extra_sources = raw.marketplace.extra_sources;
+
+      // Invalidate cache on the service
+      service?.invalidateCache();
+
+      return c.json<APIResponse<MarketplaceSource>>({
+        success: true,
+        data: { ...newSource, isOfficial: false },
+      });
+    } catch (err) {
+      return c.json<APIResponse>(
+        { success: false, error: err instanceof Error ? err.message : String(err) },
+        500
+      );
+    }
+  });
+
+  // DELETE /sources — remove a custom registry source by URL
+  app.delete("/sources", async (c) => {
+    if (!deps.marketplace) {
+      return c.json<APIResponse>({ success: false, error: "Marketplace not configured" }, 501);
+    }
+
+    try {
+      const body = await c.req.json<{ url: string }>();
+      if (!body.url) {
+        return c.json<APIResponse>({ success: false, error: "Missing url" }, 400);
+      }
+
+      const raw = readRawConfig(deps.configPath);
+      const sources: Array<{ url: string }> = raw.marketplace?.extra_sources ?? [];
+      const idx = sources.findIndex((s) => s.url === body.url);
+      if (idx === -1) {
+        return c.json<APIResponse>({ success: false, error: "Source not found" }, 404);
+      }
+
+      raw.marketplace.extra_sources.splice(idx, 1);
+      writeRawConfig(raw, deps.configPath);
+
+      // Patch live config
+      deps.marketplace.config.marketplace.extra_sources = raw.marketplace.extra_sources;
+
+      service?.invalidateCache();
+
+      return c.json<APIResponse<{ url: string }>>({ success: true, data: { url: body.url } });
+    } catch (err) {
+      return c.json<APIResponse>(
+        { success: false, error: err instanceof Error ? err.message : String(err) },
+        500
+      );
+    }
+  });
+
+  // PATCH /sources — toggle a source enabled/disabled
+  app.patch("/sources", async (c) => {
+    if (!deps.marketplace) {
+      return c.json<APIResponse>({ success: false, error: "Marketplace not configured" }, 501);
+    }
+
+    try {
+      const body = await c.req.json<{ url: string; enabled: boolean }>();
+      if (!body.url || typeof body.enabled !== "boolean") {
+        return c.json<APIResponse>({ success: false, error: "Missing url or enabled" }, 400);
+      }
+
+      const raw = readRawConfig(deps.configPath);
+      const sources: Array<{ url: string; enabled: boolean }> =
+        raw.marketplace?.extra_sources ?? [];
+      const src = sources.find((s) => s.url === body.url);
+      if (!src) {
+        return c.json<APIResponse>({ success: false, error: "Source not found" }, 404);
+      }
+
+      src.enabled = body.enabled;
+      writeRawConfig(raw, deps.configPath);
+
+      deps.marketplace.config.marketplace.extra_sources = raw.marketplace.extra_sources;
+      service?.invalidateCache();
+
+      return c.json<APIResponse<{ url: string; enabled: boolean }>>({
+        success: true,
+        data: { url: body.url, enabled: body.enabled },
       });
     } catch (err) {
       return c.json<APIResponse>(
