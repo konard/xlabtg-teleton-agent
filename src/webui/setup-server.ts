@@ -198,20 +198,25 @@ export class SetupServer {
         const content = readFileSync(filePath);
         const ext = filePath.split(".").pop() || "";
         if (mimeTypes[ext]) {
+          // Vite hashes asset filenames (e.g. /assets/index-abc123.js) — safe to cache forever.
+          // All other static files must not be cached so browsers always fetch the latest
+          // version after a rebuild.
           const immutable = c.req.path.startsWith("/assets/");
           return c.body(content, 200, {
             "Content-Type": mimeTypes[ext],
             "Cache-Control": immutable
               ? "public, max-age=31536000, immutable"
-              : "public, max-age=3600",
+              : "no-cache, no-store, must-revalidate",
           });
         }
       } catch {
         // File not found — fall through to SPA
       }
 
-      // SPA fallback
-      return c.html(indexHtml);
+      // SPA fallback (never cache)
+      return c.html(indexHtml, 200, {
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+      });
     });
   }
 

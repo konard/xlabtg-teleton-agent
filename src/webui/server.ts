@@ -215,6 +215,34 @@ export class WebUIServer {
     this.app.route("/api/groq", createGroqRoutes(this.deps));
     this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
 
+    // Debug endpoint — returns build metadata (which dist folder is served and its version)
+    this.app.get("/api/debug/ui-version", (c) => {
+      const webDist = findWebDist();
+      let buildVersion: string | null = null;
+      let buildTimestamp: string | null = null;
+
+      if (webDist) {
+        try {
+          const meta = JSON.parse(readFileSync(join(webDist, "build-meta.json"), "utf-8"));
+          buildVersion = meta.version ?? null;
+          buildTimestamp = meta.buildTimestamp ?? null;
+        } catch {
+          // build-meta.json not present in older builds — acceptable
+        }
+      }
+
+      return c.json({
+        success: true,
+        data: {
+          webDistPath: webDist,
+          buildVersion,
+          buildTimestamp,
+          nodeVersion: process.version,
+          uptime: Math.floor(process.uptime()),
+        },
+      });
+    });
+
     // Agent lifecycle routes
     this.app.post("/api/agent/start", async (c) => {
       const lifecycle = this.deps.lifecycle;
@@ -354,20 +382,25 @@ export class WebUIServer {
           const content = readFileSync(filePath);
           const ext = filePath.split(".").pop() || "";
           if (mimeTypes[ext]) {
+            // Vite hashes asset filenames (e.g. /assets/index-abc123.js) — safe to cache forever.
+            // All other static files must not be cached so browsers always fetch the latest
+            // version after a rebuild.
             const immutable = c.req.path.startsWith("/assets/");
             return c.body(content, 200, {
               "Content-Type": mimeTypes[ext],
               "Cache-Control": immutable
                 ? "public, max-age=31536000, immutable"
-                : "public, max-age=3600",
+                : "no-cache, no-store, must-revalidate",
             });
           }
         } catch {
           // File not found — fall through to SPA
         }
 
-        // SPA fallback: serve index.html for all non-file routes
-        return c.html(indexHtml);
+        // SPA fallback: serve index.html for all non-file routes (never cache)
+        return c.html(indexHtml, 200, {
+          "Cache-Control": "no-cache, no-store, must-revalidate",
+        });
       });
     }
 
