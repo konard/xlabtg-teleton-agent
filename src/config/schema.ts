@@ -205,6 +205,25 @@ const _DevObject = z.object({
 });
 export const DevConfigSchema = _DevObject.default(_DevObject.parse({}));
 
+const _MarketplaceSourceObject = z.object({
+  url: z
+    .string()
+    .url()
+    .describe(
+      "Registry JSON URL (e.g. https://raw.githubusercontent.com/owner/repo/main/registry.json)"
+    ),
+  label: z.string().optional().describe("Human-readable label shown in the UI"),
+  enabled: z.boolean().default(true).describe("Enable or disable this source"),
+});
+
+const _MarketplaceObject = z.object({
+  extra_sources: z
+    .array(_MarketplaceSourceObject)
+    .default([])
+    .describe("Additional plugin registry sources beyond the built-in official registry"),
+});
+export const MarketplaceConfigSchema = _MarketplaceObject.default(_MarketplaceObject.parse({}));
+
 const _ApiObject = z.object({
   enabled: z.boolean().default(false).describe("Enable HTTPS Management API server"),
   port: z.number().min(1).max(65535).default(7778).describe("HTTPS server port"),
@@ -337,6 +356,7 @@ export const ConfigSchema = z.object({
   webui: WebUIConfigSchema,
   logging: LoggingConfigSchema,
   dev: DevConfigSchema,
+  marketplace: MarketplaceConfigSchema,
   tool_rag: ToolRagConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
@@ -425,3 +445,5 @@ export type ApiConfig = z.infer<typeof _ApiObject>;
 export type ExecConfig = z.infer<typeof _ExecObject>;
 export type GroqConfig = NonNullable<z.infer<typeof ConfigSchema>["groq"]>;
 export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;
+export type MarketplaceConfig = z.infer<typeof _MarketplaceObject>;
+export type MarketplaceSourceConfig = z.infer<typeof _MarketplaceSourceObject>;

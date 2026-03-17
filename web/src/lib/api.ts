@@ -255,6 +255,15 @@ export interface MarketplacePlugin {
   toolCount: number;
   tools: Array<{ name: string; description: string }>;
   secrets?: Record<string, { required: boolean; description: string; env?: string }>;
+  source: 'official' | 'community' | 'custom';
+  sourceLabel: string;
+}
+
+export interface MarketplaceSource {
+  url: string;
+  label: string;
+  enabled: boolean;
+  isOfficial: boolean;
 }
 
 export interface SecretDeclaration {
@@ -595,6 +604,31 @@ export const api = {
   async unsetPluginSecret(pluginId: string, key: string) {
     return fetchAPI<APIResponse<{ key: string; set: boolean }>>(`/marketplace/secrets/${encodeURIComponent(pluginId)}/${encodeURIComponent(key)}`, {
       method: 'DELETE',
+    });
+  },
+
+  async getMarketplaceSources() {
+    return fetchAPI<APIResponse<MarketplaceSource[]>>('/marketplace/sources');
+  },
+
+  async addMarketplaceSource(url: string, label?: string) {
+    return fetchAPI<APIResponse<MarketplaceSource>>('/marketplace/sources', {
+      method: 'POST',
+      body: JSON.stringify({ url, label }),
+    });
+  },
+
+  async removeMarketplaceSource(url: string) {
+    return fetchAPI<APIResponse<{ url: string }>>('/marketplace/sources', {
+      method: 'DELETE',
+      body: JSON.stringify({ url }),
+    });
+  },
+
+  async toggleMarketplaceSource(url: string, enabled: boolean) {
+    return fetchAPI<APIResponse<{ url: string; enabled: boolean }>>('/marketplace/sources', {
+      method: 'PATCH',
+      body: JSON.stringify({ url, enabled }),
     });
   },
 

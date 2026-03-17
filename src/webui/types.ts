@@ -67,6 +67,10 @@ export interface MarketplacePlugin {
   toolCount: number;
   tools: Array<{ name: string; description: string }>;
   secrets?: Record<string, { required: boolean; description: string; env?: string }>;
+  /** Which registry this plugin comes from */
+  source: "official" | "community" | "custom";
+  /** Human-readable source label (e.g. registry URL or configured label) */
+  sourceLabel: string;
 }
 
 export interface MarketplaceDeps {
@@ -76,6 +80,13 @@ export interface MarketplaceDeps {
   pluginContext: PluginContext;
   loadedModuleNames: string[];
   rewireHooks: () => void;
+}
+
+export interface MarketplaceSource {
+  url: string;
+  label: string;
+  enabled: boolean;
+  isOfficial: boolean;
 }
 
 export interface LogEntry {
