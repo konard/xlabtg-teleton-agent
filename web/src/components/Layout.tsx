@@ -35,6 +35,9 @@ function DashboardNav() {
           >
             Logout
           </button>
+          <div style={{ marginTop: '8px', textAlign: 'center', fontSize: '11px', opacity: 0.4, userSelect: 'none' }}>
+            v{__BUILD_VERSION__} ({__BUILD_COMMIT__})
+          </div>
         </div>
       </div>
     </>
