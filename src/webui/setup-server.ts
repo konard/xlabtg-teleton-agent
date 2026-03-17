@@ -10,14 +10,13 @@ import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
-import { exec } from "node:child_process";
+import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { createSetupRoutes } from "./routes/setup.js";
 import { randomBytes } from "node:crypto";
-import { readFileSync as readYaml, writeFileSync } from "node:fs";
 import YAML from "yaml";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import type { Server as HttpServer } from "node:http";
@@ -40,21 +39,21 @@ function findWebDist(): string | null {
 
 function autoOpenBrowser(url: string): void {
   const os = platform();
-  let cmd: string;
+  let prog: string;
 
   if (os === "darwin") {
-    cmd = `open "${url}"`;
+    prog = "open";
   } else if (os === "win32") {
-    cmd = `start "${url}"`;
+    prog = "explorer";
   } else {
-    cmd = `xdg-open "${url}"`;
+    prog = "xdg-open";
   }
 
-  exec(cmd, (err) => {
-    if (err) {
-      log.info(`Open this URL in your browser: ${url}`);
-    }
+  const child = spawn(prog, [url], { detached: true, stdio: "ignore" });
+  child.on("error", () => {
+    log.info(`Open this URL in your browser: ${url}`);
   });
+  child.unref();
 }
 
 export class SetupServer {
@@ -137,7 +136,7 @@ export class SetupServer {
 
         // Persist token into config.yaml so the agent WebUI can validate it
         const configPath = join(TELETON_ROOT, "config.yaml");
-        const raw = readYaml(configPath, "utf-8");
+        const raw = readFileSync(configPath, "utf-8");
         const config = YAML.parse(raw);
         config.webui = { ...(config.webui || {}), enabled: true, auth_token: token };
         writeFileSync(configPath, YAML.stringify(config), { encoding: "utf-8", mode: 0o600 });

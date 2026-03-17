@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { hasVerifiedDeal } from "../../../../deals/module.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
+import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { createLogger } from "../../../../utils/logger.js";
 
 const log = createLogger("Tools");
@@ -68,8 +69,7 @@ export const telegramSendGiftExecutor: ToolExecutor<SendGiftParams> = async (
 
     const invoiceData = {
       peer: user,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-      giftId: BigInt(giftId) as any,
+      giftId: toLong(giftId),
       hideName: anonymous,
       message: message ? new Api.TextWithEntities({ text: message, entities: [] }) : undefined,
     };

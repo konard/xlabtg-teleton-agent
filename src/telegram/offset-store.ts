@@ -62,7 +62,7 @@ function saveState(state: OffsetState): void {
 
     // Atomic write: write to temp file, then rename (POSIX atomic)
     const tmpFile = OFFSET_FILE + ".tmp";
-    writeFileSync(tmpFile, JSON.stringify(state, null, 2), "utf-8");
+    writeFileSync(tmpFile, JSON.stringify(state, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmpFile, OFFSET_FILE);
     offsetCache = state;
   } catch (error) {

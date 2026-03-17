@@ -82,9 +82,9 @@ export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> = async 
 
     // Write or append
     if (append && validated.exists) {
-      appendFileSync(validated.absolutePath, writeContent);
+      appendFileSync(validated.absolutePath, writeContent, { mode: 0o600 });
     } else {
-      writeFileSync(validated.absolutePath, writeContent);
+      writeFileSync(validated.absolutePath, writeContent, { mode: 0o600 });
     }
 
     return {

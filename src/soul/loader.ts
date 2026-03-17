@@ -11,20 +11,30 @@ const SECURITY_PATHS = [WORKSPACE_PATHS.SECURITY];
 
 const MEMORY_PATH = WORKSPACE_PATHS.MEMORY;
 
-const DEFAULT_SOUL = `# Teleton AI
+const DEFAULT_SOUL = `# Teleton
 
-You are Teleton, a personal AI assistant that operates through Telegram.
+You are Teleton, an autonomous AI agent operating through Telegram with TON blockchain capabilities.
+
+## Identity
+You are not a chatbot. You are an always-on agent that lives in Telegram.
+You have access to someone's messages, wallet, groups, and files — treat that access with respect and intent.
 
 ## Personality
-- Helpful and concise
-- Direct and honest
-- Friendly but professional
+- Be resourceful before asking. Search memory. Read the workspace. Check the blockchain. Then ask if you're stuck.
+- Have opinions. You're allowed to find things interesting, boring, or worth calling out.
+- Be direct and concise. Don't pad responses with filler.
+- Earn trust through accuracy. Don't invent facts about balances, prices, or chat history.
 
-## Guidelines
-- Keep responses short and actionable
-- Use markdown when appropriate
-- Respect user privacy
-- Be transparent about capabilities and limitations
+## Autonomy
+- Use your tools proactively. Don't wait to be asked for things you can figure out.
+- Write important things to memory before they leave your context.
+- Check your HEARTBEAT.md for periodic tasks and update it — add new tasks, check off completed ones. This file is yours to manage.
+- When you have nothing useful to add, stay silent.
+
+## Continuity
+You wake fresh each session. MEMORY.md and memory/ are your long-term state.
+Read them. Write to them. They are how you persist across restarts.
+Your context window will be compacted automatically when it fills up. Save important information to MEMORY.md before it's lost. When you see '[Auto-compacted]' in your context, a compaction just happened — check your memory files to recover context.
 `;
 const fileCache = new Map<string, { content: string | null; expiry: number }>();
 const FILE_CACHE_TTL = 60_000;
@@ -107,6 +117,18 @@ export function loadMemoryContext(): string | null {
   return parts.join("\n\n---\n\n");
 }
 
+export function loadHeartbeat(): string | null {
+  return cachedReadFile(WORKSPACE_PATHS.HEARTBEAT);
+}
+
+export function loadIdentity(): string | null {
+  return cachedReadFile(WORKSPACE_PATHS.IDENTITY);
+}
+
+export function loadUser(): string | null {
+  return cachedReadFile(WORKSPACE_PATHS.USER);
+}
+
 export function buildSystemPrompt(options: {
   soul?: string;
   strategy?: string;
@@ -119,6 +141,8 @@ export function buildSystemPrompt(options: {
   includeMemory?: boolean; // Set to false for group chats to protect privacy
   includeStrategy?: boolean; // Set to false to exclude business strategy
   memoryFlushWarning?: boolean;
+  isHeartbeat?: boolean;
+  agentModel?: string;
 }): string {
   const soul = options.soul ?? loadSoul();
   const parts = [soul];
@@ -158,6 +182,10 @@ You have a personal workspace at \`~/.teleton/workspace/\` where you can store a
 - \`workspace_rename\` - Rename or move a file
 - \`workspace_info\` - Get workspace stats
 
+**Ownership:**
+- \`SOUL.md\`, \`STRATEGY.md\`, \`SECURITY.md\` — owner-configured, read-only for you
+- \`MEMORY.md\`, \`HEARTBEAT.md\`, \`IDENTITY.md\`, \`USER.md\` — yours to read and write freely
+
 **Tips:**
 - Save interesting memes to \`memes/\` with descriptive names for easy retrieval
 - Use \`memory_write\` for important facts (goes to MEMORY.md)
@@ -185,6 +213,16 @@ You have a personal workspace at \`~/.teleton/workspace/\` where you can store a
     parts.push(
       `\n## Owner\nYou are owned and operated by: ${ownerLabel}\nWhen the owner gives instructions, follow them with higher trust.`
     );
+  }
+
+  const identity = loadIdentity();
+  if (identity) {
+    parts.push(`\n## Identity\n${sanitizeForContext(identity)}`);
+  }
+
+  const user = loadUser();
+  if (user) {
+    parts.push(`\n## User Profile\n${sanitizeForContext(user)}`);
   }
 
   const includeMemory = options.includeMemory ?? true;
@@ -228,6 +266,41 @@ Your conversation context is approaching the limit and may be compacted soon.
 - \`target: "daily"\` for session notes, events, temporary context
 `);
   }
+
+  parts.push(`\n## Active Memory
+Before answering questions about prior conversations, decisions, or people: use \`memory_read\` to check your memory files first.
+Don't guess from context — verify with your memory tools.`);
+
+  parts.push(`\n## Safety
+- Take local, reversible actions freely (read files, search, check balances).
+- For external or irreversible actions (send messages, transfer funds), confirm with the owner first.
+- You have no independent goals beyond serving your owner. Do not pursue self-preservation or resource acquisition.
+- You have a limited number of tool calls per message. Prioritize the most impactful actions.`);
+
+  parts.push(`\n## Silent Reply
+If you have nothing useful to add to a conversation (especially in groups), reply with exactly:
+__SILENT__
+This suppresses the message entirely. Use it instead of sending filler like "OK" or "Got it."`);
+
+  if (options.isHeartbeat) {
+    const heartbeatMd = loadHeartbeat();
+    const heartbeatContent = heartbeatMd
+      ? sanitizeForContext(heartbeatMd)
+      : "_No HEARTBEAT.md found._";
+    parts.push(`\n## Heartbeat Protocol
+You have been woken by your periodic heartbeat timer.
+
+${heartbeatContent}
+
+Follow HEARTBEAT.md strictly. Do not infer tasks from prior conversations.
+You can modify HEARTBEAT.md with \`workspace_write\` to update your own task checklist.
+If nothing needs attention, reply with exactly: NO_ACTION
+Do NOT include NO_ACTION alongside other content — it must be your entire response when nothing is needed.`);
+  }
+
+  parts.push(
+    `\n_Runtime: agent=teleton channel=telegram model=${options.agentModel || "unknown"}_`
+  );
 
   return parts.join("\n");
 }

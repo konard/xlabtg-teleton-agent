@@ -1,4 +1,4 @@
-import { randomLong } from "../utils/gramjs-bigint.js";
+import { randomLong, toLong } from "../utils/gramjs-bigint.js";
 import type { TelegramBridge } from "../telegram/bridge.js";
 import type { Api } from "telegram";
 import type { PluginLogger, SimpleMessage, MediaSendOptions } from "@teleton-agent/sdk";
@@ -192,8 +192,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
             limit,
             maxId: 0,
             minId: 0,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat requires bigint cast
-            hash: 0n as any,
+            hash: toLong(0n),
           })
         );
 
@@ -401,18 +400,18 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         }
 
         // Check file size before downloading to prevent OOM
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS media type is a union; narrowing not practical here
-        const doc = (messages[0].media as any)?.document;
-        if (doc?.size && Number(doc.size) > MAX_DOWNLOAD_SIZE) {
+        const media = messages[0].media;
+        const doc = media && "document" in media ? media.document : undefined;
+        const docSize = doc && "size" in doc ? doc.size : undefined;
+        if (docSize && Number(docSize) > MAX_DOWNLOAD_SIZE) {
           throw new PluginSDKError(
-            `File too large (${Math.round(Number(doc.size) / 1024 / 1024)}MB). Max: 50MB`,
+            `File too large (${Math.round(Number(docSize) / 1024 / 1024)}MB). Max: 50MB`,
             "OPERATION_FAILED"
           );
         }
 
         const buffer = await gramJsClient.downloadMedia(messages[0], {});
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS downloadMedia returns Buffer | string | undefined
-        return buffer ? Buffer.from(buffer as any) : null;
+        return buffer ? Buffer.from(buffer as Buffer | string) : null;
       } catch (err) {
         if (err instanceof PluginSDKError) throw err;
         throw new PluginSDKError(
@@ -434,8 +433,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         const result = await gramJsClient.invoke(
           new Api.messages.GetScheduledHistory({
             peer,
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat requires bigint cast
-            hash: 0n as any,
+            hash: toLong(0n),
           })
         );
 

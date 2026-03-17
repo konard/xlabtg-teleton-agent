@@ -124,7 +124,10 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
 
       // Append to MEMORY.md
       if (!existsSync(MEMORY_FILE)) {
-        writeFileSync(MEMORY_FILE, "# MEMORY.md - Persistent Memory\n\n", "utf-8");
+        writeFileSync(MEMORY_FILE, "# MEMORY.md - Persistent Memory\n\n", {
+          encoding: "utf-8",
+          mode: 0o600,
+        });
       }
       appendFileSync(MEMORY_FILE, entry, "utf-8");
 
@@ -155,7 +158,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
       // Create header if file doesn't exist
       if (!existsSync(logPath)) {
         const header = `# Daily Log - ${formatDate(now)}\n\n`;
-        writeFileSync(logPath, header, "utf-8");
+        writeFileSync(logPath, header, { encoding: "utf-8", mode: 0o600 });
       }
 
       let entry = `## ${timestamp}`;

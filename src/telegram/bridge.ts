@@ -417,15 +417,12 @@ export class TelegramBridge {
     let text = "";
 
     if (action instanceof Api.MessageActionStarGiftPurchaseOffer) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS Layer 222 dynamic TL types
-      const gift = action.gift as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS Layer 222 dynamic TL types
-      const price = action.price as any;
-      const isUnique = gift.className === "StarGiftUnique";
+      const gift = action.gift;
+      const isUnique = gift instanceof Api.StarGiftUnique;
       const title = gift.title || "Unknown Gift";
       const slug = isUnique ? gift.slug : undefined;
       const num = isUnique ? gift.num : undefined;
-      const priceStars = price?.amount?.toString() || "?";
+      const priceStars = action.price.amount?.toString() || "?";
       const status = action.accepted ? "accepted" : action.declined ? "declined" : "pending";
       const expires = action.expiresAt
         ? new Date(action.expiresAt * 1000).toISOString()
@@ -442,15 +439,12 @@ export class TelegramBridge {
         `Gift offer received: ${priceStars} Stars for "${title}" from ${senderUsername || senderId}`
       );
     } else if (action instanceof Api.MessageActionStarGiftPurchaseOfferDeclined) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS Layer 222 dynamic TL types
-      const gift = action.gift as any;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS Layer 222 dynamic TL types
-      const price = action.price as any;
-      const isUnique = gift.className === "StarGiftUnique";
+      const gift = action.gift;
+      const isUnique = gift instanceof Api.StarGiftUnique;
       const title = gift.title || "Unknown Gift";
       const slug = isUnique ? gift.slug : undefined;
       const num = isUnique ? gift.num : undefined;
-      const priceStars = price?.amount?.toString() || "?";
+      const priceStars = action.price.amount?.toString() || "?";
       const reason = action.expired ? "expired" : "declined";
 
       text = `[Gift Offer ${action.expired ? "Expired" : "Declined"}]\n`;
@@ -458,12 +452,10 @@ export class TelegramBridge {
 
       log.info(`Gift offer ${reason}: ${priceStars} Stars for "${title}"`);
     } else if (action instanceof Api.MessageActionStarGift) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS Layer 222 dynamic TL types
-      const gift = action.gift as any;
+      const gift = action.gift;
       const title = gift.title || "Unknown Gift";
-      const stars = gift.stars?.toString() || "?";
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS Layer 222 dynamic TL types
-      const giftMessage = (action.message as any)?.text || "";
+      const stars = gift instanceof Api.StarGift ? gift.stars?.toString() || "?" : "?";
+      const giftMessage = action.message?.text || "";
       const fromAnonymous = action.nameHidden;
 
       text = `[Gift Received]\n`;

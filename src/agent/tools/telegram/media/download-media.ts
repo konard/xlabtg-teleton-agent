@@ -185,7 +185,7 @@ export const telegramDownloadMediaExecutor: ToolExecutor<DownloadMediaParams> = 
     }
 
     // Save to file
-    writeFileSync(validatedPath.absolutePath, buffer);
+    writeFileSync(validatedPath.absolutePath, buffer, { mode: 0o600 });
 
     return {
       success: true,

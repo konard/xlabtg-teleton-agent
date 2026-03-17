@@ -14,40 +14,24 @@ jobs:
       && github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     steps:
-      - name: Split commit message
-        id: msg
+      - name: Build message file
+        env:
+          FULL: ${{ github.event.workflow_run.head_commit.message }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          REPO: ${{ github.repository }}
         run: |
-          FULL="${{ github.event.workflow_run.head_commit.message }}"
           TITLE=$(echo "$FULL" | head -1)
           BODY=$(echo "$FULL" | tail -n +3)
-          echo "title=$TITLE" >> "$GITHUB_OUTPUT"
+          COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
           {
-            echo "body<<EOF"
-            echo "$BODY"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build message
-        id: fmt
-        run: |
-          COMMIT_URL="https://github.com/${{ github.repository }}/commit/${{ github.event.workflow_run.head_sha }}"
-          BODY="${{ steps.msg.outputs.body }}"
-          if [ -n "$BODY" ]; then
-            MSG="<b>${{ steps.msg.outputs.title }}</b>
-
-          $BODY
-
-          <a href=\"${COMMIT_URL}\">View commit</a>"
-          else
-            MSG="<b>${{ steps.msg.outputs.title }}</b>
-
-          <a href=\"${COMMIT_URL}\">View commit</a>"
-          fi
-          {
-            echo "text<<EOF"
-            echo "$MSG"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+            echo "<b>${TITLE}</b>"
+            if [ -n "$BODY" ]; then
+              echo ""
+              echo "$BODY"
+            fi
+            echo ""
+            echo "<a href=\"${COMMIT_URL}\">View commit</a>"
+          } > "$GITHUB_WORKSPACE/.tg_message.txt"
 
       - name: Send commit to Telegram
         uses: appleboy/telegram-action@master
@@ -56,7 +40,7 @@ jobs:
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           format: html
           disable_web_page_preview: true
-          message: ${{ steps.fmt.outputs.text }}
+          message_file: .tg_message.txt
 
   # ---- Release notification (only after Release workflow passes) ----
   release:

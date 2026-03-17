@@ -25,6 +25,7 @@ export const WORKSPACE_PATHS = {
   USER: join(WORKSPACE_ROOT, "USER.md"),
   STRATEGY: join(WORKSPACE_ROOT, "STRATEGY.md"),
   SECURITY: join(WORKSPACE_ROOT, "SECURITY.md"),
+  HEARTBEAT: join(WORKSPACE_ROOT, "HEARTBEAT.md"),
 
   // Directories
   MEMORY_DIR: join(WORKSPACE_ROOT, "memory"),

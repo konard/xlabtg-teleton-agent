@@ -34,7 +34,6 @@ export function AgentSettingsPanel({
 }: AgentSettingsPanelProps) {
   return (
     <>
-      <div className="section-title">Agent</div>
       <div style={{ display: 'grid', gap: '16px' }}>
         <div className="form-group" style={{ marginBottom: 0 }}>
           <label>Provider <InfoTip text="LLM provider" /></label>

@@ -4,6 +4,7 @@ import { cors } from "hono/cors";
 import { streamSSE } from "hono/streaming";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
+import type { Server as HttpServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -33,6 +34,7 @@ import { createConfigRoutes } from "./routes/config.js";
 import { createMarketplaceRoutes } from "./routes/marketplace.js";
 import { createHooksRoutes } from "./routes/hooks.js";
 import { createGroqRoutes } from "./routes/groq.js";
+import { createTonProxyRoutes } from "./routes/ton-proxy.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -211,6 +213,7 @@ export class WebUIServer {
     this.app.route("/api/marketplace", createMarketplaceRoutes(this.deps));
     this.app.route("/api/hooks", createHooksRoutes(this.deps));
     this.app.route("/api/groq", createGroqRoutes(this.deps));
+    this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
 
     // Agent lifecycle routes
     this.app.post("/api/agent/start", async (c) => {
@@ -413,6 +416,7 @@ export class WebUIServer {
   async stop(): Promise<void> {
     if (this.server) {
       return new Promise((resolve) => {
+        (this.server as HttpServer).closeAllConnections();
         this.server?.close(() => {
           logInterceptor.uninstall();
           log.info("WebUI server stopped");

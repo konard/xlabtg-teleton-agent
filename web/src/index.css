@@ -842,6 +842,18 @@ button.btn-sm {
   margin-bottom: 12px;
 }
 
+.card-header {
+  margin-bottom: 8px;
+}
+.card-header .section-title {
+  margin-bottom: 2px;
+}
+.card-description {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 0 0 0 0;
+}
+
 /* ---- Empty state ---- */
 
 .empty {

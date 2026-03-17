@@ -13,6 +13,7 @@ import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { randomBytes } from "crypto";
 import { TELETON_ROOT } from "../workspace/paths.js";
+import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Setup");
@@ -491,6 +492,18 @@ export class TelegramAuthManager {
     }
 
     writeFileSync(sessionPath, sessionString, { mode: 0o600 });
-    log.info("Telegram session saved");
+
+    // Persist telegram credentials to config.yaml
+    const configPath = join(TELETON_ROOT, "config.yaml");
+    const raw = readRawConfig(configPath);
+    raw.telegram = raw.telegram ?? {};
+    raw.telegram.api_id = session.apiId;
+    raw.telegram.api_hash = session.apiHash;
+    if (session.type === "phone") {
+      raw.telegram.phone = session.phone;
+    }
+    writeRawConfig(raw, configPath);
+
+    log.info("Telegram session and credentials saved");
   }
 }

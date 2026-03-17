@@ -280,7 +280,7 @@ export async function chatWithContext(
       response.errorMessage.toLowerCase().includes("unauthorized"))
   ) {
     log.warn("Claude Code token rejected (401), refreshing credentials and retrying...");
-    const refreshedKey = refreshClaudeCodeApiKey();
+    const refreshedKey = await refreshClaudeCodeApiKey();
     if (refreshedKey) {
       completeOptions.apiKey = refreshedKey;
       response = await complete(model, context, completeOptions as ProviderStreamOptions);
@@ -335,9 +335,19 @@ export async function chatWithContext(
 export function loadContextFromTranscript(sessionId: string, systemPrompt?: string): Context {
   const messages = readTranscript(sessionId) as Message[];
 
+  // Deduplicate toolResult messages by toolCallId (prevents API 400 on corrupted transcripts)
+  const seenToolCallIds = new Set<string>();
+  const deduped = messages.filter((msg) => {
+    if (msg.role !== "toolResult") return true;
+    const id = (msg as { toolCallId: string }).toolCallId;
+    if (seenToolCallIds.has(id)) return false;
+    seenToolCallIds.add(id);
+    return true;
+  });
+
   return {
     systemPrompt,
-    messages,
+    messages: deduped,
   };
 }
 

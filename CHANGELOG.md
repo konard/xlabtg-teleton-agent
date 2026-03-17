@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-03-05
+
+### Added
+- **TON Proxy module**: Built-in Tonutils-Proxy lifecycle manager — auto-download binary from GitHub, start/stop, health checks, auto-restart on crash, PID-based orphan cleanup, WebUI API routes for hot-toggle
+- **SDK signed transfers**: `createTransfer()`, `createJettonTransfer()`, `getPublicKey()`, `getWalletVersion()` — sign TON/jetton transfers without broadcasting for x402 payment protocol
+- **Plugin hooks system**: 13 typed hooks via `sdk.on()` — `message:receive`, `response:before/after/error`, `tool:error`, `prompt:after`, `agent:start/stop`, plus 5 original lifecycle hooks with configurable priority
+- **User-configurable hooks**: Keyword blocklist and context triggers for automated responses
+- **QR code login**: WebUI setup wizard supports QR code authentication as alternative to phone+code
+- **Two-phase observation masking**: Old tool results fully masked, previous iteration results truncated at 4K while preserving summary fields, current iteration intact
+
+### Changed
+- **WebUI Config page**: Reorganized into dedicated tabs (Agent, Telegram, TON Proxy, Sessions, Tool RAG)
+- **RAG performance**: Knowledge + feed hybrid searches run concurrently via `Promise.all` (~200-500ms saved per message); parsed transcripts cached in memory with invalidation on delete/archive
+- **15 LLM providers**: Documentation updated across all `.md` files to reflect Cerebras, ZAI, MiniMax, Hugging Face additions
+- **70+ models** in shared catalog (up from 60+)
+
+### Fixed
+- **Tool RAG scoring**: Keyword search scores normalized to 1.0 weight when no embedding provider is configured (was incorrectly using 0.4)
+- **Transcript deduplication**: `loadContextFromTranscript()` deduplicates `toolResult` messages by `toolCallId`, preventing API 400 errors on corrupted transcripts
+- **TON Proxy orphan process**: Manager now writes PID file and checks port occupancy before start, killing orphan processes from previous sessions
+- **Security**: Sanitize hook context, fix `effectiveIsGroup` self-reference crash (TDZ)
+- **CI**: Coverage thresholds lowered with margin for Node 20 CI variance
+- **ESLint**: Strict config with quality tooling and CI hardening
+
+## [0.8.0] - 2026-03-02
+
+### Added
+- **4 new LLM providers** (11 → 15): Cerebras (ultra-fast inference, free tier), ZAI/Zhipu (2 free models), MiniMax (M2.5, 204K ctx), Hugging Face (routing to 18 models via single token)
+- **Bot SDK for plugins**: `sdk.bot` with inline query handling, callback routing, colored/styled buttons (success/danger/primary), lazy-loaded, rate-limited, namespace-isolated per plugin
+- **29 new SDK methods**: Full Telegram surface (77 tools), TON jetton analytics, dual DEX aggregator, .ton DNS management, scheduled messages, Stars/gift marketplace, `getDialogs`/`getHistory`, `kickUser`
+- **`dns.setSiteRecord()`**: Set ADNL records on .ton domains for TON Site hosting
+- **GramJS Layer 223**: Participant ranks and message `from_rank` surfaced in agent display
+
+### Changed
+- **Moonshot provider**: Refactored from hardcoded model dict to pi-ai native `kimi-coding` provider (30 lines removed). Backward-compat alias maps `kimi-k2.5` → `k2p5`
+- **Configurable keys**: Provider list derived from `getSupportedProviders()` instead of hardcoded copy
+
+### Fixed
+- **Docker build**: Remove deleted `scripts/` references from Dockerfile; skip husky prepare in runtime stage
+- **Release workflow**: Publish-npm and create-release skip gracefully when version already published (idempotent re-push)
+- **Security**: NFKC normalization + Unicode Tag Block filtering, SQL comment stripping on plugin DB proxy, download size guard (50MB), deep-clone frozenConfig
+- **Performance**: Single shared embedding for context + tool RAG, edges-first chunk reordering, feed truncation (2000 chars)
+- **UTC session reset**, transcript permissions, masked API key display
+
 ## [0.7.5] - 2026-02-28
 
 ### Added
@@ -365,7 +409,9 @@ Git history rewritten to fix commit attribution (email update from `tonresistor@
 - Professional distribution (npm, Docker, CI/CD)
 - Pre-commit hooks and linting infrastructure
 
-[Unreleased]: https://github.com/TONresistor/teleton-agent/compare/v0.7.5...HEAD
+[Unreleased]: https://github.com/TONresistor/teleton-agent/compare/v0.8.1...HEAD
+[0.8.1]: https://github.com/TONresistor/teleton-agent/compare/v0.8.0...v0.8.1
+[0.8.0]: https://github.com/TONresistor/teleton-agent/compare/v0.7.5...v0.8.0
 [0.7.5]: https://github.com/TONresistor/teleton-agent/compare/v0.7.4...v0.7.5
 [0.7.4]: https://github.com/TONresistor/teleton-agent/compare/v0.7.3...v0.7.4
 [0.7.3]: https://github.com/TONresistor/teleton-agent/compare/v0.7.2...v0.7.3

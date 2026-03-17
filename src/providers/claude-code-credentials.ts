@@ -8,13 +8,19 @@
  * Tokens are cached in memory and re-read only on expiration or forced refresh.
  */
 
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { execSync } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("ClaudeCodeCreds");
+
+// ── OAuth constants (extracted from Claude Code binary) ────────────────
+
+const OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
+const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
+const OAUTH_SCOPES = "user:profile user:inference user:sessions:claude_code user:mcp_servers";
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -31,6 +37,7 @@ interface ClaudeOAuthCredentials {
 
 let cachedToken: string | null = null;
 let cachedExpiresAt = 0;
+let cachedRefreshToken: string | null = null;
 
 // ── Internal helpers ───────────────────────────────────────────────────
 
@@ -91,6 +98,7 @@ function readCredentials(): ClaudeOAuthCredentials | null {
 function extractToken(creds: ClaudeOAuthCredentials): {
   token: string;
   expiresAt: number;
+  refreshToken?: string;
 } | null {
   const oauth = creds.claudeAiOauth;
   if (!oauth?.accessToken) {
@@ -100,6 +108,7 @@ function extractToken(creds: ClaudeOAuthCredentials): {
   return {
     token: oauth.accessToken,
     expiresAt: oauth.expiresAt ?? 0,
+    refreshToken: oauth.refreshToken,
   };
 }
 
@@ -127,6 +136,7 @@ export function getClaudeCodeApiKey(fallbackKey?: string): string {
     if (extracted) {
       cachedToken = extracted.token;
       cachedExpiresAt = extracted.expiresAt;
+      cachedRefreshToken = extracted.refreshToken ?? null;
       log.debug("Claude Code credentials loaded successfully");
       return cachedToken;
     }
@@ -142,26 +152,114 @@ export function getClaudeCodeApiKey(fallbackKey?: string): string {
 }
 
 /**
- * Force re-read credentials from disk (called on 401 or manual refresh).
+ * Call the Claude Code OAuth token endpoint to exchange a refresh token for a new access token.
+ * On success, persists the new credentials to disk and returns the new access token.
+ */
+async function performOAuthRefresh(refreshToken: string): Promise<string | null> {
+  try {
+    const res = await fetch(OAUTH_TOKEN_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        grant_type: "refresh_token",
+        refresh_token: refreshToken,
+        client_id: OAUTH_CLIENT_ID,
+        scope: OAUTH_SCOPES,
+      }),
+    });
+
+    if (!res.ok) {
+      log.warn(`OAuth token refresh failed: ${res.status} ${res.statusText}`);
+      return null;
+    }
+
+    const data = (await res.json()) as {
+      access_token?: string;
+      refresh_token?: string;
+      expires_in?: number;
+    };
+
+    if (!data.access_token || !data.expires_in) {
+      log.warn("OAuth token refresh: unexpected response shape");
+      return null;
+    }
+
+    const newExpiresAt = Date.now() + data.expires_in * 1000;
+    const newRefreshToken = data.refresh_token ?? refreshToken;
+
+    // Persist updated credentials to disk
+    const filePath = getCredentialsFilePath();
+    try {
+      const existing = existsSync(filePath)
+        ? (JSON.parse(readFileSync(filePath, "utf-8")) as ClaudeOAuthCredentials)
+        : {};
+      const updated: ClaudeOAuthCredentials = {
+        ...existing,
+        claudeAiOauth: {
+          ...existing.claudeAiOauth,
+          accessToken: data.access_token,
+          refreshToken: newRefreshToken,
+          expiresAt: newExpiresAt,
+        },
+      };
+      writeFileSync(filePath, JSON.stringify(updated, null, 2), { mode: 0o600 });
+    } catch (e) {
+      log.warn({ err: e }, "Failed to persist refreshed OAuth credentials to disk");
+    }
+
+    // Update in-memory cache
+    cachedToken = data.access_token;
+    cachedExpiresAt = newExpiresAt;
+    cachedRefreshToken = newRefreshToken;
+
+    log.info("Claude Code OAuth token refreshed successfully");
+    return cachedToken;
+  } catch (e) {
+    log.warn({ err: e }, "OAuth token refresh request failed");
+    return null;
+  }
+}
+
+/**
+ * Force credential refresh (called on 401).
+ * First attempts OAuth refresh via the refresh token, then falls back to re-reading disk.
  * Returns the new token or null if unavailable.
  */
-export function refreshClaudeCodeApiKey(): string | null {
-  // Clear cache
+export async function refreshClaudeCodeApiKey(): Promise<string | null> {
+  // Clear access token cache (keep refresh token for OAuth attempt)
   cachedToken = null;
   cachedExpiresAt = 0;
 
+  // Populate refresh token from disk if not already cached
+  if (!cachedRefreshToken) {
+    const creds = readCredentials();
+    if (creds) {
+      const extracted = extractToken(creds);
+      cachedRefreshToken = extracted?.refreshToken ?? null;
+    }
+  }
+
+  // Try OAuth refresh first
+  if (cachedRefreshToken) {
+    const refreshed = await performOAuthRefresh(cachedRefreshToken);
+    if (refreshed) return refreshed;
+    log.warn("OAuth refresh failed, falling back to disk read");
+  }
+
+  // Fallback: re-read from disk (in case another process already refreshed it)
   const creds = readCredentials();
   if (creds) {
     const extracted = extractToken(creds);
     if (extracted) {
       cachedToken = extracted.token;
       cachedExpiresAt = extracted.expiresAt;
+      cachedRefreshToken = extracted.refreshToken ?? null;
       log.info("Claude Code credentials refreshed from disk");
       return cachedToken;
     }
   }
 
-  log.warn("Failed to refresh Claude Code credentials from disk");
+  log.warn("Failed to refresh Claude Code credentials");
   return null;
 }
 
@@ -174,4 +272,5 @@ export function isClaudeCodeTokenValid(): boolean {
 export function _resetCache(): void {
   cachedToken = null;
   cachedExpiresAt = 0;
+  cachedRefreshToken = null;
 }

@@ -1,4 +1,4 @@
-import { spawn } from "child_process";
+import { spawn, type SpawnOptions } from "child_process";
 import type { ExecResult, RunOptions } from "./types.js";
 import { createLogger } from "../../../utils/logger.js";
 
@@ -21,8 +21,7 @@ export function runCommand(command: string, options: RunOptions): Promise<ExecRe
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf8",
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Node.js spawn options type doesn't include encoding
-    } as any);
+    } as SpawnOptions & { encoding: string });
 
     const finish = (exitCode: number | null, signal: string | null) => {
       if (resolved) return;

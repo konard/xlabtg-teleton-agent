@@ -15,19 +15,27 @@
 
 ---
 
-<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 125+ built-in tools, supports 11 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
+<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 135+ built-in tools, supports 15 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
 
 ### Key Highlights
 
-- **Full Telegram access** - Operates as a real user via MTProto (GramJS), not a limited bot
-- **Agentic loop** - Up to 5 iterations of tool calling per message, the agent thinks, acts, observes, and repeats
-- **Multi-Provider LLM** - Anthropic, Claude Code, OpenAI, Google Gemini, xAI Grok, Groq, OpenRouter, Moonshot, Mistral, Cocoon, Local (11 providers)
-- **TON Blockchain** - Built-in W5R1 wallet, send/receive TON & jettons, swap on STON.fi and DeDust, NFTs, DNS domains
-- **Persistent memory** - Hybrid RAG (sqlite-vec + FTS5), auto-compaction with AI summarization, daily logs
-- **125+ built-in tools** - Messaging, media, blockchain, DEX trading, deals, DNS, exec, journaling, and more
-- **Plugin SDK** - Extend the agent with custom tools, frozen SDK with isolated databases, secrets management, lifecycle hooks
-- **MCP Client** - Connect external tool servers (stdio/SSE/Streamable HTTP) with 2 lines of YAML, no code, no rebuild
-- **Secure by design** - Prompt injection defense, sandboxed workspace, plugin isolation, wallet encryption
+<table>
+<tr>
+<td align="center" width="33%"><br><b><ins>Full Telegram Access</ins></b><br>Real user via MTProto,<br>not a bot<br><br></td>
+<td align="center" width="33%"><br><b><ins>Agentic Loop</ins></b><br>Think, act, observe, repeat<br>until shit gets done<br><br></td>
+<td align="center" width="33%"><br><b><ins>15 LLM Providers</ins></b><br>Anthropic, OpenAI, Google, xAI, Groq, and more<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b><ins>TON Blockchain</ins></b><br>Wallet, jettons, DEX swaps, DNS, NFTs<br><br></td>
+<td align="center"><br><b><ins>Persistent Memory</ins></b><br>Hybrid RAG, vector + keyword, auto-compaction<br><br></td>
+<td align="center"><br><b><ins>135+ Built-in Tools</ins></b><br>Messaging, media, crypto, DEX, DNS, files<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b><ins>Plugin SDK</ins></b><br>Custom tools, isolated DBs, secrets, hooks<br><br></td>
+<td align="center"><br><b><ins>MCP Client</ins></b><br>Connect any MCP tool server<br><br></td>
+<td align="center"><br><b><ins>Secure by Design</ins></b><br>Sandbox, plugin isolation, prompt defense<br><br></td>
+</tr>
+</table>
 
 ---
 
@@ -35,45 +43,49 @@
 
 ### Tool Categories
 
-| Category      | Tools | Description                                                                                                        |
-| ------------- | ----- | ------------------------------------------------------------------------------------------------------------------ |
-| Telegram      | 77    | Messaging, media, chats, groups, polls, stickers, gifts, stars, stories, contacts, folders, profile, memory, tasks, voice transcription, scheduled messages |
-| TON & Jettons | 15    | W5R1 wallet, send/receive TON & jettons, balances, prices, holders, history, charts, NFTs, smart DEX router        |
-| STON.fi DEX   | 5     | Swap, quote, search, trending tokens, liquidity pools                                                              |
-| DeDust DEX    | 5     | Swap, quote, pools, prices, token analytics (holders, top traders, buy/sell tax)                                   |
-| TON DNS       | 8     | Domain auctions, bidding, linking/unlinking, TON Site hosting, resolution, availability checks                      |
-| Deals         | 5     | P2P escrow with inline buttons, on-chain payment verification, anti double-spend                                   |
-| Journal       | 3     | Trade/operation logging with P&L tracking and natural language queries                                             |
-| Web           | 2     | Web search and page extraction via Tavily (search, fetch/extract)                                                  |
-| Workspace     | 6     | Sandboxed file operations with path traversal protection                                                           |
-| Exec          | 4     | System execution (YOLO mode) — shell commands, file read/write, process management (off by default, admin-only)    |
+| Category      | Tools | Description                                                    |
+| ------------- | ----- | -------------------------------------------------------------- |
+| Telegram      | 80    | Messages, media, chats, polls, stickers, gifts, stars, stories |
+| TON & Jettons | 15    | Wallet, send/receive, balances, prices, NFTs, DEX router       |
+| STON.fi DEX   | 5     | Swap, quote, search, trending, pools                           |
+| DeDust DEX    | 5     | Swap, quote, pools, prices, token analytics                    |
+| TON DNS       | 8     | Auctions, bidding, linking, TON Sites, resolution              |
+| Deals         | 5     | P2P escrow, on-chain verification, anti double-spend           |
+| Journal       | 3     | Trade logging, P&L tracking, natural language queries          |
+| Web           | 2     | Search and page extraction via Tavily                          |
+| Workspace     | 6     | Sandboxed file operations, path traversal protection           |
+| Exec          | 4     | Shell, files, processes (off by default, admin-only)           |
+| Bot           | 1     | Inline bot message sending for plugin interactions             |
 
 ### Advanced Capabilities
 
-| Capability              | Description                                                                                                                 |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| **Multi-Provider LLM**  | Switch between Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cocoon, or Local — Dashboard validates API key before switching |
-| **RAG + Hybrid Search** | Local ONNX embeddings (384d) or Voyage AI (512d/1024d) with FTS5 keyword + sqlite-vec cosine similarity, fused via RRF      |
-| **Auto-Compaction**     | AI-summarized context management prevents overflow, preserves key information in `memory/*.md` files                        |
-| **Observation Masking** | Compresses old tool results to one-line summaries, saving ~90% context window                                               |
-| **Plugin SDK**          | Frozen namespaced SDK (`sdk.ton`, `sdk.telegram`, `sdk.secrets`, `sdk.storage`) with isolated databases and lifecycle hooks |
-| **Smart DEX Router**    | `dex_quote` compares STON.fi vs DeDust in parallel, recommends the best rate                                                |
-| **Vision Analysis**     | Image understanding via multimodal LLM (utility model)                                                                      |
-| **Scheduled Tasks**     | Time-based task execution with DAG dependency resolution                                                                    |
-| **Message Debouncing**  | Intelligent batching of rapid group messages (DMs are always instant)                                                       |
-| **Daily Logs**          | Automatic session summaries preserved across resets                                                                         |
-| **Multi-Policy Access** | Configurable DM/group policies (open, allowlist, admin-only, disabled) with per-group module permissions                    |
-| **Tool RAG**            | Semantic tool selection (enabled by default) - sends only the top-K most relevant tools per message (hybrid vector + FTS5, configurable `top_k`, `always_include` patterns) |
-| **MCP Client**          | Connect external MCP tool servers (stdio, SSE, or Streamable HTTP) - auto-discovery, namespaced tools, managed via CLI or WebUI |
-| **System Execution**    | YOLO mode — 4 system tools (shell, file read/write, process list) with audit logging, configurable timeout, admin-only scope (off by default) |
-| **Sandboxed Workspace** | Secure file system with recursive URL decoding, symlink detection, and immutable config files                               |
+| Capability              | Description                                                              |
+| ----------------------- | ------------------------------------------------------------------------ |
+| **Multi-Provider LLM**  | 15 providers, hot-swap from dashboard or CLI                             |
+| **RAG + Hybrid Search** | Vector (sqlite-vec) + keyword (FTS5) fused search                        |
+| **Auto-Compaction**     | AI summarizes old context, saves to `memory/*.md`                        |
+| **Observation Masking** | Compresses old tool results, saves ~90% context                          |
+| **Plugin SDK**          | Frozen SDK, isolated DBs, secrets, lifecycle hooks                       |
+| **Smart DEX Router**    | Compares STON.fi vs DeDust, picks best rate                              |
+| **Vision Analysis**     | Image understanding via utility model                                    |
+| **Scheduled Tasks**     | Cron-like tasks with dependency chains                                   |
+| **Message Debouncing**  | Batches rapid group messages, DMs stay instant                           |
+| **Daily Logs**          | Auto session summaries, persisted across resets                          |
+| **Multi-Policy Access** | DM/group policies (open, allowlist, admin-only, disabled), per-group     |
+| **Tool RAG**            | Sends only top-K relevant tools per message                              |
+| **MCP Client**          | stdio, SSE, Streamable HTTP, auto-discovery, CLI or WebUI               |
+| **System Execution**    | YOLO mode: shell, files, processes (off by default, admin-only)          |
+| **TON Proxy**           | Browse .ton domains via HTTP proxy, auto-installed                       |
+| **Management API**      | HTTPS control plane for remote admin, bootstrap mode, lifecycle control  |
+| **Sandboxed Workspace** | Path traversal protection, symlink detection, immutable configs          |
+| **Heartbeat**           | Autonomous periodic wake-up, HEARTBEAT.md task checklist, configurable intervals |
 
 ---
 
 ## Prerequisites
 
 - **Node.js 20.0.0+** - [Download](https://nodejs.org/)
-- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
+- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
 - **Telegram Account** - Dedicated account recommended for security
 - **Telegram API Credentials** - From [my.telegram.org/apps](https://my.telegram.org/apps)
 - **Your Telegram User ID** - Message [@userinfobot](https://t.me/userinfobot)
@@ -104,35 +116,21 @@ cd teleton-agent
 npm install && npm run build
 ```
 
-### 2. Setup
+### 2. Setup & Start
 
 ```bash
-teleton setup
+teleton setup --ui
 ```
 
-The wizard will configure:
-- LLM provider selection (11 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cocoon, Local)
-- Telegram authentication (API credentials, phone, login code)
-- Access policies (DM/group response rules)
-- Admin user ID
-- TON wallet generation (W5R1 with 24-word mnemonic)
-- Workspace initialization (SOUL.md, STRATEGY.md, SECURITY.md, MEMORY.md)
+The WebUI wizard walks you through everything: LLM provider, Telegram auth (QR code or phone), access policies, admin ID, TON wallet, and workspace files. Once done, the agent starts automatically.
 
-Configuration files created:
-- `~/.teleton/config.yaml` - Main configuration
-- `~/.teleton/wallet.json` - TON wallet (backup mnemonic securely)
-- `~/.teleton/memory.db` - SQLite database (WAL mode, sqlite-vec, FTS5)
-- `~/.teleton/workspace/` - Sandboxed file storage
-
-### 3. Start
-
-If setup completed without errors, your agent is ready to go:
+To restart later with the dashboard:
 
 ```bash
-teleton start
+teleton start --webui
 ```
 
-### 4. Verify
+### 3. Verify
 
 Send a message to your agent on Telegram:
 
@@ -154,7 +152,7 @@ The `teleton setup` wizard generates a fully configured `~/.teleton/config.yaml`
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cocoon | local
+  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
   api_key: "sk-ant-api03-..."
   model: "claude-opus-4-6"
   utility_model: "claude-haiku-4-5-20251001"  # for summarization, compaction, vision
@@ -184,6 +182,11 @@ webui:                       # Optional: Web dashboard
   host: "127.0.0.1"          # Localhost only (security)
   # auth_token: "..."        # Auto-generated if omitted
 
+ton_proxy:                   # Optional: .ton domain proxy
+  enabled: false             # Enable Tonutils-Proxy
+  port: 8080                 # HTTP proxy port
+  # binary_path: "..."       # Custom binary path (auto-downloaded if omitted)
+
 # capabilities:                # System execution (YOLO mode, off by default)
 #   exec:
 #     mode: "off"              # off | yolo
@@ -192,21 +195,31 @@ webui:                       # Optional: Web dashboard
 
 ### Supported Models
 
-All models are defined in `src/config/model-catalog.ts` and shared across the CLI setup, WebUI setup wizard, and Dashboard. To add a model, add it there — it will appear everywhere automatically.
+70+ models across 15 providers. Defined in `src/config/model-catalog.ts`, shared across CLI, WebUI, and Dashboard.
 
-| Provider | Models |
-|----------|--------|
-| **Anthropic** | Claude Opus 4.6, Claude Opus 4.5, Claude Sonnet 4.6, Claude Haiku 4.5 |
-| **Claude Code** | Same as Anthropic (auto-detected credentials) |
-| **OpenAI** | GPT-5, GPT-5 Pro, GPT-5 Mini, GPT-5.1, GPT-4o, GPT-4.1, GPT-4.1 Mini, o4 Mini, o3, Codex Mini |
-| **Google** | Gemini 3 Pro (preview), Gemini 3 Flash (preview), Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash Lite, Gemini 2.0 Flash |
-| **xAI** | Grok 4.1 Fast, Grok 4 Fast, Grok 4, Grok Code, Grok 3 |
-| **Groq** | Llama 4 Maverick, Qwen3 32B, DeepSeek R1 70B, Llama 3.3 70B |
-| **OpenRouter** | Claude Opus/Sonnet, GPT-5, Gemini, DeepSeek R1/V3, Qwen3 Coder/Max/235B, Nemotron, Sonar Pro, MiniMax, Grok 4 |
-| **Moonshot** | Kimi K2.5, Kimi K2 Thinking |
-| **Mistral** | Devstral Small/Medium, Mistral Large, Magistral Small |
-| **Cocoon** | Qwen/Qwen3-32B (decentralized, pays in TON) |
-| **Local** | Auto-detected (Ollama, vLLM, LM Studio) |
+<table>
+<tr>
+<td align="center" width="20%"><br><b>Anthropic</b><br>Claude Opus 4.6<br><br></td>
+<td align="center" width="20%"><br><b>Claude Code</b><br>Auto-detected<br><br></td>
+<td align="center" width="20%"><br><b>OpenAI</b><br>GPT-5<br><br></td>
+<td align="center" width="20%"><br><b>Google</b><br>Gemini 3 Pro<br><br></td>
+<td align="center" width="20%"><br><b>xAI</b><br>Grok 4.1<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b>Groq</b><br>Llama 4 Maverick<br><br></td>
+<td align="center"><br><b>OpenRouter</b><br>Multi-provider<br><br></td>
+<td align="center"><br><b>Moonshot</b><br>Kimi K2.5<br><br></td>
+<td align="center"><br><b>Mistral</b><br>Devstral<br><br></td>
+<td align="center"><br><b>Cerebras</b><br>Qwen 3 235B<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b>ZAI</b><br>GLM-5<br><br></td>
+<td align="center"><br><b>MiniMax</b><br>M2.5<br><br></td>
+<td align="center"><br><b>Hugging Face</b><br>DeepSeek V3.2<br><br></td>
+<td align="center"><br><b>Cocoon</b><br>Decentralized (TON)<br><br></td>
+<td align="center"><br><b>Local</b><br>Ollama, vLLM, LM Studio<br><br></td>
+</tr>
+</table>
 
 ### MCP Servers
 
@@ -241,49 +254,6 @@ When the WebUI is enabled, the **MCP Servers** page lets you add/remove servers,
 
 Tools are namespaced as `mcp_<server>_<tool>` (e.g. `mcp_filesystem_read_file`). Each server supports `scope` (always, dm-only, group-only, admin-only) and `enabled` toggle.
 
-### Web Search & Fetch
-
-The agent has two built-in web tools powered by [Tavily](https://tavily.com/) (free tier available):
-
-| Tool | Description |
-|------|-------------|
-| `web_search` | Search the web - returns titles, URLs, content snippets, relevance scores. Supports `topic`: general, news, finance |
-| `web_fetch` | Extract readable text from a URL - articles, docs, links shared by users |
-
-Both tools require a Tavily API key. Set it via CLI or config:
-
-```bash
-teleton config set tavily_api_key
-```
-
-Or in `config.yaml`:
-```yaml
-tavily_api_key: "tvly-..."
-```
-
-Once configured, the agent can autonomously search the web and read pages when needed to answer questions or verify information.
-
-### Managing Config Keys
-
-Use `teleton config` to manage optional keys without editing YAML manually:
-
-```bash
-# List all configurable keys and their status
-teleton config list
-
-# Set a key (prompts interactively if value omitted)
-teleton config set tavily_api_key
-teleton config set tonapi_key AFTWPHSLN3...
-
-# View a key (sensitive values are masked)
-teleton config get tavily_api_key
-
-# Remove a key
-teleton config unset tavily_api_key
-```
-
-Configurable keys: `tavily_api_key`, `tonapi_key`, `telegram.bot_token`, `telegram.bot_username`.
-
 ### Environment Variables
 
 All environment variables override the corresponding `config.yaml` value at startup - useful for Docker and CI:
@@ -291,93 +261,80 @@ All environment variables override the corresponding `config.yaml` value at star
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `TELETON_HOME` | Data directory (config, DB, session) | `~/.teleton` |
-| `TELETON_API_KEY` | LLM API key (overrides config) | - |
-| `TELETON_TG_API_ID` | Telegram API ID (overrides config) | - |
-| `TELETON_TG_API_HASH` | Telegram API Hash (overrides config) | - |
-| `TELETON_TG_PHONE` | Phone number (overrides config) | - |
-| `TELETON_TAVILY_API_KEY` | Tavily API key for web search | - |
-| `TELETON_TONAPI_KEY` | TonAPI key for higher rate limits | - |
-| `TELETON_WEBUI_ENABLED` | Enable WebUI (overrides config) | `false` |
-| `TELETON_WEBUI_PORT` | WebUI port (overrides config) | `7777` |
+| `TELETON_API_KEY` | LLM API key | - |
+| `TELETON_BASE_URL` | Custom LLM base URL | - |
+| `TELETON_TG_API_ID` | Telegram API ID | - |
+| `TELETON_TG_API_HASH` | Telegram API Hash | - |
+| `TELETON_TG_PHONE` | Phone number | - |
+| `TELETON_TAVILY_API_KEY` | Tavily API key for web tools | - |
+| `TELETON_TONAPI_KEY` | TonAPI key | - |
+| `TELETON_TONCENTER_API_KEY` | Toncenter API key | - |
+| `TELETON_WEBUI_ENABLED` | Enable WebUI | `false` |
+| `TELETON_WEBUI_PORT` | WebUI port | `7777` |
+| `TELETON_WEBUI_HOST` | WebUI bind address | `127.0.0.1` |
+| `TELETON_API_ENABLED` | Enable Management API | `false` |
+| `TELETON_API_PORT` | Management API port | `7778` |
+| `TELETON_LOG_LEVEL` | Log level (debug, info, warn, error) | `info` |
 
 ---
 
 ## WebUI Dashboard
 
-Teleton includes an **optional web dashboard** for monitoring and configuration. The WebUI is disabled by default and runs only on localhost for security.
+Optional web dashboard, localhost only, token auth. Start with `teleton start --webui` or `teleton setup --ui`.
 
-### Features
+<table>
+<tr>
+<td align="center" width="25%"><br><b>Dashboard</b><br>Status, model, tokens, config<br><br></td>
+<td align="center" width="25%"><br><b>Tools</b><br>Toggle, scope, per-module<br><br></td>
+<td align="center" width="25%"><br><b>Plugins</b><br>Marketplace, install, secrets<br><br></td>
+<td align="center" width="25%"><br><b>Soul Editor</b><br>SOUL, SECURITY, STRATEGY, MEMORY<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b>Memory Search</b><br>Vector + keyword hybrid<br><br></td>
+<td align="center"><br><b>Live Logs (in Dashboard)</b><br>Real-time SSE streaming<br><br></td>
+<td align="center"><br><b>Workspace</b><br>File browser + editor<br><br></td>
+<td align="center"><br><b>MCP Servers</b><br>Add, remove, configure<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b>TON Proxy (in Config)</b><br>Start/stop, auto-install<br><br></td>
+<td align="center"><br><b>Tasks</b><br>Schedule, dependencies, bulk<br><br></td>
+<td align="center"><br><b>Setup Wizard</b><br>QR code + phone auth<br><br></td>
+<td align="center"><br><b>Config</b><br>Provider switch, key validation<br><br></td>
+</tr>
+<tr>
+<td align="center"><br><b>Hooks</b><br>Plugin hook registrations<br><br></td>
+</tr>
+</table>
 
-- **Dashboard**: System status, uptime, model info, session count, memory stats, live token usage tracking, provider switching with API key validation
-- **Tools Management**: View all tools grouped by module, toggle enable/disable, change scope per tool
-- **Plugin Marketplace**: Install, update, and manage plugins from registry with secrets management
-- **Soul Editor**: Edit SOUL.md, SECURITY.md, STRATEGY.md, MEMORY.md with unsaved changes warning
-- **Memory Search**: Search knowledge base with hybrid vector+keyword search
-- **Live Logs**: Real-time log streaming via Server-Sent Events
-- **Workspace**: File browser with inline text editor
-- **MCP Servers**: Add/remove external tool servers, manage API keys (env vars), view connection status
-- **Tasks**: Scheduled task management with status, dependencies, and bulk actions
+Auth token is printed at startup. Stored as HttpOnly cookie for 7 days. For remote access:
 
-### Usage
-
-**Enable via config.yaml:**
-```yaml
-webui:
-  enabled: true
-  port: 7777
-```
-
-**Enable via CLI flag:**
-```bash
-teleton start --webui
-# or specify custom port
-teleton start --webui --webui-port 8080
-```
-
-**Enable via environment variable:**
-```bash
-TELETON_WEBUI_ENABLED=true teleton start
-```
-
-### Access
-
-When WebUI is enabled, the agent will display:
-```
-🌐 WebUI: http://localhost:7777?token=your-token-here
-🔑 Token: your-token-here
-```
-
-1. Click the URL (token is auto-filled) or visit `http://localhost:7777`
-2. Paste the token from the console (displayed once at startup)
-3. Token is stored as HttpOnly cookie (7 days) for subsequent visits
-
-### Security
-
-- **Localhost only**: Server binds to `127.0.0.1` by default (not accessible from network)
-- **Bearer token auth**: All API routes require authentication (timing-safe comparison)
-- **HttpOnly cookies**: SameSite=Strict, prevents XSS token theft
-- **No persistence**: Runtime changes (like model switches via WebUI) are not saved to config.yaml
-- **For remote access**: Use SSH tunneling or reverse proxy (nginx/caddy) with HTTPS
-
-**SSH tunnel example:**
 ```bash
 ssh -L 7777:localhost:7777 user@remote-server
-# Then access http://localhost:7777 on your local machine
 ```
 
-### Workspace Files
+### Coding Agent
 
-The agent's personality and rules are configured via markdown files in `~/.teleton/workspace/`. Default templates are generated during `teleton setup` - you can edit any of them to customize your agent:
+By default, the agent has a **sandboxed workspace** at `~/.teleton/workspace/` with 6 file tools (read, write, delete, rename, list, info). Path traversal protection, symlink detection, and 500 MB quota. Core files (`SOUL.md`, `STRATEGY.md`, `SECURITY.md`) are immutable. Write operations are DM-only.
 
-| File | Purpose | Mutable by Agent |
-|------|---------|-----------------|
-| `SOUL.md` | Personality, tone, behavior guidelines | No |
-| `STRATEGY.md` | Trading rules, buy/sell thresholds | No |
-| `SECURITY.md` | Security principles, threat recognition | No |
-| `MEMORY.md` | Persistent memory (facts, contacts, decisions) | Yes |
-| `memory/*.md` | Session summaries, daily logs (auto-generated) | Yes |
+**YOLO mode** unlocks full system access (off by default, Linux only):
 
-> **Tip**: Templates are located in `src/templates/` if installing from source. Edit the workspace copies in `~/.teleton/workspace/` - not the source templates.
+| Tool | Description |
+|------|-------------|
+| `exec_run` | Execute any bash command |
+| `exec_install` | Install packages (apt, pip, npm, docker) |
+| `exec_service` | Manage systemd services |
+| `exec_status` | Server health (disk, RAM, CPU, uptime) |
+
+All commands are audit-logged with user, command, output, exit code, and duration. Configurable timeout (default 120s), scope (`admin-only`, `allowlist`, `all`), and output capture limit.
+
+```yaml
+capabilities:
+  exec:
+    mode: "yolo"          # off | yolo
+    scope: "admin-only"   # admin-only | allowlist | all
+    limits:
+      timeout: 120        # seconds (1-3600)
+```
 
 ### Admin Commands
 
@@ -405,14 +362,102 @@ All admin commands support `/`, `!`, or `.` prefix:
 
 ---
 
+## Plugins
+
+Extend the agent with custom tools. Install from the WebUI marketplace in one click, or drop a `.js` file in `~/.teleton/plugins/`. Loaded at startup, no rebuild needed. See [official example plugins](https://github.com/TONresistor/teleton-plugins).
+
+```
+~/.teleton/plugins/
+├── weather.js              # Single-file plugin
+└── my-plugin/
+    ├── index.js            # Folder plugin
+    ├── package.json        # npm deps (auto-installed via npm ci)
+    └── package-lock.json
+```
+
+Plugins export a `tools` function (recommended) or array, plus optional lifecycle hooks:
+
+```js
+// ~/.teleton/plugins/weather.js
+
+export const manifest = {
+  name: "weather",
+  version: "1.0.0",
+  sdkVersion: "^1.0.0",
+};
+
+// Optional: creates an isolated database at ~/.teleton/plugins/data/weather.db
+export function migrate(db) {
+  db.exec(`CREATE TABLE IF NOT EXISTS weather_cache (
+    city TEXT PRIMARY KEY, data TEXT, cached_at INTEGER
+  )`);
+}
+
+// Required: tools as a function receiving the Plugin SDK
+export const tools = (sdk) => [
+  {
+    name: "weather_get",
+    description: "Get current weather for a city",
+    parameters: {
+      type: "object",
+      properties: { city: { type: "string", description: "City name" } },
+      required: ["city"],
+    },
+    execute: async (params) => {
+      sdk.log.info(`Fetching weather for ${params.city}`);
+      const res = await fetch(`https://wttr.in/${params.city}?format=j1`);
+      if (!res.ok) return { success: false, error: "City not found" };
+      const data = await res.json();
+      return { success: true, data: { temp: data.current_condition[0].temp_C } };
+    },
+  },
+];
+```
+
+### Plugin SDK
+
+The SDK provides namespaced access to core services:
+
+| Namespace          | Methods                                                                                                                                                                                                                                                                                              |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sdk.ton`          | **Wallet**: `getAddress()`, `getBalance()`, `getPrice()`, `sendTON()`, `getTransactions()`, `verifyPayment()`                                                                                                                                                                                        |
+|                    | **Jettons**: `getJettonBalances()`, `getJettonInfo()`, `sendJetton()`, `getJettonWalletAddress()`                                                                                                                                                                                                    |
+|                    | **Analytics**: `getJettonPrice()`, `getJettonHolders()`, `getJettonHistory()`                                                                                                                                                                                                                        |
+|                    | **NFT**: `getNftItems()`, `getNftInfo()`                                                                                                                                                                                                                                                             |
+|                    | **DEX** (`sdk.ton.dex`): `quote()`, `swap()`, `quoteSTONfi()`, `quoteDeDust()`, `swapSTONfi()`, `swapDeDust()`                                                                                                                                                                                       |
+|                    | **DNS** (`sdk.ton.dns`): `check()`, `resolve()`, `getAuctions()`, `startAuction()`, `bid()`, `link()`, `unlink()`, `setSiteRecord()`                                                                                                                                                                 |
+|                    | **Signed Transfers**: `createTransfer()`, `createJettonTransfer()`, `getPublicKey()`, `getWalletVersion()`                                                                                                                                                                                           |
+|                    | **Utils**: `toNano()`, `fromNano()`, `validateAddress()`                                                                                                                                                                                                                                             |
+| `sdk.telegram`     | **Messages**: `sendMessage()`, `editMessage()`, `deleteMessage()`, `forwardMessage()`, `pinMessage()`, `searchMessages()`, `scheduleMessage()`, `getScheduledMessages()`, `deleteScheduledMessage()`, `sendScheduledNow()`, `getReplies()`                                                           |
+|                    | **Media**: `sendPhoto()`, `sendVideo()`, `sendVoice()`, `sendFile()`, `sendGif()`, `sendSticker()`, `downloadMedia()`                                                                                                                                                                                |
+|                    | **Chat & Users**: `getChatInfo()`, `getUserInfo()`, `resolveUsername()`, `getParticipants()`, `getDialogs()`, `getHistory()`                                                                                                                                                                         |
+|                    | **Interactive**: `sendDice()`, `sendReaction()`, `createPoll()`, `createQuiz()`                                                                                                                                                                                                                      |
+|                    | **Moderation**: `banUser()`, `unbanUser()`, `muteUser()`, `kickUser()`                                                                                                                                                                                                                               |
+|                    | **Stars & Gifts**: `getStarsBalance()`, `sendGift()`, `getAvailableGifts()`, `getMyGifts()`, `getResaleGifts()`, `buyResaleGift()`, `getStarsTransactions()`, `transferCollectible()`, `setCollectiblePrice()`, `getCollectibleInfo()`, `getUniqueGift()`, `getUniqueGiftValue()`, `sendGiftOffer()` |
+|                    | **Advanced**: `getMe()`, `getMessages()`, `isAvailable()`, `getRawClient()`, `setTyping()`, `sendStory()`                                                                                                                                                                                            |
+| `sdk.bot`          | `onInlineQuery()`, `onCallback()`, `onChosenResult()`, `editInlineMessage()`, `keyboard()`, `isAvailable`, `username`                                                                                                                                                                                |
+| `sdk.secrets`      | `get()`, `require()`, `has()`                                                                                                                                                                                                                                                                        |
+| `sdk.storage`      | `get()`, `set()`, `delete()`, `has()`, `clear()` (KV with TTL)                                                                                                                                                                                                                                       |
+| `sdk.db`           | Raw `better-sqlite3` database, isolated per plugin                                                                                                                                                                                                                                                   |
+| `sdk.config`       | Sanitized app config (no API keys)                                                                                                                                                                                                                                                                   |
+| `sdk.pluginConfig` | Plugin-specific config from `config.yaml`                                                                                                                                                                                                                                                            |
+| `sdk.log`          | `info()`, `warn()`, `error()`, `debug()`                                                                                                                                                                                                                                                             |
+| `sdk.on()`         | Register hooks: `tool:before`, `tool:after`, `tool:error`, `prompt:before`, `prompt:after`, `session:start`, `session:end`, `message:receive`, `response:before`, `response:after`, `response:error`, `agent:start`, `agent:stop`                                                                    |
+
+**Lifecycle hooks**: `migrate(db)`, `start(ctx)`, `stop()`, `onMessage(event)`, `onCallbackQuery(event)`
+
+**Security**: all SDK objects are frozen. Plugins never see API keys or other plugins' data.
+
+---
+
 ## Architecture
 
 ### Tech Stack
 
 | Layer | Technology |
 |-------|------------|
-| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (11 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cocoon, Local) |
-| Telegram Userbot | [GramJS](https://gram.js.org/) Layer 222 fork (MTProto) |
+| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
+| Telegram Userbot | [GramJS](https://gram.js.org/) Layer 223 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |
 | DeFi | STON.fi SDK, DeDust SDK |
@@ -420,7 +465,6 @@ All admin commands support `/`, `!`, or `.` prefix:
 | Vector Search | [sqlite-vec](https://github.com/asg017/sqlite-vec) (cosine similarity) |
 | Full-Text Search | SQLite FTS5 (BM25 ranking) |
 | Embeddings | [@huggingface/transformers](https://www.npmjs.com/package/@huggingface/transformers) (local ONNX) or Voyage AI |
-| Token Counting | [js-tiktoken](https://github.com/dqbd/tiktoken) |
 | MCP Client | [@modelcontextprotocol/sdk](https://modelcontextprotocol.io/) (stdio + SSE + Streamable HTTP) |
 | WebUI | [Hono](https://hono.dev/) (API) + React + Vite (frontend) |
 | Language | TypeScript 5.7, Node.js 20+ |
@@ -433,13 +477,13 @@ src/
 ├── agent/                  # Core agent runtime
 │   ├── runtime.ts          # Agentic loop (5 iterations, tool calling, masking, compaction)
 │   ├── client.ts           # Multi-provider LLM client
-│   └── tools/              # 125+ built-in tools
-│       ├── register-all.ts # Central tool registration (8 categories, 121 tools)
+│   └── tools/              # 135+ built-in tools
+│       ├── register-all.ts # Central tool registration (9 categories)
 │       ├── registry.ts     # Tool registry, scope filtering, provider limits
 │       ├── module-loader.ts    # Built-in module loading (deals + exec)
 │       ├── plugin-loader.ts    # External plugin discovery, validation, hot-reload
 │       ├── mcp-loader.ts       # MCP client (stdio/SSE), tool discovery, lifecycle
-│       ├── telegram/       # Telegram operations (77 tools)
+│       ├── telegram/       # Telegram operations (80 tools)
 │       ├── ton/            # TON blockchain + jettons + DEX router (15 tools)
 │       ├── stonfi/         # STON.fi DEX (5 tools)
 │       ├── dedust/         # DeDust DEX (5 tools)
@@ -476,6 +520,10 @@ src/
 │   ├── wallet-service.ts   # W5R1 wallet, PBKDF2 key caching, encrypted storage
 │   ├── transfer.ts         # TON send operations
 │   └── payment-verifier.ts # On-chain payment verification with replay protection
+├── ton-proxy/             # TON Proxy module (Tonutils-Proxy lifecycle)
+│   ├── manager.ts         # Binary download, start/stop, PID file, health checks
+│   ├── module.ts          # Module lifecycle integration
+│   └── tools.ts           # ton_proxy_status tool
 ├── sdk/                    # Plugin SDK (v1.0.0)
 │   ├── index.ts            # SDK factory (createPluginSDK, all objects frozen)
 │   ├── ton.ts              # TON service for plugins
@@ -489,18 +537,23 @@ src/
 │   └── loader.ts           # 10 sections: soul + security + strategy + memory + context + ...
 ├── config/                 # Configuration
 │   ├── schema.ts           # Zod schemas + validation
-│   ├── providers.ts        # Multi-provider LLM registry (11 providers)
-│   └── model-catalog.ts    # Shared model catalog (60+ models across all providers)
+│   ├── providers.ts        # Multi-provider LLM registry (15 providers)
+│   └── model-catalog.ts    # Shared model catalog (70+ models across all providers)
 ├── webui/                  # Optional web dashboard
 │   ├── server.ts           # Hono server, auth middleware, static serving
-│   └── routes/             # 11 API route groups (status, tools, logs, memory, soul, plugins, mcp, tasks, workspace, config, marketplace)
+│   └── routes/             # 14 route groups (status, tools, logs, memory, soul, plugins, mcp, tasks, workspace, config, marketplace, hooks, ton-proxy, setup)
+├── api/                    # Management API (HTTPS control plane)
+│   ├── server.ts           # Hono HTTPS server, TLS, middleware stack
+│   ├── bootstrap.ts        # API-only mode (no config needed)
+│   ├── middleware/          # Auth, rate-limit, audit, request-id
+│   └── routes/             # Agent lifecycle, system, logs, memory, auth
 ├── constants/              # Centralized limits, timeouts, API endpoints
 ├── utils/                  # Logger, sanitize, retry, fetch
 ├── workspace/              # Path validator (anti-traversal, anti-symlink)
 ├── templates/              # Workspace template files (SOUL.md, etc.)
 └── cli/                    # CLI commands (setup, config, doctor, mcp)
 
-web/                        # React + Vite frontend (10 pages)
+web/                        # React + Vite frontend (11 pages)
 packages/sdk/               # Published @teleton-agent/sdk
 ```
 
@@ -565,104 +618,6 @@ npm run test        # Vitest
 npm run format      # Prettier
 ```
 
-### Plugins
-
-Plugins extend the agent with custom tools. Drop a `.js` file or folder in `~/.teleton/plugins/` - loaded at startup, hot-reloaded in dev mode, no rebuild needed. See [official example plugins](https://github.com/TONresistor/teleton-plugins) for complete working examples.
-
-```
-~/.teleton/plugins/
-├── weather.js              # Single-file plugin
-└── my-plugin/
-    ├── index.js            # Folder plugin
-    ├── package.json        # npm deps (auto-installed via npm ci)
-    └── package-lock.json
-```
-
-Plugins export a `tools` function (recommended) or array, plus optional lifecycle hooks:
-
-```js
-// ~/.teleton/plugins/weather.js
-
-export const manifest = {
-  name: "weather",
-  version: "1.0.0",
-  sdkVersion: "^1.0.0",
-};
-
-// Optional: creates an isolated database at ~/.teleton/plugins/data/weather.db
-export function migrate(db) {
-  db.exec(`CREATE TABLE IF NOT EXISTS weather_cache (
-    city TEXT PRIMARY KEY, data TEXT, cached_at INTEGER
-  )`);
-}
-
-// Required: tools as a function receiving the Plugin SDK
-export const tools = (sdk) => [
-  {
-    name: "weather_get",
-    description: "Get current weather for a city",
-    parameters: {
-      type: "object",
-      properties: { city: { type: "string", description: "City name" } },
-      required: ["city"],
-    },
-    execute: async (params) => {
-      sdk.log.info(`Fetching weather for ${params.city}`);
-      const res = await fetch(`https://wttr.in/${params.city}?format=j1`);
-      if (!res.ok) return { success: false, error: "City not found" };
-      const data = await res.json();
-      return { success: true, data: { temp: data.current_condition[0].temp_C } };
-    },
-  },
-];
-```
-
-#### Plugin SDK
-
-When `tools` is a function, the SDK provides namespaced access to core services:
-
-| Namespace | Methods |
-|-----------|---------|
-| `sdk.ton` | **Wallet**: `getAddress()`, `getBalance()`, `getPrice()`, `sendTON()`, `getTransactions()`, `verifyPayment()` |
-| | **Jettons**: `getJettonBalances()`, `getJettonInfo()`, `sendJetton()`, `getJettonWalletAddress()` |
-| | **Analytics**: `getJettonPrice()`, `getJettonHolders()`, `getJettonHistory()` |
-| | **NFT**: `getNftItems()`, `getNftInfo()` |
-| | **DEX** (`sdk.ton.dex`): `quote()`, `swap()`, `quoteSTONfi()`, `quoteDeDust()`, `swapSTONfi()`, `swapDeDust()` |
-| | **DNS** (`sdk.ton.dns`): `check()`, `resolve()`, `getAuctions()`, `startAuction()`, `bid()`, `link()`, `unlink()`, `setSiteRecord()` |
-| | **Utils**: `toNano()`, `fromNano()`, `validateAddress()` |
-| `sdk.telegram` | **Messages**: `sendMessage()`, `editMessage()`, `deleteMessage()`, `forwardMessage()`, `pinMessage()`, `searchMessages()`, `scheduleMessage()`, `getScheduledMessages()`, `deleteScheduledMessage()`, `sendScheduledNow()`, `getReplies()` |
-| | **Media**: `sendPhoto()`, `sendVideo()`, `sendVoice()`, `sendFile()`, `sendGif()`, `sendSticker()`, `downloadMedia()` |
-| | **Chat & Users**: `getChatInfo()`, `getUserInfo()`, `resolveUsername()`, `getParticipants()`, `getDialogs()`, `getHistory()` |
-| | **Interactive**: `sendDice()`, `sendReaction()`, `createPoll()`, `createQuiz()` |
-| | **Moderation**: `banUser()`, `unbanUser()`, `muteUser()`, `kickUser()` |
-| | **Stars & Gifts**: `getStarsBalance()`, `sendGift()`, `getAvailableGifts()`, `getMyGifts()`, `getResaleGifts()`, `buyResaleGift()`, `getStarsTransactions()`, `transferCollectible()`, `setCollectiblePrice()`, `getCollectibleInfo()`, `getUniqueGift()`, `getUniqueGiftValue()`, `sendGiftOffer()` |
-| | **Advanced**: `getMe()`, `isAvailable()`, `getRawClient()`, `setTyping()`, `sendStory()` |
-| `sdk.secrets` | `get()`, `require()`, `has()` - 3-tier resolution (env var → secrets file → plugin config) |
-| `sdk.storage` | `get()`, `set()`, `delete()`, `has()`, `clear()` - KV store with TTL support |
-| `sdk.db` | Raw `better-sqlite3` database - isolated per plugin at `~/.teleton/plugins/data/<name>.db` |
-| `sdk.config` | Sanitized app config (no API keys exposed) |
-| `sdk.pluginConfig` | Plugin-specific config from `config.yaml` `plugins:` section |
-| `sdk.log` | `info()`, `warn()`, `error()`, `debug()` - Prefixed logger |
-
-**Lifecycle hooks**: `migrate(db)`, `start(ctx)`, `stop()`, `onMessage(event)`, `onCallbackQuery(event)`
-
-**Security**: all SDK objects are `Object.freeze()`-ed. Plugins never see API keys or other plugins' data.
-
-Plugin config in `config.yaml`:
-```yaml
-plugins:
-  weather:
-    api_key: "abc123"
-```
-
-Backward compatible: plugins can export `tools` as a static array without the SDK.
-
-At startup:
-```
-🔌 Plugin "weather": 1 tool registered
-✅ 115 tools loaded (1 from plugins)
-```
-
 ---
 
 ## Documentation
@@ -676,6 +631,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 | [Plugin Development](docs/plugins.md) | Step-by-step plugin tutorial |
 | [Telegram Setup](docs/telegram-setup.md) | API credentials, policies, 2FA, admin commands |
 | [TON Wallet](docs/ton-wallet.md) | Wallet setup, DEX trading, security |
+| [Management API](docs/management-api.md) | HTTPS API, bootstrap mode, authentication, endpoints |
 
 ---
 
@@ -718,6 +674,7 @@ MIT License - See [LICENSE](LICENSE) for details.
 - [MCP SDK](https://github.com/modelcontextprotocol/typescript-sdk) - Model Context Protocol client
 - [sqlite-vec](https://github.com/asg017/sqlite-vec) - Vector search for SQLite
 - [Hono](https://hono.dev/) - Lightweight web framework
+- [Tonutils-Proxy](https://github.com/xssnick/Tonutils-Proxy) - TON Proxy for .ton sites
 
 ---
 

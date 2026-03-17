@@ -104,6 +104,19 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
     }
   }
 
+  // Management API environment variable overrides
+  if (process.env.TELETON_API_ENABLED) {
+    if (!config.api) config.api = { enabled: false, port: 7778, key_hash: "", allowed_ips: [] };
+    config.api.enabled = process.env.TELETON_API_ENABLED === "true";
+  }
+  if (process.env.TELETON_API_PORT) {
+    const port = parseInt(process.env.TELETON_API_PORT, 10);
+    if (!isNaN(port) && port >= 1024 && port <= 65535) {
+      if (!config.api) config.api = { enabled: false, port: 7778, key_hash: "", allowed_ips: [] };
+      config.api.port = port;
+    }
+  }
+
   // Local LLM base URL override
   if (process.env.TELETON_BASE_URL) {
     try {

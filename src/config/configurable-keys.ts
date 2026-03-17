@@ -16,6 +16,7 @@ export type ConfigCategory =
   | "Embedding"
   | "WebUI"
   | "Deals"
+  | "TON Proxy"
   | "Coding Agent"
   | "Developer";
 
@@ -616,6 +617,41 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     parse: (v) => Number(v),
   },
 
+  // ─── TON Proxy ────────────────────────────────────────────────────
+  "ton_proxy.enabled": {
+    type: "boolean",
+    category: "TON Proxy",
+    label: "TON Proxy Enabled",
+    description: "Enable Tonutils-Proxy for .ton site access (auto-downloads binary on first run)",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
+  "ton_proxy.port": {
+    type: "number",
+    category: "TON Proxy",
+    label: "Proxy Port",
+    description: "HTTP proxy port for .ton sites (default: 8080)",
+    sensitive: false,
+    hotReload: "restart",
+    validate: numberInRange(1, 65535),
+    mask: identity,
+    parse: (v) => Number(v),
+  },
+  "ton_proxy.binary_path": {
+    type: "string",
+    category: "TON Proxy",
+    label: "Binary Path",
+    description: "Custom path to tonutils-proxy-cli (leave empty for auto-download)",
+    sensitive: false,
+    hotReload: "restart",
+    validate: noValidation,
+    mask: identity,
+    parse: identity,
+  },
+
   // ─── Capabilities ──────────────────────────────────────────────────
   "capabilities.exec.mode": {
     type: "enum",
@@ -642,6 +678,41 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     validate: enumValidator(["admin-only", "allowlist", "all"]),
     mask: identity,
     parse: identity,
+  },
+
+  // ─── Heartbeat ─────────────────────────────────────────────────────
+  "heartbeat.enabled": {
+    type: "boolean",
+    category: "Agent",
+    label: "Heartbeat Enabled",
+    description: "Enable periodic heartbeat timer",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
+  "heartbeat.interval_ms": {
+    type: "number",
+    category: "Agent",
+    label: "Heartbeat Interval (ms)",
+    description: "Heartbeat interval in milliseconds (min 60000)",
+    sensitive: false,
+    hotReload: "restart",
+    validate: numberInRange(60000, 86400000),
+    mask: identity,
+    parse: (v) => Number(v),
+  },
+  "heartbeat.self_configurable": {
+    type: "boolean",
+    category: "Agent",
+    label: "Heartbeat Self-Configurable",
+    description: "Allow agent to modify heartbeat config at runtime",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
   },
 
   // ─── Developer ─────────────────────────────────────────────────────
@@ -744,6 +815,7 @@ export const CATEGORY_ORDER: ConfigCategory[] = [
   "Embedding",
   "WebUI",
   "Deals",
+  "TON Proxy",
   "Coding Agent",
   "Developer",
 ];

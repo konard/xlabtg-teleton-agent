@@ -25,6 +25,7 @@ export class MemoryDatabase {
   private db: Database.Database;
   private config: DatabaseConfig;
   private vectorReady = false;
+  private _dimensionsChanged = false;
 
   constructor(config: DatabaseConfig) {
     this.config = config;
@@ -39,7 +40,9 @@ export class MemoryDatabase {
     });
     try {
       chmodSync(config.path, 0o600);
-    } catch {}
+    } catch (err) {
+      log.warn({ err, path: config.path }, "Failed to set DB file permissions to 0o600");
+    }
 
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("synchronous = NORMAL");
@@ -55,7 +58,8 @@ export class MemoryDatabase {
     let currentVersion: string | null = null;
     try {
       currentVersion = getSchemaVersion(this.db);
-    } catch {
+    } catch (err) {
+      log.warn({ err }, "Could not read schema version, assuming fresh database");
       currentVersion = null;
     }
 
@@ -78,7 +82,7 @@ export class MemoryDatabase {
       sqliteVec.load(this.db);
       this.db.prepare("SELECT vec_version() as vec_version").get();
       const dims = this.config.vectorDimensions ?? 512;
-      ensureVectorTables(this.db, dims);
+      this._dimensionsChanged = ensureVectorTables(this.db, dims);
       this.vectorReady = true;
     } catch (error) {
       log.warn(`sqlite-vec not available, vector search disabled: ${(error as Error).message}`);
@@ -100,6 +104,10 @@ export class MemoryDatabase {
 
   isVectorSearchReady(): boolean {
     return this.vectorReady;
+  }
+
+  didDimensionsChange(): boolean {
+    return this._dimensionsChanged;
   }
 
   getVectorDimensions(): number | undefined {
@@ -136,26 +144,35 @@ export class MemoryDatabase {
     embeddingCache: number;
     vectorSearchEnabled: boolean;
   } {
-    const knowledge = this.db.prepare(`SELECT COUNT(*) as c FROM knowledge`).get() as { c: number };
-    const sessions = this.db.prepare(`SELECT COUNT(*) as c FROM sessions`).get() as { c: number };
-    const tasks = this.db.prepare(`SELECT COUNT(*) as c FROM tasks`).get() as { c: number };
-    const tgChats = this.db.prepare(`SELECT COUNT(*) as c FROM tg_chats`).get() as { c: number };
-    const tgUsers = this.db.prepare(`SELECT COUNT(*) as c FROM tg_users`).get() as { c: number };
-    const tgMessages = this.db.prepare(`SELECT COUNT(*) as c FROM tg_messages`).get() as {
-      c: number;
-    };
-    const embeddingCache = this.db.prepare(`SELECT COUNT(*) as c FROM embedding_cache`).get() as {
-      c: number;
+    const counts = this.db
+      .prepare(
+        `SELECT
+          (SELECT COUNT(*) FROM knowledge)       as knowledge,
+          (SELECT COUNT(*) FROM sessions)        as sessions,
+          (SELECT COUNT(*) FROM tasks)           as tasks,
+          (SELECT COUNT(*) FROM tg_chats)        as tg_chats,
+          (SELECT COUNT(*) FROM tg_users)        as tg_users,
+          (SELECT COUNT(*) FROM tg_messages)     as tg_messages,
+          (SELECT COUNT(*) FROM embedding_cache) as embedding_cache`
+      )
+      .get() as {
+      knowledge: number;
+      sessions: number;
+      tasks: number;
+      tg_chats: number;
+      tg_users: number;
+      tg_messages: number;
+      embedding_cache: number;
     };
 
     return {
-      knowledge: knowledge.c,
-      sessions: sessions.c,
-      tasks: tasks.c,
-      tgChats: tgChats.c,
-      tgUsers: tgUsers.c,
-      tgMessages: tgMessages.c,
-      embeddingCache: embeddingCache.c,
+      knowledge: counts.knowledge,
+      sessions: counts.sessions,
+      tasks: counts.tasks,
+      tgChats: counts.tg_chats,
+      tgUsers: counts.tg_users,
+      tgMessages: counts.tg_messages,
+      embeddingCache: counts.embedding_cache,
       vectorSearchEnabled: this.vectorReady,
     };
   }

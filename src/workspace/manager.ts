@@ -123,6 +123,7 @@ async function bootstrapTemplates(workspace: Workspace, silent = false): Promise
     { name: "USER.md", path: workspace.userPath },
     { name: "SECURITY.md", path: workspace.securityPath },
     { name: "STRATEGY.md", path: workspace.strategyPath },
+    { name: "HEARTBEAT.md", path: WORKSPACE_PATHS.HEARTBEAT },
   ];
 
   for (const template of templates) {

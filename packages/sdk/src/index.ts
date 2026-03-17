@@ -44,6 +44,12 @@ export type {
   JettonBalance,
   JettonInfo,
   JettonSendResult,
+  SignedTransfer,
+  TonMessage,
+  TonSendOptions,
+  TonTransferResult,
+  GetMethodResult,
+  TonSender,
   NftItem,
   // TON Analytics
   JettonPrice,

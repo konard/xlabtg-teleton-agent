@@ -25,7 +25,6 @@ export default defineConfig({
         branches: 15.95,
         functions: 22.5,
         lines: 18.96,
-        autoUpdate: true,
       },
     },
     // Longer timeout for tests that import heavy deps (GramJS, @ton/ton)

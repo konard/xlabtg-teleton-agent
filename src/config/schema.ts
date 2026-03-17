@@ -184,6 +184,19 @@ const _LoggingObject = z.object({
 });
 export const LoggingConfigSchema = _LoggingObject.default(_LoggingObject.parse({}));
 
+const _TonProxyObject = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe("Enable TON Proxy (Tonutils-Proxy) for .ton site access"),
+  port: z.number().min(1).max(65535).default(8080).describe("HTTP proxy port (default: 8080)"),
+  binary_path: z
+    .string()
+    .optional()
+    .describe("Custom path to tonutils-proxy-cli binary (auto-downloaded if omitted)"),
+});
+export const TonProxyConfigSchema = _TonProxyObject.default(_TonProxyObject.parse({}));
+
 const _DevObject = z.object({
   hot_reload: z
     .boolean()
@@ -191,6 +204,20 @@ const _DevObject = z.object({
     .describe("Enable plugin hot-reload (watches ~/.teleton/plugins/ for changes)"),
 });
 export const DevConfigSchema = _DevObject.default(_DevObject.parse({}));
+
+const _ApiObject = z.object({
+  enabled: z.boolean().default(false).describe("Enable HTTPS Management API server"),
+  port: z.number().min(1).max(65535).default(7778).describe("HTTPS server port"),
+  key_hash: z
+    .string()
+    .default("")
+    .describe("SHA-256 hash of the API key (auto-generated if empty)"),
+  allowed_ips: z
+    .array(z.string())
+    .default([])
+    .describe("IP whitelist (empty = allow all authenticated requests)"),
+});
+export const ApiConfigSchema = _ApiObject.default(_ApiObject.parse({}));
 
 const McpServerSchema = z
   .object({
@@ -280,6 +307,26 @@ const _CapabilitiesObject = z.object({
 });
 export const CapabilitiesConfigSchema = _CapabilitiesObject.default(_CapabilitiesObject.parse({}));
 
+const _HeartbeatObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable periodic heartbeat timer"),
+  interval_ms: z
+    .number()
+    .min(60_000)
+    .default(1_800_000)
+    .describe("Heartbeat interval in milliseconds (min 60s, default 30min)"),
+  prompt: z
+    .string()
+    .default(
+      "Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION."
+    )
+    .describe("Prompt sent to agent on each heartbeat tick"),
+  self_configurable: z
+    .boolean()
+    .default(false)
+    .describe("Allow agent to modify heartbeat config via config_set"),
+});
+export const HeartbeatConfigSchema = _HeartbeatObject.default(_HeartbeatObject.parse({}));
+
 export const ConfigSchema = z.object({
   meta: MetaConfigSchema.default(MetaConfigSchema.parse({})),
   agent: AgentConfigSchema,
@@ -292,6 +339,9 @@ export const ConfigSchema = z.object({
   dev: DevConfigSchema,
   tool_rag: ToolRagConfigSchema,
   capabilities: CapabilitiesConfigSchema,
+  api: ApiConfigSchema.optional(),
+  ton_proxy: TonProxyConfigSchema,
+  heartbeat: HeartbeatConfigSchema,
   mcp: McpConfigSchema,
   plugins: z
     .record(z.string(), z.unknown())
@@ -370,5 +420,8 @@ export type McpConfig = z.infer<typeof McpConfigSchema>;
 export type ToolRagConfig = z.infer<typeof ToolRagConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
+export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;
+export type ApiConfig = z.infer<typeof _ApiObject>;
 export type ExecConfig = z.infer<typeof _ExecObject>;
 export type GroqConfig = NonNullable<z.infer<typeof ConfigSchema>["groq"]>;
+export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;

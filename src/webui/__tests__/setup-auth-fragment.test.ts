@@ -108,6 +108,12 @@ vi.mock("fs", () => ({
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   existsSync: vi.fn(() => true),
+  readFileSync: vi.fn(() => "telegram:\n  api_id: 0\n  api_hash: ''\n  phone: ''\n"),
+}));
+
+vi.mock("../../config/configurable-keys.js", () => ({
+  readRawConfig: vi.fn(() => ({ telegram: {} })),
+  writeRawConfig: vi.fn(),
 }));
 
 vi.mock("../../workspace/paths.js", () => ({

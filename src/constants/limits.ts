@@ -12,7 +12,7 @@ export const SQLITE_CACHE_SIZE_KB = 64_000;
 export const SQLITE_MMAP_SIZE = 256_000_000;
 export const SECONDS_PER_DAY = 86_400;
 export const SECONDS_PER_HOUR = 3_600;
-export const COMPACTION_MAX_MESSAGES = 200;
+export const COMPACTION_MAX_MESSAGES = 1000;
 export const COMPACTION_KEEP_RECENT = 20;
 export const COMPACTION_MAX_TOKENS_RATIO = 0.75;
 export const COMPACTION_SOFT_THRESHOLD_RATIO = 0.5;
@@ -24,6 +24,9 @@ export const CONTEXT_MAX_RECENT_MESSAGES = 10;
 export const CONTEXT_MAX_RELEVANT_CHUNKS = 5;
 export const FEED_MESSAGE_MAX_CHARS = 2_000;
 export const HYBRID_SEARCH_MIN_SCORE = 0.15;
+export const RECENCY_DECAY_FACTOR = 0.05;
+export const RECENCY_WEIGHT = 0.15;
+export const EMBEDDING_QUERY_MAX_CHARS = 1000;
 export const CONTEXT_OVERFLOW_SUMMARY_MESSAGES = 15;
 export const RATE_LIMIT_MAX_RETRIES = 3;
 export const SERVER_ERROR_MAX_RETRIES = 3;
@@ -62,6 +65,8 @@ export const SESSION_SLUG_MAX_TOKENS = 50;
 
 // ─── Observation Masking ────────────────────────────────────────
 export const MASKING_KEEP_RECENT_COUNT = 10;
+export const RESULT_TRUNCATION_THRESHOLD = 4_000;
+export const RESULT_TRUNCATION_KEEP_CHARS = 500;
 
 // ─── Embedding Cache ────────────────────────────────────────────
 export const EMBEDDING_CACHE_EVICTION_RATIO = 0.1;
@@ -69,6 +74,9 @@ export const EMBEDDING_CACHE_EVICTION_RATIO = 0.1;
 // ─── Web Tools ─────────────────────────────────────────────────
 export const WEB_FETCH_MAX_TEXT_LENGTH = 20_000; // default text truncation
 export const WEB_SEARCH_MAX_RESULTS = 10; // max allowed count
+
+// ─── Tool Execution ─────────────────────────────────────────────
+export const TOOL_CONCURRENCY_LIMIT = 2;
 
 // ─── Tool RAG ──────────────────────────────────────────────────
 export const TOOL_RAG_DEFAULT_TOP_K = 25;

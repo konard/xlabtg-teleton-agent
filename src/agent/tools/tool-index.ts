@@ -325,6 +325,12 @@ export class ToolIndex {
   ): ToolSearchResult[] {
     const byName = new Map<string, ToolSearchResult>();
 
+    // When vector search returns nothing (no embedder configured),
+    // normalize keyword scores to full weight instead of 0.4
+    const hasVectorResults = vectorResults.length > 0;
+    const effectiveKeywordWeight = hasVectorResults ? TOOL_RAG_KEYWORD_WEIGHT : 1.0;
+    const effectiveVectorWeight = hasVectorResults ? TOOL_RAG_VECTOR_WEIGHT : 0;
+
     for (const r of vectorResults) {
       byName.set(r.name, { ...r, vectorScore: r.score });
     }
@@ -334,12 +340,12 @@ export class ToolIndex {
       if (existing) {
         existing.keywordScore = r.keywordScore;
         existing.score =
-          TOOL_RAG_VECTOR_WEIGHT * (existing.vectorScore ?? 0) +
-          TOOL_RAG_KEYWORD_WEIGHT * (r.keywordScore ?? 0);
+          effectiveVectorWeight * (existing.vectorScore ?? 0) +
+          effectiveKeywordWeight * (r.keywordScore ?? 0);
       } else {
         byName.set(r.name, {
           ...r,
-          score: TOOL_RAG_KEYWORD_WEIGHT * (r.keywordScore ?? 0),
+          score: effectiveKeywordWeight * (r.keywordScore ?? 0),
         });
       }
     }

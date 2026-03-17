@@ -10,6 +10,7 @@
  */
 
 import type Database from "better-sqlite3";
+import type { Cell, TupleItem, Address } from "@ton/core";
 
 // ─── TON Types ───────────────────────────────────────────────────
 
@@ -132,6 +133,70 @@ export interface JettonSendResult {
   success: boolean;
   /** Wallet sequence number used */
   seqno: number;
+}
+
+/**
+ * Signed transfer ready for off-chain transmission (e.g. x402 payment).
+ * Contains the signed BOC and wallet identity metadata.
+ */
+export interface SignedTransfer {
+  /** Base64-encoded signed external message BOC */
+  signedBoc: string;
+  /** Hex-encoded ed25519 public key */
+  walletPublicKey: string;
+  /** Raw wallet address (0:hex format) */
+  walletAddress: string;
+  /** Wallet sequence number used in this transfer */
+  seqno: number;
+  /** Unix timestamp when this transfer expires */
+  validUntil: number;
+
+  // Backward compatibility aliases (deprecated)
+  /** @deprecated Use signedBoc */
+  boc: string;
+  /** @deprecated Use walletPublicKey */
+  publicKey: string;
+  /** @deprecated V5R1 only — no v2 equivalent needed */
+  walletVersion: string;
+}
+
+/** Single message for sdk.ton.send() / sdk.ton.sendMessages() */
+export interface TonMessage {
+  to: string;
+  value: number;
+  body?: Cell | string;
+  bounce?: boolean;
+  stateInit?: { code: Cell; data: Cell };
+}
+
+/** Options for send/sendMessages */
+export interface TonSendOptions {
+  sendMode?: number;
+}
+
+/** Result of low-level send/sendMessages */
+export interface TonTransferResult {
+  hash: string;
+  seqno: number;
+}
+
+/** Result of runGetMethod */
+export interface GetMethodResult {
+  exitCode: number;
+  stack: TupleItem[];
+}
+
+/** Sender adapter compatible with @ton/ton Sender interface */
+export interface TonSender {
+  address: Address;
+  send(args: {
+    to: Address;
+    value: bigint;
+    body?: Cell;
+    bounce?: boolean;
+    init?: { code?: Cell | null; data?: Cell | null } | null;
+    sendMode?: number;
+  }): Promise<void>;
 }
 
 /** NFT item information */
@@ -826,6 +891,56 @@ export interface TonSDK {
    */
   getJettonWalletAddress(ownerAddress: string, jettonAddress: string): Promise<string | null>;
 
+  // ─── Signed Transfers (no broadcast) ────────────────────────
+
+  /**
+   * Create a signed TON transfer without broadcasting it.
+   *
+   * Returns a signed BOC that can be transmitted off-chain (e.g. as an
+   * x402 `X-PAYMENT` header). The server or recipient broadcasts the BOC.
+   *
+   * WARNING: The BOC becomes invalid if any other transaction is sent from
+   * this wallet before the BOC is broadcast (seqno collision).
+   *
+   * @param to — Recipient TON address
+   * @param amount — Amount in TON (e.g. 0.05)
+   * @param comment — Optional transaction comment/memo
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
+   */
+  createTransfer(to: string, amount: number, comment?: string): Promise<SignedTransfer>;
+
+  /**
+   * Create a signed jetton transfer without broadcasting it.
+   *
+   * Returns a signed BOC encoding a TEP-74 jetton transfer message.
+   *
+   * WARNING: Same seqno caveat as createTransfer.
+   *
+   * @param jettonAddress — Jetton master contract address
+   * @param to — Recipient TON address
+   * @param amount — Amount in human-readable units (e.g. 100 for 100 USDT)
+   * @param opts — Optional comment for the transfer
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
+   */
+  createJettonTransfer(
+    jettonAddress: string,
+    to: string,
+    amount: number,
+    opts?: { comment?: string }
+  ): Promise<SignedTransfer>;
+
+  /**
+   * Get the wallet's public key.
+   * @returns Hex-encoded ed25519 public key, or null if wallet not initialized.
+   */
+  getPublicKey(): string | null;
+
+  /**
+   * Get the wallet contract version.
+   * @returns Wallet version string (e.g. "v5r1").
+   */
+  getWalletVersion(): string;
+
   // ─── NFT ───────────────────────────────────────────────────
 
   /**
@@ -891,6 +1006,64 @@ export interface TonSDK {
    * @returns Market analytics, or null if unavailable.
    */
   getJettonHistory(jettonAddress: string): Promise<JettonHistory | null>;
+
+  // ─── Low-level Transfer ─────────────────────────────────────────
+
+  /**
+   * Send TON to a single address with full control over message parameters.
+   *
+   * WARNING: Irreversible blockchain transaction.
+   *
+   * @param to — Recipient TON address
+   * @param value — Amount in TON (e.g. 1.5)
+   * @param opts — Optional body, bounce, stateInit, sendMode
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
+   */
+  send(to: string, value: number, opts?: {
+    body?: Cell | string;
+    bounce?: boolean;
+    stateInit?: { code: Cell; data: Cell };
+    sendMode?: number;
+  }): Promise<TonTransferResult>;
+
+  /**
+   * Send multiple messages in a single wallet transfer.
+   *
+   * WARNING: Irreversible blockchain transaction. Max 255 messages per transfer.
+   *
+   * @param messages — Array of messages to send
+   * @param opts — Optional sendMode override
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
+   */
+  sendMessages(messages: TonMessage[], opts?: TonSendOptions): Promise<TonTransferResult>;
+
+  /**
+   * Run a get method on a smart contract.
+   *
+   * @param address — Smart contract address
+   * @param method — Method name (e.g. "get_wallet_data")
+   * @param stack — Optional input stack (TupleItem[])
+   * @returns Exit code and result stack
+   * @throws {PluginSDKError} INVALID_ADDRESS, OPERATION_FAILED
+   */
+  runGetMethod(address: string, method: string, stack?: TupleItem[]): Promise<GetMethodResult>;
+
+  /**
+   * Create a Sender adapter compatible with @ton/ton contracts.
+   *
+   * Useful for interacting with smart contract wrappers that expect a Sender.
+   *
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, OPERATION_FAILED
+   */
+  createSender(): Promise<TonSender>;
+
+  /**
+   * Get the current wallet sequence number (seqno).
+   *
+   * @returns Current seqno
+   * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, OPERATION_FAILED
+   */
+  getSeqno(): Promise<number>;
 
   // ─── Sub-namespaces ───────────────────────────────────────────
 

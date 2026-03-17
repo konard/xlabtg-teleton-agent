@@ -33,9 +33,14 @@ export function TelegramSettingsPanel({
   onArraySave,
   extended,
 }: TelegramSettingsPanelProps) {
+  const telegramTitle = (
+    <div className="card-header">
+      <div className="section-title">Telegram</div>
+    </div>
+  );
+
   const telegramCore = (
     <>
-      <div className="section-title">Telegram</div>
       <div style={{ display: 'grid', gap: '16px' }}>
 
         {/* ── Identity ──────────────────────────────────────────── */}
@@ -157,9 +162,14 @@ export function TelegramSettingsPanel({
     </>
   );
 
+  const telegramAdvancedTitle = (
+    <div className="card-header">
+      <div className="section-title">Advanced Telegram</div>
+    </div>
+  );
+
   const telegramAdvanced = (
     <>
-      <div className="section-title">Advanced Telegram</div>
       <div style={{ display: 'grid', gap: '16px' }}>
 
         {/* ── Tuning (EditableField) ────────────────────────── */}
@@ -285,11 +295,18 @@ export function TelegramSettingsPanel({
   if (extended) {
     return (
       <>
+        {telegramTitle}
         <div className="card">{telegramCore}</div>
+        {telegramAdvancedTitle}
         <div className="card">{telegramAdvanced}</div>
       </>
     );
   }
 
-  return telegramCore;
+  return (
+    <>
+      {telegramTitle}
+      <div className="card">{telegramCore}</div>
+    </>
+  );
 }

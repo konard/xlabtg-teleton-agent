@@ -19,6 +19,7 @@ const {
   saveSessionStore,
   loadSessionStore,
   pruneOldSessions,
+  shouldResetSession,
 } = await import("../store.js");
 
 describe("Session Store", () => {
@@ -31,6 +32,7 @@ describe("Session Store", () => {
 
   afterEach(() => {
     testDb.close();
+    vi.useRealTimers();
   });
 
   // ============================================
@@ -185,6 +187,111 @@ describe("Session Store", () => {
     it("returns 0 when no sessions to prune", () => {
       const pruned = pruneOldSessions(30);
       expect(pruned).toBe(0);
+    });
+  });
+
+  // ============================================
+  // SHOULD RESET SESSION — DAILY RESET (T14)
+  // ============================================
+
+  describe("shouldResetSession — daily reset", () => {
+    it("returns false when current UTC hour < resetHour", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-01-16T01:00:00Z"));
+
+      const session = {
+        sessionId: "s1",
+        chatId: "123",
+        createdAt: Date.now() - 86400000,
+        updatedAt: Date.now(),
+        messageCount: 5,
+        lastResetDate: "2024-01-15",
+      };
+
+      const result = shouldResetSession(session, {
+        daily_reset_enabled: true,
+        daily_reset_hour: 4,
+        idle_expiry_enabled: false,
+        idle_expiry_minutes: 1440,
+      });
+
+      expect(result).toBe(false);
+    });
+
+    it("returns true when current UTC hour >= resetHour and lastResetDate < today", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-01-16T05:00:00Z"));
+
+      const session = {
+        sessionId: "s1",
+        chatId: "123",
+        createdAt: Date.now() - 86400000,
+        updatedAt: Date.now(),
+        messageCount: 5,
+        lastResetDate: "2024-01-15",
+      };
+
+      const result = shouldResetSession(session, {
+        daily_reset_enabled: true,
+        daily_reset_hour: 4,
+        idle_expiry_enabled: false,
+        idle_expiry_minutes: 1440,
+      });
+
+      expect(result).toBe(true);
+    });
+
+    it("returns false when lastResetDate equals today regardless of hour", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2024-01-16T23:00:00Z"));
+
+      const session = {
+        sessionId: "s1",
+        chatId: "123",
+        createdAt: Date.now() - 86400000,
+        updatedAt: Date.now(),
+        messageCount: 5,
+        lastResetDate: "2024-01-16",
+      };
+
+      const result = shouldResetSession(session, {
+        daily_reset_enabled: true,
+        daily_reset_hour: 0,
+        idle_expiry_enabled: false,
+        idle_expiry_minutes: 1440,
+      });
+
+      expect(result).toBe(false);
+    });
+  });
+
+  // ============================================
+  // GET OR CREATE SESSION — IDEMPOTENCY (T17)
+  // ============================================
+
+  describe("getOrCreateSession — idempotency", () => {
+    it("returns same sessionId when called twice with same chatId", () => {
+      const first = getOrCreateSession("chat-123");
+      const second = getOrCreateSession("chat-123");
+
+      expect(first.sessionId).toBe(second.sessionId);
+    });
+
+    it("creates only 1 row in sessions table for same chatId", () => {
+      getOrCreateSession("chat-123");
+      getOrCreateSession("chat-123");
+
+      const rows = testDb
+        .prepare("SELECT * FROM sessions WHERE chat_id = ?")
+        .all("telegram:chat-123");
+      expect(rows).toHaveLength(1);
+    });
+
+    it("returns different sessionId for different chatId", () => {
+      const a = getOrCreateSession("chat-123");
+      const b = getOrCreateSession("chat-456");
+
+      expect(a.sessionId).not.toBe(b.sessionId);
     });
   });
 });

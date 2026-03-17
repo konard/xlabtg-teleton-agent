@@ -7,6 +7,7 @@
  */
 
 import { Api } from "telegram";
+import { toLong } from "../../utils/gramjs-bigint.js";
 
 export interface ParsedMessage {
   text: string;
@@ -74,8 +75,7 @@ export function parseHtml(html: string): ParsedMessage {
                       new Api.MessageEntityCustomEmoji({
                         offset: open.offset,
                         length,
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger compat
-                        documentId: BigInt(open.emojiId) as any,
+                        documentId: toLong(open.emojiId),
                       })
                     );
                   }

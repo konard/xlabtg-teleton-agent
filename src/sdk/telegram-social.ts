@@ -518,7 +518,7 @@ export function createTelegramSocialSDK(bridge: TelegramBridge, log: PluginLogge
 
         const invoiceData = {
           peer: user,
-          giftId: BigInt(giftId) as any,
+          giftId: toLong(giftId),
           hideName: opts?.anonymous ?? false,
           message: opts?.message
             ? new Api.TextWithEntities({ text: opts.message, entities: [] })
@@ -621,7 +621,7 @@ export function createTelegramSocialSDK(bridge: TelegramBridge, log: PluginLogge
 
         const result: any = await client.invoke(
           new Api.payments.GetResaleStarGifts({
-            giftId: BigInt(giftId) as any,
+            giftId: toLong(giftId),
             offset: "",
             limit: limit ?? 50,
           })
@@ -805,7 +805,7 @@ export function createTelegramSocialSDK(bridge: TelegramBridge, log: PluginLogge
           new Api.payments.UpdateStarGiftPrice({
             stargift: new Api.InputSavedStarGiftUser({ msgId }),
             resellAmount: new Api.StarsAmount({
-              amount: BigInt(price) as any,
+              amount: toLong(price),
               nanos: 0,
             }),
           })
@@ -968,7 +968,7 @@ export function createTelegramSocialSDK(bridge: TelegramBridge, log: PluginLogge
           new Api.payments.SendStarGiftOffer({
             peer,
             slug: giftSlug,
-            price: new Api.StarsAmount({ amount: BigInt(price) as any, nanos: 0 }),
+            price: new Api.StarsAmount({ amount: toLong(price), nanos: 0 }),
             duration,
             randomId: randomLong(),
           })

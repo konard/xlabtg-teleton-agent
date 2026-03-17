@@ -9,12 +9,13 @@ import type { ToolRegistry } from "./registry.js";
 import type { Config } from "../../config/schema.js";
 import type Database from "better-sqlite3";
 import dealsModule from "../../deals/module.js";
+import tonProxyModule from "../../ton-proxy/module.js";
 import { execModule } from "./exec/index.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("ModuleLoader");
 
-const BUILTIN_MODULES: PluginModule[] = [dealsModule, execModule];
+const BUILTIN_MODULES: PluginModule[] = [dealsModule, tonProxyModule, execModule];
 
 export function loadModules(
   registry: ToolRegistry,

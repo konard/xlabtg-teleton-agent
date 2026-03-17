@@ -307,7 +307,7 @@ export function ensureSchema(db: Database.Database): void {
   `);
 }
 
-export function ensureVectorTables(db: Database.Database, dimensions: number): void {
+export function ensureVectorTables(db: Database.Database, dimensions: number): boolean {
   const existingDims = db
     .prepare(
       `
@@ -317,9 +317,11 @@ export function ensureVectorTables(db: Database.Database, dimensions: number): v
     )
     .get() as { sql?: string } | undefined;
 
+  let dimensionsChanged = false;
   if (existingDims?.sql && !existingDims.sql.includes(`[${dimensions}]`)) {
     db.exec(`DROP TABLE IF EXISTS knowledge_vec`);
     db.exec(`DROP TABLE IF EXISTS tg_messages_vec`);
+    dimensionsChanged = true;
   }
 
   db.exec(`
@@ -333,6 +335,8 @@ export function ensureVectorTables(db: Database.Database, dimensions: number): v
       embedding FLOAT[${dimensions}] distance_metric=cosine
     );
   `);
+
+  return dimensionsChanged;
 }
 
 export function getSchemaVersion(db: Database.Database): string | null {

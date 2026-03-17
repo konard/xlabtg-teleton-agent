@@ -23,13 +23,13 @@ export class KnowledgeIndexer {
     private vectorEnabled: boolean
   ) {}
 
-  async indexAll(): Promise<{ indexed: number; skipped: number }> {
+  async indexAll(options?: { force?: boolean }): Promise<{ indexed: number; skipped: number }> {
     const files = this.listMemoryFiles();
     let indexed = 0;
     let skipped = 0;
 
     for (const file of files) {
-      const wasIndexed = await this.indexFile(file);
+      const wasIndexed = await this.indexFile(file, options?.force);
       if (wasIndexed) {
         indexed++;
       } else {
@@ -40,7 +40,7 @@ export class KnowledgeIndexer {
     return { indexed, skipped };
   }
 
-  async indexFile(absPath: string): Promise<boolean> {
+  async indexFile(absPath: string, force?: boolean): Promise<boolean> {
     if (!existsSync(absPath) || !absPath.endsWith(".md")) {
       return false;
     }
@@ -49,12 +49,14 @@ export class KnowledgeIndexer {
     const relPath = absPath.replace(this.workspaceDir + "/", "");
     const fileHash = hashText(content);
 
-    const existing = this.db
-      .prepare(`SELECT hash FROM knowledge WHERE path = ? AND source = 'memory' LIMIT 1`)
-      .get(relPath) as { hash: string } | undefined;
+    if (!force) {
+      const existing = this.db
+        .prepare(`SELECT hash FROM knowledge WHERE path = ? AND source = 'memory' LIMIT 1`)
+        .get(relPath) as { hash: string } | undefined;
 
-    if (existing?.hash === fileHash) {
-      return false;
+      if (existing?.hash === fileHash) {
+        return false;
+      }
     }
 
     const chunks = this.chunkMarkdown(content, relPath);
@@ -93,7 +95,7 @@ export class KnowledgeIndexer {
           serializeEmbedding(embedding),
           chunk.startLine,
           chunk.endLine,
-          chunk.hash
+          fileHash
         );
 
         if (insertVec && embedding.length > 0) {
@@ -142,6 +144,7 @@ export class KnowledgeIndexer {
     let startLine = 1;
     let currentLine = 1;
     let inCodeBlock = false;
+    let overlapPrefix = "";
 
     const flushChunk = () => {
       const text = currentChunk.trim();
@@ -155,8 +158,10 @@ export class KnowledgeIndexer {
           endLine: currentLine - 1,
           hash: hashText(text),
         });
+        const nonEmpty = text.split("\n").filter((l) => l.trim());
+        overlapPrefix = nonEmpty.length > 0 ? nonEmpty.slice(-2).join("\n") + "\n" : "";
       }
-      currentChunk = "";
+      currentChunk = overlapPrefix;
       startLine = currentLine;
     };
 

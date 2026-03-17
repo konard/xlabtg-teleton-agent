@@ -22,6 +22,9 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
   private hits = 0;
   private misses = 0;
   private ops = 0;
+  private readonly stmtCacheGet: Database.Statement;
+  private readonly stmtCachePut: Database.Statement;
+  private readonly stmtCacheTouch: Database.Statement;
 
   constructor(
     private inner: EmbeddingProvider,
@@ -30,31 +33,30 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
     this.id = inner.id;
     this.model = inner.model;
     this.dimensions = inner.dimensions;
+    this.stmtCacheGet = db.prepare(
+      `SELECT embedding FROM embedding_cache WHERE hash = ? AND model = ? AND provider = ?`
+    );
+    this.stmtCachePut = db.prepare(
+      `INSERT OR REPLACE INTO embedding_cache (hash, embedding, model, provider, dims, created_at, accessed_at)
+       VALUES (?, ?, ?, ?, ?, unixepoch(), unixepoch())`
+    );
+    this.stmtCacheTouch = db.prepare(
+      `UPDATE embedding_cache SET accessed_at = unixepoch() WHERE hash = ? AND model = ? AND provider = ?`
+    );
   }
 
   private cacheGet(hash: string): { embedding: Buffer | string } | undefined {
-    return this.db
-      .prepare(
-        `SELECT embedding FROM embedding_cache WHERE hash = ? AND model = ? AND provider = ?`
-      )
-      .get(hash, this.model, this.id) as { embedding: Buffer | string } | undefined;
+    return this.stmtCacheGet.get(hash, this.model, this.id) as
+      | { embedding: Buffer | string }
+      | undefined;
   }
 
   private cachePut(hash: string, blob: Buffer): void {
-    this.db
-      .prepare(
-        `INSERT OR REPLACE INTO embedding_cache (hash, embedding, model, provider, dims, created_at, accessed_at)
-         VALUES (?, ?, ?, ?, ?, unixepoch(), unixepoch())`
-      )
-      .run(hash, blob, this.model, this.id, this.dimensions);
+    this.stmtCachePut.run(hash, blob, this.model, this.id, this.dimensions);
   }
 
   private cacheTouch(hash: string): void {
-    this.db
-      .prepare(
-        `UPDATE embedding_cache SET accessed_at = unixepoch() WHERE hash = ? AND model = ? AND provider = ?`
-      )
-      .run(hash, this.model, this.id);
+    this.stmtCacheTouch.run(hash, this.model, this.id);
   }
 
   async warmup(): Promise<boolean> {

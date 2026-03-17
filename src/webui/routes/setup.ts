@@ -7,7 +7,7 @@
  */
 
 import { Hono } from "hono";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, statSync } from "fs";
 import { join } from "path";
 import YAML from "yaml";
 import {
@@ -48,7 +48,7 @@ function maskKey(key: string): string {
 
 // ── Route factory ─────────────────────────────────────────────────────
 
-export function createSetupRoutes(): Hono {
+export function createSetupRoutes(options?: { keyHash?: string }): Hono {
   const app = new Hono();
   const authManager = new TelegramAuthManager();
 
@@ -125,7 +125,7 @@ export function createSetupRoutes(): Hono {
   app.get("/detect-claude-code-key", (c) => {
     try {
       const key = getClaudeCodeApiKey();
-      const masked = key.slice(0, 12) + "****" + key.slice(-4);
+      const masked = maskKey(key);
       return c.json({
         success: true,
         data: {
@@ -463,6 +463,37 @@ export function createSetupRoutes(): Hono {
     }
   });
 
+  // ── POST /embeddings/warmup ──────────────────────────────────────
+  app.post("/embeddings/warmup", async (c) => {
+    try {
+      const { LocalEmbeddingProvider } = await import("../../memory/embeddings/local.js");
+      const provider = new LocalEmbeddingProvider({});
+      const success = await provider.warmup();
+      return c.json({
+        success,
+        model: provider.model,
+        dimensions: provider.dimensions,
+      });
+    } catch (error) {
+      return c.json(
+        { success: false, error: error instanceof Error ? error.message : String(error) },
+        500
+      );
+    }
+  });
+
+  // ── GET /embeddings/status ─────────────────────────────────────
+  app.get("/embeddings/status", (c) => {
+    const model = "Xenova/all-MiniLM-L6-v2";
+    const modelPath = join(TELETON_ROOT, "models", model, "onnx", "model.onnx");
+    try {
+      const stats = statSync(modelPath);
+      return c.json({ cached: true, model, modelPath, sizeBytes: stats.size });
+    } catch {
+      return c.json({ cached: false, model, modelPath });
+    }
+  });
+
   // ── POST /config/save ─────────────────────────────────────────────
   app.post("/config/save", async (c) => {
     try {
@@ -564,6 +595,13 @@ export function createSetupRoutes(): Hono {
         ...(input.tonapi_key ? { tonapi_key: input.tonapi_key } : {}),
         ...(input.toncenter_api_key ? { toncenter_api_key: input.toncenter_api_key } : {}),
         ...(input.tavily_api_key ? { tavily_api_key: input.tavily_api_key } : {}),
+        // Persist Management API key hash so it survives reboots
+        api: {
+          enabled: true,
+          port: 7778,
+          host: "0.0.0.0",
+          ...(options?.keyHash ? { key_hash: options.keyHash } : {}),
+        },
       };
 
       // Validate with Zod

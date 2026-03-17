@@ -391,7 +391,7 @@ describe("Config Loader", () => {
       const config = loadConfig(TEST_CONFIG_PATH);
 
       expect(config.agent.provider).toBe("openai");
-      expect(config.agent.model).toBe("gpt-4o");
+      expect(config.agent.model).toBe("gpt-5.4");
     });
 
     it("should not override explicit model for non-anthropic providers", () => {
@@ -880,7 +880,7 @@ telegram:
       expect(config.webui.enabled).toBe(true);
 
       // Provider auto-model
-      expect(config.agent.model).toBe("gpt-4o");
+      expect(config.agent.model).toBe("gpt-5.4");
 
       // Path expansion
       expect(config.telegram.session_path).toBe(join(homedir(), "custom"));
