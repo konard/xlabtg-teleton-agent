@@ -676,7 +676,6 @@ export function Plugins() {
         <h1>Plugins</h1>
         <p>Manage installed plugins and browse the marketplace</p>
       </div>
-      <h1>DEBUG: NEW UI BUILD</h1>
 
       {error && (
         <div className="alert error" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
