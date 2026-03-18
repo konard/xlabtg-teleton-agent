@@ -1884,6 +1884,141 @@ button.btn-lg {
   }
 }
 
+/* ── Dashboard Widget System ── */
+
+.dashboard-grid-root {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.dashboard-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.widget-add-dropdown {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dashboard-rgl {
+  width: 100%;
+}
+
+/* react-grid-layout placeholder */
+.react-grid-item.react-grid-placeholder {
+  background: var(--accent-dim) !important;
+  border: 1px dashed var(--accent) !important;
+  border-radius: var(--radius-lg) !important;
+  opacity: 1 !important;
+}
+
+.react-resizable-handle {
+  opacity: 0.4;
+}
+
+.react-resizable-handle:hover {
+  opacity: 0.8;
+}
+
+/* Widget Wrapper */
+.widget-wrapper {
+  height: 100%;
+  margin-bottom: 0 !important;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.widget-wrapper.widget-edit-mode {
+  border-style: dashed;
+  border-color: var(--glass-border-strong);
+}
+
+.widget-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  min-height: 24px;
+}
+
+.widget-drag-handle {
+  cursor: grab;
+  color: var(--text-tertiary);
+  font-size: 16px;
+  line-height: 1;
+  user-select: none;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.widget-drag-handle:hover {
+  color: var(--text-secondary);
+}
+
+.widget-drag-handle:active {
+  cursor: grabbing;
+}
+
+.widget-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  flex: 1;
+}
+
+.widget-remove-btn {
+  padding: 2px 7px !important;
+  font-size: 11px !important;
+  min-height: unset !important;
+  border-radius: 6px !important;
+  opacity: 0.6;
+}
+
+.widget-remove-btn:hover {
+  opacity: 1;
+}
+
+.widget-content {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+/* Stats widget — keep existing status-row behavior */
+.widget-stats .widget-content {
+  display: flex;
+  align-items: center;
+}
+
+/* Logs widget — fill height, scroll inside */
+.widget-logs .widget-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.logs-widget-inner {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.logs-widget-inner .dashboard-logs-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 /* ── Pill Bar ── */
 
 .pill-bar {
