@@ -2,6 +2,25 @@ import { useEffect, useState } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
+import { PillBar } from '../components/PillBar';
+
+type StateFilter = 'all' | 'enabled' | 'disabled';
+type SortBy = 'name-asc' | 'name-desc' | 'module';
+
+function highlight(text: string, query: string): JSX.Element {
+  if (!query) return <>{text}</>;
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return <>{text}</>;
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ background: 'rgba(255,200,0,0.3)', color: 'inherit', borderRadius: '2px', padding: '0 1px' }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  );
+}
 
 export function Tools() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
@@ -10,6 +29,8 @@ export function Tools() {
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [stateFilter, setStateFilter] = useState<StateFilter>('all');
+  const [sortBy, setSortBy] = useState<SortBy>('module');
 
   const loadTools = () => {
     setLoading(true);
@@ -91,12 +112,42 @@ export function Tools() {
   const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter(t => t.enabled).length, 0);
 
   const trimmedSearch = search.trim().toLowerCase();
-  const filtered = trimmedSearch
-    ? builtIn.filter((m) =>
-        m.name.toLowerCase().includes(trimmedSearch) ||
-        m.tools.some(t => t.name.toLowerCase().includes(trimmedSearch) || t.description.toLowerCase().includes(trimmedSearch))
-      )
-    : builtIn;
+
+  // Filter modules by search and state
+  const filtered = builtIn
+    .map((m) => {
+      const matchingTools = m.tools.filter((t) => {
+        const matchesSearch = !trimmedSearch
+          || t.name.toLowerCase().includes(trimmedSearch)
+          || t.description.toLowerCase().includes(trimmedSearch)
+          || m.name.toLowerCase().includes(trimmedSearch);
+        const matchesState = stateFilter === 'all'
+          || (stateFilter === 'enabled' && t.enabled)
+          || (stateFilter === 'disabled' && !t.enabled);
+        return matchesSearch && matchesState;
+      });
+      return { module: m, matchingTools };
+    })
+    .filter(({ matchingTools }) => matchingTools.length > 0);
+
+  // Sort
+  const sorted = [...filtered].sort((a, b) => {
+    if (sortBy === 'name-asc') return a.module.name.localeCompare(b.module.name);
+    if (sortBy === 'name-desc') return b.module.name.localeCompare(a.module.name);
+    return 0; // 'module' keeps original order
+  });
+
+  const totalMatchingTools = sorted.reduce((sum, { matchingTools }) => sum + matchingTools.length, 0);
+  const isFiltered = trimmedSearch || stateFilter !== 'all';
+
+  const statePills = [
+    { id: 'all', label: 'All' },
+    { id: 'enabled', label: `Enabled (${enabledCount})` },
+    { id: 'disabled', label: `Disabled (${builtInCount - enabledCount})` },
+  ];
+
+  const sortOptions: SortBy[] = ['module', 'name-asc', 'name-desc'];
+  const sortLabels = ['Module', 'Name A–Z', 'Name Z–A'];
 
   return (
     <div>
@@ -164,9 +215,16 @@ export function Tools() {
               </button>
             )}
           </div>
-          {trimmedSearch && (
+          <Select
+            value={sortBy}
+            options={sortOptions}
+            labels={sortLabels}
+            onChange={(v) => setSortBy(v as SortBy)}
+            style={{ minWidth: '110px' }}
+          />
+          {isFiltered && (
             <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-              {filtered.length} of {builtIn.length} modules
+              {totalMatchingTools} of {builtInCount} tools
             </span>
           )}
           <button
@@ -178,11 +236,16 @@ export function Tools() {
         </div>
       </div>
 
+      {/* State filter pill bar */}
+      <div style={{ marginBottom: '14px' }}>
+        <PillBar tabs={statePills} activeTab={stateFilter} onTabChange={(id) => setStateFilter(id as StateFilter)} />
+      </div>
+
       {/* Module table */}
       <div className="card" style={{ padding: 0 }}>
-        {filtered.length === 0 ? (
+        {sorted.length === 0 ? (
           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            {trimmedSearch ? 'No modules match your search' : 'No modules found'}
+            {isFiltered ? 'No tools match your filters' : 'No modules found'}
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
@@ -195,7 +258,7 @@ export function Tools() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((module) => {
+              {sorted.map(({ module, matchingTools }) => {
                 const isExpanded = expandedModule === module.name;
                 const someEnabled = module.tools.some((t) => t.enabled);
                 const noneEnabled = module.tools.every((t) => !t.enabled);
@@ -225,9 +288,14 @@ export function Tools() {
                           <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
                             {isExpanded ? '\u25BC' : '\u25B6'}
                           </span>
-                          <span style={{ fontWeight: 600 }}>{module.name}</span>
+                          <span style={{ fontWeight: 600 }}>{highlight(module.name, trimmedSearch)}</span>
                           {noneEnabled && (
                             <span className="badge warn">Disabled</span>
+                          )}
+                          {isFiltered && matchingTools.length !== module.toolCount && (
+                            <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>
+                              ({matchingTools.length} matching)
+                            </span>
                           )}
                         </div>
                       </td>
@@ -265,8 +333,8 @@ export function Tools() {
                       <tr key={`${module.name}-detail`} style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--separator)' }}>
                         <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
                           <div style={{ display: 'grid', gap: '6px', paddingTop: '6px' }}>
-                            {module.tools.map((tool) => (
-                              <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} />
+                            {(isFiltered ? matchingTools : module.tools).map((tool) => (
+                              <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} search={trimmedSearch} />
                             ))}
                           </div>
                         </td>
