@@ -254,6 +254,28 @@ export interface NotificationData {
   createdAt: number;
 }
 
+// ── Metrics types ────────────────────────────────────────────────────
+
+export interface TokenDataPoint {
+  timestamp: number; // unix seconds, truncated to hour
+  tokens: number;
+  cost: number;
+}
+
+export interface ToolUsageEntry {
+  tool: string;
+  count: number;
+}
+
+export interface ActivityEntry {
+  dayOfWeek: number; // 0=Sun … 6=Sat
+  hour: number;      // 0–23
+  count: number;
+}
+
+export type MetricsPeriod = '24h' | '7d' | '30d';
+
+
 export interface MarketplacePlugin {
   id: string;
   name: string;
@@ -788,6 +810,20 @@ export const api = {
     });
 
     return () => eventSource.close();
+  },
+
+  // ── Metrics ───────────────────────────────────────────────────────
+
+  async getTokenMetrics(period: MetricsPeriod = '24h') {
+    return fetchAPI<APIResponse<TokenDataPoint[]>>(`/metrics/tokens?period=${period}`);
+  },
+
+  async getToolMetrics(period: MetricsPeriod = '7d') {
+    return fetchAPI<APIResponse<ToolUsageEntry[]>>(`/metrics/tools?period=${period}`);
+  },
+
+  async getActivityMetrics(period: MetricsPeriod = '30d') {
+    return fetchAPI<APIResponse<ActivityEntry[]>>(`/metrics/activity?period=${period}`);
   },
 
   connectLogs(onLog: (entry: LogEntry) => void, onError?: (error: Event) => void) {
