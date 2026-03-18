@@ -349,6 +349,53 @@ export interface ActivityEntry {
 
 export type MetricsPeriod = "24h" | "7d" | "30d";
 
+// ── Analytics types ──────────────────────────────────────────────────
+
+export interface PerformanceSummary {
+  avgResponseMs: number | null;
+  successRate: number | null;
+  totalRequests: number;
+  errorCount: number;
+  p95Ms: number | null;
+  p99Ms: number | null;
+}
+
+export interface ErrorFrequencyEntry {
+  date: string;
+  count: number;
+}
+
+export interface AnalyticsPerformanceData {
+  summary: PerformanceSummary;
+  errorFrequency: ErrorFrequencyEntry[];
+}
+
+export interface DailyCostEntry {
+  date: string;
+  cost_usd: number;
+  tokens_input: number;
+  tokens_output: number;
+  request_count: number;
+}
+
+export interface CostPerToolEntry {
+  tool: string;
+  count: number;
+  avg_duration_ms: number | null;
+}
+
+export interface AnalyticsCostData {
+  daily: DailyCostEntry[];
+  perTool: CostPerToolEntry[];
+}
+
+export interface BudgetStatus {
+  monthly_limit_usd: number | null;
+  current_month_cost_usd: number;
+  percent_used: number | null;
+  projection_usd: number | null;
+}
+
 export interface MarketplacePlugin {
   id: string;
   name: string;
@@ -1142,6 +1189,39 @@ export const api = {
 
   async getActivityMetrics(period: MetricsPeriod = "30d") {
     return fetchAPI<APIResponse<ActivityEntry[]>>(`/metrics/activity?period=${period}`);
+  },
+
+  // ── Analytics ────────────────────────────────────────────────────
+
+  async getAnalyticsUsage(period: MetricsPeriod = "7d") {
+    return fetchAPI<APIResponse<TokenDataPoint[]>>(`/analytics/usage?period=${period}`);
+  },
+
+  async getAnalyticsTools(period: MetricsPeriod = "7d") {
+    return fetchAPI<APIResponse<ToolUsageEntry[]>>(`/analytics/tools?period=${period}`);
+  },
+
+  async getAnalyticsHeatmap(period: MetricsPeriod = "30d") {
+    return fetchAPI<APIResponse<ActivityEntry[]>>(`/analytics/heatmap?period=${period}`);
+  },
+
+  async getAnalyticsPerformance(period: MetricsPeriod = "7d") {
+    return fetchAPI<APIResponse<AnalyticsPerformanceData>>(`/analytics/performance?period=${period}`);
+  },
+
+  async getAnalyticsCost(period: MetricsPeriod = "30d") {
+    return fetchAPI<APIResponse<AnalyticsCostData>>(`/analytics/cost?period=${period}`);
+  },
+
+  async getAnalyticsBudget() {
+    return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget");
+  },
+
+  async setAnalyticsBudget(monthly_limit_usd: number | null) {
+    return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget", {
+      method: "PUT",
+      body: JSON.stringify({ monthly_limit_usd }),
+    });
   },
 
   connectLogs(onLog: (entry: LogEntry) => void, onError?: (error: Event) => void) {
