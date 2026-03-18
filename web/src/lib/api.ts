@@ -396,6 +396,49 @@ export interface BudgetStatus {
   projection_usd: number | null;
 }
 
+// ── Security types ────────────────────────────────────────────────────────────
+
+export type AuditActionType =
+  | "config_change"
+  | "tool_toggle"
+  | "soul_edit"
+  | "agent_restart"
+  | "agent_stop"
+  | "plugin_install"
+  | "plugin_remove"
+  | "hook_change"
+  | "mcp_change"
+  | "memory_delete"
+  | "workspace_change"
+  | "session_delete"
+  | "secret_change"
+  | "security_change"
+  | "login"
+  | "logout"
+  | "other";
+
+export interface AuditLogEntry {
+  id: number;
+  action: AuditActionType;
+  details: string;
+  ip: string | null;
+  user_agent: string | null;
+  created_at: number;
+}
+
+export interface AuditLogPage {
+  entries: AuditLogEntry[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface SecuritySettings {
+  session_timeout_minutes: number | null;
+  ip_allowlist: string[];
+  rate_limit_rpm: number | null;
+}
+
 export interface MarketplacePlugin {
   id: string;
   name: string;
@@ -1221,6 +1264,47 @@ export const api = {
     return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget", {
       method: "PUT",
       body: JSON.stringify({ monthly_limit_usd }),
+    });
+  },
+
+  // ── Security ──────────────────────────────────────────────────────
+
+  async getAuditLog(opts: {
+    page?: number;
+    limit?: number;
+    type?: AuditActionType | null;
+    since?: number | null;
+    until?: number | null;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (opts.page) params.set("page", String(opts.page));
+    if (opts.limit) params.set("limit", String(opts.limit));
+    if (opts.type) params.set("type", opts.type);
+    if (opts.since != null) params.set("since", String(opts.since));
+    if (opts.until != null) params.set("until", String(opts.until));
+    return fetchAPI<APIResponse<AuditLogPage>>(`/security/audit?${params}`);
+  },
+
+  getAuditExportUrl(opts: {
+    type?: AuditActionType | null;
+    since?: number | null;
+    until?: number | null;
+  } = {}) {
+    const params = new URLSearchParams();
+    if (opts.type) params.set("type", opts.type);
+    if (opts.since != null) params.set("since", String(opts.since));
+    if (opts.until != null) params.set("until", String(opts.until));
+    return `${API_BASE}/security/audit/export?${params}`;
+  },
+
+  async getSecuritySettings() {
+    return fetchAPI<APIResponse<SecuritySettings>>("/security/settings");
+  },
+
+  async updateSecuritySettings(patch: Partial<SecuritySettings>) {
+    return fetchAPI<APIResponse<SecuritySettings>>("/security/settings", {
+      method: "PUT",
+      body: JSON.stringify(patch),
     });
   },
 

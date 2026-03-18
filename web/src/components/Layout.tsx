@@ -51,6 +51,9 @@ function DashboardNav() {
         <Link to="/analytics" className={isActive("/analytics") ? "active" : ""}>
           Analytics
         </Link>
+        <Link to="/security" className={isActive("/security") ? "active" : ""}>
+          Security
+        </Link>
         <Link to="/config" className={isActive("/config") ? "active" : ""}>
           Config
         </Link>
