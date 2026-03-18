@@ -14,6 +14,7 @@ import { Config } from "./pages/Config";
 import { Hooks } from "./pages/Hooks";
 import { Sessions } from "./pages/Sessions";
 import { Analytics } from "./pages/Analytics";
+import { Security } from "./pages/Security";
 import { Setup } from "./pages/Setup";
 import { SetupLayout } from "./components/setup/SetupLayout";
 import { checkAuth, login } from "./lib/api";
@@ -143,6 +144,7 @@ function AuthenticatedApp() {
             <Route path="hooks" element={<Hooks />} />
             <Route path="sessions" element={<Sessions />} />
             <Route path="analytics" element={<Analytics />} />
+            <Route path="security" element={<Security />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

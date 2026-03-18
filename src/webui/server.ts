@@ -42,6 +42,8 @@ import { createAgentActionsRoutes } from "./routes/agent-actions.js";
 import { createMetricsRoutes } from "./routes/metrics.js";
 import { createSessionsRoutes } from "./routes/sessions.js";
 import { createAnalyticsRoutes } from "./routes/analytics.js";
+import { createSecurityRoutes } from "./routes/security.js";
+import { createAuditMiddleware } from "./middleware/audit.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -160,6 +162,9 @@ export class WebUIServer {
 
       return c.json({ success: false, error: "Unauthorized" }, 401);
     });
+
+    // Audit logging for mutating API requests (after auth, so unauthenticated requests are not logged)
+    this.app.use("/api/*", createAuditMiddleware(this.deps));
   }
 
   private setupRoutes() {
@@ -228,6 +233,7 @@ export class WebUIServer {
     this.app.route("/api/metrics", createMetricsRoutes(this.deps));
     this.app.route("/api/sessions", createSessionsRoutes(this.deps));
     this.app.route("/api/analytics", createAnalyticsRoutes(this.deps));
+    this.app.route("/api/security", createSecurityRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {
