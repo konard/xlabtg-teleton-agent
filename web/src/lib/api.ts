@@ -243,6 +243,17 @@ export interface LogEntry {
   timestamp: number;
 }
 
+export type NotificationType = 'error' | 'warning' | 'info' | 'achievement';
+
+export interface NotificationData {
+  id: string;
+  type: NotificationType;
+  title: string;
+  message: string;
+  read: boolean;
+  createdAt: number;
+}
+
 export interface MarketplacePlugin {
   id: string;
   name: string;
@@ -738,6 +749,45 @@ export const api = {
 
   async uninstallTonProxy() {
     return fetchAPI<APIResponse<{ running: boolean; installed: boolean; port: number; enabled: boolean }>>('/ton-proxy/uninstall', { method: 'POST' });
+  },
+
+  // ── Notifications ─────────────────────────────────────────────────
+
+  async getNotifications(unreadOnly = false) {
+    const qs = unreadOnly ? '?unread=true' : '';
+    return fetchAPI<APIResponse<NotificationData[]>>(`/notifications${qs}`);
+  },
+
+  async getUnreadCount() {
+    return fetchAPI<APIResponse<{ count: number }>>('/notifications/unread-count');
+  },
+
+  async markNotificationRead(id: string) {
+    return fetchAPI<APIResponse<{ count: number }>>(`/notifications/${id}/read`, { method: 'PATCH' });
+  },
+
+  async markAllNotificationsRead() {
+    return fetchAPI<APIResponse<{ changed: number; count: number }>>('/notifications/read-all', { method: 'POST' });
+  },
+
+  async deleteNotification(id: string) {
+    return fetchAPI<APIResponse<{ message: string }>>(`/notifications/${id}`, { method: 'DELETE' });
+  },
+
+  connectNotifications(onCount: (count: number) => void) {
+    const url = `${API_BASE}/notifications/stream`;
+    const eventSource = new EventSource(url);
+
+    eventSource.addEventListener('unread-count', (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onCount(data.count);
+      } catch {
+        // ignore parse errors
+      }
+    });
+
+    return () => eventSource.close();
   },
 
   connectLogs(onLog: (entry: LogEntry) => void, onError?: (error: Event) => void) {

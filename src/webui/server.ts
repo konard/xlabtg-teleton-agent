@@ -35,6 +35,8 @@ import { createMarketplaceRoutes } from "./routes/marketplace.js";
 import { createHooksRoutes } from "./routes/hooks.js";
 import { createGroqRoutes } from "./routes/groq.js";
 import { createTonProxyRoutes } from "./routes/ton-proxy.js";
+import { createNotificationsRoutes, notificationBus } from "./routes/notifications.js";
+import { getNotificationService } from "../services/notifications.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -72,6 +74,7 @@ export class WebUIServer {
 
     this.setupMiddleware();
     this.setupRoutes();
+    this.setupNotificationTriggers();
   }
 
   /** Set an HttpOnly session cookie */
@@ -214,6 +217,7 @@ export class WebUIServer {
     this.app.route("/api/hooks", createHooksRoutes(this.deps));
     this.app.route("/api/groq", createGroqRoutes(this.deps));
     this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
+    this.app.route("/api/notifications", createNotificationsRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {
@@ -419,6 +423,26 @@ export class WebUIServer {
         },
         500
       );
+    });
+  }
+
+  private setupNotificationTriggers() {
+    const lifecycle = this.deps.lifecycle;
+    if (!lifecycle) return;
+
+    const svc = getNotificationService(this.deps.memory.db);
+
+    lifecycle.on("stateChange", (event: StateChangeEvent) => {
+      if (event.state === "stopped" && event.error) {
+        svc.add("error", "Agent crashed", event.error);
+        notificationBus.emit("update", svc.unreadCount());
+      } else if (event.state === "stopped") {
+        svc.add("info", "Agent stopped", "The agent has been stopped.");
+        notificationBus.emit("update", svc.unreadCount());
+      } else if (event.state === "running") {
+        svc.add("info", "Agent started", "The agent is now running.");
+        notificationBus.emit("update", svc.unreadCount());
+      }
     });
   }
 
