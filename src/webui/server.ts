@@ -35,6 +35,8 @@ import { createMarketplaceRoutes } from "./routes/marketplace.js";
 import { createHooksRoutes } from "./routes/hooks.js";
 import { createGroqRoutes } from "./routes/groq.js";
 import { createTonProxyRoutes } from "./routes/ton-proxy.js";
+import { createCacheRoutes } from "./routes/cache.js";
+import { createAgentActionsRoutes } from "./routes/agent-actions.js";
 import { createMetricsRoutes } from "./routes/metrics.js";
 
 function findWebDist(): string | null {
@@ -215,6 +217,8 @@ export class WebUIServer {
     this.app.route("/api/hooks", createHooksRoutes(this.deps));
     this.app.route("/api/groq", createGroqRoutes(this.deps));
     this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
+    this.app.route("/api/cache", createCacheRoutes(this.deps));
+    this.app.route("/api/agent-actions", createAgentActionsRoutes(this.deps));
     this.app.route("/api/metrics", createMetricsRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
