@@ -5,6 +5,7 @@ interface ToolRowProps {
   updating: string | null;
   onToggle: (name: string, enabled: boolean) => void;
   onScope: (name: string, scope: ToolInfo['scope']) => void;
+  onInfo?: (name: string) => void;
   search?: string;
 }
 
@@ -23,14 +24,14 @@ function highlight(text: string, query: string | undefined): JSX.Element {
   );
 }
 
-export function ToolRow({ tool, updating, onToggle, onScope, search }: ToolRowProps) {
+export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search }: ToolRowProps) {
   return (
     <div
       className="tool-row"
       style={{
         opacity: tool.enabled ? 1 : 0.5,
         display: 'grid',
-        gridTemplateColumns: '1fr auto auto',
+        gridTemplateColumns: '1fr auto auto auto',
         gap: '10px',
         alignItems: 'center',
       }}
@@ -52,6 +53,17 @@ export function ToolRow({ tool, updating, onToggle, onScope, search }: ToolRowPr
           </button>
         ))}
       </div>
+
+      {onInfo && (
+        <button
+          className="btn-ghost btn-sm"
+          title="View details"
+          onClick={() => onInfo(tool.name)}
+          style={{ padding: '3px 7px', fontSize: '13px', lineHeight: 1, opacity: 0.7 }}
+        >
+          ⓘ
+        </button>
+      )}
 
       <label className="toggle">
         <input
