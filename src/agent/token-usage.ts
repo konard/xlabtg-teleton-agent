@@ -1,5 +1,7 @@
 // ── Global token usage accumulator (in-memory, resets on restart) ───
 
+import { getMetrics } from "../services/metrics.js";
+
 const globalTokenUsage = { totalTokens: 0, totalCost: 0 };
 
 export function getTokenUsage() {
@@ -13,8 +15,11 @@ export function accumulateTokenUsage(usage: {
   cacheWrite: number;
   totalCost: number;
 }) {
-  globalTokenUsage.totalTokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  const tokens = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  globalTokenUsage.totalTokens += tokens;
   globalTokenUsage.totalCost += usage.totalCost;
+  // Persist to metrics DB if initialized
+  getMetrics()?.recordTokenUsage(tokens, usage.totalCost);
 }
 
 export function resetTokenUsage() {

@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useCallback, useRef } from 'react';
 import { ResponsiveGridLayout, Layout, LayoutItem, ResponsiveLayouts, useContainerWidth } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -11,10 +11,20 @@ import { ExecSettingsWidget } from './ExecSettingsWidget';
 import { StatusData } from '../../lib/api';
 import { ProviderMeta } from '../../hooks/useConfigState';
 
+const TokenUsageChart = lazy(() =>
+  import('../charts/TokenUsageChart').then((m) => ({ default: m.TokenUsageChart }))
+);
+const ToolUsageChart = lazy(() =>
+  import('../charts/ToolUsageChart').then((m) => ({ default: m.ToolUsageChart }))
+);
+const ActivityHeatmap = lazy(() =>
+  import('../charts/ActivityHeatmap').then((m) => ({ default: m.ActivityHeatmap }))
+);
+
 const STORAGE_KEY = 'dashboard-layout';
 
 // Widget IDs
-export type WidgetId = 'stats' | 'logs' | 'agent' | 'telegram' | 'exec';
+export type WidgetId = 'stats' | 'logs' | 'agent' | 'telegram' | 'exec' | 'token-chart' | 'tool-chart' | 'activity-heatmap';
 
 interface WidgetMeta {
   id: WidgetId;
@@ -56,11 +66,35 @@ const WIDGET_REGISTRY: WidgetMeta[] = [
     },
   },
   {
+    id: 'token-chart',
+    title: 'Token Usage',
+    defaultItem: {
+      lg: { i: 'token-chart', x: 0, y: 13, w: 6, h: 6, minH: 4 },
+      md: { i: 'token-chart', x: 0, y: 13, w: 5, h: 6, minH: 4 },
+    },
+  },
+  {
+    id: 'tool-chart',
+    title: 'Tool Calls',
+    defaultItem: {
+      lg: { i: 'tool-chart', x: 6, y: 13, w: 6, h: 6, minH: 4 },
+      md: { i: 'tool-chart', x: 5, y: 13, w: 5, h: 6, minH: 4 },
+    },
+  },
+  {
+    id: 'activity-heatmap',
+    title: 'Activity Heatmap',
+    defaultItem: {
+      lg: { i: 'activity-heatmap', x: 0, y: 19, w: 12, h: 6, minH: 4 },
+      md: { i: 'activity-heatmap', x: 0, y: 19, w: 10, h: 6, minH: 4 },
+    },
+  },
+  {
     id: 'logs',
     title: 'Live Logs',
     defaultItem: {
-      lg: { i: 'logs', x: 0, y: 13, w: 12, h: 8, minH: 4 },
-      md: { i: 'logs', x: 0, y: 13, w: 10, h: 8, minH: 4 },
+      lg: { i: 'logs', x: 0, y: 25, w: 12, h: 8, minH: 4 },
+      md: { i: 'logs', x: 0, y: 25, w: 10, h: 8, minH: 4 },
     },
   },
 ];
@@ -130,8 +164,8 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
   const { showExec, width } = props;
 
   const ALL_VISIBLE: WidgetId[] = showExec
-    ? ['stats', 'agent', 'telegram', 'exec', 'logs']
-    : ['stats', 'agent', 'telegram', 'logs'];
+    ? ['stats', 'agent', 'telegram', 'exec', 'token-chart', 'tool-chart', 'activity-heatmap', 'logs']
+    : ['stats', 'agent', 'telegram', 'token-chart', 'tool-chart', 'activity-heatmap', 'logs'];
 
   const saved = loadSaved();
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(
@@ -168,8 +202,8 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
 
   const resetLayout = useCallback(() => {
     const next = showExec
-      ? (['stats', 'agent', 'telegram', 'exec', 'logs'] as WidgetId[])
-      : (['stats', 'agent', 'telegram', 'logs'] as WidgetId[]);
+      ? (['stats', 'agent', 'telegram', 'exec', 'token-chart', 'tool-chart', 'activity-heatmap', 'logs'] as WidgetId[])
+      : (['stats', 'agent', 'telegram', 'token-chart', 'tool-chart', 'activity-heatmap', 'logs'] as WidgetId[]);
     const nextLayouts = buildDefaultLayouts(next);
     setVisible(next);
     setLayouts(nextLayouts);
@@ -229,6 +263,21 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
               getLocal={props.getLocal}
               saveConfig={props.saveConfig}
             />
+          )}
+          {id === 'token-chart' && (
+            <Suspense fallback={<div className="chart-loading">Loading…</div>}>
+              <TokenUsageChart />
+            </Suspense>
+          )}
+          {id === 'tool-chart' && (
+            <Suspense fallback={<div className="chart-loading">Loading…</div>}>
+              <ToolUsageChart />
+            </Suspense>
+          )}
+          {id === 'activity-heatmap' && (
+            <Suspense fallback={<div className="chart-loading">Loading…</div>}>
+              <ActivityHeatmap />
+            </Suspense>
           )}
         </WidgetWrapper>
       </div>
