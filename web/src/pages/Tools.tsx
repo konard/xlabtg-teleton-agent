@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { ToolDetailsModal } from '../components/ToolDetailsModal';
+import { BulkActionBar } from '../components/BulkActionBar';
 import { Select } from '../components/Select';
 import { PillBar } from '../components/PillBar';
 
@@ -33,6 +34,12 @@ export function Tools() {
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('module');
+
+  // Multi-selection state
+  const [selectedTools, setSelectedTools] = useState<Set<string>>(new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
+
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const loadTools = () => {
     setLoading(true);
@@ -107,6 +114,163 @@ export function Tools() {
     }
   };
 
+  // ── Selection helpers ────────────────────────────────────────────────
+
+  const handleSelectTool = (toolName: string, checked: boolean) => {
+    setSelectedTools((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(toolName);
+      else next.delete(toolName);
+      return next;
+    });
+  };
+
+  // All visible tools (from currently filtered + sorted view)
+  const allVisibleTools = (): string[] => {
+    const builtIn = modules.filter((m) => !m.isPlugin);
+    const trimmedSearch = search.trim().toLowerCase();
+    const result: string[] = [];
+    for (const m of builtIn) {
+      for (const t of m.tools) {
+        const matchesSearch = !trimmedSearch
+          || t.name.toLowerCase().includes(trimmedSearch)
+          || t.description.toLowerCase().includes(trimmedSearch)
+          || m.name.toLowerCase().includes(trimmedSearch);
+        const matchesState = stateFilter === 'all'
+          || (stateFilter === 'enabled' && t.enabled)
+          || (stateFilter === 'disabled' && !t.enabled);
+        if (matchesSearch && matchesState) result.push(t.name);
+      }
+    }
+    return result;
+  };
+
+  const handleSelectAll = () => {
+    setSelectedTools(new Set(allVisibleTools()));
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedTools(new Set());
+  };
+
+  // ── Bulk action operations ───────────────────────────────────────────
+
+  const allTools = (): ToolInfo[] =>
+    modules.filter((m) => !m.isPlugin).flatMap((m) => m.tools);
+
+  const bulkEnableSelected = async () => {
+    setBulkBusy(true);
+    try {
+      for (const name of selectedTools) {
+        const tool = allTools().find((t) => t.name === name);
+        if (tool && !tool.enabled) {
+          await api.updateToolConfig(name, { enabled: true });
+        }
+      }
+      await loadTools();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkDisableSelected = async () => {
+    setBulkBusy(true);
+    try {
+      for (const name of selectedTools) {
+        const tool = allTools().find((t) => t.name === name);
+        if (tool && tool.enabled) {
+          await api.updateToolConfig(name, { enabled: false });
+        }
+      }
+      await loadTools();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const bulkSetScope = async (scope: ToolInfo['scope']) => {
+    setBulkBusy(true);
+    try {
+      for (const name of selectedTools) {
+        await api.updateToolConfig(name, { scope });
+      }
+      await loadTools();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  const handleDisableUnused = async () => {
+    setBulkBusy(true);
+    try {
+      const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
+      const tools = allTools().filter((t) => t.enabled);
+      for (const tool of tools) {
+        try {
+          const details = await api.getToolDetails(tool.name);
+          const lastUsed = details.data.stats?.lastUsedAt;
+          const isUnused = lastUsed === null || lastUsed === undefined || lastUsed < thirtyDaysAgo;
+          if (isUnused) {
+            await api.updateToolConfig(tool.name, { enabled: false });
+          }
+        } catch {
+          // Skip tools whose details can't be fetched
+        }
+      }
+      await loadTools();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkBusy(false);
+    }
+  };
+
+  // ── Export / Import ──────────────────────────────────────────────────
+
+  const handleExport = () => {
+    const tools = allTools();
+    const config = tools.map((t) => ({ name: t.name, enabled: t.enabled, scope: t.scope }));
+    const blob = new Blob([JSON.stringify(config, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'tools-config.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleImportFile = async (file: File) => {
+    setBulkBusy(true);
+    try {
+      const text = await file.text();
+      const config = JSON.parse(text) as { name: string; enabled: boolean; scope: ToolInfo['scope'] }[];
+      if (!Array.isArray(config)) throw new Error('Invalid config format: expected an array');
+      for (const entry of config) {
+        if (typeof entry.name !== 'string') continue;
+        await api.updateToolConfig(entry.name, {
+          enabled: Boolean(entry.enabled),
+          scope: entry.scope,
+        });
+      }
+      await loadTools();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBulkBusy(false);
+      if (importInputRef.current) importInputRef.current.value = '';
+    }
+  };
+
+  const handleImport = () => {
+    importInputRef.current?.click();
+  };
+
   if (loading) return <div className="loading">Loading...</div>;
 
   const builtIn = modules.filter((m) => !m.isPlugin);
@@ -150,6 +314,8 @@ export function Tools() {
 
   const sortOptions: SortBy[] = ['module', 'name-asc', 'name-desc'];
   const sortLabels = ['Module', 'Name A–Z', 'Name Z–A'];
+
+  const visibleToolNames = allVisibleTools();
 
   return (
     <div style={{ position: 'relative' }}>
@@ -242,6 +408,33 @@ export function Tools() {
       <div style={{ marginBottom: '14px' }}>
         <PillBar tabs={statePills} activeTab={stateFilter} onTabChange={(id) => setStateFilter(id as StateFilter)} />
       </div>
+
+      {/* Bulk action bar */}
+      <BulkActionBar
+        selectedCount={selectedTools.size}
+        totalCount={visibleToolNames.length}
+        onSelectAll={handleSelectAll}
+        onDeselectAll={handleDeselectAll}
+        onEnableSelected={bulkEnableSelected}
+        onDisableSelected={bulkDisableSelected}
+        onSetScope={bulkSetScope}
+        onDisableUnused={handleDisableUnused}
+        onExport={handleExport}
+        onImport={handleImport}
+        busy={bulkBusy}
+      />
+
+      {/* Hidden file input for import */}
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".json,application/json"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleImportFile(file);
+        }}
+      />
 
       {/* Module table */}
       <div className="card" style={{ padding: 0 }}>
@@ -336,7 +529,17 @@ export function Tools() {
                         <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
                           <div style={{ display: 'grid', gap: '6px', paddingTop: '6px' }}>
                             {(isFiltered ? matchingTools : module.tools).map((tool) => (
-                              <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} onInfo={setSelectedTool} search={trimmedSearch} />
+                              <ToolRow
+                                key={tool.name}
+                                tool={tool}
+                                updating={updating}
+                                onToggle={toggleEnabled}
+                                onScope={updateScope}
+                                onInfo={setSelectedTool}
+                                search={trimmedSearch}
+                                selected={selectedTools.has(tool.name)}
+                                onSelect={handleSelectTool}
+                              />
                             ))}
                           </div>
                         </td>
