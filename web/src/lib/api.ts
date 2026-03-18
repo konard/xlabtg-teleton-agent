@@ -845,6 +845,16 @@ export const api = {
 
     return () => eventSource.close();
   },
+
+  // ── Quick Actions ──────────────────────────────────────────────────
+
+  async clearCache() {
+    return fetchAPI<APIResponse<{ cleared: string[]; message: string }>>('/cache/clear', { method: 'POST' });
+  },
+
+  async sendTestMessage() {
+    return fetchAPI<APIResponse<{ message: string; targetId: number }>>('/agent-actions/test/message', { method: 'POST' });
+  },
 };
 
 // ── Setup API (no auth required) ────────────────────────────────────

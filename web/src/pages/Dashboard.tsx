@@ -3,6 +3,7 @@ import { useConfigState } from '../hooks/useConfigState';
 import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
 import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
 import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
+import { QuickActions } from '../components/QuickActions';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
 
@@ -144,6 +145,9 @@ export function Dashboard() {
           </div>
         )}
       </div>
+
+      {/* ── Quick Actions ──────────────────────────────────── */}
+      <QuickActions />
 
       {/* ── Live Logs ──────────────────────────────────────── */}
       <div className="card dashboard-logs">
