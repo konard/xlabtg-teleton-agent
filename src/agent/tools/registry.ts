@@ -17,6 +17,7 @@ import {
   saveToolConfig,
   type ToolConfig,
 } from "../../memory/tool-config.js";
+import { recordToolUsage } from "../../memory/tool-usage.js";
 import type { ToolIndex } from "./tool-index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
@@ -152,6 +153,7 @@ export class ToolRegistry {
       const validatedArgs = validateToolCall(this.getAll(), toolCall);
 
       let timeoutHandle: ReturnType<typeof setTimeout>;
+      const startMs = Date.now();
       const result = await Promise.race([
         registered.executor(validatedArgs, context),
         new Promise<never>((_, reject) => {
@@ -167,9 +169,16 @@ export class ToolRegistry {
         }),
       ]).finally(() => clearTimeout(timeoutHandle));
 
+      if (this.db) {
+        recordToolUsage(this.db, toolCall.name, result.success, Date.now() - startMs);
+      }
+
       return result;
     } catch (error) {
       log.error({ err: error }, `Error executing tool ${toolCall.name}`);
+      if (this.db) {
+        recordToolUsage(this.db, toolCall.name, false);
+      }
       return {
         success: false,
         error: getErrorMessage(error),

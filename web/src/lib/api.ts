@@ -217,6 +217,25 @@ export interface ToolConfigData {
   scope: string;
 }
 
+export interface ToolUsageStats {
+  totalCalls: number;
+  successCount: number;
+  failureCount: number;
+  lastUsedAt: number | null;
+  avgDurationMs: number | null;
+}
+
+export interface ToolDetails {
+  name: string;
+  description: string;
+  module: string | null;
+  category: string | null;
+  scope: 'always' | 'dm-only' | 'group-only' | 'admin-only';
+  enabled: boolean;
+  parameters: unknown;
+  stats: ToolUsageStats;
+}
+
 export interface ToolRagStatus {
   enabled: boolean;
   indexed: boolean;
@@ -523,6 +542,17 @@ export const api = {
     return fetchAPI<APIResponse<ToolConfigData>>(`/tools/${toolName}`, {
       method: 'PUT',
       body: JSON.stringify(config),
+    });
+  },
+
+  async getToolDetails(toolName: string) {
+    return fetchAPI<APIResponse<ToolDetails>>(`/tools/${encodeURIComponent(toolName)}/details`);
+  },
+
+  async testTool(toolName: string, params: Record<string, unknown>) {
+    return fetchAPI<APIResponse<{ success: boolean; data?: unknown; error?: string }>>(`/tools/${encodeURIComponent(toolName)}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ params }),
     });
   },
 

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
+import { ToolDetailsModal } from '../components/ToolDetailsModal';
 import { Select } from '../components/Select';
 import { PillBar } from '../components/PillBar';
 
@@ -28,6 +29,7 @@ export function Tools() {
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [stateFilter, setStateFilter] = useState<StateFilter>('all');
   const [sortBy, setSortBy] = useState<SortBy>('module');
@@ -150,7 +152,7 @@ export function Tools() {
   const sortLabels = ['Module', 'Name A–Z', 'Name Z–A'];
 
   return (
-    <div>
+    <div style={{ position: 'relative' }}>
       <div className="header">
         <h1>Tools</h1>
         <p>{builtInCount} built-in tools across {builtIn.length} modules</p>
@@ -334,7 +336,7 @@ export function Tools() {
                         <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
                           <div style={{ display: 'grid', gap: '6px', paddingTop: '6px' }}>
                             {(isFiltered ? matchingTools : module.tools).map((tool) => (
-                              <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} search={trimmedSearch} />
+                              <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} onInfo={setSelectedTool} search={trimmedSearch} />
                             ))}
                           </div>
                         </td>
@@ -347,6 +349,10 @@ export function Tools() {
           </table>
         )}
       </div>
+
+      {selectedTool && (
+        <ToolDetailsModal toolName={selectedTool} onClose={() => setSelectedTool(null)} />
+      )}
     </div>
   );
 }

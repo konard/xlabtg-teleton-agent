@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { WebUIServerDeps, ToolInfo, ModuleInfo, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { readRawConfig, setNestedValue, writeRawConfig } from "../../config/configurable-keys.js";
+import { getToolUsageStats } from "../../memory/tool-usage.js";
 
 export function createToolsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -214,6 +215,103 @@ export function createToolsRoutes(deps: WebUIServerDeps) {
         },
       };
 
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Get tool details (description, parameters schema, usage stats)
+  app.get("/:name/details", (c) => {
+    try {
+      const toolName = c.req.param("name");
+
+      if (!deps.toolRegistry.has(toolName)) {
+        const response: APIResponse = {
+          success: false,
+          error: `Tool "${toolName}" not found`,
+        };
+        return c.json(response, 404);
+      }
+
+      const allTools = deps.toolRegistry.getAll();
+      const tool = allTools.find((t) => t.name === toolName);
+      if (!tool) {
+        return c.json({ success: false, error: `Tool "${toolName}" not found` }, 404);
+      }
+
+      const config = deps.toolRegistry.getToolConfig(toolName);
+      const module = deps.toolRegistry
+        .getAvailableModules()
+        .find((m) => deps.toolRegistry.getModuleTools(m).some((t) => t.name === toolName));
+
+      const stats = getToolUsageStats(deps.memory.db, toolName);
+
+      const response: APIResponse = {
+        success: true,
+        data: {
+          name: tool.name,
+          description: tool.description,
+          module: module ?? null,
+          category: deps.toolRegistry.getToolCategory(toolName) ?? null,
+          scope: config?.scope ?? "always",
+          enabled: config?.enabled ?? true,
+          parameters: tool.parameters,
+          stats,
+        },
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Test tool execution (admin-only: validated server-side via config)
+  app.post("/:name/test", async (c) => {
+    try {
+      const toolName = c.req.param("name");
+
+      if (!deps.toolRegistry.has(toolName)) {
+        const response: APIResponse = {
+          success: false,
+          error: `Tool "${toolName}" not found`,
+        };
+        return c.json(response, 404);
+      }
+
+      const body = await c.req.json().catch(() => ({}));
+      const params = (body as { params?: Record<string, unknown> }).params ?? {};
+
+      // Build a minimal tool context using the first known admin ID
+      const fullConfig = deps.agent.getConfig();
+      const adminIds: number[] = fullConfig.telegram?.admin_ids ?? [];
+      if (adminIds.length === 0) {
+        return c.json({ success: false, error: "No admin configured — cannot test tools" }, 403);
+      }
+
+      const context = {
+        bridge: deps.bridge,
+        db: deps.memory.db,
+        chatId: String(adminIds[0]),
+        senderId: adminIds[0],
+        isGroup: false,
+        config: fullConfig,
+      };
+
+      const result = await deps.toolRegistry.execute(
+        { type: "toolCall", name: toolName, arguments: params, id: "webui-test" },
+        context
+      );
+
+      const response: APIResponse = { success: true, data: result };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {
