@@ -181,6 +181,22 @@ export interface TaskData {
   dependents: string[];
 }
 
+export interface SoulVersionMeta {
+  id: number;
+  filename: string;
+  comment: string | null;
+  created_at: string;
+  content_length: number;
+}
+
+export interface SoulVersion {
+  id: number;
+  filename: string;
+  content: string;
+  comment: string | null;
+  created_at: string;
+}
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -427,6 +443,27 @@ export const api = {
     return fetchAPI<APIResponse<{ message: string }>>(`/soul/${filename}`, {
       method: 'PUT',
       body: JSON.stringify({ content }),
+    });
+  },
+
+  async listSoulVersions(filename: string) {
+    return fetchAPI<APIResponse<SoulVersionMeta[]>>(`/soul/${filename}/versions`);
+  },
+
+  async saveSoulVersion(filename: string, content: string, comment?: string) {
+    return fetchAPI<APIResponse<SoulVersionMeta>>(`/soul/${filename}/versions`, {
+      method: 'POST',
+      body: JSON.stringify({ content, comment }),
+    });
+  },
+
+  async getSoulVersion(filename: string, id: number) {
+    return fetchAPI<APIResponse<SoulVersion>>(`/soul/${filename}/versions/${id}`);
+  },
+
+  async deleteSoulVersion(filename: string, id: number) {
+    return fetchAPI<APIResponse<{ message: string }>>(`/soul/${filename}/versions/${id}`, {
+      method: 'DELETE',
     });
   },
 
