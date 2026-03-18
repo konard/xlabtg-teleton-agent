@@ -1,6 +1,7 @@
 import { Link, useLocation } from 'react-router-dom';
 import { Shell } from './Shell';
 import { AgentControl } from './AgentControl';
+import { NotificationBell } from './NotificationBell';
 import { logout } from '../lib/api';
 import { useTheme } from '../hooks/useTheme';
 
@@ -31,6 +32,9 @@ function DashboardNav() {
       <div style={{ marginTop: 'auto' }}>
         <AgentControl />
         <div style={{ padding: '0 12px 14px' }}>
+          <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '8px' }}>
+            <NotificationBell />
+          </div>
           <button
             onClick={toggleTheme}
             className="btn-ghost"
