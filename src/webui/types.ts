@@ -153,6 +153,48 @@ export interface SessionInfo {
   lastActivity: number;
 }
 
+export interface SessionListItem {
+  sessionId: string;
+  chatId: string;
+  startedAt: number;
+  updatedAt: number;
+  messageCount: number;
+  model: string | null;
+  provider: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  contextTokens: number;
+  chatType: string | null;
+  chatTitle: string | null;
+  chatUsername: string | null;
+}
+
+export interface SessionMessage {
+  id: string;
+  senderId: string | null;
+  senderUsername: string | null;
+  senderName: string | null;
+  text: string | null;
+  isFromAgent: boolean;
+  isEdited: boolean;
+  hasMedia: boolean;
+  mediaType: string | null;
+  timestamp: number;
+  replyToId: string | null;
+}
+
+export interface SessionSearchResult {
+  messageId: string;
+  text: string;
+  isFromAgent: boolean;
+  timestamp: number;
+  chatId: string;
+  sessionId: string | null;
+  chatType: string | null;
+  chatTitle: string | null;
+  score: number;
+}
+
 export interface MemorySourceFile {
   source: string;
   entryCount: number;
