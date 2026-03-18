@@ -316,6 +316,45 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tool_usage_created ON tool_usage(created_at DESC);
 
     -- =====================================================
+    -- ANALYTICS: Request Metrics (per-request detail)
+    -- =====================================================
+
+    CREATE TABLE IF NOT EXISTS request_metrics (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tool_name TEXT,
+      tokens_used INTEGER DEFAULT 0,
+      duration_ms INTEGER,
+      success INTEGER NOT NULL DEFAULT 1 CHECK(success IN (0, 1)),
+      error_message TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_request_metrics_created ON request_metrics(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_request_metrics_tool ON request_metrics(tool_name) WHERE tool_name IS NOT NULL;
+
+    -- =====================================================
+    -- ANALYTICS: Cost Records (daily aggregation)
+    -- =====================================================
+
+    CREATE TABLE IF NOT EXISTS cost_records (
+      date TEXT PRIMARY KEY,       -- YYYY-MM-DD
+      tokens_input INTEGER DEFAULT 0,
+      tokens_output INTEGER DEFAULT 0,
+      cost_usd REAL DEFAULT 0,
+      request_count INTEGER DEFAULT 0
+    );
+
+    -- =====================================================
+    -- ANALYTICS: Budget Config
+    -- =====================================================
+
+    CREATE TABLE IF NOT EXISTS budget_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    -- =====================================================
     -- JOURNAL (Trading & Business Operations)
     -- =====================================================
     ${JOURNAL_SCHEMA}
@@ -371,7 +410,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.16.0";
+export const CURRENT_SCHEMA_VERSION = "1.17.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -684,6 +723,46 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.16.0 complete: tool_usage table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.16.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.17.0")) {
+    log.info(
+      "Running migration 1.17.0: Add analytics tables (request_metrics, cost_records, budget_config)"
+    );
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS request_metrics (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          tool_name TEXT,
+          tokens_used INTEGER DEFAULT 0,
+          duration_ms INTEGER,
+          success INTEGER NOT NULL DEFAULT 1 CHECK(success IN (0, 1)),
+          error_message TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_request_metrics_created ON request_metrics(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_request_metrics_tool ON request_metrics(tool_name) WHERE tool_name IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS cost_records (
+          date TEXT PRIMARY KEY,
+          tokens_input INTEGER DEFAULT 0,
+          tokens_output INTEGER DEFAULT 0,
+          cost_usd REAL DEFAULT 0,
+          request_count INTEGER DEFAULT 0
+        );
+
+        CREATE TABLE IF NOT EXISTS budget_config (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+      `);
+      log.info("Migration 1.17.0 complete: analytics tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.17.0 failed");
       throw error;
     }
   }
