@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore, useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useSyncExternalStore, useState } from 'react';
 import { useConfigState } from '../hooks/useConfigState';
 import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
 import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
@@ -6,6 +6,16 @@ import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
 import { QuickActions } from '../components/QuickActions';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
+
+const TokenUsageChart = lazy(() =>
+  import('../components/charts/TokenUsageChart').then((m) => ({ default: m.TokenUsageChart }))
+);
+const ToolUsageChart = lazy(() =>
+  import('../components/charts/ToolUsageChart').then((m) => ({ default: m.ToolUsageChart }))
+);
+const ActivityHeatmap = lazy(() =>
+  import('../components/charts/ActivityHeatmap').then((m) => ({ default: m.ActivityHeatmap }))
+);
 
 function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
@@ -98,6 +108,17 @@ export function Dashboard() {
           <Metric label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
         </div>
       </div>
+
+      {/* ── Charts ─────────────────────────────────────────── */}
+      <Suspense fallback={<div className="chart-loading">Loading charts…</div>}>
+        <div className="dashboard-charts">
+          <TokenUsageChart />
+          <ToolUsageChart />
+        </div>
+        <div className="dashboard-charts">
+          <ActivityHeatmap />
+        </div>
+      </Suspense>
 
       {/* ── Settings (side by side) ────────────────────────── */}
       <div className="dashboard-settings">
