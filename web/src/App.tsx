@@ -1,25 +1,26 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState } from 'react';
-import { Layout } from './components/Layout';
-import { ErrorBoundary } from './components/ErrorBoundary';
-import { Dashboard } from './pages/Dashboard';
-import { Tools } from './pages/Tools';
-import { Plugins } from './pages/Plugins';
-import { Soul } from './pages/Soul';
-import { Memory } from './pages/Memory';
-import { Workspace } from './pages/Workspace';
-import { Tasks } from './pages/Tasks';
-import { Mcp } from './pages/Mcp';
-import { Config } from './pages/Config';
-import { Hooks } from './pages/Hooks';
-import { Setup } from './pages/Setup';
-import { SetupLayout } from './components/setup/SetupLayout';
-import { checkAuth, login } from './lib/api';
-import { logStore } from './lib/log-store';
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Layout } from "./components/Layout";
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { Dashboard } from "./pages/Dashboard";
+import { Tools } from "./pages/Tools";
+import { Plugins } from "./pages/Plugins";
+import { Soul } from "./pages/Soul";
+import { Memory } from "./pages/Memory";
+import { Workspace } from "./pages/Workspace";
+import { Tasks } from "./pages/Tasks";
+import { Mcp } from "./pages/Mcp";
+import { Config } from "./pages/Config";
+import { Hooks } from "./pages/Hooks";
+import { Sessions } from "./pages/Sessions";
+import { Setup } from "./pages/Setup";
+import { SetupLayout } from "./components/setup/SetupLayout";
+import { checkAuth, login } from "./lib/api";
+import { logStore } from "./lib/log-store";
 
 function App() {
   // Setup route bypasses auth entirely
-  if (window.location.pathname.startsWith('/setup')) {
+  if (window.location.pathname.startsWith("/setup")) {
     return (
       <BrowserRouter>
         <ErrorBoundary>
@@ -39,20 +40,20 @@ function App() {
 function AuthenticatedApp() {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [tokenInput, setTokenInput] = useState('');
-  const [loginError, setLoginError] = useState('');
+  const [tokenInput, setTokenInput] = useState("");
+  const [loginError, setLoginError] = useState("");
 
   useEffect(() => {
     // Check for token exchange (from setup launch flow)
     const params = new URLSearchParams(window.location.search);
-    const exchangeToken = params.get('token');
-    if (window.location.pathname === '/auth/exchange' && exchangeToken) {
+    const exchangeToken = params.get("token");
+    if (window.location.pathname === "/auth/exchange" && exchangeToken) {
       login(exchangeToken).then((success) => {
         if (success) {
-          window.location.href = '/';
+          window.location.href = "/";
         } else {
           setLoading(false);
-          setLoginError('Token exchange failed');
+          setLoginError("Token exchange failed");
         }
       });
       return;
@@ -75,12 +76,12 @@ function AuthenticatedApp() {
     const token = tokenInput.trim();
     if (!token) return;
 
-    setLoginError('');
+    setLoginError("");
     const success = await login(token);
     if (success) {
       setIsAuthenticated(true);
     } else {
-      setLoginError('Invalid token');
+      setLoginError("Invalid token");
     }
   };
 
@@ -106,17 +107,17 @@ function AuthenticatedApp() {
               type="password"
               value={tokenInput}
               onChange={(e) => setTokenInput(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleLogin()}
+              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
               placeholder="Paste token from config..."
-              style={{ width: '100%' }}
+              style={{ width: "100%" }}
             />
           </div>
           {loginError && (
-            <div className="alert error" style={{ marginBottom: '1rem' }}>
+            <div className="alert error" style={{ marginBottom: "1rem" }}>
               {loginError}
             </div>
           )}
-          <button onClick={handleLogin} style={{ width: '100%' }}>
+          <button onClick={handleLogin} style={{ width: "100%" }}>
             Sign In
           </button>
         </div>
@@ -139,6 +140,7 @@ function AuthenticatedApp() {
             <Route path="mcp" element={<Mcp />} />
             <Route path="config" element={<Config />} />
             <Route path="hooks" element={<Hooks />} />
+            <Route path="sessions" element={<Sessions />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>
