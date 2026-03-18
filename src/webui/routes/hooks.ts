@@ -6,8 +6,12 @@ import {
   setBlocklistConfig,
   getTriggersConfig,
   setTriggersConfig,
+  getRulesConfig,
+  setRulesConfig,
   type BlocklistConfig,
   type TriggerEntry,
+  type StructuredRule,
+  type RuleBlock,
 } from "../../agent/hooks/user-hook-store.js";
 import { getErrorMessage } from "../../utils/errors.js";
 
@@ -203,6 +207,123 @@ export function createHooksRoutes(deps: WebUIServerDeps) {
         success: true,
         data: { id, enabled: body.enabled },
       });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  // ── Structured Rules (Visual Rule Builder) ───────────────────────
+
+  app.get("/rules", (c) => {
+    try {
+      const data = getRulesConfig(deps.memory.db);
+      return c.json<APIResponse<StructuredRule[]>>({ success: true, data });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  app.post("/rules", async (c) => {
+    try {
+      const body = await c.req.json<{
+        name?: string;
+        enabled?: boolean;
+        blocks?: RuleBlock[];
+      }>();
+
+      const name = typeof body.name === "string" ? body.name.trim().slice(0, 100) : "Untitled Rule";
+      if (!Array.isArray(body.blocks)) {
+        return c.json<APIResponse>({ success: false, error: "blocks must be an array" }, 400);
+      }
+
+      const rules = getRulesConfig(deps.memory.db);
+      if (rules.length >= 100) {
+        return c.json<APIResponse>({ success: false, error: "Maximum 100 rules" }, 400);
+      }
+
+      const rule: StructuredRule = {
+        id: randomUUID(),
+        name,
+        enabled: body.enabled !== false,
+        blocks: body.blocks,
+        order: rules.length,
+      };
+      rules.push(rule);
+      setRulesConfig(deps.memory.db, rules);
+      deps.userHookEvaluator?.reload();
+
+      return c.json<APIResponse<StructuredRule>>({ success: true, data: rule });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  // Note: /rules/reorder must be defined before /rules/:id so Hono doesn't match "reorder" as an id
+  app.put("/rules/reorder", async (c) => {
+    try {
+      const body = await c.req.json<{ ids: string[] }>();
+      if (!Array.isArray(body.ids)) {
+        return c.json<APIResponse>({ success: false, error: "ids must be an array" }, 400);
+      }
+
+      const rules = getRulesConfig(deps.memory.db);
+      const reordered = body.ids
+        .map((id, i) => {
+          const rule = rules.find((r) => r.id === id);
+          if (rule) rule.order = i;
+          return rule;
+        })
+        .filter((r): r is StructuredRule => r !== undefined);
+
+      // Append any rules not mentioned in the ids list at the end
+      const mentionedIds = new Set(body.ids);
+      const remaining = rules.filter((r) => !mentionedIds.has(r.id));
+      remaining.forEach((r, i) => {
+        r.order = reordered.length + i;
+      });
+
+      const final = [...reordered, ...remaining];
+      setRulesConfig(deps.memory.db, final);
+
+      return c.json<APIResponse<StructuredRule[]>>({ success: true, data: final });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  app.put("/rules/:id", async (c) => {
+    try {
+      const id = c.req.param("id");
+      const body = await c.req.json<Partial<StructuredRule>>();
+
+      const rules = getRulesConfig(deps.memory.db);
+      const idx = rules.findIndex((r) => r.id === id);
+      if (idx === -1) {
+        return c.json<APIResponse>({ success: false, error: "Rule not found" }, 404);
+      }
+
+      if (typeof body.name === "string") rules[idx].name = body.name.trim().slice(0, 100);
+      if (typeof body.enabled === "boolean") rules[idx].enabled = body.enabled;
+      if (Array.isArray(body.blocks)) rules[idx].blocks = body.blocks;
+      if (typeof body.order === "number") rules[idx].order = body.order;
+
+      setRulesConfig(deps.memory.db, rules);
+      deps.userHookEvaluator?.reload();
+
+      return c.json<APIResponse<StructuredRule>>({ success: true, data: rules[idx] });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  app.delete("/rules/:id", (c) => {
+    try {
+      const id = c.req.param("id");
+      const rules = getRulesConfig(deps.memory.db);
+      const filtered = rules.filter((r) => r.id !== id);
+      setRulesConfig(deps.memory.db, filtered);
+      deps.userHookEvaluator?.reload();
+      return c.json<APIResponse<null>>({ success: true, data: null });
     } catch (err) {
       return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
     }
