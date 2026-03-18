@@ -4,6 +4,7 @@ import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { MarkdownPreview } from '../components/MarkdownPreview';
 import { SplitView } from '../components/SplitView';
+import { TemplateSelector } from '../components/TemplateSelector';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
@@ -115,6 +116,12 @@ export function Soul() {
               </button>
             ))}
           </div>
+
+          <TemplateSelector
+            activeFile={activeTab}
+            onLoad={setContent}
+            hasUnsavedChanges={dirty}
+          />
 
           <div className="view-mode-toggle">
             {(['edit', 'split', 'preview'] as ViewMode[]).map((mode) => (
