@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
@@ -40,6 +41,11 @@ export function Soul() {
       setSaving(false);
     }
   };
+
+  // Ctrl+S / Cmd+S to save
+  useKeyboardShortcuts([
+    { key: 's', ctrl: true, handler: () => { if (dirty && !saving) saveFile(); } },
+  ]);
 
   // Warn before leaving with unsaved changes
   useEffect(() => {
@@ -96,7 +102,7 @@ export function Soul() {
               style={{ flex: 1, minHeight: '200px' }}
             />
             <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button onClick={saveFile} disabled={saving || !dirty}>
+              <button onClick={saveFile} disabled={saving || !dirty} title="Save (Ctrl+S)">
                 {saving ? 'Saving...' : 'Save'}
               </button>
               {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Unsaved changes</span>}
