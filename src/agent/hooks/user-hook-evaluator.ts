@@ -12,6 +12,20 @@ export interface UserHookResult {
   additionalContext: string;
 }
 
+export interface HookTraceStep {
+  step: string;
+  detail?: string;
+  matched: boolean;
+}
+
+export interface UserHookTestResult {
+  blocked: boolean;
+  blockResponse: string;
+  triggeredHooks: Array<{ keyword: string; context: string }>;
+  injectedContext: string;
+  trace: HookTraceStep[];
+}
+
 /** Strip zero-width characters that could bypass keyword matching */
 const ZERO_WIDTH_RE = /[\u200B-\u200D\uFEFF\u00AD]/g;
 
@@ -84,6 +98,91 @@ export class UserHookEvaluator {
       ...t,
       keywordTokens: tokenize(t.keyword),
     }));
+  }
+
+  /** Evaluate a message with full debug trace — used by the test endpoint */
+  evaluateWithTrace(text: string): UserHookTestResult {
+    const tokens = tokenize(text);
+    const trace: HookTraceStep[] = [];
+
+    // Check blocklist
+    trace.push({ step: "Checking keyword blocklist...", matched: false });
+    if (!this.blocklistEnabled) {
+      trace.push({ step: "Keyword blocklist is disabled", matched: false });
+    } else {
+      let blockedBy: string | null = null;
+      // Single-word check
+      for (const token of tokens) {
+        if (this.singleKeywords.has(token)) {
+          blockedBy = token;
+          break;
+        }
+      }
+      // Multi-word check
+      if (!blockedBy) {
+        for (const kwTokens of this.multiKeywords) {
+          if (matchesMultiWord(tokens, kwTokens)) {
+            blockedBy = kwTokens.join(" ");
+            break;
+          }
+        }
+      }
+
+      if (blockedBy) {
+        trace.push({
+          step: `Keyword '${blockedBy}' matched in blocklist → BLOCKED`,
+          detail: blockedBy,
+          matched: true,
+        });
+        return {
+          blocked: true,
+          blockResponse: this.blockMessage || "",
+          triggeredHooks: [],
+          injectedContext: "",
+          trace,
+        };
+      } else {
+        trace.push({ step: "No blocklist keywords matched", matched: false });
+      }
+    }
+
+    // Check context triggers
+    trace.push({ step: "Checking context triggers...", matched: false });
+    const triggeredHooks: Array<{ keyword: string; context: string }> = [];
+    const seen = new Set<string>();
+
+    for (const trigger of this.triggers) {
+      if (!trigger.enabled || trigger.keywordTokens.length === 0) continue;
+      const matched =
+        trigger.keywordTokens.length === 1
+          ? tokens.includes(trigger.keywordTokens[0])
+          : matchesMultiWord(tokens, trigger.keywordTokens);
+      if (matched) {
+        if (!seen.has(trigger.context)) {
+          seen.add(trigger.context);
+          triggeredHooks.push({ keyword: trigger.keyword, context: trigger.context });
+          trace.push({
+            step: `Trigger '${trigger.keyword}' matched → injecting ${trigger.context.length} chars of context`,
+            detail: trigger.keyword,
+            matched: true,
+          });
+        }
+      }
+    }
+
+    if (triggeredHooks.length === 0) {
+      trace.push({ step: "No context triggers matched", matched: false });
+    }
+
+    const injectedContext = triggeredHooks.map((h) => h.context).join("\n\n");
+
+    return {
+      blocked: false,
+      blockResponse: "",
+      triggeredHooks,
+      injectedContext,
+      trace,
+    };
   }
 
   /** Evaluate a message — returns { blocked, blockMessage, additionalContext } */

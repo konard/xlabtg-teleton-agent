@@ -378,6 +378,22 @@ export interface PluginSecretsInfo {
   configured: string[];
 }
 
+// ── Hook test types ─────────────────────────────────────────────────
+
+export interface HookTraceStep {
+  step: string;
+  detail?: string;
+  matched: boolean;
+}
+
+export interface HookTestResult {
+  blocked: boolean;
+  blockResponse: string;
+  triggeredHooks: Array<{ keyword: string; context: string }>;
+  injectedContext: string;
+  trace: HookTraceStep[];
+}
+
 // ── API response wrapper ────────────────────────────────────────────
 
 interface APIResponse<T> {
@@ -839,6 +855,13 @@ export const api = {
     return fetchAPI<APIResponse<StructuredRule[]>>('/hooks/rules/reorder', {
       method: 'PUT',
       body: JSON.stringify({ ids }),
+    });
+  },
+
+  async testHooks(message: string) {
+    return fetchAPI<APIResponse<HookTestResult>>('/hooks/test', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
     });
   },
 

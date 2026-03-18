@@ -13,6 +13,7 @@ import {
   type StructuredRule,
   type RuleBlock,
 } from "../../agent/hooks/user-hook-store.js";
+import { UserHookEvaluator, type UserHookTestResult } from "../../agent/hooks/user-hook-evaluator.js";
 import { getErrorMessage } from "../../utils/errors.js";
 
 export function createHooksRoutes(deps: WebUIServerDeps) {
@@ -324,6 +325,29 @@ export function createHooksRoutes(deps: WebUIServerDeps) {
       setRulesConfig(deps.memory.db, filtered);
       deps.userHookEvaluator?.reload();
       return c.json<APIResponse<null>>({ success: true, data: null });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  // ── Hook Test Endpoint ────────────────────────────────────────────
+
+  app.post("/test", async (c) => {
+    try {
+      const body = await c.req.json<{ message?: string }>();
+      const message = typeof body.message === "string" ? body.message : "";
+
+      if (message.length > 4000) {
+        return c.json<APIResponse>({ success: false, error: "message must be 4000 characters or fewer" }, 400);
+      }
+
+      // Use the live evaluator if available, otherwise create a temporary one from DB state
+      const evaluator: UserHookEvaluator =
+        deps.userHookEvaluator ?? new UserHookEvaluator(deps.memory.db);
+
+      const result = evaluator.evaluateWithTrace(message);
+
+      return c.json<APIResponse<UserHookTestResult>>({ success: true, data: result });
     } catch (err) {
       return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
     }

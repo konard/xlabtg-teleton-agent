@@ -2,6 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
 import type { StructuredRule } from '../lib/api';
 import { RuleBuilder } from '../components/hooks/RuleBuilder';
+import { HookTestPanel } from '../components/HookTestPanel';
 
 interface TriggerEntry {
   id: string;
@@ -530,6 +531,8 @@ export function Hooks() {
           onReorderRules={handleReorderRules}
         />
       )}
+
+      <HookTestPanel />
     </div>
   );
 }
