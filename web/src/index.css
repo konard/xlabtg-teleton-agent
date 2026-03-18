@@ -1,4 +1,4 @@
-/* iOS 26 Liquid Glass — Dark Mode */
+/* iOS 26 Liquid Glass — Dark & Light Mode */
 
 * {
   box-sizing: border-box;
@@ -74,6 +74,50 @@
   /* ── Effects ── */
   --blur: 40px;
   --blur-heavy: 80px;
+}
+
+/* ── Light Theme ── */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* ── Base ── */
+  --bg: #f2f2f7;
+  --surface: rgba(0, 0, 0, 0.04);
+  --surface-hover: rgba(0, 0, 0, 0.07);
+  --surface-active: rgba(0, 0, 0, 0.10);
+  --glass: rgba(255, 255, 255, 0.75);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --glass-border-strong: rgba(0, 0, 0, 0.14);
+
+  /* ── Text ── */
+  --text: rgba(0, 0, 0, 0.88);
+  --text-secondary: rgba(0, 0, 0, 0.50);
+  --text-tertiary: rgba(0, 0, 0, 0.40);
+  --text-on-accent: #ffffff;
+
+  /* ── Accent ── */
+  --accent: #007AFF;
+  --accent-dim: rgba(0, 122, 255, 0.12);
+
+  /* ── Semantic ── */
+  --green: #34C759;
+  --green-dim: rgba(52, 199, 89, 0.12);
+  --orange: rgba(0, 0, 0, 0.50);
+  --orange-dim: rgba(0, 0, 0, 0.04);
+  --red: #FF3B30;
+  --red-dim: rgba(255, 59, 48, 0.12);
+  --purple: #AF52DE;
+  --purple-dim: rgba(175, 82, 222, 0.12);
+  --cyan: #32ADE6;
+  --cyan-dim: rgba(50, 173, 230, 0.12);
+
+  /* ── Chrome ── */
+  --separator: rgba(0, 0, 0, 0.08);
+  --sidebar-bg: rgba(0, 0, 0, 0.02);
+  --scrollbar: rgba(0, 0, 0, 0.12);
+  --scrollbar-hover: rgba(0, 0, 0, 0.22);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.1);
+  --thumb-bg: #ffffff;
 }
 
 html, body {
@@ -380,6 +424,10 @@ select {
   background-position: right 12px center;
   padding-right: 36px;
   cursor: pointer;
+}
+
+:root[data-theme="light"] select {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(0,0,0,0.45)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
 }
 
 /* ---- Custom Select (dark-friendly dropdown) ---- */
