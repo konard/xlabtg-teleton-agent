@@ -18,6 +18,50 @@ export interface BlocklistConfig {
   message: string;
 }
 
+// ── Visual Rule Builder types ────────────────────────────────────────────────
+
+export type RuleType = "block" | "inject" | "transform" | "notify";
+export type ChatType = "dm" | "group" | "any";
+export type UserRole = "admin" | "any";
+
+export interface TriggerBlock {
+  type: "trigger";
+  keyword: string;
+}
+
+export interface ConditionBlock {
+  type: "condition";
+  userRole: UserRole;
+  chatType: ChatType;
+}
+
+export interface ActionBlock {
+  type: "action";
+  ruleType: RuleType;
+  /** inject: context text; transform: replacement text; notify: notification message; block: block response */
+  value: string;
+}
+
+export type RuleBlock = TriggerBlock | ConditionBlock | ActionBlock;
+
+export interface StructuredRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  blocks: RuleBlock[];
+  /** order index for drag-and-drop priority */
+  order: number;
+}
+
+export function getRulesConfig(db: Database.Database): StructuredRule[] {
+  const raw = getUserHookConfig(db, "structured_rules");
+  return raw ? (JSON.parse(raw) as StructuredRule[]) : [];
+}
+
+export function setRulesConfig(db: Database.Database, rules: StructuredRule[]): void {
+  setUserHookConfig(db, "structured_rules", JSON.stringify(rules));
+}
+
 export function getUserHookConfig(db: Database.Database, key: string): string | null {
   const row = db.prepare("SELECT value FROM user_hook_config WHERE key = ?").get(key) as
     | { value: string }

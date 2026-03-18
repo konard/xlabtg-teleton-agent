@@ -1,5 +1,38 @@
 const API_BASE = '/api';
 
+// ── Structured Rule types (Visual Rule Builder) ───────────────────────────────
+
+export type RuleType = 'block' | 'inject' | 'transform' | 'notify';
+export type ChatType = 'dm' | 'group' | 'any';
+export type UserRole = 'admin' | 'any';
+
+export interface TriggerBlock {
+  type: 'trigger';
+  keyword: string;
+}
+
+export interface ConditionBlock {
+  type: 'condition';
+  userRole: UserRole;
+  chatType: ChatType;
+}
+
+export interface ActionBlock {
+  type: 'action';
+  ruleType: RuleType;
+  value: string;
+}
+
+export type RuleBlock = TriggerBlock | ConditionBlock | ActionBlock;
+
+export interface StructuredRule {
+  id: string;
+  name: string;
+  enabled: boolean;
+  blocks: RuleBlock[];
+  order: number;
+}
+
 // ── Setup types ─────────────────────────────────────────────────────
 
 export interface SetupStatusResponse {
@@ -775,6 +808,37 @@ export const api = {
     return fetchAPI<APIResponse<{ id: string; enabled: boolean }>>(`/hooks/triggers/${id}/toggle`, {
       method: 'PATCH',
       body: JSON.stringify({ enabled }),
+    });
+  },
+
+  // ── Structured Rules (Visual Rule Builder) ────────────────────────
+
+  async getRules() {
+    return fetchAPI<APIResponse<StructuredRule[]>>('/hooks/rules');
+  },
+
+  async createRule(data: { name: string; enabled?: boolean; blocks: RuleBlock[] }) {
+    return fetchAPI<APIResponse<StructuredRule>>('/hooks/rules', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateRule(id: string, data: Partial<StructuredRule>) {
+    return fetchAPI<APIResponse<StructuredRule>>(`/hooks/rules/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteRule(id: string) {
+    return fetchAPI<APIResponse<null>>(`/hooks/rules/${id}`, { method: 'DELETE' });
+  },
+
+  async reorderRules(ids: string[]) {
+    return fetchAPI<APIResponse<StructuredRule[]>>('/hooks/rules/reorder', {
+      method: 'PUT',
+      body: JSON.stringify({ ids }),
     });
   },
 
