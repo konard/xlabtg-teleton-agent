@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { MarkdownEditor } from '../components/MarkdownEditor';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
@@ -95,11 +96,11 @@ export function Soul() {
           <div className="loading">Loading...</div>
         ) : (
           <>
-            <textarea
+            <MarkdownEditor
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={setContent}
+              onSave={() => { if (dirty && !saving) saveFile(); }}
               placeholder={`Edit ${activeTab}...`}
-              style={{ flex: 1, minHeight: '200px' }}
             />
             <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
               <button onClick={saveFile} disabled={saving || !dirty} title="Save (Ctrl+S)">
