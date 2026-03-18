@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ToolInfo, ModuleInfo } from '../lib/api';
+import { api, ToolInfo, ModuleInfo, ToolUsageStats } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { ToolDetailsModal } from '../components/ToolDetailsModal';
 import { BulkActionBar } from '../components/BulkActionBar';
 import { Select } from '../components/Select';
 import { PillBar } from '../components/PillBar';
+import { estimateCostTier } from '../components/CostBadge';
 
 type StateFilter = 'all' | 'enabled' | 'disabled';
 type SortBy = 'name-asc' | 'name-desc' | 'module';
@@ -26,6 +27,7 @@ function highlight(text: string, query: string): JSX.Element {
 
 export function Tools() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
+  const [toolStats, setToolStats] = useState<Record<string, ToolUsageStats>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updating, setUpdating] = useState<string | null>(null);
@@ -43,9 +45,10 @@ export function Tools() {
 
   const loadTools = () => {
     setLoading(true);
-    return api.getTools()
-      .then((toolsRes) => {
+    return Promise.all([api.getTools(), api.getToolsStats()])
+      .then(([toolsRes, statsRes]) => {
         setModules(toolsRes.data);
+        setToolStats((statsRes as { data: Record<string, ToolUsageStats> }).data ?? {});
         setLoading(false);
       })
       .catch((err) => {
@@ -277,6 +280,14 @@ export function Tools() {
   const builtInCount = builtIn.reduce((sum, m) => sum + m.toolCount, 0);
   const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter(t => t.enabled).length, 0);
 
+  // Compute aggregate cost tier for enabled tools
+  const enabledTools = builtIn.flatMap((m) => m.tools.filter((t) => t.enabled));
+  const costTierScore = (tier: '$' | '$$' | '$$$') => tier === '$' ? 1 : tier === '$$' ? 2 : 3;
+  const totalCostScore = enabledTools.reduce((sum, t) => sum + costTierScore(estimateCostTier(t, toolStats[t.name])), 0);
+  const avgCostScore = enabledTools.length > 0 ? totalCostScore / enabledTools.length : 0;
+  const overallCostTier = avgCostScore >= 2.5 ? '$$$' : avgCostScore >= 1.5 ? '$$' : '$';
+  const costTierColor = overallCostTier === '$' ? 'var(--green)' : overallCostTier === '$$' ? '#f0a500' : 'var(--red, #e05252)';
+
   const trimmedSearch = search.trim().toLowerCase();
 
   // Filter modules by search and state
@@ -341,6 +352,14 @@ export function Tools() {
         </span>
         <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
           <span style={{ color: 'var(--text)', fontWeight: 600 }}>{builtInCount - enabledCount}</span> disabled
+        </span>
+        <span
+          title={`Estimated cost tier for enabled tools: ${overallCostTier} per 1000 requests. Based on tool categories and execution patterns.`}
+          style={{ fontSize: '13px', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'default' }}
+        >
+          Estimated cost:&nbsp;
+          <span style={{ fontWeight: 700, color: costTierColor }}>{overallCostTier}</span>
+          <span style={{ fontSize: '11px' }}>/ 1k req</span>
         </span>
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -539,6 +558,7 @@ export function Tools() {
                                 search={trimmedSearch}
                                 selected={selectedTools.has(tool.name)}
                                 onSelect={handleSelectTool}
+                                stats={toolStats[tool.name]}
                               />
                             ))}
                           </div>

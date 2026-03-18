@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import type { WebUIServerDeps, ToolInfo, ModuleInfo, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { readRawConfig, setNestedValue, writeRawConfig } from "../../config/configurable-keys.js";
-import { getToolUsageStats } from "../../memory/tool-usage.js";
+import { getToolUsageStats, getAllToolUsageStats } from "../../memory/tool-usage.js";
 
 export function createToolsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -49,6 +49,23 @@ export function createToolsRoutes(deps: WebUIServerDeps) {
         data: moduleData,
       };
 
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // ── Tool stats (must be before /:name wildcard) ───────────────────
+
+  // Get usage stats for all tools in one request
+  app.get("/stats", (c) => {
+    try {
+      const stats = getAllToolUsageStats(deps.memory.db);
+      const response: APIResponse = { success: true, data: stats };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {

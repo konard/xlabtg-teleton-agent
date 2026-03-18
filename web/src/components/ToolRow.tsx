@@ -1,4 +1,6 @@
-import { ToolInfo } from '../lib/api';
+import { ToolInfo, ToolUsageStats } from '../lib/api';
+import { CostBadge } from './CostBadge';
+import { SpeedDot } from './SpeedDot';
 
 interface ToolRowProps {
   tool: ToolInfo;
@@ -9,6 +11,7 @@ interface ToolRowProps {
   search?: string;
   selected?: boolean;
   onSelect?: (name: string, selected: boolean) => void;
+  stats?: ToolUsageStats;
 }
 
 function highlight(text: string, query: string | undefined): JSX.Element {
@@ -26,7 +29,26 @@ function highlight(text: string, query: string | undefined): JSX.Element {
   );
 }
 
-export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search, selected, onSelect }: ToolRowProps) {
+function usageLabel(stats: ToolUsageStats | undefined): string {
+  if (!stats || stats.totalCalls === 0) return 'Never used';
+  const count = stats.totalCalls;
+  const lastUsedAt = stats.lastUsedAt;
+  const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+  const isInactive = lastUsedAt !== null && lastUsedAt < thirtyDaysAgo;
+  const label = `Used ${count} ${count === 1 ? 'time' : 'times'}`;
+  return isInactive ? `${label} (inactive)` : label;
+}
+
+function isRarelyUsed(stats: ToolUsageStats | undefined): boolean {
+  if (!stats) return false;
+  const thirtyDaysAgo = Math.floor(Date.now() / 1000) - 30 * 24 * 60 * 60;
+  const recentUses = stats.totalCalls; // we don't have per-period counts here, use lastUsedAt as proxy
+  return recentUses < 5 || (stats.lastUsedAt !== null && stats.lastUsedAt < thirtyDaysAgo);
+}
+
+export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search, selected, onSelect, stats }: ToolRowProps) {
+  const inactive = stats !== undefined && isRarelyUsed(stats) && stats.totalCalls > 0;
+
   return (
     <div
       className="tool-row"
@@ -49,8 +71,32 @@ export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search, sel
       )}
 
       <div style={{ minWidth: 0 }}>
-        <div className="tool-name">{highlight(tool.name, search)}</div>
-        <div className="tool-desc">{highlight(tool.description, search)}</div>
+        <div className="tool-name" style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+          {highlight(tool.name, search)}
+          <CostBadge tool={tool} stats={stats} />
+          <SpeedDot stats={stats} />
+          {inactive && (
+            <span
+              title="Rarely used — consider disabling"
+              style={{
+                fontSize: '10px',
+                color: 'var(--text-secondary)',
+                border: '1px solid var(--separator)',
+                borderRadius: '3px',
+                padding: '0 4px',
+                lineHeight: '14px',
+              }}
+            >
+              inactive
+            </span>
+          )}
+        </div>
+        <div className="tool-desc" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>{highlight(tool.description, search)}</span>
+          <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            {usageLabel(stats)}
+          </span>
+        </div>
       </div>
 
       <div className={`scope-seg${!tool.enabled || updating === tool.name ? ' disabled' : ''}`}>

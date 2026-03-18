@@ -545,6 +545,10 @@ export const api = {
     });
   },
 
+  async getToolsStats() {
+    return fetchAPI<APIResponse<Record<string, ToolUsageStats>>>('/tools/stats');
+  },
+
   async getToolDetails(toolName: string) {
     return fetchAPI<APIResponse<ToolDetails>>(`/tools/${encodeURIComponent(toolName)}/details`);
   },
