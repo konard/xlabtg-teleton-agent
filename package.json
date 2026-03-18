@@ -100,7 +100,7 @@
     "@typescript-eslint/parser": "^8.56.0",
     "@vitest/coverage-v8": "^4.0.18",
     "audit-ci": "^7.1.0",
-    "eslint": "^10.0.0",
+    "eslint": "^10.0.3",
     "husky": "^9.1.7",
     "jscpd": "^4.0.8",
     "knip": "^5.85.0",
@@ -109,7 +109,7 @@
     "prettier": "^3.8.1",
     "tsup": "^8.5.1",
     "tsx": "^4.19.0",
-    "typescript": "^5.7.0",
+    "typescript": "^5.9.3",
     "vitest": "^4.0.18"
   },
   "engines": {
