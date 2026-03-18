@@ -7,6 +7,8 @@ interface ToolRowProps {
   onScope: (name: string, scope: ToolInfo['scope']) => void;
   onInfo?: (name: string) => void;
   search?: string;
+  selected?: boolean;
+  onSelect?: (name: string, selected: boolean) => void;
 }
 
 function highlight(text: string, query: string | undefined): JSX.Element {
@@ -24,18 +26,28 @@ function highlight(text: string, query: string | undefined): JSX.Element {
   );
 }
 
-export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search }: ToolRowProps) {
+export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search, selected, onSelect }: ToolRowProps) {
   return (
     <div
       className="tool-row"
       style={{
         opacity: tool.enabled ? 1 : 0.5,
         display: 'grid',
-        gridTemplateColumns: '1fr auto auto auto',
+        gridTemplateColumns: onSelect ? 'auto 1fr auto auto auto' : '1fr auto auto auto',
         gap: '10px',
         alignItems: 'center',
       }}
     >
+      {onSelect && (
+        <input
+          type="checkbox"
+          checked={selected ?? false}
+          onChange={(e) => onSelect(tool.name, e.target.checked)}
+          style={{ cursor: 'pointer', width: '14px', height: '14px', accentColor: 'var(--green)' }}
+          title={selected ? 'Deselect tool' : 'Select tool'}
+        />
+      )}
+
       <div style={{ minWidth: 0 }}>
         <div className="tool-name">{highlight(tool.name, search)}</div>
         <div className="tool-desc">{highlight(tool.description, search)}</div>
