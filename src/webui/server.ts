@@ -44,6 +44,8 @@ import { createSessionsRoutes } from "./routes/sessions.js";
 import { createAnalyticsRoutes } from "./routes/analytics.js";
 import { createSecurityRoutes } from "./routes/security.js";
 import { createAuditMiddleware } from "./middleware/audit.js";
+import { createHealthRoutes } from "./routes/health.js";
+import { createExportImportRoutes } from "./routes/export-import.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -234,6 +236,8 @@ export class WebUIServer {
     this.app.route("/api/sessions", createSessionsRoutes(this.deps));
     this.app.route("/api/analytics", createAnalyticsRoutes(this.deps));
     this.app.route("/api/security", createSecurityRoutes(this.deps));
+    this.app.route("/api/health-check", createHealthRoutes(this.deps));
+    this.app.route("/api/export", createExportImportRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {

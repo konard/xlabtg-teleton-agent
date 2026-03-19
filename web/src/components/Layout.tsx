@@ -4,6 +4,7 @@ import { AgentControl } from "./AgentControl";
 import { NotificationBell } from "./NotificationBell";
 import { logout } from "../lib/api";
 import { useTheme } from "../hooks/useTheme";
+import { openCommandPalette } from "./CommandPalette";
 
 function DashboardNav() {
   const location = useLocation();
@@ -17,7 +18,17 @@ function DashboardNav() {
 
   return (
     <>
-      <nav>
+      <nav aria-label="Main navigation">
+        <button
+          className="cmd-k-hint"
+          onClick={openCommandPalette}
+          title="Open command palette (Ctrl+K)"
+          aria-label="Open command palette"
+          style={{ width: '100%', marginBottom: '4px', justifyContent: 'space-between' }}
+        >
+          <span>Search...</span>
+          <span><kbd>⌘</kbd><kbd>K</kbd></span>
+        </button>
         <Link to="/" className={isActive("/") ? "active" : ""}>
           Dashboard
         </Link>
@@ -141,7 +152,7 @@ function DashboardNav() {
 
 function TopBar() {
   return (
-    <div className="topbar-controls">
+    <div className="topbar-controls" role="toolbar" aria-label="Top bar controls">
       <NotificationBell />
     </div>
   );

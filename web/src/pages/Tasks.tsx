@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, TaskData } from '../lib/api';
+import { useConfirm } from '../components/ConfirmDialog';
 
 type TaskStatus = TaskData['status'];
 type Task = TaskData;
@@ -67,6 +68,7 @@ function truncate(s: string | null | undefined, max: number): string {
 }
 
 export function Tasks() {
+  const { confirm } = useConfirm();
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -132,7 +134,7 @@ export function Tasks() {
   };
 
   const cancelTask = async (id: string) => {
-    if (!confirm('Cancel this task?')) return;
+    if (!(await confirm({ title: "Cancel task?", variant: "warning", confirmText: "Cancel Task" }))) return;
     try {
       await api.tasksCancel(id);
       loadTasks();
@@ -143,7 +145,7 @@ export function Tasks() {
   };
 
   const deleteTask = async (id: string) => {
-    if (!confirm('Permanently delete this task?')) return;
+    if (!(await confirm({ title: "Delete task?", description: "This cannot be undone.", variant: "danger", confirmText: "Delete" }))) return;
     try {
       await api.tasksDelete(id);
       loadTasks();

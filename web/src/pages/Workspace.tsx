@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, FileEntry, WorkspaceInfo } from '../lib/api';
+import { useConfirm } from '../components/ConfirmDialog';
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '—';
@@ -27,6 +28,7 @@ function isBinaryFile(path: string): boolean {
 }
 
 export function Workspace() {
+  const { confirm } = useConfirm();
   const [currentPath, setCurrentPath] = useState('');
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [info, setInfo] = useState<WorkspaceInfo | null>(null);
@@ -80,8 +82,8 @@ export function Workspace() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [editDirty]);
 
-  const navigateTo = (path: string) => {
-    if (!closeEditor()) return;
+  const navigateTo = async (path: string) => {
+    if (!(await closeEditor())) return;
     loadDir(path);
   };
 
@@ -114,8 +116,8 @@ export function Workspace() {
     }
   };
 
-  const closeEditor = (): boolean => {
-    if (fileMode === 'text' && editDirty && !confirm('You have unsaved changes. Discard?')) return false;
+  const closeEditor = async (): Promise<boolean> => {
+    if (fileMode === 'text' && editDirty && !(await confirm({ title: "Discard changes?", description: "You have unsaved changes.", variant: "warning", confirmText: "Discard" }))) return false;
     setEditingFile(null);
     setEditContent('');
     setEditDirty(false);
@@ -123,11 +125,11 @@ export function Workspace() {
     return true;
   };
 
-  const handleFileClick = (path: string) => {
+  const handleFileClick = async (path: string) => {
     if (editingFile === path) {
       closeEditor();
     } else {
-      if (!closeEditor()) return;
+      if (!(await closeEditor())) return;
       openFile(path);
     }
   };
@@ -148,7 +150,7 @@ export function Workspace() {
 
   const deleteEntry = async (entry: FileEntry) => {
     const label = entry.isDirectory ? 'directory' : 'file';
-    if (!confirm(`Delete ${label} "${entry.name}"?`)) return;
+    if (!(await confirm({ title: `Delete ${label}?`, description: entry.name, variant: "danger", confirmText: "Delete" }))) return;
 
     try {
       await api.workspaceDelete(entry.path, entry.isDirectory);

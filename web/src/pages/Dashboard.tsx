@@ -3,6 +3,7 @@ import { useConfigState } from '../hooks/useConfigState';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
 import { DashboardGrid } from '../components/widgets/DashboardGrid';
+import { HealthCheck } from '../components/HealthCheck';
 
 export function Dashboard() {
   const {
@@ -76,6 +77,8 @@ export function Dashboard() {
         handleProviderConfirm={handleProviderConfirm}
         handleProviderCancel={handleProviderCancel}
       />
+
+      <HealthCheck />
     </div>
   );
 }

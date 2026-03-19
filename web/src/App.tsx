@@ -2,6 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Layout } from "./components/Layout";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { ToastContainer } from "./components/ToastContainer";
+import { ConfirmDialogProvider } from "./components/ConfirmDialog";
+import { CommandPalette } from "./components/CommandPalette";
 import { Dashboard } from "./pages/Dashboard";
 import { Tools } from "./pages/Tools";
 import { Plugins } from "./pages/Plugins";
@@ -130,24 +133,28 @@ function AuthenticatedApp() {
   return (
     <BrowserRouter>
       <ErrorBoundary>
-        <Routes>
-          <Route path="/" element={<Layout />}>
-            <Route index element={<Dashboard />} />
-            <Route path="tools" element={<Tools />} />
-            <Route path="plugins" element={<Plugins />} />
-            <Route path="soul" element={<Soul />} />
-            <Route path="memory" element={<Memory />} />
-            <Route path="workspace" element={<Workspace />} />
-            <Route path="tasks" element={<Tasks />} />
-            <Route path="mcp" element={<Mcp />} />
-            <Route path="config" element={<Config />} />
-            <Route path="hooks" element={<Hooks />} />
-            <Route path="sessions" element={<Sessions />} />
-            <Route path="analytics" element={<Analytics />} />
-            <Route path="security" element={<Security />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
-        </Routes>
+        <ConfirmDialogProvider>
+          <Routes>
+            <Route path="/" element={<Layout />}>
+              <Route index element={<Dashboard />} />
+              <Route path="tools" element={<Tools />} />
+              <Route path="plugins" element={<Plugins />} />
+              <Route path="soul" element={<Soul />} />
+              <Route path="memory" element={<Memory />} />
+              <Route path="workspace" element={<Workspace />} />
+              <Route path="tasks" element={<Tasks />} />
+              <Route path="mcp" element={<Mcp />} />
+              <Route path="config" element={<Config />} />
+              <Route path="hooks" element={<Hooks />} />
+              <Route path="sessions" element={<Sessions />} />
+              <Route path="analytics" element={<Analytics />} />
+              <Route path="security" element={<Security />} />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Route>
+          </Routes>
+          <CommandPalette />
+          <ToastContainer />
+        </ConfirmDialogProvider>
       </ErrorBoundary>
     </BrowserRouter>
   );
