@@ -71,6 +71,7 @@ import {
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
+import { getMetrics } from "../services/metrics.js";
 
 export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
@@ -809,6 +810,11 @@ export class AgentRuntime {
               ...(plan.blocked ? { blocked: true, blockReason: plan.blockReason } : {}),
             };
             await this.hookRunner.runObservingHook("tool:after", afterEvent);
+          }
+
+          // Record tool invocation metric (skipped for blocked tools)
+          if (!plan.blocked) {
+            getMetrics()?.recordToolCall(block.name);
           }
 
           const toolHint = summarizeToolParams(block.name, plan.params);
