@@ -6,8 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build:
+  # ---- Quality checks (lint, types, format, dead code, duplicates) ----
+  quality:
+    name: Quality checks
     runs-on: ubuntu-latest
 
     strategy:
@@ -23,7 +29,7 @@ jobs:
           node-version: ${{ matrix.node-version }}
           cache: npm
 
-      - name: Install dependencies
+      - name: Install root dependencies
         run: npm ci
 
       - name: Install WebUI dependencies
@@ -50,14 +56,112 @@ jobs:
       - name: Duplicate code check
         run: npm run dupcheck
 
+  # ---- Build & smoke test ----
+  build:
+    name: Build (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install WebUI dependencies
+        run: cd web && npm ci
+
+      - name: Build SDK workspace
+        run: npm run build -w packages/sdk
+
       - name: Build
         run: npm run build
+
+      - name: CLI smoke test
+        run: node dist/cli/index.js --help
+
+      - name: Upload build artifacts
+        if: matrix.node-version == 20
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-ci-${{ github.sha }}
+          path: dist/
+          retention-days: 7
+
+  # ---- Tests with coverage ----
+  test:
+    name: Test (Node ${{ matrix.node-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build SDK workspace
+        run: npm run build -w packages/sdk
 
       - name: Test with coverage
         run: npm run test:coverage
 
+      - name: Upload coverage report
+        if: matrix.node-version == 20
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage/
+          retention-days: 7
+
+      - name: Coverage summary
+        if: matrix.node-version == 20
+        run: |
+          echo "## Test Coverage" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat coverage/coverage-summary.json | node -e "
+            const d = JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).total;
+            console.log('Statements : ' + d.statements.pct + '%');
+            console.log('Branches   : ' + d.branches.pct + '%');
+            console.log('Functions  : ' + d.functions.pct + '%');
+            console.log('Lines      : ' + d.lines.pct + '%');
+          " || cat coverage/coverage-summary.json
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  # ---- Security audit ----
+  security:
+    name: Security audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
       - name: Security audit
         run: npm run audit:ci
-
-      - name: CLI smoke test
-        run: node dist/cli/index.js --help
