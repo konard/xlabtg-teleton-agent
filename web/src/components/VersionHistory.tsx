@@ -92,8 +92,8 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
         right: 0,
         bottom: 0,
         width: '340px',
-        background: 'var(--bg-card, #1e1e1e)',
-        borderLeft: '1px solid var(--border, #333)',
+        background: 'var(--glass)',
+        borderLeft: '1px solid var(--separator)',
         display: 'flex',
         flexDirection: 'column',
         zIndex: 100,
@@ -106,7 +106,7 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '12px 16px',
-          borderBottom: '1px solid var(--border, #333)',
+          borderBottom: '1px solid var(--separator)',
         }}
       >
         <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600 }}>Version History</h3>
@@ -138,8 +138,8 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
               padding: '10px 12px',
               marginBottom: '6px',
               borderRadius: '6px',
-              background: 'var(--bg-secondary, #252525)',
-              border: '1px solid var(--border, #333)',
+              background: 'var(--surface)',
+              border: '1px solid var(--glass-border)',
             }}
           >
             <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
@@ -168,7 +168,7 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
               <button
                 onClick={() => void handleDelete(v.id)}
                 disabled={deleting === v.id}
-                style={{ fontSize: '12px', padding: '3px 8px', color: 'var(--color-error, #e05252)' }}
+                style={{ fontSize: '12px', padding: '3px 8px', color: 'var(--red)' }}
                 title="Delete this version"
               >
                 {deleting === v.id ? '...' : 'Delete'}
@@ -178,7 +178,7 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
         ))}
       </div>
 
-      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--border, #333)', fontSize: '12px', color: 'var(--text-secondary)' }}>
+      <div style={{ padding: '10px 16px', borderTop: '1px solid var(--separator)', fontSize: '12px', color: 'var(--text-secondary)' }}>
         {versions.length > 0 ? `${versions.length} version${versions.length === 1 ? '' : 's'} · last 50 kept` : ''}
       </div>
     </div>
