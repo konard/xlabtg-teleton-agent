@@ -47,6 +47,35 @@ export class AnalyticsService {
 
   constructor(db: Database) {
     this.db = db;
+    this.migrate();
+  }
+
+  private migrate(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS request_metrics (
+        id           INTEGER PRIMARY KEY AUTOINCREMENT,
+        tool_name    TEXT,
+        tokens_used  INTEGER,
+        duration_ms  INTEGER,
+        success      INTEGER NOT NULL DEFAULT 1,  -- 1=true, 0=false
+        error_message TEXT,
+        created_at   INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE IF NOT EXISTS cost_records (
+        date           TEXT NOT NULL PRIMARY KEY,  -- YYYY-MM-DD
+        tokens_input   INTEGER NOT NULL DEFAULT 0,
+        tokens_output  INTEGER NOT NULL DEFAULT 0,
+        cost_usd       REAL    NOT NULL DEFAULT 0,
+        request_count  INTEGER NOT NULL DEFAULT 0
+      );
+
+      CREATE TABLE IF NOT EXISTS budget_config (
+        key        TEXT NOT NULL PRIMARY KEY,
+        value      TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+    `);
   }
 
   // ── Performance ──────────────────────────────────────────────────
@@ -207,6 +236,29 @@ export class AnalyticsService {
       percent_used: percentUsed,
       projection_usd: projection,
     };
+  }
+
+  // ── Request metrics recording (called from agent runtime) ─────────
+
+  recordRequestMetric(opts: {
+    toolName?: string;
+    tokensUsed?: number;
+    durationMs?: number;
+    success: boolean;
+    errorMessage?: string;
+  }): void {
+    this.db
+      .prepare(
+        `INSERT INTO request_metrics (tool_name, tokens_used, duration_ms, success, error_message)
+         VALUES (?, ?, ?, ?, ?)`
+      )
+      .run(
+        opts.toolName ?? null,
+        opts.tokensUsed ?? null,
+        opts.durationMs ?? null,
+        opts.success ? 1 : 0,
+        opts.errorMessage ?? null
+      );
   }
 
   // ── Cost record upsert (called from metrics service hook) ─────────

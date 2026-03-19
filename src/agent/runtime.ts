@@ -72,6 +72,7 @@ import {
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
 import { getMetrics } from "../services/metrics.js";
+import { getAnalytics } from "../services/analytics.js";
 
 export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
@@ -992,11 +993,28 @@ export class AgentRuntime {
         await this.hookRunner.runObservingHook("response:after", responseAfterEvent);
       }
 
+      // Record overall request metric for the Analytics performance dashboard
+      getAnalytics()?.recordRequestMetric({
+        durationMs: Date.now() - processStartTime,
+        tokensUsed:
+          accumulatedUsage.input +
+          accumulatedUsage.output +
+          accumulatedUsage.cacheRead +
+          accumulatedUsage.cacheWrite,
+        success: true,
+      });
+
       return {
         content,
         toolCalls: totalToolCalls,
       };
     } catch (error) {
+      // Record failed request metric
+      getAnalytics()?.recordRequestMetric({
+        durationMs: Date.now() - processStartTime,
+        success: false,
+        errorMessage: error instanceof Error ? error.message : String(error),
+      });
       log.error({ err: error }, "Agent error");
       throw error;
     }

@@ -44,6 +44,8 @@ import { setBotPreMiddleware, getDealBot } from "./deals/module.js";
 import type { TaskDependencyResolver } from "./telegram/task-dependency-resolver.js";
 import type { WebUIServer } from "./webui/server.js";
 import type { ApiServer } from "./api/server.js";
+import { initMetrics } from "./services/metrics.js";
+import { initAnalytics } from "./services/analytics.js";
 
 const log = createLogger("App");
 
@@ -123,6 +125,10 @@ export class TeletonApp {
     });
 
     const db = getDatabase().getDb();
+
+    // Initialize analytics and metrics singletons early so agent runtime can record data
+    initMetrics(db);
+    initAnalytics(db);
 
     this.userHookEvaluator = new UserHookEvaluator(db);
     this.agent.setUserHookEvaluator(this.userHookEvaluator);
