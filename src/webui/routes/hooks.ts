@@ -13,7 +13,10 @@ import {
   type StructuredRule,
   type RuleBlock,
 } from "../../agent/hooks/user-hook-store.js";
-import { UserHookEvaluator, type UserHookTestResult } from "../../agent/hooks/user-hook-evaluator.js";
+import {
+  UserHookEvaluator,
+  type UserHookTestResult,
+} from "../../agent/hooks/user-hook-evaluator.js";
 import { getErrorMessage } from "../../utils/errors.js";
 
 export function createHooksRoutes(deps: WebUIServerDeps) {
@@ -338,7 +341,10 @@ export function createHooksRoutes(deps: WebUIServerDeps) {
       const message = typeof body.message === "string" ? body.message : "";
 
       if (message.length > 4000) {
-        return c.json<APIResponse>({ success: false, error: "message must be 4000 characters or fewer" }, 400);
+        return c.json<APIResponse>(
+          { success: false, error: "message must be 4000 characters or fewer" },
+          400
+        );
       }
 
       // Use the live evaluator if available, otherwise create a temporary one from DB state

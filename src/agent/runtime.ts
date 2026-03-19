@@ -288,14 +288,16 @@ export class AgentRuntime {
         log.info(`🆕 Starting new session: ${session.sessionId}`);
       }
 
-      // Hook: session:start
-      if (this.hookRunner) {
-        await this.hookRunner.runObservingHook("session:start", {
-          sessionId: session.sessionId,
-          chatId,
-          isResume: !isNewSession,
-        });
-      }
+      // Hook: session:start — fire concurrently, don't block message processing
+      const sessionStartPromise = this.hookRunner
+        ? this.hookRunner
+            .runObservingHook("session:start", {
+              sessionId: session.sessionId,
+              chatId,
+              isResume: !isNewSession,
+            })
+            .catch((err) => log.warn({ err }, "session:start hook failed"))
+        : Promise.resolve();
 
       const previousTimestamp = session.updatedAt;
 
@@ -331,29 +333,32 @@ export class AgentRuntime {
       let queryEmbedding: number[] | undefined;
       const isNonTrivial = !isTrivialMessage(effectiveMessage);
 
-      if (this.embedder && isNonTrivial) {
-        try {
-          // Enrich query with recent conversation context for better RAG retrieval
-          let searchQuery = effectiveMessage;
-          const recentUserMsgs = context.messages
-            .filter((m) => m.role === "user" && typeof m.content === "string")
-            .slice(-3)
-            .map((m) => {
-              const text = m.content as string;
-              const bodyMatch = text.match(/\] (.+)/s);
-              return (bodyMatch ? bodyMatch[1] : text).trim();
-            })
-            .filter((t) => t.length > 0);
-          if (recentUserMsgs.length > 0) {
-            searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
-          }
-          queryEmbedding = await this.embedder.embedQuery(
-            searchQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS)
-          );
-        } catch (error) {
-          log.warn({ err: error }, "Embedding computation failed");
+      // Start embedding computation concurrently
+      const embeddingPromise = (async () => {
+        if (!this.embedder || !isNonTrivial) return;
+        // Enrich query with recent conversation context for better RAG retrieval
+        let searchQuery = effectiveMessage;
+        const recentUserMsgs = context.messages
+          .filter((m) => m.role === "user" && typeof m.content === "string")
+          .slice(-3)
+          .map((m) => {
+            const text = m.content as string;
+            const bodyMatch = text.match(/\] (.+)/s);
+            return (bodyMatch ? bodyMatch[1] : text).trim();
+          })
+          .filter((t) => t.length > 0);
+        if (recentUserMsgs.length > 0) {
+          searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
         }
-      }
+        queryEmbedding = await this.embedder.embedQuery(
+          searchQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS)
+        );
+      })().catch((error) => {
+        log.warn({ err: error }, "Embedding computation failed");
+      });
+
+      // Await session:start and embedding concurrently before building context
+      await Promise.all([sessionStartPromise, embeddingPromise]);
 
       if (this.contextBuilder && isNonTrivial) {
         try {
@@ -404,19 +409,21 @@ export class AgentRuntime {
         ? `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}\n\n${relevantContext}`
         : `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}`;
 
-      // Hook: prompt:before
-      let hookAdditionalContext = "";
-      if (this.hookRunner) {
-        const promptEvent: BeforePromptBuildEvent = {
-          chatId,
-          sessionId: session.sessionId,
-          isGroup: effectiveIsGroup,
-          additionalContext: "",
-        };
-        await this.hookRunner.runModifyingHook("prompt:before", promptEvent);
-        // Sanitize hook context to prevent prompt injection (H1 remediation)
-        hookAdditionalContext = sanitizeForContext(promptEvent.additionalContext);
-      }
+      // Hook: prompt:before — run concurrently with context assembly
+      const promptEvent: BeforePromptBuildEvent = {
+        chatId,
+        sessionId: session.sessionId,
+        isGroup: effectiveIsGroup,
+        additionalContext: "",
+      };
+      const promptBeforePromise = this.hookRunner
+        ? this.hookRunner.runModifyingHook("prompt:before", promptEvent)
+        : Promise.resolve();
+
+      await promptBeforePromise;
+
+      // Sanitize hook context to prevent prompt injection (H1 remediation)
+      const hookAdditionalContext = sanitizeForContext(promptEvent.additionalContext);
 
       const compactionConfig = this.compactionManager.getConfig();
       const needsMemoryFlush =
@@ -632,7 +639,6 @@ export class AgentRuntime {
                 `🚫 Rate limited, retrying in ${delay}ms (attempt ${rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
               );
               await new Promise((r) => setTimeout(r, delay));
-              iteration--;
               continue;
             }
             log.error(`🚫 Rate limited after ${RATE_LIMIT_MAX_RETRIES} retries: ${errorMsg}`);
@@ -643,7 +649,10 @@ export class AgentRuntime {
             errorMsg.includes("500") ||
             errorMsg.includes("502") ||
             errorMsg.includes("503") ||
-            errorMsg.includes("529")
+            errorMsg.includes("529") ||
+            errorMsg.toLowerCase().includes("overloaded") ||
+            errorMsg.includes("Internal server error") ||
+            errorMsg.includes("api_error")
           ) {
             serverErrorRetries++;
             if (serverErrorRetries <= SERVER_ERROR_MAX_RETRIES) {
@@ -776,12 +785,15 @@ export class AgentRuntime {
         }
 
         // Phase 3: Process results in original order (hooks, context, transcript)
+        // Collect observing hook promises to fire concurrently via Promise.allSettled
+        const observingHookPromises: Promise<void>[] = [];
+
         for (let i = 0; i < toolPlans.length; i++) {
           const plan = toolPlans[i];
           const { block } = plan;
           const exec = execResults[i];
 
-          // Hook: tool:error (if execution threw)
+          // Hook: tool:error (if execution threw) — fire concurrently
           if (exec.execError && this.hookRunner) {
             const errorEvent: ToolErrorEvent = {
               toolName: block.name,
@@ -792,10 +804,14 @@ export class AgentRuntime {
               isGroup: effectiveIsGroup,
               durationMs: exec.durationMs,
             };
-            await this.hookRunner.runObservingHook("tool:error", errorEvent);
+            observingHookPromises.push(
+              this.hookRunner.runObservingHook("tool:error", errorEvent).catch((err) => {
+                log.warn({ err }, "tool:error hook failed");
+              })
+            );
           }
 
-          // Hook: tool:after (fires for all cases including blocks)
+          // Hook: tool:after (fires for all cases including blocks) — fire concurrently
           if (this.hookRunner) {
             const afterEvent: AfterToolCallEvent = {
               toolName: block.name,
@@ -810,7 +826,11 @@ export class AgentRuntime {
               isGroup: effectiveIsGroup,
               ...(plan.blocked ? { blocked: true, blockReason: plan.blockReason } : {}),
             };
-            await this.hookRunner.runObservingHook("tool:after", afterEvent);
+            observingHookPromises.push(
+              this.hookRunner.runObservingHook("tool:after", afterEvent).catch((err) => {
+                log.warn({ err }, "tool:after hook failed");
+              })
+            );
           }
 
           // Record tool invocation metric (skipped for blocked tools)
@@ -864,6 +884,9 @@ export class AgentRuntime {
             appendToTranscript(session.sessionId, toolResultMsg);
           }
         }
+
+        // Await all observing hooks concurrently
+        await Promise.allSettled(observingHookPromises);
 
         log.info(`🔄 ${iteration}/${maxIterations} → ${iterationToolNames.join(", ")}`);
 

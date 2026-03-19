@@ -17,6 +17,7 @@ function resolveScope(scope: ExecConfig["scope"]): ToolScope {
     case "admin-only":
       return "admin-only";
     case "allowlist":
+      return "admin-only";
     case "all":
       return "always";
   }
