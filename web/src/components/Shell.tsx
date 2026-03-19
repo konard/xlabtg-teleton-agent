@@ -4,10 +4,11 @@ import { useTheme } from '../hooks/useTheme';
 
 interface ShellProps {
   sidebar: ReactNode;
+  topBar?: ReactNode;
   children?: ReactNode;
 }
 
-export function Shell({ sidebar, children }: ShellProps) {
+export function Shell({ sidebar, topBar, children }: ShellProps) {
   const { theme } = useTheme();
 
   return (
@@ -18,9 +19,12 @@ export function Shell({ sidebar, children }: ShellProps) {
         </div>
         {sidebar}
       </aside>
-      <main className="main">
-        {children ?? <Outlet />}
-      </main>
+      <div className="main-wrapper">
+        {topBar && <div className="topbar">{topBar}</div>}
+        <main className="main">
+          {children ?? <Outlet />}
+        </main>
+      </div>
     </div>
   );
 }

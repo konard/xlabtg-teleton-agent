@@ -212,12 +212,40 @@ body {
   user-select: none;
 }
 
+.main-wrapper {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 32px;
+  border-bottom: 1px solid var(--separator);
+  background: var(--sidebar-bg);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  flex-shrink: 0;
+}
+
+.topbar-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .main {
   flex: 1;
   padding: 32px;
   max-width: 1080px;
   min-width: 0;
   margin: 0 auto;
+  width: 100%;
 }
 
 /* ---- Page header ---- */
@@ -1860,6 +1888,15 @@ button.btn-lg {
     font-size: 8px;
   }
 
+  .topbar {
+    padding: 8px 16px;
+  }
+
+  .notification-panel {
+    width: calc(100vw - 32px);
+    right: 0;
+  }
+
   .main {
     padding: 20px 16px;
   }
@@ -2101,11 +2138,10 @@ button.btn-lg {
 
 .notification-panel {
   position: absolute;
-  bottom: calc(100% + 8px);
-  left: 50%;
-  transform: translateX(-50%);
+  top: calc(100% + 8px);
+  right: 0;
   width: 320px;
-  max-height: 420px;
+  max-height: min(420px, calc(100vh - 80px));
   background: var(--glass);
   border: 1px solid var(--glass-border-strong);
   border-radius: var(--radius-md);
