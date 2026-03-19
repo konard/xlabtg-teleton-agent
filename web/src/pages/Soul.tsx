@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../lib/api';
+import { useConfirm } from '../components/ConfirmDialog';
+import { toast } from '../lib/toast-store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { MarkdownEditor } from '../components/MarkdownEditor';
 import { MarkdownPreview } from '../components/MarkdownPreview';
@@ -75,6 +77,7 @@ function SaveVersionDialog({ onSave, onCancel }: SaveVersionDialogProps) {
 }
 
 export function Soul() {
+  const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<string>(SOUL_FILES[0]);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
@@ -131,9 +134,12 @@ export function Soul() {
         if (raw) {
           const draft = JSON.parse(raw) as { content: string; ts: number };
           if (draft.content !== serverContent) {
-            const restore = window.confirm(
-              `You have an unsaved draft for ${filename} from ${new Date(draft.ts).toLocaleString()}. Restore it?`
-            );
+            const restore = await confirm({
+              title: "Restore draft?",
+              description: `You have an unsaved draft for ${filename} from ${new Date(draft.ts).toLocaleString()}.`,
+              variant: "warning",
+              confirmText: "Restore",
+            });
             if (restore) {
               setContent(draft.content);
               setSavedContent(serverContent);
@@ -166,8 +172,10 @@ export function Soul() {
       setSavedContent(content);
       clearDraft(activeTab);
       setMessage({ type: 'success', text: res.data.message });
+      toast.success(res.data.message ?? 'File saved successfully');
     } catch (err) {
       setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setSaving(false);
     }
@@ -217,9 +225,9 @@ export function Soul() {
   }, [dirty, activeTab, content, saveDraft]);
 
   // Confirm before switching tabs with unsaved changes
-  const handleTabSwitch = (file: string) => {
+  const handleTabSwitch = async (file: string) => {
     if (file === activeTab) return;
-    if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
+    if (dirty && !(await confirm({ title: "Discard changes?", description: "You have unsaved changes.", variant: "warning", confirmText: "Discard" }))) return;
     setActiveTab(file);
     setShowVersionHistory(false);
   };

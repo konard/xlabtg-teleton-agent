@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { api, ToolInfo, ModuleInfo, PluginManifest, MarketplacePlugin, MarketplaceSource, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
+import { useConfirm } from '../components/ConfirmDialog';
 
 type Tab = 'installed' | 'marketplace';
 type DetailsTab = 'overview' | 'tools' | 'secrets';
@@ -292,6 +293,7 @@ function PluginDetailsModal({
 // ── Main Plugins page ─────────────────────────────────────────────────────────
 
 export function Plugins() {
+  const { confirm } = useConfirm();
   const [tab, setTab] = useState<Tab>('installed');
   const [manifests, setManifests] = useState<PluginManifest[]>([]);
   const [pluginModules, setPluginModules] = useState<ModuleInfo[]>([]);
@@ -480,7 +482,7 @@ export function Plugins() {
   };
 
   const handleUninstall = async (id: string) => {
-    if (!confirm(`Uninstall plugin "${id}"? This will remove its files.`)) return;
+    if (!(await confirm({ title: `Uninstall "${id}"?`, description: "This will remove its files.", variant: "danger", confirmText: "Uninstall" }))) return;
     setOperating(id);
     try {
       await api.uninstallPlugin(id);
@@ -632,7 +634,7 @@ export function Plugins() {
   };
 
   const handleRemoveSource = async (url: string) => {
-    if (!confirm(`Remove source "${url}"?`)) return;
+    if (!(await confirm({ title: `Remove source?`, description: url, variant: "danger", confirmText: "Remove" }))) return;
     try {
       await api.removeMarketplaceSource(url);
       await loadMarketplace(true);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api, type SoulVersionMeta } from '../lib/api';
+import { useConfirm } from './ConfirmDialog';
 
 interface VersionHistoryProps {
   filename: string;
@@ -25,6 +26,7 @@ function formatSize(bytes: number): string {
 }
 
 export function VersionHistory({ filename, onRestore, onDiff, onClose }: VersionHistoryProps) {
+  const { confirm } = useConfirm();
   const [versions, setVersions] = useState<SoulVersionMeta[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -50,7 +52,7 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
   const handleRestore = async (id: number) => {
     try {
       const res = await api.getSoulVersion(filename, id);
-      if (window.confirm('Restore this version? Your current unsaved changes will be replaced in the editor.')) {
+      if (await confirm({ title: "Restore this version?", description: "Your current unsaved changes will be replaced in the editor.", variant: "warning", confirmText: "Restore" })) {
         onRestore(res.data.content);
         onClose();
       }
@@ -72,7 +74,7 @@ export function VersionHistory({ filename, onRestore, onDiff, onClose }: Version
   };
 
   const handleDelete = async (id: number) => {
-    if (!window.confirm('Delete this version? This cannot be undone.')) return;
+    if (!(await confirm({ title: "Delete this version?", description: "This cannot be undone.", variant: "danger", confirmText: "Delete" }))) return;
     setDeleting(id);
     try {
       await api.deleteSoulVersion(filename, id);

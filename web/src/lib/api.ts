@@ -540,6 +540,44 @@ interface APIResponse<T> {
   data: T;
 }
 
+// ── Health Check types ──────────────────────────────────────────────
+
+export type HealthStatus = "healthy" | "degraded" | "unhealthy" | "unconfigured";
+
+export interface HealthCheck {
+  status: HealthStatus;
+  latency_ms?: number;
+  message?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface HealthCheckResponse {
+  status: HealthStatus;
+  checks: {
+    agent: HealthCheck;
+    database: HealthCheck;
+    disk: HealthCheck;
+    memory: HealthCheck;
+    mcp: HealthCheck;
+  };
+  checked_at: string;
+}
+
+// ── Export/Import types ─────────────────────────────────────────────
+
+export interface ConfigBundle {
+  version: "1.0";
+  exported_at: string;
+  app_version: string;
+  config: Record<string, unknown>;
+  hooks: {
+    blocklist: unknown;
+    triggers: unknown;
+    rules: unknown;
+  };
+  soul: Record<string, string>;
+}
+
 // ── Fetch helpers ───────────────────────────────────────────────────
 
 async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -1380,6 +1418,25 @@ export const api = {
       "/agent-actions/test/message",
       { method: "POST" }
     );
+  },
+
+  // ── Health Check ───────────────────────────────────────────────────
+
+  async getHealthCheck() {
+    return fetchAPI<APIResponse<HealthCheckResponse>>("/health-check");
+  },
+
+  // ── Export / Import ────────────────────────────────────────────────
+
+  async exportConfig() {
+    return fetchAPI<APIResponse<ConfigBundle>>("/export");
+  },
+
+  async importConfig(bundle: ConfigBundle, options?: { config?: boolean; hooks?: boolean; soul?: boolean }) {
+    return fetchAPI<APIResponse<{ applied: string[] }>>("/export/import", {
+      method: "POST",
+      body: JSON.stringify({ bundle, options }),
+    });
   },
 };
 

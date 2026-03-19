@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, ConfigKeyData } from '../lib/api';
+import { useConfirm } from '../components/ConfirmDialog';
 import { useConfigState } from '../hooks/useConfigState';
 import { PillBar } from '../components/PillBar';
 import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
@@ -12,6 +13,7 @@ import { ArrayInput } from '../components/ArrayInput';
 import { EditableField } from '../components/EditableField';
 import { ConfigSection } from '../components/ConfigSection';
 import { InfoTip } from '../components/InfoTip';
+import { ExportImportPanel } from '../components/ExportImportPanel';
 
 const TABS = [
   { id: 'llm', label: 'LLM' },
@@ -23,6 +25,7 @@ const TABS = [
   { id: 'advanced', label: 'Advanced' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'tool-rag', label: 'Tool RAG' },
+  { id: 'backup', label: 'Backup' },
 ];
 
 const API_KEY_KEYS = ['agent.api_key', 'telegram.bot_token', 'tavily_api_key', 'tonapi_key', 'toncenter_api_key'];
@@ -39,6 +42,7 @@ const SESSION_KEYS = [
 ];
 
 export function Config() {
+  const { confirm } = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'llm';
 
@@ -366,7 +370,7 @@ export function Config() {
                   <button
                     disabled={proxyLoading || !proxyStatus?.installed}
                     onClick={async () => {
-                      if (!confirm('Remove the TON Proxy binary from disk?')) return;
+                      if (!(await confirm({ title: "Remove TON Proxy?", description: "This will remove the TON Proxy binary from disk.", variant: "danger", confirmText: "Remove" }))) return;
                       setProxyLoading(true);
                       setProxyError(null);
                       try {
@@ -537,6 +541,11 @@ export function Config() {
             </div>
           </div>
         </>
+      )}
+
+      {/* Backup Tab */}
+      {activeTab === 'backup' && (
+        <ExportImportPanel />
       )}
     </div>
   );

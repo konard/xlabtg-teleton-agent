@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { api, McpServerInfo } from '../lib/api';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export function Mcp() {
+  const { confirm } = useConfirm();
   const [servers, setServers] = useState<McpServerInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -73,7 +75,7 @@ export function Mcp() {
   };
 
   const handleRemove = async (name: string) => {
-    if (!confirm(`Remove MCP server "${name}"?`)) return;
+    if (!(await confirm({ title: `Remove MCP server "${name}"?`, description: "This cannot be undone.", variant: "danger", confirmText: "Remove" }))) return;
     setRemoving(name);
     setError(null);
     try {

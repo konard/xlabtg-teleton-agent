@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { TEMPLATES, FILE_EXAMPLES, Template } from '../data/templates';
+import { useConfirm } from './ConfirmDialog';
 
 interface TemplateSelectorProps {
   activeFile: string;
@@ -7,25 +8,21 @@ interface TemplateSelectorProps {
   hasUnsavedChanges: boolean;
 }
 
-function confirmLoad(dirty: boolean): boolean {
-  if (!dirty) return true;
-  return window.confirm('Loading a template will replace your current content. Continue?');
-}
-
 export function TemplateSelector({ activeFile, onLoad, hasUnsavedChanges }: TemplateSelectorProps) {
+  const { confirm } = useConfirm();
   const [open, setOpen] = useState(false);
   const selectRef = useRef<HTMLSelectElement>(null);
 
   const example = FILE_EXAMPLES[activeFile];
 
-  const handleTemplateChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
+  const handleTemplateChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
     const id = e.target.value;
     if (!id) return;
 
     const tpl = TEMPLATES.find((t) => t.id === id);
     if (!tpl) return;
 
-    if (!confirmLoad(hasUnsavedChanges)) {
+    if (hasUnsavedChanges && !(await confirm({ title: "Load template?", description: "Loading a template will replace your current content.", variant: "warning", confirmText: "Continue" }))) {
       // Reset the select to blank without loading
       e.target.value = '';
       return;
@@ -36,9 +33,9 @@ export function TemplateSelector({ activeFile, onLoad, hasUnsavedChanges }: Temp
     setOpen(false);
   };
 
-  const handleLoadExample = () => {
+  const handleLoadExample = async () => {
     if (!example) return;
-    if (!confirmLoad(hasUnsavedChanges)) return;
+    if (hasUnsavedChanges && !(await confirm({ title: "Load example?", description: "Loading an example will replace your current content.", variant: "warning", confirmText: "Continue" }))) return;
     onLoad(example.content);
   };
 

@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAgentStatus, AgentState } from '../hooks/useAgentStatus';
+import { toast } from '../lib/toast-store';
 
 const API_BASE = '/api';
 const MAX_START_RETRIES = 3;
@@ -54,6 +55,7 @@ export function AgentControl() {
       if (!res.ok && json.error) {
         throw new Error(json.error);
       }
+      toast.success('Agent started');
     } catch (err) {
       if (!retryTimerRef.current && attempt < MAX_START_RETRIES) {
         setRetrying(true);
@@ -66,6 +68,7 @@ export function AgentControl() {
         setInflight(false);
         return;
       }
+      toast.error(`Failed to start agent: ${err instanceof Error ? err.message : String(err)}`);
       setActionError(err instanceof Error ? err.message : String(err));
       setRetrying(false);
     } finally {
@@ -91,7 +94,9 @@ export function AgentControl() {
       if (!res.ok && json.error) {
         throw new Error(json.error);
       }
+      toast.success('Agent stopped');
     } catch (err) {
+      toast.error(`Failed to stop agent: ${err instanceof Error ? err.message : String(err)}`);
       setActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setInflight(false);

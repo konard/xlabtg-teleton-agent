@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { api, SessionListItem, SessionMessage } from "../lib/api";
+import { useConfirm } from "../components/ConfirmDialog";
 
 function formatTs(ts: number): string {
   const d = new Date(ts);
@@ -100,6 +101,7 @@ function SessionDetail({
   onClose: () => void;
   onDelete: (id: string) => void;
 }) {
+  const { confirm } = useConfirm();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -133,7 +135,7 @@ function SessionDetail({
   const totalPages = Math.ceil(total / limit);
 
   const handleDelete = async () => {
-    if (!confirm("Permanently delete this session?")) return;
+    if (!(await confirm({ title: "Delete session?", description: "This cannot be undone.", variant: "danger", confirmText: "Delete" }))) return;
     try {
       await api.deleteSession(session.sessionId);
       onDelete(session.sessionId);
