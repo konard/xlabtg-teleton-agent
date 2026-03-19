@@ -61,9 +61,6 @@ function DashboardNav() {
       <div style={{ marginTop: "auto" }}>
         <AgentControl />
         <div style={{ padding: "0 12px 14px" }}>
-          <div style={{ display: "flex", justifyContent: "center", marginBottom: "8px" }}>
-            <NotificationBell />
-          </div>
           <button
             onClick={toggleTheme}
             className="btn-ghost"
@@ -142,6 +139,14 @@ function DashboardNav() {
   );
 }
 
+function TopBar() {
+  return (
+    <div className="topbar-controls">
+      <NotificationBell />
+    </div>
+  );
+}
+
 export function Layout() {
-  return <Shell sidebar={<DashboardNav />} />;
+  return <Shell sidebar={<DashboardNav />} topBar={<TopBar />} />;
 }
