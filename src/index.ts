@@ -8,6 +8,7 @@ import { MessageHandler } from "./telegram/handlers.js";
 import { AdminHandler } from "./telegram/admin.js";
 import { MessageDebouncer } from "./telegram/debounce.js";
 import { getDatabase, closeDatabase, initializeMemory, type MemorySystem } from "./memory/index.js";
+import { initMetrics } from "./services/metrics.js";
 import { getWalletAddress } from "./ton/wallet-service.js";
 import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
@@ -123,6 +124,10 @@ export class TeletonApp {
     });
 
     const db = getDatabase().getDb();
+
+    // Initialize metrics singleton early so tool call recording works
+    // regardless of whether WebUI is enabled.
+    initMetrics(db);
 
     this.userHookEvaluator = new UserHookEvaluator(db);
     this.agent.setUserHookEvaluator(this.userHookEvaluator);

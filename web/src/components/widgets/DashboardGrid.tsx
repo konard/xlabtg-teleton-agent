@@ -205,8 +205,17 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
   const addWidget = useCallback((id: WidgetId) => {
     if (visibleRef.current.includes(id)) return;
     const nextVisible = [...visibleRef.current, id];
+    const meta = WIDGET_REGISTRY.find((m) => m.id === id)!;
+    // Inject default layout item so the widget restores at its default size
+    const currentLayouts = layoutsRef.current;
+    const nextLayouts: ResponsiveLayouts = {
+      ...currentLayouts,
+      lg: [...(currentLayouts.lg ?? []).filter((item) => item.i !== id), meta.defaultItem.lg],
+      md: [...(currentLayouts.md ?? []).filter((item) => item.i !== id), meta.defaultItem.md],
+    };
     setVisible(nextVisible);
-    saveSaved({ layouts: layoutsRef.current, visible: nextVisible });
+    setLayouts(nextLayouts);
+    saveSaved({ layouts: nextLayouts, visible: nextVisible });
   }, []);
 
   const resetLayout = useCallback(() => {
