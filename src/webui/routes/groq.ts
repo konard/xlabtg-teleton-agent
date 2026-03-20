@@ -160,8 +160,11 @@ export function createGroqRoutes(deps: WebUIServerDeps) {
       if (result.valid) {
         checks.connectivity = { status: "ok", message: "Successfully connected to Groq API" };
       } else {
+        // 403 from /models endpoint means the key itself is blocked or the account has issues,
+        // not a model-level restriction (model restrictions surface at chat completion time)
+        const status = result.statusCode === 403 ? "warn" : "error";
         checks.connectivity = {
-          status: "error",
+          status,
           message: result.hint || result.error || "Connection failed",
         };
       }

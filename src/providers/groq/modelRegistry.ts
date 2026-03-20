@@ -2,7 +2,16 @@
  * Groq Model Registry
  *
  * Classifies Groq models by type (text, STT, TTS) with rate-limit metadata.
- * Rate limits are sourced from Groq's free-plan documentation (as of 2025).
+ * Rate limits are sourced from Groq's free-plan documentation (as of 2026).
+ *
+ * Models last verified: 2026-03-20 against https://console.groq.com/docs/models
+ * Removed deprecated models (past shutdown dates):
+ *   - mixtral-8x7b-32768 (shutdown 2025-03-20)
+ *   - llama3-70b-8192 (shutdown 2025-08-30)
+ *   - llama3-8b-8192 (shutdown 2025-08-30)
+ *   - deepseek-r1-distill-llama-70b (shutdown 2025-10-02)
+ *   - gemma2-9b-it (shutdown 2025-10-08)
+ *   - meta-llama/llama-4-maverick-17b-128e-instruct (never available on Groq)
  */
 
 export type GroqModelType = "text" | "stt" | "tts";
@@ -19,14 +28,17 @@ export interface GroqModelEntry {
   tpd: number;
   /** Audio seconds per hour (STT/TTS models only, 0 for text) */
   asph?: number;
+  /** Whether the model is in preview/beta (not for production use) */
+  preview?: boolean;
 }
 
 /**
  * Static model registry for Groq.
  * Update this list as Groq releases new models.
+ * Source: https://console.groq.com/docs/models
  */
 export const GROQ_MODEL_REGISTRY: GroqModelEntry[] = [
-  // ─── Text Models ──────────────────────────────────────────────────────────
+  // ─── Text Models (Production) ─────────────────────────────────────────────
   {
     id: "llama-3.3-70b-versatile",
     type: "text",
@@ -44,68 +56,48 @@ export const GROQ_MODEL_REGISTRY: GroqModelEntry[] = [
     tpd: 500000,
   },
   {
-    id: "llama3-70b-8192",
+    id: "openai/gpt-oss-120b",
     type: "text",
-    displayName: "Llama 3 70B",
+    displayName: "GPT OSS 120B",
     rpm: 30,
     tpm: 6000,
     tpd: 500000,
   },
   {
-    id: "llama3-8b-8192",
+    id: "openai/gpt-oss-20b",
     type: "text",
-    displayName: "Llama 3 8B",
+    displayName: "GPT OSS 20B",
     rpm: 30,
-    tpm: 30000,
+    tpm: 15000,
     tpd: 500000,
   },
-  {
-    id: "meta-llama/llama-4-maverick-17b-128e-instruct",
-    type: "text",
-    displayName: "Llama 4 Maverick 17B",
-    rpm: 30,
-    tpm: 6000,
-    tpd: 500000,
-  },
+  // ─── Text Models (Preview) ────────────────────────────────────────────────
   {
     id: "meta-llama/llama-4-scout-17b-16e-instruct",
     type: "text",
-    displayName: "Llama 4 Scout 17B",
+    displayName: "Llama 4 Scout 17B (Preview)",
     rpm: 30,
     tpm: 8000,
     tpd: 500000,
+    preview: true,
   },
   {
     id: "qwen/qwen3-32b",
     type: "text",
-    displayName: "Qwen3 32B",
+    displayName: "Qwen3 32B (Preview)",
     rpm: 30,
     tpm: 6000,
     tpd: 500000,
+    preview: true,
   },
   {
-    id: "deepseek-r1-distill-llama-70b",
+    id: "moonshotai/kimi-k2-instruct",
     type: "text",
-    displayName: "DeepSeek R1 Distill 70B",
+    displayName: "Kimi K2 (Preview)",
     rpm: 30,
     tpm: 6000,
     tpd: 500000,
-  },
-  {
-    id: "mixtral-8x7b-32768",
-    type: "text",
-    displayName: "Mixtral 8x7B",
-    rpm: 30,
-    tpm: 5000,
-    tpd: 500000,
-  },
-  {
-    id: "gemma2-9b-it",
-    type: "text",
-    displayName: "Gemma 2 9B",
-    rpm: 30,
-    tpm: 15000,
-    tpd: 500000,
+    preview: true,
   },
 
   // ─── STT Models ───────────────────────────────────────────────────────────

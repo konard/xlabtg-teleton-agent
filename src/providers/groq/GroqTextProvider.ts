@@ -195,9 +195,9 @@ export async function testGroqApiKey(apiKey: string): Promise<GroqKeyTestResult>
 
   const hints: Record<number, string> = {
     401: "Invalid API key. Check that your key starts with gsk_ and is correct.",
-    403: "API key valid but access denied. Your plan may not support this endpoint.",
+    403: "Access denied. This can happen with preview/beta models that require special account access. Try a production model like llama-3.3-70b-versatile. See https://console.groq.com/docs/models for available models.",
     422: "Request schema error. This should not occur with GET /models — please report this.",
-    429: "Rate limit exceeded. Wait a moment and try again.",
+    429: "Rate limit exceeded. Wait a moment and try again. Free plan has limited quotas.",
   };
   const hint =
     hints[statusCode] ?? (statusCode >= 500 ? "Groq server error. Try again later." : null);
