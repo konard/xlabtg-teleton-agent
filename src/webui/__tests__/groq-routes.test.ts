@@ -56,6 +56,40 @@ function buildApp() {
   return app;
 }
 
+describe("getGroqApiKey resolution order", () => {
+  it("prefers groq.api_key over agent.api_key when both are set", async () => {
+    vi.mocked(readRawConfig).mockReturnValue({});
+    vi.mocked(getNestedValue).mockImplementation((_, path) => {
+      if (path === "groq.api_key") return "gsk_groq_dedicated_key";
+      if (path === "agent.api_key") return "gsk_agent_key";
+      return "";
+    });
+    const app = buildApp();
+    const res = await app.request("/groq/debug");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.apiKeyConfigured).toBe(true);
+    // Should not expose actual key values
+    expect(JSON.stringify(json)).not.toContain("gsk_groq_dedicated_key");
+    expect(JSON.stringify(json)).not.toContain("gsk_agent_key");
+  });
+
+  it("falls back to agent.api_key when groq.api_key is empty", async () => {
+    vi.mocked(readRawConfig).mockReturnValue({});
+    vi.mocked(getNestedValue).mockImplementation((_, path) => {
+      if (path === "groq.api_key") return "";
+      if (path === "agent.api_key") return "gsk_agent_key1234567890";
+      return "";
+    });
+    const app = buildApp();
+    const res = await app.request("/groq/debug");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.apiKeyConfigured).toBe(true);
+    expect(json.data.apiKeyFormatValid).toBe(true);
+  });
+});
+
 describe("GET /groq/debug", () => {
   it("returns debug info with baseURL and auth header shape", async () => {
     setupWithApiKey("gsk_testkey123");

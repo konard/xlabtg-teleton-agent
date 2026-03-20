@@ -14,10 +14,18 @@ import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("GroqRoutes");
 
-/** Retrieve the Groq API key from the current config */
+/**
+ * Retrieve the Groq API key from the current config.
+ *
+ * Resolution order:
+ * 1. groq.api_key — dedicated Groq key (used when Groq is a secondary/multi-modal provider)
+ * 2. agent.api_key — main LLM key (used when agent.provider === 'groq')
+ */
 function getGroqApiKey(deps: WebUIServerDeps): string {
   try {
     const raw = readRawConfig(deps.configPath);
+    const groqKey = (getNestedValue(raw, "groq.api_key") as string) ?? "";
+    if (groqKey) return groqKey;
     return (getNestedValue(raw, "agent.api_key") as string) ?? "";
   } catch {
     return "";
@@ -130,7 +138,7 @@ export function createGroqRoutes(deps: WebUIServerDeps) {
           tts: GROQ_MODEL_REGISTRY.filter((m) => m.type === "tts").length,
         },
         troubleshooting: !apiKey
-          ? "No API key configured. Set agent.api_key in config."
+          ? "No API key configured. Set groq.api_key (secondary mode) or agent.api_key (when agent.provider is 'groq')."
           : !keyValid
             ? "API key format invalid. Groq keys should start with 'gsk_' and be at least 20 characters."
             : null,
