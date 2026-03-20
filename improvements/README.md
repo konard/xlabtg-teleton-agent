@@ -63,6 +63,80 @@ These files are intended to be used as the basis for creating individual GitHub 
 | Dark/Light Theme Toggle | Done |
 | Keyboard Shortcuts (Ctrl+S) | Done |
 
+---
+
+## V2 Architecture — Next-Gen Agent Capabilities
+
+Professional detailed templates for the V2 architecture: memory, multi-agent, predictive systems, self-learning, security, integrations, and adaptive UI.
+
+### Block 1 — Memory System (Foundation)
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-01 | [v2-01-semantic-vector-memory.md](v2-01-semantic-vector-memory.md) | Semantic Vector Memory with Embeddings | Medium |
+| V2-02 | [v2-02-associative-memory-graph.md](v2-02-associative-memory-graph.md) | Associative Graph-Based Memory | High |
+| V2-03 | [v2-03-memory-prioritization-engine.md](v2-03-memory-prioritization-engine.md) | Importance-Based Memory Retention | Medium |
+
+### Block 2 — Predictive Intelligence
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-04 | [v2-04-prediction-engine.md](v2-04-prediction-engine.md) | Prediction Engine for Next User Actions | High |
+| V2-05 | [v2-05-predictive-caching.md](v2-05-predictive-caching.md) | Predictive Caching Layer | Medium |
+| V2-06 | [v2-06-anomaly-detection.md](v2-06-anomaly-detection.md) | Anomaly Detection for Unusual Behavior | Medium |
+
+### Block 3 — Multi-Agent System
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-07 | [v2-07-agent-registry.md](v2-07-agent-registry.md) | Agent Registry and Roles | Very High |
+| V2-08 | [v2-08-task-delegation.md](v2-08-task-delegation.md) | Automatic Task Delegation System | Very High |
+| V2-09 | [v2-09-pipeline-execution.md](v2-09-pipeline-execution.md) | Pipeline-Based Task Execution | Very High |
+| V2-10 | [v2-10-self-correcting-loop.md](v2-10-self-correcting-loop.md) | Self-Correcting Execution Loop | High |
+
+### Block 4 — Time Intelligence
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-11 | [v2-11-temporal-context.md](v2-11-temporal-context.md) | Time-Aware Context System | Medium |
+| V2-12 | [v2-12-predictive-scheduling.md](v2-12-predictive-scheduling.md) | Smart Task Scheduling | High |
+
+### Block 5 — Security Layer
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-13 | [v2-13-zero-trust-execution.md](v2-13-zero-trust-execution.md) | Zero-Trust Validation for Actions | High |
+| V2-14 | [v2-14-audit-trail.md](v2-14-audit-trail.md) | Full Audit Logs for Agent Decisions | High |
+
+### Block 6 — Integrations
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-15 | [v2-15-unified-integration-layer.md](v2-15-unified-integration-layer.md) | Unified API Layer for External Services | High |
+| V2-16 | [v2-16-webhooks-event-bus.md](v2-16-webhooks-event-bus.md) | Event-Driven Architecture | High |
+
+### Block 7 — Generative UI
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-17 | [v2-17-dynamic-dashboard.md](v2-17-dynamic-dashboard.md) | Dynamic Dashboard Generation | High |
+| V2-18 | [v2-18-ai-widget-generator.md](v2-18-ai-widget-generator.md) | Auto-Generated Widgets Based on Usage | High |
+
+### Block 8 — Self-Improvement
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-19 | [v2-19-feedback-learning.md](v2-19-feedback-learning.md) | Feedback-Based Learning Loop | High |
+| V2-20 | [v2-20-adaptive-prompting.md](v2-20-adaptive-prompting.md) | Dynamic Prompt Optimization | Very High |
+
+### Block 9 — Agent Network (Advanced / Optional)
+
+| # | File | Area | Complexity |
+|---|------|------|-----------|
+| V2-21 | [v2-21-multi-agent-network.md](v2-21-multi-agent-network.md) | Cross-Agent Communication Protocol | Very High |
+
+---
+
 ## Complexity Legend
 
 - **Low** — 1-2 days, minimal backend changes
