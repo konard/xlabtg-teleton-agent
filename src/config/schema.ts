@@ -392,6 +392,12 @@ export const ConfigSchema = z.object({
     .describe("Tavily API key for web search & extract (free at https://tavily.com)"),
   groq: z
     .object({
+      api_key: z
+        .string()
+        .optional()
+        .describe(
+          "Groq API key for STT/TTS when using a different primary LLM provider (falls back to agent.api_key when agent.provider is 'groq')"
+        ),
       stt_model: z
         .string()
         .default("whisper-large-v3-turbo")
@@ -410,6 +416,12 @@ export const ConfigSchema = z.object({
         .enum(["mp3", "opus", "aac", "flac", "wav", "pcm"])
         .default("mp3")
         .describe("TTS output audio format"),
+      tts_mode: z
+        .enum(["voice_calls_only", "always", "use_primary_text"])
+        .default("voice_calls_only")
+        .describe(
+          "When to respond with Groq TTS: voice_calls_only (only reply with voice when user sends voice), always (always respond with voice), use_primary_text (use primary provider for text, Groq only for STT)"
+        ),
       stt_language: z
         .string()
         .optional()
@@ -422,7 +434,9 @@ export const ConfigSchema = z.object({
         ),
     })
     .optional()
-    .describe("Groq multi-modal configuration (STT, TTS, rate limits)"),
+    .describe(
+      "Groq multi-modal configuration (STT, TTS, rate limits). Can be used alongside any primary LLM provider."
+    ),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

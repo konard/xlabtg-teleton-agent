@@ -734,6 +734,36 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
   },
 
   // ─── Groq Multi-Modal ──────────────────────────────────────────────
+  "groq.api_key": {
+    type: "string",
+    category: "API Keys",
+    label: "Groq API Key (STT/TTS)",
+    description:
+      "Groq API key for STT/TTS when using a different primary LLM provider. Falls back to agent.api_key when agent.provider is 'groq'.",
+    sensitive: true,
+    hotReload: "instant",
+    validate: (v) => (v.length >= 10 ? undefined : "Must be at least 10 characters"),
+    mask: (v) => v.slice(0, 8) + "****",
+    parse: identity,
+  },
+  "groq.tts_mode": {
+    type: "enum",
+    category: "Agent",
+    label: "Groq TTS Mode",
+    description:
+      "When to respond with Groq TTS: voice_calls_only (reply with voice when user sends voice), always (always respond with voice), use_primary_text (use primary provider for text, Groq for STT only)",
+    sensitive: false,
+    hotReload: "instant",
+    options: ["voice_calls_only", "always", "use_primary_text"],
+    optionLabels: {
+      voice_calls_only: "Voice calls only",
+      always: "Always respond with voice",
+      use_primary_text: "Use primary text model (STT only)",
+    },
+    validate: enumValidator(["voice_calls_only", "always", "use_primary_text"]),
+    mask: identity,
+    parse: identity,
+  },
   "groq.stt_model": {
     type: "string",
     category: "Agent",
