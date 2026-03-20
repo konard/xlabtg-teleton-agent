@@ -50,7 +50,8 @@ describe("testGroqApiKey", () => {
     const result = await testGroqApiKey("gsk_restricted_key");
     expect(result.valid).toBe(false);
     expect(result.statusCode).toBe(403);
-    expect(result.hint).toContain("plan");
+    expect(result.hint).toContain("Access denied");
+    expect(result.hint).toContain("llama-3.3-70b-versatile");
   });
 
   it("returns valid=false with statusCode=429 on rate limit", async () => {

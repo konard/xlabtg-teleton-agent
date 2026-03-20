@@ -151,7 +151,7 @@ describe("GET /groq/health", () => {
     expect(json.data.checks.modelRegistry.status).toBe("ok");
   });
 
-  it("returns error status when connectivity fails", async () => {
+  it("returns error status when connectivity fails with 401", async () => {
     setupWithApiKey("gsk_validkey1234567890abc");
     mockFetch(401, '{"error":"Invalid API Key"}');
     const app = buildApp();
@@ -161,6 +161,19 @@ describe("GET /groq/health", () => {
     expect(json.data.status).toBe("error");
     expect(json.data.checks.apiKey.status).toBe("ok");
     expect(json.data.checks.connectivity.status).toBe("error");
+  });
+
+  it("returns warn status when connectivity fails with 403 (access denied)", async () => {
+    setupWithApiKey("gsk_validkey1234567890abc");
+    mockFetch(403, '{"error":"Forbidden"}');
+    const app = buildApp();
+    const res = await app.request("/groq/health");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // 403 from /models endpoint is treated as warn, not error (may be account-level restriction)
+    expect(json.data.checks.apiKey.status).toBe("ok");
+    expect(json.data.checks.connectivity.status).toBe("warn");
+    expect(json.data.checks.connectivity.message).toContain("Access denied");
   });
 });
 

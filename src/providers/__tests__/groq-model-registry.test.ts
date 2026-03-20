@@ -102,4 +102,24 @@ describe("Groq Model Registry", () => {
       expect(model.rpm).toBeGreaterThan(0);
     }
   });
+
+  it("does not contain deprecated models that have been shut down", () => {
+    const ids = GROQ_MODEL_REGISTRY.map((m) => m.id);
+    // These models were deprecated and removed from Groq
+    expect(ids).not.toContain("mixtral-8x7b-32768"); // shutdown 2025-03-20
+    expect(ids).not.toContain("llama3-70b-8192"); // shutdown 2025-08-30
+    expect(ids).not.toContain("llama3-8b-8192"); // shutdown 2025-08-30
+    expect(ids).not.toContain("deepseek-r1-distill-llama-70b"); // shutdown 2025-10-02
+    expect(ids).not.toContain("gemma2-9b-it"); // shutdown 2025-10-08
+    // This model was never available on Groq
+    expect(ids).not.toContain("meta-llama/llama-4-maverick-17b-128e-instruct");
+  });
+
+  it("contains current production text models", () => {
+    const ids = GROQ_MODEL_REGISTRY.map((m) => m.id);
+    expect(ids).toContain("llama-3.3-70b-versatile");
+    expect(ids).toContain("llama-3.1-8b-instant");
+    expect(ids).toContain("openai/gpt-oss-120b");
+    expect(ids).toContain("openai/gpt-oss-20b");
+  });
 });

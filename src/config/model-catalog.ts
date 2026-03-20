@@ -17,17 +17,7 @@ export interface GroqModelOption extends ModelOption {
 
 /** Groq text models for LLM chat completions */
 export const GROQ_TEXT_MODELS: ModelOption[] = [
-  {
-    value: "meta-llama/llama-4-maverick-17b-128e-instruct",
-    name: "Llama 4 Maverick",
-    description: "Vision, 131K ctx, $0.20/M",
-  },
-  { value: "qwen/qwen3-32b", name: "Qwen3 32B", description: "Reasoning, 131K ctx, $0.29/M" },
-  {
-    value: "deepseek-r1-distill-llama-70b",
-    name: "DeepSeek R1 70B",
-    description: "Reasoning, 131K ctx, $0.75/M",
-  },
+  // Production models
   {
     value: "llama-3.3-70b-versatile",
     name: "Llama 3.3 70B",
@@ -37,6 +27,32 @@ export const GROQ_TEXT_MODELS: ModelOption[] = [
     value: "llama-3.1-8b-instant",
     name: "Llama 3.1 8B",
     description: "Fast & cheap, 131K ctx, $0.05/M",
+  },
+  {
+    value: "openai/gpt-oss-120b",
+    name: "GPT OSS 120B",
+    description: "Fast reasoning, 131K ctx, $0.90/M",
+  },
+  {
+    value: "openai/gpt-oss-20b",
+    name: "GPT OSS 20B",
+    description: "Ultra-fast, 131K ctx, $0.10/M",
+  },
+  // Preview models (available but not for production)
+  {
+    value: "qwen/qwen3-32b",
+    name: "Qwen3 32B (Preview)",
+    description: "Reasoning, 131K ctx, $0.29/M",
+  },
+  {
+    value: "meta-llama/llama-4-scout-17b-16e-instruct",
+    name: "Llama 4 Scout 17B (Preview)",
+    description: "Fast, 131K ctx",
+  },
+  {
+    value: "moonshotai/kimi-k2-instruct",
+    name: "Kimi K2 (Preview)",
+    description: "Long context, 262K ctx",
   },
 ];
 
