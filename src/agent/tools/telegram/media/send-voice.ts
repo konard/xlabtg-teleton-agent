@@ -187,6 +187,7 @@ export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
         rate,
         groqApiKey: provider === "groq" ? groqApiKey : undefined,
         groqModel: provider === "groq" ? groqConfig?.tts_model : undefined,
+        groqFormat: provider === "groq" ? groqConfig?.tts_format : undefined,
       });
 
       audioPath = ttsResult.filePath;

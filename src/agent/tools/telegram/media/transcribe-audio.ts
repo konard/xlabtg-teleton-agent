@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { groqTranscribe } from "../../../../providers/groq/GroqSTTProvider.js";
 
 const log = createLogger("Tools");
 
@@ -14,7 +15,7 @@ interface TranscribeAudioParams {
 export const telegramTranscribeAudioTool: Tool = {
   name: "telegram_transcribe_audio",
   description:
-    "Transcribe a voice or audio message to text using native server-side speech recognition. Target message must be a voice or audio type. May require Telegram Premium. Polls automatically until transcription completes.",
+    "Transcribe a voice or audio message to text. Uses Groq Whisper STT when groq.api_key is configured (free tier available). Falls back to Telegram native transcription (requires Telegram Premium) if Groq is not configured. Polls automatically until transcription completes.",
   category: "data-bearing",
   parameters: Type.Object({
     chatId: Type.String({
@@ -37,9 +38,63 @@ export const telegramTranscribeAudioExecutor: ToolExecutor<TranscribeAudioParams
   params,
   context
 ): Promise<ToolResult> => {
-  try {
-    const { chatId, messageId } = params;
+  const { chatId, messageId } = params;
 
+  // Try Groq Whisper STT first if configured (works without Telegram Premium)
+  const groqConfig = context.config?.groq;
+  const groqApiKey =
+    groqConfig?.api_key ??
+    (context.config?.agent.provider === "groq" ? context.config?.agent.api_key : undefined);
+
+  if (groqApiKey) {
+    try {
+      const gramJsClient = context.bridge.getClient().getClient();
+      // Fetch the message to get the audio document
+      const messages = await gramJsClient.getMessages(chatId, { ids: [messageId] });
+      const msg = messages[0];
+      if (msg) {
+        const audioBuffer = await gramJsClient.downloadMedia(msg, {});
+        if (audioBuffer) {
+          const buf = Buffer.isBuffer(audioBuffer) ? audioBuffer : Buffer.from(audioBuffer);
+          // Detect filename from message media type
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS message is untyped
+          const media = (msg as any).media;
+          const isVoice =
+            media?.document?.attributes?.some(
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS attrs are untyped
+              (a: any) => a.className === "DocumentAttributeAudio" && a.voice
+            ) ?? true;
+          const filename = isVoice ? "voice.ogg" : "audio.mp3";
+          const result = await groqTranscribe(buf, filename, {
+            apiKey: groqApiKey,
+            model: groqConfig?.stt_model,
+            language: groqConfig?.stt_language,
+          });
+          log.info(
+            `🎤 Groq STT transcribed msg ${messageId}: "${result.text.substring(0, 80)}..."`
+          );
+          return {
+            success: true,
+            data: {
+              text: result.text,
+              pending: false,
+              provider: "groq",
+              language: result.language,
+              duration: result.duration,
+            },
+          };
+        }
+      }
+    } catch (groqErr) {
+      log.warn(
+        { err: groqErr },
+        `Groq STT failed for msg ${messageId}, falling back to Telegram native`
+      );
+    }
+  }
+
+  // Fall back to Telegram native transcription (requires Telegram Premium)
+  try {
     const gramJsClient = context.bridge.getClient().getClient();
     const entity = await gramJsClient.getEntity(chatId);
 
@@ -107,7 +162,8 @@ export const telegramTranscribeAudioExecutor: ToolExecutor<TranscribeAudioParams
     if (error.errorMessage === "PREMIUM_ACCOUNT_REQUIRED") {
       return {
         success: false,
-        error: "Telegram Premium is required to transcribe audio messages.",
+        error:
+          "Telegram Premium is required to transcribe audio messages. Configure groq.api_key to use Groq Whisper STT instead (free tier available at console.groq.com).",
       };
     }
     if (error.errorMessage === "MSG_ID_INVALID") {

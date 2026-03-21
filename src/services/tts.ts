@@ -44,6 +44,8 @@ export interface TTSOptions {
   groqApiKey?: string;
   /** Groq TTS model (e.g. "canopylabs/orpheus-v1-english") */
   groqModel?: string;
+  /** Groq TTS audio output format (e.g. "mp3", "opus", "wav") */
+  groqFormat?: string;
 }
 
 export interface TTSResult {
@@ -130,7 +132,13 @@ export async function generateSpeech(options: TTSOptions): Promise<TTSResult> {
     case "elevenlabs":
       return generateElevenLabsTTS(options.text, voice);
     case "groq":
-      return generateGroqTTS(options.text, voice, options.groqApiKey, options.groqModel);
+      return generateGroqTTS(
+        options.text,
+        voice,
+        options.groqApiKey,
+        options.groqModel,
+        options.groqFormat
+      );
     default:
       throw new Error(`Unknown TTS provider: ${provider}`);
   }
@@ -409,24 +417,26 @@ async function generateGroqTTS(
   text: string,
   voice: string,
   apiKey?: string,
-  model?: string
+  model?: string,
+  format?: string
 ): Promise<TTSResult> {
   if (!apiKey) {
     throw new Error("Groq API key is required for Groq TTS. Set groq.api_key in config.");
   }
 
+  const resolvedFormat = (format as "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm") ?? "mp3";
   const tempDir = join(tmpdir(), "teleton-tts");
   if (!existsSync(tempDir)) {
     mkdirSync(tempDir, { recursive: true });
   }
 
-  const outputPath = join(tempDir, `${randomUUID()}.mp3`);
+  const outputPath = join(tempDir, `${randomUUID()}.${resolvedFormat}`);
 
   const audioBuffer = await groqSpeak(text, {
     apiKey,
     model,
     voice,
-    responseFormat: "mp3",
+    responseFormat: resolvedFormat,
   });
 
   writeFileSync(outputPath, audioBuffer);
