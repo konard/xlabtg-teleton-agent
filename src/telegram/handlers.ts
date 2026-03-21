@@ -13,6 +13,9 @@ import { isSilentReply } from "../constants/tokens.js";
 import { telegramTranscribeAudioExecutor } from "../agent/tools/telegram/media/transcribe-audio.js";
 import { TYPING_REFRESH_MS } from "../constants/timeouts.js";
 import { createLogger } from "../utils/logger.js";
+import { groqTranscribe } from "../providers/groq/GroqSTTProvider.js";
+import { generateSpeech } from "../services/tts.js";
+import { unlinkSync } from "fs";
 
 const log = createLogger("Telegram");
 import type { PluginMessageEvent } from "@teleton-agent/sdk";
@@ -384,27 +387,64 @@ export class MessageHandler {
           // 5c. Auto-transcribe voice/audio messages
           let transcriptionText: string | null = null;
           if (message.mediaType === "voice" || message.mediaType === "audio") {
-            try {
-              const transcribeResult = await telegramTranscribeAudioExecutor(
-                { chatId: message.chatId, messageId: message.id },
-                {
-                  bridge: this.bridge,
-                  db: this.db,
-                  chatId: message.chatId,
-                  senderId: message.senderId,
-                  isGroup: message.isGroup,
-                  config: this.fullConfig,
+            // Try Groq STT first if configured
+            const groqConfig = this.fullConfig?.groq;
+            const groqApiKey =
+              groqConfig?.api_key ??
+              (this.fullConfig?.agent.provider === "groq"
+                ? this.fullConfig?.agent.api_key
+                : undefined);
+
+            if (groqApiKey && message._rawMessage) {
+              try {
+                const gramJsClient = this.bridge.getClient().getClient();
+                // Download the audio buffer from the voice/audio message
+                const audioBuffer = await gramJsClient.downloadMedia(message._rawMessage, {});
+                if (audioBuffer) {
+                  const buf = Buffer.isBuffer(audioBuffer) ? audioBuffer : Buffer.from(audioBuffer);
+                  const filename = message.mediaType === "voice" ? "voice.ogg" : "audio.mp3";
+                  const result = await groqTranscribe(buf, filename, {
+                    apiKey: groqApiKey,
+                    model: groqConfig?.stt_model,
+                    language: groqConfig?.stt_language,
+                  });
+                  transcriptionText = result.text;
+                  log.info(
+                    `🎤 Groq STT transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
+                  );
                 }
-              );
-              const transcribeData = transcribeResult.data as Record<string, unknown> | undefined;
-              if (transcribeResult.success && transcribeData?.text) {
-                transcriptionText = transcribeData.text as string;
-                log.info(
-                  `🎤 Auto-transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
+              } catch (err) {
+                log.warn(
+                  { err },
+                  `Groq STT failed for voice message ${message.id}, falling back to Telegram native`
                 );
               }
-            } catch (err) {
-              log.warn({ err }, `Failed to auto-transcribe voice message ${message.id}`);
+            }
+
+            // Fall back to Telegram native transcription (requires Premium)
+            if (!transcriptionText) {
+              try {
+                const transcribeResult = await telegramTranscribeAudioExecutor(
+                  { chatId: message.chatId, messageId: message.id },
+                  {
+                    bridge: this.bridge,
+                    db: this.db,
+                    chatId: message.chatId,
+                    senderId: message.senderId,
+                    isGroup: message.isGroup,
+                    config: this.fullConfig,
+                  }
+                );
+                const transcribeData = transcribeResult.data as Record<string, unknown> | undefined;
+                if (transcribeResult.success && transcribeData?.text) {
+                  transcriptionText = transcribeData.text as string;
+                  log.info(
+                    `🎤 Auto-transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
+                  );
+                }
+              } catch (err) {
+                log.warn({ err }, `Failed to auto-transcribe voice message ${message.id}`);
+              }
             }
           }
 
@@ -461,16 +501,84 @@ export class MessageHandler {
               responseText = responseText.slice(0, this.config.max_message_length - 3) + "...";
             }
 
-            const sentMessage = await this.bridge.sendMessage({
-              chatId: message.chatId,
-              text: responseText,
-              replyToId: message.id,
-            });
+            // Check if Groq TTS mode requires a voice response
+            const groqConfig = this.fullConfig?.groq;
+            const groqApiKey =
+              groqConfig?.api_key ??
+              (this.fullConfig?.agent.provider === "groq"
+                ? this.fullConfig?.agent.api_key
+                : undefined);
+            const ttsMode = groqConfig?.tts_mode;
+            const isVoiceMessage = message.mediaType === "voice" || message.mediaType === "audio";
+            const shouldSendVoice =
+              groqApiKey &&
+              ttsMode !== "use_primary_text" &&
+              (ttsMode === "always" || (ttsMode === "voice_calls_only" && isVoiceMessage));
+
+            let sentMessageId = 0;
+            let sentMessageDate = Math.floor(Date.now() / 1000);
+
+            if (shouldSendVoice) {
+              let ttsFilePath: string | undefined;
+              let voiceSent = false;
+              try {
+                const ttsResult = await generateSpeech({
+                  text: responseText,
+                  provider: "groq",
+                  voice: groqConfig?.tts_voice,
+                  groqApiKey,
+                  groqModel: groqConfig?.tts_model,
+                });
+                ttsFilePath = ttsResult.filePath;
+
+                const gramJsClient = this.bridge.getClient().getClient();
+                const { Api } = await import("telegram");
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+                const voiceMsg: any = await gramJsClient.sendFile(message.chatId, {
+                  file: ttsFilePath,
+                  replyTo: message.id,
+                  attributes: [new Api.DocumentAttributeAudio({ voice: true, duration: 0 })],
+                });
+                sentMessageId = voiceMsg.id ?? message.id + 1;
+                sentMessageDate = voiceMsg.date ?? Math.floor(Date.now() / 1000);
+                voiceSent = true;
+                log.info(`🎙️ Groq TTS voice reply sent for chat ${message.chatId}`);
+              } catch (err) {
+                log.warn({ err }, "Groq TTS voice reply failed, falling back to text");
+              } finally {
+                if (ttsFilePath) {
+                  try {
+                    unlinkSync(ttsFilePath);
+                  } catch {
+                    // Ignore cleanup errors
+                  }
+                }
+              }
+
+              if (!voiceSent) {
+                // Fall back to text message
+                const sentMessage = await this.bridge.sendMessage({
+                  chatId: message.chatId,
+                  text: responseText,
+                  replyToId: message.id,
+                });
+                sentMessageId = sentMessage.id;
+                sentMessageDate = sentMessage.date;
+              }
+            } else {
+              const sentMessage = await this.bridge.sendMessage({
+                chatId: message.chatId,
+                text: responseText,
+                replyToId: message.id,
+              });
+              sentMessageId = sentMessage.id;
+              sentMessageDate = sentMessage.date;
+            }
 
             // Store agent's response to feed
             await this.storeTelegramMessage(
               {
-                id: sentMessage.id,
+                id: sentMessageId,
                 chatId: message.chatId,
                 senderId: this.ownUserId ? parseInt(this.ownUserId) : 0,
                 text: responseText,
@@ -478,7 +586,7 @@ export class MessageHandler {
                 isChannel: message.isChannel,
                 isBot: false,
                 mentionsMe: false,
-                timestamp: new Date(sentMessage.date * 1000),
+                timestamp: new Date(sentMessageDate * 1000),
                 hasMedia: false,
               },
               true
