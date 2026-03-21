@@ -528,6 +528,7 @@ export class MessageHandler {
                   voice: groqConfig?.tts_voice,
                   groqApiKey,
                   groqModel: groqConfig?.tts_model,
+                  groqFormat: groqConfig?.tts_format,
                 });
                 ttsFilePath = ttsResult.filePath;
 
