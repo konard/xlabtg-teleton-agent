@@ -16,6 +16,7 @@ import {
   PIPER_VOICES,
   type TTSProvider,
 } from "../../../../services/tts.js";
+import { GROQ_TTS_VOICES } from "../../../../providers/groq/GroqTTSProvider.js";
 import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
@@ -38,7 +39,7 @@ interface SendVoiceParams {
 export const telegramSendVoiceTool: Tool = {
   name: "telegram_send_voice",
   description:
-    "Send a voice message. Either provide voicePath for an existing file, or text for TTS generation. Default TTS: piper (Trump voice). Available providers: piper, edge, openai, elevenlabs.",
+    "Send a voice message. Either provide voicePath for an existing file, or text for TTS generation. Default TTS: piper (Trump voice). Available providers: piper, edge, openai, elevenlabs, groq.",
 
   parameters: Type.Object({
     chatId: Type.String({
@@ -62,8 +63,8 @@ export const telegramSendVoiceTool: Tool = {
     ttsProvider: Type.Optional(
       Type.String({
         description:
-          "TTS provider: 'piper' (default, Trump voice), 'edge', 'openai', or 'elevenlabs'",
-        enum: ["piper", "edge", "openai", "elevenlabs"],
+          "TTS provider: 'piper' (default, Trump voice), 'edge', 'openai', 'elevenlabs', or 'groq'",
+        enum: ["piper", "edge", "openai", "elevenlabs", "groq"],
       })
     ),
     rate: Type.Optional(
@@ -144,26 +145,48 @@ export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
 
     // TTS mode: generate speech from text
     if (text && !voicePath) {
+      // Determine effective provider: use groq if configured and no explicit provider given
+      const groqConfig = context.config?.groq;
+      const groqApiKey =
+        groqConfig?.api_key ??
+        (context.config?.agent.provider === "groq" ? context.config?.agent.api_key : undefined);
+
+      const provider: TTSProvider = (ttsProvider as TTSProvider) ?? (groqApiKey ? "groq" : "piper");
+
       // Resolve voice shorthand based on provider
       let resolvedVoice = voice;
-      const provider = ttsProvider ?? "piper";
 
       if (voice) {
-        // Check Piper voices first (if using piper or no provider specified)
-        if (provider === "piper" && voice.toLowerCase() in PIPER_VOICES) {
+        if (provider === "groq") {
+          // Check Groq voices (case-insensitive)
+          const groqVoiceMatch = (GROQ_TTS_VOICES as readonly string[]).find(
+            (v) => v.toLowerCase() === voice.toLowerCase()
+          );
+          if (groqVoiceMatch) {
+            resolvedVoice = groqVoiceMatch;
+          }
+          // else pass through as-is
+        } else if (provider === "piper" && voice.toLowerCase() in PIPER_VOICES) {
+          // Check Piper voices first (if using piper or no provider specified)
           resolvedVoice = voice.toLowerCase();
-        }
-        // Then check Edge voices
-        else if (voice in EDGE_VOICES) {
+        } else if (voice in EDGE_VOICES) {
+          // Then check Edge voices
           resolvedVoice = EDGE_VOICES[voice as keyof typeof EDGE_VOICES];
         }
       }
 
+      // Use configured Groq voice if no explicit voice given and using Groq
+      if (!resolvedVoice && provider === "groq" && groqConfig?.tts_voice) {
+        resolvedVoice = groqConfig.tts_voice;
+      }
+
       const ttsResult = await generateSpeech({
         text,
-        provider: ttsProvider,
+        provider,
         voice: resolvedVoice,
         rate,
+        groqApiKey: provider === "groq" ? groqApiKey : undefined,
+        groqModel: provider === "groq" ? groqConfig?.tts_model : undefined,
       });
 
       audioPath = ttsResult.filePath;

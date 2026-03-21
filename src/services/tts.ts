@@ -17,8 +17,9 @@ import { TELETON_ROOT } from "../workspace/paths.js";
 import { fetchWithTimeout } from "../utils/fetch.js";
 import { TTS_TIMEOUT_MS } from "../constants/timeouts.js";
 import { OPENAI_TTS_URL, ELEVENLABS_TTS_URL } from "../constants/api-endpoints.js";
+import { groqSpeak } from "../providers/groq/GroqTTSProvider.js";
 
-export type TTSProvider = "piper" | "edge" | "openai" | "elevenlabs";
+export type TTSProvider = "piper" | "edge" | "openai" | "elevenlabs" | "groq";
 
 // Piper voices directory and venv
 const PIPER_VOICES_DIR = join(TELETON_ROOT, "piper-voices");
@@ -39,6 +40,10 @@ export interface TTSOptions {
   voice?: string;
   rate?: string; // e.g., "+10%", "-20%"
   pitch?: string; // e.g., "+5Hz", "-10Hz"
+  /** Groq API key (required when provider = "groq") */
+  groqApiKey?: string;
+  /** Groq TTS model (e.g. "canopylabs/orpheus-v1-english") */
+  groqModel?: string;
 }
 
 export interface TTSResult {
@@ -54,6 +59,7 @@ const DEFAULT_VOICES: Record<TTSProvider, string> = {
   edge: "en-US-BrianNeural", // Casual, sincere - fallback
   openai: "onyx", // Deep male voice
   elevenlabs: "21m00Tcm4TlvDq8ikWAM", // Rachel
+  groq: "tara", // Groq Orpheus default
 };
 
 // Popular Edge TTS voices
@@ -123,6 +129,8 @@ export async function generateSpeech(options: TTSOptions): Promise<TTSResult> {
       return generateOpenAITTS(options.text, voice);
     case "elevenlabs":
       return generateElevenLabsTTS(options.text, voice);
+    case "groq":
+      return generateGroqTTS(options.text, voice, options.groqApiKey, options.groqModel);
     default:
       throw new Error(`Unknown TTS provider: ${provider}`);
   }
@@ -391,6 +399,42 @@ async function generateElevenLabsTTS(text: string, voiceId: string): Promise<TTS
     filePath: outputPath,
     provider: "elevenlabs",
     voice: voiceId,
+  };
+}
+
+/**
+ * Generate TTS using Groq Orpheus API
+ */
+async function generateGroqTTS(
+  text: string,
+  voice: string,
+  apiKey?: string,
+  model?: string
+): Promise<TTSResult> {
+  if (!apiKey) {
+    throw new Error("Groq API key is required for Groq TTS. Set groq.api_key in config.");
+  }
+
+  const tempDir = join(tmpdir(), "teleton-tts");
+  if (!existsSync(tempDir)) {
+    mkdirSync(tempDir, { recursive: true });
+  }
+
+  const outputPath = join(tempDir, `${randomUUID()}.mp3`);
+
+  const audioBuffer = await groqSpeak(text, {
+    apiKey,
+    model,
+    voice,
+    responseFormat: "mp3",
+  });
+
+  writeFileSync(outputPath, audioBuffer);
+
+  return {
+    filePath: outputPath,
+    provider: "groq",
+    voice,
   };
 }
 
