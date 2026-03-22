@@ -11,6 +11,7 @@
  */
 
 import { TelegramClient, Api } from "telegram";
+import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { toLong } from "../utils/gramjs-bigint.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
@@ -20,6 +21,7 @@ import { GRAMJS_RETRY_DELAY_MS, GRAMJS_CONNECT_RETRY_DELAY_MS } from "../constan
 import { TELEGRAM_CONNECTION_RETRIES } from "../constants/limits.js";
 import { withFloodRetry } from "../telegram/flood-retry.js";
 import { createLogger } from "../utils/logger.js";
+import type { MtprotoProxyEntry } from "../config/schema.js";
 
 const log = createLogger("Bot");
 
@@ -55,17 +57,42 @@ export class GramJSBotClient {
   private client: TelegramClient;
   private connected = false;
   private sessionPath: string | undefined;
+  private apiId: number;
+  private apiHash: string;
+  private mtprotoProxies: MtprotoProxyEntry[];
 
-  constructor(apiId: number, apiHash: string, sessionPath?: string) {
+  constructor(
+    apiId: number,
+    apiHash: string,
+    sessionPath?: string,
+    mtprotoProxies?: MtprotoProxyEntry[]
+  ) {
     this.sessionPath = sessionPath;
+    this.apiId = apiId;
+    this.apiHash = apiHash;
+    this.mtprotoProxies = mtprotoProxies ?? [];
     const sessionString = this.loadSession();
+    this.client = this.buildClient(sessionString);
+  }
+
+  private buildClient(sessionString: string, proxy?: ProxyInterface): TelegramClient {
     const logger = new Logger(LogLevel.NONE);
-    this.client = new TelegramClient(new StringSession(sessionString), apiId, apiHash, {
+    return new TelegramClient(new StringSession(sessionString), this.apiId, this.apiHash, {
       connectionRetries: 3,
       retryDelay: GRAMJS_RETRY_DELAY_MS,
       autoReconnect: true,
       baseLogger: logger,
+      proxy,
     });
+  }
+
+  private buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
+    return {
+      ip: entry.server,
+      port: entry.port,
+      secret: entry.secret,
+      MTProxy: true,
+    } as ProxyInterface;
   }
 
   private loadSession(): string {
@@ -98,9 +125,37 @@ export class GramJSBotClient {
 
   /**
    * Connect and authenticate as bot via MTProto.
+   * When mtprotoProxies are configured, tries each in order before falling back to direct.
    * Retries on transient -500 "No workers running" errors (DC overload).
    */
   async connect(botToken: string): Promise<void> {
+    const sessionString = this.loadSession();
+
+    if (this.mtprotoProxies.length > 0) {
+      // Try each proxy in order; fall back to direct only if all proxies fail
+      for (let i = 0; i < this.mtprotoProxies.length; i++) {
+        const entry = this.mtprotoProxies[i];
+        log.info(
+          { server: entry.server, port: entry.port },
+          `[GramJS Bot] [MTProxy] Trying proxy ${i + 1}/${this.mtprotoProxies.length}`
+        );
+        try {
+          this.client = this.buildClient(sessionString, this.buildProxy(entry));
+          await this.client.start({ botAuthToken: botToken });
+          this.connected = true;
+          this.saveSession();
+          return;
+        } catch (err) {
+          log.warn(
+            { err, server: entry.server },
+            `[GramJS Bot] [MTProxy] Proxy ${i + 1}/${this.mtprotoProxies.length} failed, trying next`
+          );
+        }
+      }
+      log.warn("[GramJS Bot] [MTProxy] All proxies failed, trying direct connection");
+      this.client = this.buildClient(sessionString);
+    }
+
     for (let attempt = 1; attempt <= TELEGRAM_CONNECTION_RETRIES; attempt++) {
       try {
         await this.client.start({ botAuthToken: botToken });

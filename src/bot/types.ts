@@ -2,12 +2,16 @@
  * Types for the deals inline bot
  */
 
+import type { MtprotoProxyEntry } from "../config/schema.js";
+
 export interface BotConfig {
   token: string;
   username: string;
   apiId?: number;
   apiHash?: string;
   gramjsSessionPath?: string;
+  /** MTProto proxy servers (tried in order, failover to next on connection error) */
+  mtprotoProxies?: MtprotoProxyEntry[];
 }
 
 export interface DealContext {
