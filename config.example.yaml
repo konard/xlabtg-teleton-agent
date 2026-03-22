@@ -129,6 +129,21 @@ webui:
 #     remote:
 #       url: http://localhost:3001/mcp
 
+# MTProto proxy configuration (MRTPOTO)
+# Route Telegram connections through MTProto proxies.
+# Useful when Telegram is blocked or unreliable on your network.
+# Multiple servers are tried in order — automatic failover to the next if one fails.
+# Requires restart to take effect.
+# mtproto:
+#   enabled: false                     # Set to true to activate proxy routing
+#   proxies:
+#     - server: "proxy1.example.com"   # 🖥 Server: hostname or IP
+#       port: 443                      # 🔌 Port: proxy server port
+#       secret: "dd1234abcdef..."      # 🔑 Secret: hex string (32+ chars, dd-prefix for TLS)
+#     - server: "proxy2.example.com"
+#       port: 8888
+#       secret: "abcdef1234..."
+
 # Per-plugin configuration (key = plugin name)
 # plugins:
 #   casino:

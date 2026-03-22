@@ -1171,6 +1171,26 @@ export const api = {
     >("/groq/health");
   },
 
+  // ── MTProto Proxy ─────────────────────────────────────────────────
+
+  async getMtprotoConfig() {
+    return fetchAPI<APIResponse<{ enabled: boolean; proxies: Array<{ server: string; port: number; secret: string }> }>>("/mtproto");
+  },
+
+  async setMtprotoEnabled(enabled: boolean) {
+    return fetchAPI<APIResponse<{ enabled: boolean }>>("/mtproto/enabled", {
+      method: "PUT",
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  async setMtprotoProxies(proxies: Array<{ server: string; port: number; secret: string }>) {
+    return fetchAPI<APIResponse<{ proxies: Array<{ server: string; port: number; secret: string }> }>>("/mtproto/proxies", {
+      method: "PUT",
+      body: JSON.stringify({ proxies }),
+    });
+  },
+
   // ── TON Proxy ──────────────────────────────────────────────────────
 
   async getTonProxyStatus() {

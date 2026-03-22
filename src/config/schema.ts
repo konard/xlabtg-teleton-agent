@@ -326,6 +326,25 @@ const _CapabilitiesObject = z.object({
 });
 export const CapabilitiesConfigSchema = _CapabilitiesObject.default(_CapabilitiesObject.parse({}));
 
+const _MtprotoProxyObject = z.object({
+  server: z.string().describe("Proxy server hostname or IP address"),
+  port: z.number().min(1).max(65535).describe("Proxy server port"),
+  secret: z
+    .string()
+    .describe("MTProto proxy secret (hex string, 32 chars or dd-prefixed 34 chars)"),
+});
+export type MtprotoProxyEntry = z.infer<typeof _MtprotoProxyObject>;
+
+const _MtprotoObject = z.object({
+  enabled: z.boolean().default(false).describe("Enable MTProto proxy for Telegram connection"),
+  proxies: z
+    .array(_MtprotoProxyObject)
+    .default([])
+    .describe("List of MTProto proxy servers (tried in order, failover to next on error)"),
+});
+export const MtprotoConfigSchema = _MtprotoObject.default(_MtprotoObject.parse({}));
+export type MtprotoConfig = z.infer<typeof _MtprotoObject>;
+
 const _HeartbeatObject = z.object({
   enabled: z.boolean().default(true).describe("Enable periodic heartbeat timer"),
   interval_ms: z
@@ -362,6 +381,7 @@ export const ConfigSchema = z.object({
   api: ApiConfigSchema.optional(),
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
+  mtproto: MtprotoConfigSchema,
   mcp: McpConfigSchema,
   plugins: z
     .record(z.string(), z.unknown())

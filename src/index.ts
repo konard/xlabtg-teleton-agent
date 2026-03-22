@@ -99,6 +99,11 @@ export class TeletonApp {
 
     this.agent = new AgentRuntime(this.config, soul, this.toolRegistry);
 
+    const mtprotoProxies =
+      this.config.mtproto?.enabled && this.config.mtproto.proxies.length > 0
+        ? this.config.mtproto.proxies
+        : undefined;
+
     this.bridge = new TelegramBridge({
       apiId: this.config.telegram.api_id,
       apiHash: this.config.telegram.api_hash,
@@ -107,6 +112,7 @@ export class TeletonApp {
       connectionRetries: TELEGRAM_CONNECTION_RETRIES,
       autoReconnect: true,
       floodSleepThreshold: TELEGRAM_FLOOD_SLEEP_THRESHOLD,
+      mtprotoProxies,
     });
 
     const embeddingProvider = this.config.embedding.provider;
