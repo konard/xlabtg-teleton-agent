@@ -14,6 +14,7 @@ import { EditableField } from '../components/EditableField';
 import { ConfigSection } from '../components/ConfigSection';
 import { InfoTip } from '../components/InfoTip';
 import { ExportImportPanel } from '../components/ExportImportPanel';
+import { MtprotoSettingsPanel } from '../components/MtprotoSettingsPanel';
 
 const TABS = [
   { id: 'llm', label: 'LLM' },
@@ -22,6 +23,7 @@ const TABS = [
   { id: 'heartbeat', label: 'Heartbeat' },
   { id: 'api-keys', label: 'API Keys' },
   { id: 'ton-proxy', label: 'TON Proxy' },
+  { id: 'mrtpoto', label: 'MRTPOTO' },
   { id: 'advanced', label: 'Advanced' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'tool-rag', label: 'Tool RAG' },
@@ -437,6 +439,14 @@ export function Config() {
             </div>
           </div>
         </>
+      )}
+
+      {/* MRTPOTO Tab */}
+      {activeTab === 'mrtpoto' && (
+        <MtprotoSettingsPanel
+          showSuccess={config.showSuccess}
+          setError={config.setError}
+        />
       )}
 
       {/* Advanced Tab */}

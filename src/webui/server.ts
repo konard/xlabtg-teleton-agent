@@ -35,6 +35,7 @@ import { createMarketplaceRoutes } from "./routes/marketplace.js";
 import { createHooksRoutes } from "./routes/hooks.js";
 import { createGroqRoutes } from "./routes/groq.js";
 import { createTonProxyRoutes } from "./routes/ton-proxy.js";
+import { createMtprotoRoutes } from "./routes/mtproto.js";
 import { createNotificationsRoutes, notificationBus } from "./routes/notifications.js";
 import { getNotificationService } from "../services/notifications.js";
 import { createCacheRoutes } from "./routes/cache.js";
@@ -229,6 +230,7 @@ export class WebUIServer {
     this.app.route("/api/hooks", createHooksRoutes(this.deps));
     this.app.route("/api/groq", createGroqRoutes(this.deps));
     this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
+    this.app.route("/api/mtproto", createMtprotoRoutes(this.deps));
     this.app.route("/api/notifications", createNotificationsRoutes(this.deps));
     this.app.route("/api/cache", createCacheRoutes(this.deps));
     this.app.route("/api/agent-actions", createAgentActionsRoutes(this.deps));

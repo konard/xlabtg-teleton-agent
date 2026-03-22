@@ -1,4 +1,5 @@
 import { TelegramClient, Api } from "telegram";
+import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
@@ -9,6 +10,7 @@ import { createInterface } from "readline";
 import { markdownToTelegramHtml } from "./formatting.js";
 import { withFloodRetry } from "./flood-retry.js";
 import { createLogger } from "../utils/logger.js";
+import type { MtprotoProxyEntry } from "../config/schema.js";
 
 const log = createLogger("Telegram");
 
@@ -31,6 +33,8 @@ export interface TelegramClientConfig {
   retryDelay?: number;
   autoReconnect?: boolean;
   floodSleepThreshold?: number;
+  /** MTProto proxy servers (tried in order, failover to next on connection error) */
+  mtprotoProxies?: MtprotoProxyEntry[];
 }
 
 export interface TelegramUser {
@@ -47,21 +51,35 @@ export class TelegramUserClient {
   private config: TelegramClientConfig;
   private connected = false;
   private me?: TelegramUser;
+  /** Index into mtprotoProxies[] currently being used (or undefined = direct) */
+  private activeProxyIndex?: number;
 
   constructor(config: TelegramClientConfig) {
     this.config = config;
+    this.client = this.buildClient();
+  }
 
+  private buildClient(proxy?: ProxyInterface): TelegramClient {
     const sessionString = this.loadSession();
     const session = new StringSession(sessionString);
-
     const logger = new Logger(LogLevel.NONE);
-    this.client = new TelegramClient(session, config.apiId, config.apiHash, {
-      connectionRetries: config.connectionRetries ?? 5,
-      retryDelay: config.retryDelay ?? 1000,
-      autoReconnect: config.autoReconnect ?? true,
-      floodSleepThreshold: config.floodSleepThreshold ?? 60,
+    return new TelegramClient(session, this.config.apiId, this.config.apiHash, {
+      connectionRetries: this.config.connectionRetries ?? 5,
+      retryDelay: this.config.retryDelay ?? 1000,
+      autoReconnect: this.config.autoReconnect ?? true,
+      floodSleepThreshold: this.config.floodSleepThreshold ?? 60,
       baseLogger: logger,
+      proxy,
     });
+  }
+
+  private buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
+    return {
+      ip: entry.server,
+      port: entry.port,
+      secret: entry.secret,
+      MTProxy: true,
+    } as ProxyInterface;
   }
 
   private loadSession(): string {
@@ -93,6 +111,20 @@ export class TelegramUserClient {
     }
   }
 
+  /** Try connecting via proxy at `index`, rebuilding the client with that proxy. */
+  private async connectWithProxy(index: number): Promise<void> {
+    const proxies = this.config.mtprotoProxies ?? [];
+    const entry = proxies[index];
+    const proxy = this.buildProxy(entry);
+    log.info(
+      { server: entry.server, port: entry.port },
+      `[MTProxy] Trying proxy ${index + 1}/${proxies.length}`
+    );
+    this.client = this.buildClient(proxy);
+    this.activeProxyIndex = index;
+    await this.client.connect();
+  }
+
   async connect(): Promise<void> {
     if (this.connected) {
       log.info("Already connected");
@@ -100,9 +132,31 @@ export class TelegramUserClient {
     }
 
     try {
+      const proxies = this.config.mtprotoProxies ?? [];
       const hasSession = existsSync(this.config.sessionPath);
 
-      if (hasSession) {
+      if (proxies.length > 0) {
+        // Try each proxy in order; fall back to direct only if all proxies fail
+        let proxyConnected = false;
+        for (let i = 0; i < proxies.length; i++) {
+          try {
+            await this.connectWithProxy(i);
+            proxyConnected = true;
+            break;
+          } catch (err) {
+            log.warn(
+              { err, server: proxies[i].server },
+              `[MTProxy] Proxy ${i + 1}/${proxies.length} failed, trying next`
+            );
+          }
+        }
+        if (!proxyConnected) {
+          log.warn("[MTProxy] All proxies failed, trying direct connection");
+          this.client = this.buildClient();
+          this.activeProxyIndex = undefined;
+          await this.client.connect();
+        }
+      } else if (hasSession) {
         await this.client.connect();
       } else {
         log.info("Starting authentication flow...");

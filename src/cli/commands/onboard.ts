@@ -1017,6 +1017,7 @@ async function runInteractiveOnboarding(
       },
     },
     ton_proxy: { enabled: false, port: 8080 },
+    mtproto: { enabled: false, proxies: [] },
     heartbeat: {
       enabled: true,
       interval_ms: 1_800_000,
@@ -1206,6 +1207,7 @@ async function runNonInteractiveOnboarding(
       },
     },
     ton_proxy: { enabled: false, port: 8080 },
+    mtproto: { enabled: false, proxies: [] },
     heartbeat: {
       enabled: true,
       interval_ms: 1_800_000,
