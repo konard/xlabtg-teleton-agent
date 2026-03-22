@@ -162,7 +162,7 @@ export interface GroqKeyTestResult {
  *
  * Error differentiation:
  * - 401: Invalid API key
- * - 403: API key lacks permission (plan restriction)
+ * - 403: Access denied — geo-restriction, plan limitation, or preview model access
  * - 429: Rate limit exceeded
  * - 422: Bad request schema (should not happen with GET /models)
  * - 5xx: Groq server error
@@ -195,7 +195,7 @@ export async function testGroqApiKey(apiKey: string): Promise<GroqKeyTestResult>
 
   const hints: Record<number, string> = {
     401: "Invalid API key. Check that your key starts with gsk_ and is correct.",
-    403: "Access denied. This can happen with preview/beta models that require special account access. Try a production model like llama-3.3-70b-versatile. See https://console.groq.com/docs/models for available models.",
+    403: "Access denied. This may be due to geo-restrictions in your region, a plan limitation, or a preview/beta model. Try a production model like llama-3.3-70b-versatile. If geo-restrictions apply, consider using the groq-mcp-server via MCP (see mcp.servers.groq in config.example.yaml). See https://console.groq.com/docs/models for available models.",
     422: "Request schema error. This should not occur with GET /models — please report this.",
     429: "Rate limit exceeded. Wait a moment and try again. Free plan has limited quotas.",
   };
