@@ -125,6 +125,93 @@ export class TelegramUserClient {
     await this.client.connect();
   }
 
+  /**
+   * Perform the interactive authentication flow (SendCode → SignIn / 2FA).
+   * Called when there is no saved session and we need to create a new one.
+   */
+  private async runAuthFlow(): Promise<void> {
+    log.info("Starting authentication flow...");
+    const phone = this.config.phone || (await promptInput("Phone number: "));
+
+    const sendResult = await this.client.invoke(
+      new Api.auth.SendCode({
+        phoneNumber: phone,
+        apiId: this.config.apiId,
+        apiHash: this.config.apiHash,
+        settings: new Api.CodeSettings({}),
+      })
+    );
+
+    // SentCodeSuccess means we're already authorized (e.g. session migration)
+    if (sendResult instanceof Api.auth.SentCodeSuccess) {
+      log.info("Authenticated (SentCodeSuccess)");
+      this.saveSession();
+      return;
+    }
+
+    if (!(sendResult instanceof Api.auth.SentCode)) {
+      throw new Error("Unexpected auth response: payment required or unknown type");
+    }
+
+    const phoneCodeHash = sendResult.phoneCodeHash;
+
+    // Detect Fragment SMS for anonymous numbers (+888)
+    if (sendResult.type instanceof Api.auth.SentCodeTypeFragmentSms) {
+      const url = sendResult.type.url;
+      if (url) {
+        log.info({ fragmentUrl: url }, "Anonymous number — open this URL to get your code");
+        process.stdout.write(`\n  Open this URL to get your code:\n  ${url}\n\n`);
+      }
+    }
+
+    let authenticated = false;
+    const maxAttempts = 3;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const code = await promptInput("Verification code: ");
+
+      try {
+        await this.client.invoke(
+          new Api.auth.SignIn({
+            phoneNumber: phone,
+            phoneCodeHash,
+            phoneCode: code,
+          })
+        );
+        authenticated = true;
+        break;
+      } catch (err: unknown) {
+        const errObj = err as Record<string, string>;
+        if (errObj.errorMessage === "PHONE_CODE_INVALID") {
+          const remaining = maxAttempts - attempt - 1;
+          if (remaining > 0) {
+            log.warn({ attemptsRemaining: remaining }, "Invalid authentication code");
+          } else {
+            throw new Error("Authentication failed: too many invalid code attempts");
+          }
+        } else if (errObj.errorMessage === "SESSION_PASSWORD_NEEDED") {
+          // 2FA required
+          const pwd = await promptInput("2FA password: ");
+          const { computeCheck } = await import("telegram/Password.js");
+          const srpResult = await this.client.invoke(new Api.account.GetPassword());
+          const srpCheck = await computeCheck(srpResult, pwd);
+          await this.client.invoke(new Api.auth.CheckPassword({ password: srpCheck }));
+          authenticated = true;
+          break;
+        } else {
+          throw err;
+        }
+      }
+    }
+
+    if (!authenticated) {
+      throw new Error("Authentication failed");
+    }
+
+    log.info("Authenticated");
+    this.saveSession();
+  }
+
   async connect(): Promise<void> {
     if (this.connected) {
       log.info("Already connected");
@@ -156,88 +243,15 @@ export class TelegramUserClient {
           this.activeProxyIndex = undefined;
           await this.client.connect();
         }
+        // If no session exists, run auth flow now that the TCP connection is established
+        if (!hasSession) {
+          await this.runAuthFlow();
+        }
       } else if (hasSession) {
         await this.client.connect();
       } else {
-        log.info("Starting authentication flow...");
-        const phone = this.config.phone || (await promptInput("Phone number: "));
-
         await this.client.connect();
-
-        const sendResult = await this.client.invoke(
-          new Api.auth.SendCode({
-            phoneNumber: phone,
-            apiId: this.config.apiId,
-            apiHash: this.config.apiHash,
-            settings: new Api.CodeSettings({}),
-          })
-        );
-
-        // SentCodeSuccess means we're already authorized (e.g. session migration)
-        if (sendResult instanceof Api.auth.SentCodeSuccess) {
-          log.info("Authenticated (SentCodeSuccess)");
-          this.saveSession();
-        } else if (sendResult instanceof Api.auth.SentCode) {
-          const phoneCodeHash = sendResult.phoneCodeHash;
-
-          // Detect Fragment SMS for anonymous numbers (+888)
-          if (sendResult.type instanceof Api.auth.SentCodeTypeFragmentSms) {
-            const url = sendResult.type.url;
-            if (url) {
-              log.info({ fragmentUrl: url }, "Anonymous number — open this URL to get your code");
-              process.stdout.write(`\n  Open this URL to get your code:\n  ${url}\n\n`);
-            }
-          }
-
-          let authenticated = false;
-          const maxAttempts = 3;
-
-          for (let attempt = 0; attempt < maxAttempts; attempt++) {
-            const code = await promptInput("Verification code: ");
-
-            try {
-              await this.client.invoke(
-                new Api.auth.SignIn({
-                  phoneNumber: phone,
-                  phoneCodeHash,
-                  phoneCode: code,
-                })
-              );
-              authenticated = true;
-              break;
-            } catch (err: unknown) {
-              const errObj = err as Record<string, string>;
-              if (errObj.errorMessage === "PHONE_CODE_INVALID") {
-                const remaining = maxAttempts - attempt - 1;
-                if (remaining > 0) {
-                  log.warn({ attemptsRemaining: remaining }, "Invalid authentication code");
-                } else {
-                  throw new Error("Authentication failed: too many invalid code attempts");
-                }
-              } else if (errObj.errorMessage === "SESSION_PASSWORD_NEEDED") {
-                // 2FA required
-                const pwd = await promptInput("2FA password: ");
-                const { computeCheck } = await import("telegram/Password.js");
-                const srpResult = await this.client.invoke(new Api.account.GetPassword());
-                const srpCheck = await computeCheck(srpResult, pwd);
-                await this.client.invoke(new Api.auth.CheckPassword({ password: srpCheck }));
-                authenticated = true;
-                break;
-              } else {
-                throw err;
-              }
-            }
-          }
-
-          if (!authenticated) {
-            throw new Error("Authentication failed");
-          }
-
-          log.info("Authenticated");
-          this.saveSession();
-        } else {
-          throw new Error("Unexpected auth response: payment required or unknown type");
-        }
+        await this.runAuthFlow();
       }
 
       const me = (await this.client.getMe()) as Api.User;
