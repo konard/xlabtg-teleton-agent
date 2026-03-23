@@ -125,8 +125,6 @@ function buildAgentPrompt(
   executionData: any,
   parentResults?: Array<{ taskId: string; description: string; result: unknown }>
 ): string {
-  const timeAgo = formatTimeAgo(task.createdAt);
-
   let prompt = `[SCHEDULED TASK - ${task.id}]\n`;
   prompt += `Description: ${task.description}\n`;
 
@@ -134,7 +132,11 @@ function buildAgentPrompt(
     prompt += `Reason: ${task.reason}\n`;
   }
 
-  prompt += `Scheduled: ${timeAgo}\n`;
+  if (task.scheduledFor) {
+    prompt += `Scheduled for: ${task.scheduledFor.toISOString()}\n`;
+  } else {
+    prompt += `Created: ${formatTimeAgo(task.createdAt)}\n`;
+  }
 
   // Add parent task results if this is a dependent task
   if (parentResults && parentResults.length > 0) {

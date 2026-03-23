@@ -1014,8 +1014,13 @@ ${blue}  ┌──────────────────────�
         return;
       }
 
-      // Skip cancelled tasks (e.g. cancelled via WebUI or admin)
-      if (task.status === "cancelled" || task.status === "done" || task.status === "failed") {
+      // Skip tasks that are already running or in a terminal state
+      if (
+        task.status === "in_progress" ||
+        task.status === "cancelled" ||
+        task.status === "done" ||
+        task.status === "failed"
+      ) {
         log.info(`⏭️ Task ${taskId} already ${task.status}, skipping`);
         return;
       }

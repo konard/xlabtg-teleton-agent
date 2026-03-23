@@ -276,6 +276,11 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
         }
       }
 
+      // Persist the scheduled message ID back to the task record
+      if (scheduledMessageId !== undefined) {
+        taskStore.updateTask(task.id, { scheduledMessageId });
+      }
+
       return {
         success: true,
         data: {
