@@ -98,6 +98,8 @@ export class TaskDependencyResolver {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
+  private static readonly MAX_CASCADE_DEPTH = 20;
+
   /**
    * Called when a task fails
    * Cancels all dependent tasks (unless they have skipOnParentFailure flag)
@@ -105,7 +107,13 @@ export class TaskDependencyResolver {
    * Security: Processes at most MAX_DEPENDENTS_PER_TASK dependents
    * Cancellation is less risky than triggering but still limited for consistency
    */
-  async onTaskFail(failedTaskId: string): Promise<void> {
+  async onTaskFail(failedTaskId: string, _depth = 0): Promise<void> {
+    if (_depth >= TaskDependencyResolver.MAX_CASCADE_DEPTH) {
+      log.warn(
+        `⚠️ Task failure cascade reached max depth (${TaskDependencyResolver.MAX_CASCADE_DEPTH}) at task ${failedTaskId}`
+      );
+      return;
+    }
     try {
       const allDependentIds = this.taskStore.getDependents(failedTaskId);
 
@@ -150,8 +158,8 @@ export class TaskDependencyResolver {
           this.taskStore.cancelTask(depId);
           log.info(`↳ Cancelled task ${depId}: ${task.description}`);
 
-          // Recursively cancel dependents
-          await this.onTaskFail(depId);
+          // Recursively cancel dependents (depth-limited)
+          await this.onTaskFail(depId, _depth + 1);
         }
       }
     } catch (error) {

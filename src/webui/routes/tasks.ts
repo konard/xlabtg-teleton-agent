@@ -147,12 +147,22 @@ export function createTasksRoutes(deps: WebUIServerDeps) {
   // Cancel task
   app.post("/:id/cancel", (c) => {
     try {
-      const updated = store().cancelTask(c.req.param("id"));
-      if (!updated) {
+      const taskId = c.req.param("id");
+      const task = store().getTask(taskId);
+      if (!task) {
         const response: APIResponse = { success: false, error: "Task not found" };
         return c.json(response, 404);
       }
 
+      if (TERMINAL_STATUSES.includes(task.status)) {
+        const response: APIResponse = {
+          success: false,
+          error: `Cannot cancel task with status "${task.status}"`,
+        };
+        return c.json(response, 409);
+      }
+
+      const updated = store().cancelTask(taskId);
       const response: APIResponse = { success: true, data: updated };
       return c.json(response);
     } catch (error) {

@@ -84,6 +84,7 @@ export class TaskStore {
       priority?: number;
       result?: string;
       error?: string;
+      scheduledMessageId?: number;
     }
   ): Task | undefined {
     const task = this.getTask(taskId);
@@ -128,6 +129,10 @@ export class TaskStore {
     if (updates.error !== undefined) {
       updateFields.push("error = ?");
       updateValues.push(updates.error);
+    }
+    if (updates.scheduledMessageId !== undefined) {
+      updateFields.push("scheduled_message_id = ?");
+      updateValues.push(updates.scheduledMessageId);
     }
 
     if (updateFields.length === 0) return task;
@@ -253,6 +258,12 @@ export class TaskStore {
   }
 
   cancelTask(taskId: string): Task | undefined {
+    const task = this.getTask(taskId);
+    if (!task) return undefined;
+    // Cannot cancel tasks that are already in a terminal state
+    if (task.status === "done" || task.status === "failed" || task.status === "cancelled") {
+      return task;
+    }
     return this.updateTask(taskId, { status: "cancelled" });
   }
 
