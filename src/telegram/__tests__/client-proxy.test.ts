@@ -245,9 +245,7 @@ describe("TelegramUserClient — proxy connection", () => {
         mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
       });
 
-      await expect(client.connect()).rejects.toThrow(
-        "test: SendCode called after direct fallback"
-      );
+      await expect(client.connect()).rejects.toThrow("test: SendCode called after direct fallback");
 
       // connect called: proxy (fails) + direct (succeeds) = 2 times
       expect(mockConnect).toHaveBeenCalledTimes(2);
