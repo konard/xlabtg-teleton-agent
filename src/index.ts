@@ -60,6 +60,7 @@ export class TeletonApp {
   private toolRegistry: ToolRegistry;
   private dependencyResolver: TaskDependencyResolver | null = null;
   private modules: PluginModule[] = [];
+  private builtinModuleCount: number = 0;
   private memory: MemorySystem;
   private sdkDeps: SDKDependencies;
   private webuiServer: WebUIServer | null = null;
@@ -142,6 +143,7 @@ export class TeletonApp {
     this.sdkDeps = { bridge: this.bridge };
 
     this.modules = loadModules(this.toolRegistry, this.config, db);
+    this.builtinModuleCount = this.modules.length;
 
     const modulePermissions = new ModulePermissions(db);
     this.toolRegistry.setPermissions(modulePermissions);
@@ -404,6 +406,9 @@ ${blue}  ┌──────────────────────�
     const moduleNames = this.modules
       .filter((m) => m.tools(this.config).length > 0)
       .map((m) => m.name);
+
+    // Truncate to builtins before re-loading plugins (prevents duplication on restart)
+    this.modules.length = this.builtinModuleCount;
 
     // Load enhanced plugins from ~/.teleton/plugins/
     const builtinNames = this.modules.map((m) => m.name);
