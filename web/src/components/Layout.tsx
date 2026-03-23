@@ -24,10 +24,13 @@ function DashboardNav() {
           onClick={openCommandPalette}
           title="Open command palette (Ctrl+K)"
           aria-label="Open command palette"
-          style={{ width: '100%', marginBottom: '4px', justifyContent: 'space-between' }}
+          style={{ width: "100%", marginBottom: "4px", justifyContent: "space-between" }}
         >
           <span>Search...</span>
-          <span><kbd>⌘</kbd><kbd>K</kbd></span>
+          <span>
+            <kbd>⌘</kbd>
+            <kbd>K</kbd>
+          </span>
         </button>
         <Link to="/" className={isActive("/") ? "active" : ""}>
           Dashboard
@@ -49,6 +52,9 @@ function DashboardNav() {
         </Link>
         <Link to="/tasks" className={isActive("/tasks") ? "active" : ""}>
           Tasks
+        </Link>
+        <Link to="/workflows" className={isActive("/workflows") ? "active" : ""}>
+          Workflows
         </Link>
         <Link to="/mcp" className={isActive("/mcp") ? "active" : ""}>
           MCP

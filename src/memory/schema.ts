@@ -410,7 +410,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.17.0";
+export const CURRENT_SCHEMA_VERSION = "1.18.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -763,6 +763,33 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.17.0 complete: analytics tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.17.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.18.0")) {
+    log.info("Running migration 1.18.0: Add workflows table for workflow automation");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS workflows (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+          config TEXT NOT NULL DEFAULT '{}',
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          last_run_at INTEGER,
+          run_count INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_workflows_enabled ON workflows(enabled);
+        CREATE INDEX IF NOT EXISTS idx_workflows_created ON workflows(created_at DESC);
+      `);
+      log.info("Migration 1.18.0 complete: workflows table created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.18.0 failed");
       throw error;
     }
   }

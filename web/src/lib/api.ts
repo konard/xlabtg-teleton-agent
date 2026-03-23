@@ -1,5 +1,65 @@
 const API_BASE = "/api";
 
+// ── Workflow Automation types ─────────────────────────────────────────────────
+
+export interface CronTrigger {
+  type: "cron";
+  cron: string;
+  label?: string;
+}
+
+export interface WebhookTrigger {
+  type: "webhook";
+  secret?: string;
+}
+
+export interface EventTrigger {
+  type: "event";
+  event: "agent.start" | "agent.stop" | "agent.error" | "tool.complete";
+}
+
+export type WorkflowTrigger = CronTrigger | WebhookTrigger | EventTrigger;
+
+export interface SendMessageAction {
+  type: "send_message";
+  chatId: string;
+  text: string;
+}
+
+export interface CallApiAction {
+  type: "call_api";
+  method: "GET" | "POST" | "PUT" | "DELETE" | "PATCH";
+  url: string;
+  headers?: Record<string, string>;
+  body?: string;
+}
+
+export interface SetVariableAction {
+  type: "set_variable";
+  name: string;
+  value: string;
+}
+
+export type WorkflowAction = SendMessageAction | CallApiAction | SetVariableAction;
+
+export interface WorkflowConfig {
+  trigger: WorkflowTrigger;
+  actions: WorkflowAction[];
+}
+
+export interface WorkflowData {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  config: WorkflowConfig;
+  createdAt: number;
+  updatedAt: number;
+  lastRunAt: number | null;
+  runCount: number;
+  lastError: string | null;
+}
+
 // ── Structured Rule types (Visual Rule Builder) ───────────────────────────────
 
 export type RuleType = "block" | "inject" | "transform" | "notify";
@@ -1174,7 +1234,12 @@ export const api = {
   // ── MTProto Proxy ─────────────────────────────────────────────────
 
   async getMtprotoConfig() {
-    return fetchAPI<APIResponse<{ enabled: boolean; proxies: Array<{ server: string; port: number; secret: string }> }>>("/mtproto");
+    return fetchAPI<
+      APIResponse<{
+        enabled: boolean;
+        proxies: Array<{ server: string; port: number; secret: string }>;
+      }>
+    >("/mtproto");
   },
 
   async setMtprotoEnabled(enabled: boolean) {
@@ -1185,7 +1250,9 @@ export const api = {
   },
 
   async setMtprotoProxies(proxies: Array<{ server: string; port: number; secret: string }>) {
-    return fetchAPI<APIResponse<{ proxies: Array<{ server: string; port: number; secret: string }> }>>("/mtproto/proxies", {
+    return fetchAPI<
+      APIResponse<{ proxies: Array<{ server: string; port: number; secret: string }> }>
+    >("/mtproto/proxies", {
       method: "PUT",
       body: JSON.stringify({ proxies }),
     });
@@ -1307,7 +1374,9 @@ export const api = {
   },
 
   async getAnalyticsPerformance(period: MetricsPeriod = "7d") {
-    return fetchAPI<APIResponse<AnalyticsPerformanceData>>(`/analytics/performance?period=${period}`);
+    return fetchAPI<APIResponse<AnalyticsPerformanceData>>(
+      `/analytics/performance?period=${period}`
+    );
   },
 
   async getAnalyticsCost(period: MetricsPeriod = "30d") {
@@ -1327,13 +1396,15 @@ export const api = {
 
   // ── Security ──────────────────────────────────────────────────────
 
-  async getAuditLog(opts: {
-    page?: number;
-    limit?: number;
-    type?: AuditActionType | null;
-    since?: number | null;
-    until?: number | null;
-  } = {}) {
+  async getAuditLog(
+    opts: {
+      page?: number;
+      limit?: number;
+      type?: AuditActionType | null;
+      since?: number | null;
+      until?: number | null;
+    } = {}
+  ) {
     const params = new URLSearchParams();
     if (opts.page) params.set("page", String(opts.page));
     if (opts.limit) params.set("limit", String(opts.limit));
@@ -1343,11 +1414,13 @@ export const api = {
     return fetchAPI<APIResponse<AuditLogPage>>(`/security/audit?${params}`);
   },
 
-  getAuditExportUrl(opts: {
-    type?: AuditActionType | null;
-    since?: number | null;
-    until?: number | null;
-  } = {}) {
+  getAuditExportUrl(
+    opts: {
+      type?: AuditActionType | null;
+      since?: number | null;
+      until?: number | null;
+    } = {}
+  ) {
     const params = new URLSearchParams();
     if (opts.type) params.set("type", opts.type);
     if (opts.since != null) params.set("since", String(opts.since));
@@ -1452,11 +1525,62 @@ export const api = {
     return fetchAPI<APIResponse<ConfigBundle>>("/export");
   },
 
-  async importConfig(bundle: ConfigBundle, options?: { config?: boolean; hooks?: boolean; soul?: boolean }) {
+  async importConfig(
+    bundle: ConfigBundle,
+    options?: { config?: boolean; hooks?: boolean; soul?: boolean }
+  ) {
     return fetchAPI<APIResponse<{ applied: string[] }>>("/export/import", {
       method: "POST",
       body: JSON.stringify({ bundle, options }),
     });
+  },
+
+  // ── Workflows ──────────────────────────────────────────────────────
+
+  async workflowsList() {
+    return fetchAPI<APIResponse<WorkflowData[]>>("/workflows");
+  },
+
+  async workflowsGet(id: string) {
+    return fetchAPI<APIResponse<WorkflowData>>(`/workflows/${id}`);
+  },
+
+  async workflowsCreate(data: {
+    name: string;
+    description?: string;
+    enabled?: boolean;
+    config: WorkflowConfig;
+  }) {
+    return fetchAPI<APIResponse<WorkflowData>>("/workflows", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async workflowsUpdate(
+    id: string,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      enabled: boolean;
+      config: WorkflowConfig;
+    }>
+  ) {
+    return fetchAPI<APIResponse<WorkflowData>>(`/workflows/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async workflowsToggle(id: string, enabled: boolean) {
+    return fetchAPI<APIResponse<{ id: string; enabled: boolean }>>(`/workflows/${id}/toggle`, {
+      method: "PATCH",
+      body: JSON.stringify({ enabled }),
+    });
+  },
+
+  async workflowsDelete(id: string) {
+    return fetchAPI<APIResponse<null>>(`/workflows/${id}`, { method: "DELETE" });
   },
 };
 
