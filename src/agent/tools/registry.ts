@@ -353,6 +353,7 @@ export class ToolRegistry {
     pluginName: string,
     tools: Array<{ tool: Tool; executor: ToolExecutor; scope?: ToolScope }>
   ): number {
+    this.removePluginTools(pluginName);
     const names: string[] = [];
     for (const { tool, executor, scope } of tools) {
       if (this.tools.has(tool.name)) continue;
