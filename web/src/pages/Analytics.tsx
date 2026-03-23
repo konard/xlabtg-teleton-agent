@@ -234,12 +234,18 @@ function UsageSection() {
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={toolData} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" />
+              <BarChart data={toolData} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
-                <YAxis dataKey="tool" type="category" tick={{ fontSize: 10 }} width={100} />
+                <YAxis
+                  dataKey="tool"
+                  type="category"
+                  tick={{ fontSize: 10 }}
+                  width={110}
+                  tickFormatter={(v: string) => v.length > 16 ? `${v.slice(0, 15)}…` : v}
+                />
                 <Tooltip />
-                <Bar dataKey="count" fill="#2563eb" name="Calls" />
+                <Bar dataKey="count" fill="#2563eb" name="Calls" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -264,9 +270,11 @@ function UsageSection() {
                   cx="50%"
                   cy="50%"
                   outerRadius={80}
-                  label={({ name, percent }) =>
-                    percent > 0.05 ? `${name} ${(percent * 100).toFixed(0)}%` : ""
-                  }
+                  label={({ name, percent }) => {
+                    if (percent <= 0.05) return "";
+                    const shortName = name.length > 12 ? `${name.slice(0, 11)}…` : name;
+                    return `${shortName} ${(percent * 100).toFixed(0)}%`;
+                  }}
                   labelLine={false}
                 >
                   {toolData.map((_, i) => (
@@ -714,43 +722,31 @@ function CostSection() {
           )}
         </div>
 
-        {/* Cost per tool table */}
+        {/* Cost per tool bar chart */}
         <div className="card" style={{ padding: "16px" }}>
           <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
-            Tool Call Counts (by cost proxy)
+            Tool Call Counts
           </h3>
           {loading ? (
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
           ) : perTool.length === 0 ? (
             <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
           ) : (
-            <div style={{ overflowY: "auto", maxHeight: 200 }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-                <thead>
-                  <tr style={{ borderBottom: "1px solid var(--separator)" }}>
-                    <th style={{ textAlign: "left", padding: "4px 8px", color: "var(--text-secondary)", fontWeight: 500 }}>Tool</th>
-                    <th style={{ textAlign: "right", padding: "4px 8px", color: "var(--text-secondary)", fontWeight: 500 }}>Calls</th>
-                    <th style={{ textAlign: "right", padding: "4px 8px", color: "var(--text-secondary)", fontWeight: 500 }}>Avg ms</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {perTool.map((row) => (
-                    <tr
-                      key={row.tool}
-                      style={{ borderBottom: "1px solid var(--separator)" }}
-                    >
-                      <td style={{ padding: "4px 8px", maxWidth: 160, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {row.tool}
-                      </td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>{row.count.toLocaleString()}</td>
-                      <td style={{ padding: "4px 8px", textAlign: "right" }}>
-                        {row.avg_duration_ms != null ? Math.round(row.avg_duration_ms) : "—"}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={perTool} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" horizontal={false} />
+                <XAxis type="number" tick={{ fontSize: 10 }} />
+                <YAxis
+                  dataKey="tool"
+                  type="category"
+                  tick={{ fontSize: 10 }}
+                  width={110}
+                  tickFormatter={(v: string) => v.length > 16 ? `${v.slice(0, 15)}…` : v}
+                />
+                <Tooltip formatter={(v: number) => [v.toLocaleString(), "Calls"]} />
+                <Bar dataKey="count" fill="#2563eb" name="Calls" radius={[0, 4, 4, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           )}
         </div>
       </div>

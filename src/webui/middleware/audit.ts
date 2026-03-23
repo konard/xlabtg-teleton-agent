@@ -16,7 +16,7 @@ function inferActionType(method: string, path: string): AuditActionType {
   if (lower.includes("/api/agent/start") || lower.includes("/api/agent/stop")) {
     return method === "POST" && lower.includes("stop") ? "agent_stop" : "agent_restart";
   }
-  if (lower.includes("/api/plugins"))
+  if (lower.includes("/api/plugins") || lower.includes("/api/marketplace"))
     return method === "DELETE" ? "plugin_remove" : "plugin_install";
   if (lower.includes("/api/hooks")) return "hook_change";
   if (lower.includes("/api/mcp")) return "mcp_change";
@@ -26,6 +26,9 @@ function inferActionType(method: string, path: string): AuditActionType {
   if (lower.includes("/api/security")) return "security_change";
   if (lower.includes("/auth/login")) return "login";
   if (lower.includes("/auth/logout")) return "logout";
+  if (lower.includes("/api/workflows")) return "hook_change";
+  if (lower.includes("/api/tasks")) return "workspace_change";
+  if (lower.includes("/api/secret")) return "secret_change";
 
   return "other";
 }

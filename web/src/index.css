@@ -2106,8 +2106,9 @@ button.btn-lg {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 32px;
-  height: 32px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
   border-radius: var(--radius-sm);
   color: var(--text-secondary);
   transition: color 0.2s ease;
