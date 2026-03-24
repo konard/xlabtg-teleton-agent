@@ -17,7 +17,11 @@ import { StringSession } from "telegram/sessions/index.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { dirname } from "path";
-import { GRAMJS_RETRY_DELAY_MS, GRAMJS_CONNECT_RETRY_DELAY_MS } from "../constants/timeouts.js";
+import {
+  GRAMJS_RETRY_DELAY_MS,
+  GRAMJS_CONNECT_RETRY_DELAY_MS,
+  MTPROTO_PROXY_CONNECT_TIMEOUT_MS,
+} from "../constants/timeouts.js";
 import { TELEGRAM_CONNECTION_RETRIES } from "../constants/limits.js";
 import { withFloodRetry } from "../telegram/flood-retry.js";
 import { createLogger } from "../utils/logger.js";
@@ -132,7 +136,9 @@ export class GramJSBotClient {
     const sessionString = this.loadSession();
 
     if (this.mtprotoProxies.length > 0) {
-      // Try each proxy in order; fall back to direct only if all proxies fail
+      // Try each proxy in order; fall back to direct only if all proxies fail.
+      // Each attempt is raced against a timeout to prevent indefinite hangs
+      // when a proxy silently drops packets.
       for (let i = 0; i < this.mtprotoProxies.length; i++) {
         const entry = this.mtprotoProxies[i];
         log.info(
@@ -141,7 +147,30 @@ export class GramJSBotClient {
         );
         try {
           this.client = this.buildClient(sessionString, this.buildProxy(entry));
-          await this.client.start({ botAuthToken: botToken });
+
+          let timeoutId: ReturnType<typeof setTimeout> | undefined;
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            timeoutId = setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    `[GramJS Bot] [MTProxy] Proxy ${i + 1} timed out after ${MTPROTO_PROXY_CONNECT_TIMEOUT_MS / 1000}s`
+                  )
+                ),
+              MTPROTO_PROXY_CONNECT_TIMEOUT_MS
+            );
+          });
+
+          try {
+            await Promise.race([this.client.start({ botAuthToken: botToken }), timeoutPromise]);
+          } catch (err) {
+            // Disconnect the abandoned client so its internal retry loop stops
+            this.client.disconnect().catch(() => {});
+            throw err;
+          } finally {
+            clearTimeout(timeoutId);
+          }
+
           this.connected = true;
           this.saveSession();
           return;

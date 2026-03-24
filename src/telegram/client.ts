@@ -115,6 +115,7 @@ export class TelegramUserClient {
   /** Try connecting via proxy at `index`, rebuilding the client with that proxy.
    *  Races the connect() call against a timeout to avoid indefinite hangs when
    *  a proxy silently drops packets instead of refusing the connection.
+   *  On failure/timeout, disconnects the client to stop background retries.
    */
   private async connectWithProxy(index: number): Promise<void> {
     const proxies = this.config.mtprotoProxies ?? [];
@@ -142,6 +143,11 @@ export class TelegramUserClient {
 
     try {
       await Promise.race([this.client.connect(), timeoutPromise]);
+    } catch (err) {
+      // Disconnect the abandoned client so its internal retry loop stops
+      // and does not leak sockets or interfere with the next attempt.
+      this.client.disconnect().catch(() => {});
+      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
