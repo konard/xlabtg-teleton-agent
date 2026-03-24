@@ -9,6 +9,7 @@ import {
   CONTEXT_MAX_RELEVANT_CHUNKS,
   CONTEXT_OVERFLOW_SUMMARY_MESSAGES,
   RATE_LIMIT_MAX_RETRIES,
+  RATE_LIMIT_MAX_BACKOFF_MS,
   SERVER_ERROR_MAX_RETRIES,
   TOOL_CONCURRENCY_LIMIT,
   EMBEDDING_QUERY_MAX_CHARS,
@@ -68,6 +69,7 @@ import {
   isContextOverflowError,
   isTrivialMessage,
   extractContextSummary,
+  parseRetryAfterMs,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -634,7 +636,13 @@ export class AgentRuntime {
           } else if (errorMsg.toLowerCase().includes("rate") || errorMsg.includes("429")) {
             rateLimitRetries++;
             if (rateLimitRetries <= RATE_LIMIT_MAX_RETRIES) {
-              const delay = 1000 * Math.pow(2, rateLimitRetries - 1);
+              // Respect Retry-After hint from the API if present (e.g. "retry-after: 30")
+              const retryAfterMs = parseRetryAfterMs(errorMsg);
+              const backoffDelay = Math.min(
+                1000 * Math.pow(2, rateLimitRetries - 1),
+                RATE_LIMIT_MAX_BACKOFF_MS
+              );
+              const delay = retryAfterMs ?? backoffDelay;
               log.warn(
                 `🚫 Rate limited, retrying in ${delay}ms (attempt ${rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
               );

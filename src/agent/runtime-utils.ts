@@ -14,6 +14,16 @@ export function isContextOverflowError(errorMessage?: string): boolean {
   );
 }
 
+/**
+ * Extracts the Retry-After value (in milliseconds) from an error message if the
+ * API includes one (e.g. "retry-after: 30" or "Retry-After: 60").
+ * Returns null if no Retry-After hint is present.
+ */
+export function parseRetryAfterMs(errorMessage: string): number | null {
+  const match = errorMessage.match(/retry.after[:\s]+(\d+)/i);
+  return match ? Number(match[1]) * 1000 : null;
+}
+
 export function isTrivialMessage(text: string): boolean {
   const stripped = text.trim();
   if (!stripped) return true;
