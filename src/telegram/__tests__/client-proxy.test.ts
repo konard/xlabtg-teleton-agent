@@ -25,12 +25,13 @@ vi.mock("../flood-retry.js", () => ({
 }));
 
 // Use vi.hoisted so variables are available inside vi.mock factories
-const { mockConnect, mockGetMe, mockInvoke, mockExistsSync } = vi.hoisted(() => {
+const { mockConnect, mockDisconnect, mockGetMe, mockInvoke, mockExistsSync } = vi.hoisted(() => {
   const mockConnect = vi.fn();
+  const mockDisconnect = vi.fn().mockResolvedValue(undefined);
   const mockGetMe = vi.fn();
   const mockInvoke = vi.fn();
   const mockExistsSync = vi.fn();
-  return { mockConnect, mockGetMe, mockInvoke, mockExistsSync };
+  return { mockConnect, mockDisconnect, mockGetMe, mockInvoke, mockExistsSync };
 });
 
 vi.mock("telegram", () => {
@@ -40,7 +41,7 @@ vi.mock("telegram", () => {
       this.session = { save: () => "" };
     }
     connect = mockConnect;
-    disconnect = vi.fn();
+    disconnect = mockDisconnect;
     getMe = mockGetMe;
     invoke = mockInvoke;
     connected = true;
@@ -320,6 +321,8 @@ describe("TelegramUserClient — proxy timeout", () => {
     // connect called twice: proxy1 (timeout → failed) + proxy2 (success)
     expect(mockConnect).toHaveBeenCalledTimes(2);
     expect(client.isConnected()).toBe(true);
+    // The timed-out proxy's client must be disconnected to stop background retries
+    expect(mockDisconnect).toHaveBeenCalled();
   });
 
   it("times out all proxies and falls back to direct connection", async () => {
@@ -357,6 +360,29 @@ describe("TelegramUserClient — proxy timeout", () => {
     // proxy1 (timeout) + proxy2 (timeout) + direct (success) = 3 calls
     expect(mockConnect).toHaveBeenCalledTimes(3);
     expect(client.isConnected()).toBe(true);
+    // Both timed-out proxy clients must be disconnected
+    expect(mockDisconnect).toHaveBeenCalledTimes(2);
+  });
+
+  it("disconnects failed proxy client on connection error (not just timeout)", async () => {
+    mockConnect
+      .mockRejectedValueOnce(new Error("proxy1 connection refused"))
+      .mockResolvedValueOnce(undefined);
+
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [
+        { server: "bad.example.com", port: 443, secret: "aabbcc" },
+        { server: "good.example.com", port: 443, secret: "ddeeff" },
+      ],
+    });
+
+    await client.connect();
+
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(client.isConnected()).toBe(true);
+    // The failed proxy's client must be disconnected to clean up resources
+    expect(mockDisconnect).toHaveBeenCalled();
   });
 });
 
