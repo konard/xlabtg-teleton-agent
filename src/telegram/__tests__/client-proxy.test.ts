@@ -2,8 +2,10 @@
  * Tests for TelegramUserClient MTProto proxy connection logic.
  * Verifies that proxies are tried in order, auth flow is triggered when
  * no session exists (whether via proxy or direct), and failover works.
+ * Also tests the connection timeout that prevents indefinite hangs on
+ * unresponsive proxies, and the getActiveProxyIndex() accessor.
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
@@ -98,6 +100,11 @@ vi.mock("fs", () => ({
 
 vi.mock("path", () => ({
   dirname: (p: string) => p.split("/").slice(0, -1).join("/"),
+}));
+
+// Use a short timeout (100 ms) so timeout tests complete quickly without real delays
+vi.mock("../../constants/timeouts.js", () => ({
+  MTPROTO_PROXY_CONNECT_TIMEOUT_MS: 100,
 }));
 
 import { TelegramUserClient } from "../client.js";
@@ -269,5 +276,151 @@ describe("TelegramUserClient — proxy connection", () => {
       // Auth flow should NOT be triggered if even direct failed
       expect(mockInvoke).not.toHaveBeenCalled();
     });
+  });
+});
+
+describe("TelegramUserClient — proxy timeout", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetMe.mockResolvedValue(MOCK_ME);
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("times out a hanging proxy and falls back to the next one", async () => {
+    // First proxy hangs forever; second succeeds immediately
+    mockConnect
+      .mockImplementationOnce(
+        () =>
+          new Promise(() => {
+            /* never resolves */
+          })
+      )
+      .mockResolvedValueOnce(undefined);
+
+    vi.useFakeTimers();
+
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [
+        { server: "hanging.example.com", port: 443, secret: "aabbcc" },
+        { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+      ],
+    });
+
+    const connectPromise = client.connect();
+    // Advance past the 100 ms mock timeout
+    await vi.runAllTimersAsync();
+
+    await connectPromise;
+
+    // connect called twice: proxy1 (timeout → failed) + proxy2 (success)
+    expect(mockConnect).toHaveBeenCalledTimes(2);
+    expect(client.isConnected()).toBe(true);
+  });
+
+  it("times out all proxies and falls back to direct connection", async () => {
+    // Both proxies hang; direct succeeds
+    mockConnect
+      .mockImplementationOnce(
+        () =>
+          new Promise(() => {
+            /* never resolves */
+          })
+      )
+      .mockImplementationOnce(
+        () =>
+          new Promise(() => {
+            /* never resolves */
+          })
+      )
+      .mockResolvedValueOnce(undefined);
+
+    vi.useFakeTimers();
+
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [
+        { server: "hanging1.example.com", port: 443, secret: "aabbcc" },
+        { server: "hanging2.example.com", port: 443, secret: "ddeeff" },
+      ],
+    });
+
+    const connectPromise = client.connect();
+    await vi.runAllTimersAsync();
+
+    await connectPromise;
+
+    // proxy1 (timeout) + proxy2 (timeout) + direct (success) = 3 calls
+    expect(mockConnect).toHaveBeenCalledTimes(3);
+    expect(client.isConnected()).toBe(true);
+  });
+});
+
+describe("TelegramUserClient — getActiveProxyIndex", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockGetMe.mockResolvedValue(MOCK_ME);
+    mockExistsSync.mockReturnValue(true);
+  });
+
+  it("returns undefined before connecting", () => {
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+    });
+    expect(client.getActiveProxyIndex()).toBeUndefined();
+  });
+
+  it("returns 0 after connecting via first proxy", async () => {
+    mockConnect.mockResolvedValue(undefined);
+
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [
+        { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
+        { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+      ],
+    });
+
+    await client.connect();
+
+    expect(client.getActiveProxyIndex()).toBe(0);
+  });
+
+  it("returns 1 when first proxy fails and second succeeds", async () => {
+    mockConnect
+      .mockRejectedValueOnce(new Error("proxy1 unreachable"))
+      .mockResolvedValueOnce(undefined);
+
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [
+        { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
+        { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+      ],
+    });
+
+    await client.connect();
+
+    expect(client.getActiveProxyIndex()).toBe(1);
+  });
+
+  it("returns undefined when all proxies fail and direct connection is used", async () => {
+    mockConnect
+      .mockRejectedValueOnce(new Error("proxy1 unreachable"))
+      .mockResolvedValueOnce(undefined);
+
+    const client = new TelegramUserClient({
+      ...BASE_CONFIG,
+      mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+    });
+
+    await client.connect();
+
+    expect(client.getActiveProxyIndex()).toBeUndefined();
   });
 });

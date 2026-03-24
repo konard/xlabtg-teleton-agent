@@ -14,6 +14,34 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
     return c.json({ success: true, data: mtproto } as APIResponse);
   });
 
+  // GET /api/mtproto/status — runtime connection status
+  app.get("/status", (c) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
+    const config = deps.agent.getConfig() as Record<string, any>;
+    const mtproto = config.mtproto ?? { enabled: false, proxies: [] };
+    const proxies: MtprotoProxyEntry[] = mtproto.proxies ?? [];
+    const connected = deps.bridge.isAvailable();
+    const activeProxyIndex = connected ? deps.bridge.getActiveProxyIndex() : undefined;
+    const activeProxy =
+      activeProxyIndex !== undefined && proxies[activeProxyIndex]
+        ? {
+            server: proxies[activeProxyIndex].server,
+            port: proxies[activeProxyIndex].port,
+            index: activeProxyIndex,
+          }
+        : null;
+
+    return c.json({
+      success: true,
+      data: {
+        connected,
+        enabled: mtproto.enabled ?? false,
+        /** null means connected directly (no proxy active) */
+        activeProxy,
+      },
+    } as APIResponse);
+  });
+
   // PUT /api/mtproto/enabled — toggle enabled flag
   app.put("/enabled", async (c) => {
     try {

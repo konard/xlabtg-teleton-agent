@@ -8,6 +8,12 @@ interface MtprotoProxy {
   secret: string;
 }
 
+interface ProxyStatus {
+  connected: boolean;
+  enabled: boolean;
+  activeProxy: { server: string; port: number; index: number } | null;
+}
+
 interface MtprotoSettingsPanelProps {
   showSuccess: (msg: string) => void;
   setError: (msg: string | null) => void;
@@ -20,14 +26,21 @@ export function MtprotoSettingsPanel({ showSuccess, setError }: MtprotoSettingsP
   const [proxies, setProxies] = useState<MtprotoProxy[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<ProxyStatus | null>(null);
 
-  // Load current config
+  // Load current config and runtime status
   useEffect(() => {
-    api.getMtprotoConfig()
-      .then((res) => {
-        if (res.data) {
-          setEnabled(res.data.enabled ?? false);
-          setProxies(res.data.proxies ?? []);
+    Promise.all([
+      api.getMtprotoConfig(),
+      api.getMtprotoStatus().catch(() => ({ data: null })),
+    ])
+      .then(([configRes, statusRes]) => {
+        if (configRes.data) {
+          setEnabled(configRes.data.enabled ?? false);
+          setProxies(configRes.data.proxies ?? []);
+        }
+        if (statusRes.data) {
+          setStatus(statusRes.data);
         }
       })
       .catch(() => {})
@@ -89,6 +102,20 @@ export function MtprotoSettingsPanel({ showSuccess, setError }: MtprotoSettingsP
 
   if (loading) return null;
 
+  // Derive connection status badge info
+  const isConnected = status?.connected ?? false;
+  const activeProxy = status?.activeProxy ?? null;
+  const connectionLabel = !isConnected
+    ? 'Not connected'
+    : activeProxy
+      ? `Connected via proxy ${activeProxy.index + 1} (${activeProxy.server}:${activeProxy.port})`
+      : 'Connected (direct)';
+  const connectionColor = !isConnected
+    ? 'var(--red, #ef4444)'
+    : activeProxy
+      ? 'var(--green, #22c55e)'
+      : 'var(--text-secondary)';
+
   return (
     <>
       <div className="card-header">
@@ -102,6 +129,32 @@ export function MtprotoSettingsPanel({ showSuccess, setError }: MtprotoSettingsP
       </div>
       <div className="card">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+          {/* Connection status */}
+          {status && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '8px 12px',
+              borderRadius: 6,
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--separator)',
+              fontSize: 13,
+            }}>
+              <span style={{
+                width: 8,
+                height: 8,
+                borderRadius: '50%',
+                background: connectionColor,
+                flexShrink: 0,
+              }} />
+              <span style={{ color: connectionColor, fontWeight: 500 }}>
+                {connectionLabel}
+              </span>
+              <InfoTip text="Current Telegram connection status. Shows which proxy (if any) is actively being used." />
+            </div>
+          )}
 
           {/* Enable toggle */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -151,7 +204,7 @@ export function MtprotoSettingsPanel({ showSuccess, setError }: MtprotoSettingsP
                   <div
                     key={idx}
                     style={{
-                      border: '1px solid var(--separator)',
+                      border: `1px solid ${activeProxy?.index === idx ? 'var(--green, #22c55e)' : 'var(--separator)'}`,
                       borderRadius: 8,
                       padding: 12,
                       background: 'var(--bg-secondary)',
@@ -159,8 +212,13 @@ export function MtprotoSettingsPanel({ showSuccess, setError }: MtprotoSettingsP
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)' }}>
+                      <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
                         Server {idx + 1}
+                        {activeProxy?.index === idx && (
+                          <span style={{ fontSize: 11, color: 'var(--green, #22c55e)', fontWeight: 500 }}>
+                            ● Active
+                          </span>
+                        )}
                       </span>
                       <button
                         onClick={() => removeProxy(idx)}
