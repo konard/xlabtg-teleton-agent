@@ -11,6 +11,7 @@ import { markdownToTelegramHtml } from "./formatting.js";
 import { withFloodRetry } from "./flood-retry.js";
 import { createLogger } from "../utils/logger.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
+import { MTPROTO_PROXY_CONNECT_TIMEOUT_MS } from "../constants/timeouts.js";
 
 const log = createLogger("Telegram");
 
@@ -111,7 +112,10 @@ export class TelegramUserClient {
     }
   }
 
-  /** Try connecting via proxy at `index`, rebuilding the client with that proxy. */
+  /** Try connecting via proxy at `index`, rebuilding the client with that proxy.
+   *  Races the connect() call against a timeout to avoid indefinite hangs when
+   *  a proxy silently drops packets instead of refusing the connection.
+   */
   private async connectWithProxy(index: number): Promise<void> {
     const proxies = this.config.mtprotoProxies ?? [];
     const entry = proxies[index];
@@ -122,7 +126,30 @@ export class TelegramUserClient {
     );
     this.client = this.buildClient(proxy);
     this.activeProxyIndex = index;
-    await this.client.connect();
+
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `[MTProxy] Proxy ${index + 1} timed out after ${MTPROTO_PROXY_CONNECT_TIMEOUT_MS / 1000}s`
+            )
+          ),
+        MTPROTO_PROXY_CONNECT_TIMEOUT_MS
+      );
+    });
+
+    try {
+      await Promise.race([this.client.connect(), timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /** Return the index (0-based) of the currently active proxy, or undefined for direct connection. */
+  getActiveProxyIndex(): number | undefined {
+    return this.activeProxyIndex;
   }
 
   /**

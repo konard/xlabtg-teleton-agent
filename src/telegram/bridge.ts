@@ -70,6 +70,11 @@ export class TelegramBridge {
     return this.client.isConnected();
   }
 
+  /** Returns the 0-based index of the active MTProto proxy, or undefined for direct connection. */
+  getActiveProxyIndex(): number | undefined {
+    return this.client.getActiveProxyIndex();
+  }
+
   getOwnUserId(): bigint | undefined {
     return this.ownUserId;
   }

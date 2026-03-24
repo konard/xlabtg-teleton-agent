@@ -1258,6 +1258,16 @@ export const api = {
     });
   },
 
+  async getMtprotoStatus() {
+    return fetchAPI<
+      APIResponse<{
+        connected: boolean;
+        enabled: boolean;
+        activeProxy: { server: string; port: number; index: number } | null;
+      }>
+    >("/mtproto/status");
+  },
+
   // ── TON Proxy ──────────────────────────────────────────────────────
 
   async getTonProxyStatus() {
