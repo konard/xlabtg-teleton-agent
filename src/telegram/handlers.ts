@@ -608,6 +608,22 @@ export class MessageHandler {
         log.debug(`Processed message ${message.id} in chat ${message.chatId}`);
       } catch (error) {
         log.error({ err: error }, "Error handling message");
+        // Notify the user when the agent hits persistent API rate limits so they
+        // aren't left waiting in silence.
+        if (
+          error instanceof Error &&
+          (error.message.toLowerCase().includes("rate limit") || error.message.includes("429"))
+        ) {
+          try {
+            await this.bridge.sendMessage({
+              chatId: message.chatId,
+              text: "⚠️ The AI service is currently rate limited. Please try again in a moment.",
+              replyToId: message.id,
+            });
+          } catch (sendErr) {
+            log.error({ err: sendErr }, "Failed to send rate-limit error message to user");
+          }
+        }
       }
     });
   }

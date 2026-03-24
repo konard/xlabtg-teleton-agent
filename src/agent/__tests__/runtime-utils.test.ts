@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { isContextOverflowError, isTrivialMessage } from "../../agent/runtime-utils.js";
+import {
+  isContextOverflowError,
+  isTrivialMessage,
+  parseRetryAfterMs,
+} from "../../agent/runtime-utils.js";
 
 // ─── T10: isContextOverflowError ────────────────────────────────
 
@@ -176,5 +180,33 @@ describe("isTrivialMessage (replicated from runtime.ts — not exported)", () =>
     expect(isTrivialMessage("!!!")).toBe(true);
     expect(isTrivialMessage("???")).toBe(true);
     expect(isTrivialMessage("—")).toBe(true);
+  });
+});
+
+// ─── T12: parseRetryAfterMs ─────────────────────────────────────
+
+describe("parseRetryAfterMs", () => {
+  it("T12a: parses 'retry-after: 30' → 30000ms", () => {
+    expect(parseRetryAfterMs("429 Too Many Requests retry-after: 30")).toBe(30_000);
+  });
+
+  it("T12b: parses 'Retry-After: 60' (capital letters)", () => {
+    expect(parseRetryAfterMs("Rate limit hit. Retry-After: 60")).toBe(60_000);
+  });
+
+  it("T12c: parses 'retry_after: 5'", () => {
+    expect(parseRetryAfterMs("retry_after: 5")).toBe(5_000);
+  });
+
+  it("T12d: returns null when no Retry-After header present", () => {
+    expect(parseRetryAfterMs("429 Rate limit reached for requests")).toBeNull();
+  });
+
+  it("T12e: returns null for empty string", () => {
+    expect(parseRetryAfterMs("")).toBeNull();
+  });
+
+  it("T12f: returns null for unrelated error messages", () => {
+    expect(parseRetryAfterMs("Internal server error 500")).toBeNull();
   });
 });

@@ -632,4 +632,52 @@ describe("MessageHandler", () => {
       expect(agent.processMessage).not.toHaveBeenCalled();
     });
   });
+
+  // ── T10: Rate limit error user notification ──────────────────────────────
+  describe("rate limit error notification", () => {
+    it("sends a user-facing error message when processMessage throws a rate limit error", async () => {
+      const agent = makeAgent();
+      agent.processMessage.mockRejectedValueOnce(
+        new Error("API rate limited after 5 retries. Please try again later.")
+      );
+
+      const { handler, bridge } = createHandler({ dm_policy: "open" }, { agent });
+      await handler.handleMessage(makeMessage({ id: 201, chatId: "chat2" }));
+
+      expect(bridge.sendMessage).toHaveBeenCalledTimes(1);
+      expect(bridge.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: "chat2",
+          text: expect.stringContaining("rate limit"),
+          replyToId: 201,
+        })
+      );
+    });
+
+    it("sends error message for 429-containing rate limit errors", async () => {
+      const agent = makeAgent();
+      agent.processMessage.mockRejectedValueOnce(new Error("429 Rate limit reached for requests"));
+
+      const { handler, bridge } = createHandler({ dm_policy: "open" }, { agent });
+      await handler.handleMessage(makeMessage({ id: 202, chatId: "chat3" }));
+
+      expect(bridge.sendMessage).toHaveBeenCalledTimes(1);
+      expect(bridge.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          chatId: "chat3",
+          replyToId: 202,
+        })
+      );
+    });
+
+    it("does NOT send rate limit error message for unrelated errors", async () => {
+      const agent = makeAgent();
+      agent.processMessage.mockRejectedValueOnce(new Error("some unexpected error"));
+
+      const { handler, bridge } = createHandler({ dm_policy: "open" }, { agent });
+      await handler.handleMessage(makeMessage({ id: 203, chatId: "chat4" }));
+
+      expect(bridge.sendMessage).not.toHaveBeenCalled();
+    });
+  });
 });
