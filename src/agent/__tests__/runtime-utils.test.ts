@@ -5,7 +5,9 @@ import {
   parseRetryAfterMs,
   isNetworkError,
   isNetworkErrorMessage,
+  trimRagContext,
 } from "../../agent/runtime-utils.js";
+import { AgentConfigSchema } from "../../config/schema.js";
 
 // ─── T10: isContextOverflowError ────────────────────────────────
 
@@ -262,6 +264,16 @@ describe("isNetworkError", () => {
     expect(isNetworkError(undefined)).toBe(false);
     expect(isNetworkError(42)).toBe(false);
   });
+
+  it("T13k: detects TimeoutError thrown by AbortSignal.timeout()", () => {
+    const err = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    expect(isNetworkError(err)).toBe(true);
+  });
+
+  it("T13l: detects AbortError thrown when AbortController.abort() is called", () => {
+    const err = new DOMException("The operation was aborted", "AbortError");
+    expect(isNetworkError(err)).toBe(true);
+  });
 });
 
 // ─── T14: isNetworkErrorMessage ──────────────────────────────────
@@ -313,5 +325,86 @@ describe("isNetworkErrorMessage", () => {
 
   it("T14k: returns false for empty string", () => {
     expect(isNetworkErrorMessage("")).toBe(false);
+  });
+
+  it("T14l: detects 'Connection error' (ZAI provider stopReason:error path)", () => {
+    expect(isNetworkErrorMessage("Connection error.")).toBe(true);
+    expect(isNetworkErrorMessage("connection error")).toBe(true);
+  });
+
+  it("T14m: detects 'Request timed out' (ZAI provider stopReason:error path)", () => {
+    expect(isNetworkErrorMessage("Request timed out.")).toBe(true);
+    expect(isNetworkErrorMessage("request timed out")).toBe(true);
+  });
+});
+
+// ─── T15: trimRagContext ─────────────────────────────────────────
+
+describe("trimRagContext", () => {
+  it("T15a: returns context unchanged when maxChars is undefined", () => {
+    const ctx = "knowledge chunk 1\n---\nknowledge chunk 2";
+    expect(trimRagContext(ctx, undefined)).toBe(ctx);
+  });
+
+  it("T15b: returns context unchanged when length <= maxChars", () => {
+    const ctx = "short context";
+    expect(trimRagContext(ctx, 100)).toBe(ctx);
+    expect(trimRagContext(ctx, ctx.length)).toBe(ctx);
+  });
+
+  it("T15c: trims context and appends marker when length > maxChars", () => {
+    const ctx = "abcdefghijklmnopqrstuvwxyz";
+    const result = trimRagContext(ctx, 10);
+    expect(result).toBe("abcdefghij\n...[context trimmed]");
+  });
+
+  it("T15d: returns context unchanged when maxChars equals exact length", () => {
+    const ctx = "exactly ten";
+    expect(trimRagContext(ctx, ctx.length)).toBe(ctx);
+  });
+
+  it("T15e: trims at maxChars=1 (edge case — minimum allowed in schema is 500 but logic handles any positive int)", () => {
+    const result = trimRagContext("hello", 1);
+    expect(result).toBe("h\n...[context trimmed]");
+  });
+
+  it("T15f: returns empty string unchanged when maxChars is undefined", () => {
+    expect(trimRagContext("", undefined)).toBe("");
+  });
+
+  it("T15g: returns empty string unchanged when maxChars > 0", () => {
+    expect(trimRagContext("", 500)).toBe("");
+  });
+});
+
+// ─── T16: AgentConfigSchema max_rag_chars ────────────────────────
+
+describe("AgentConfigSchema max_rag_chars", () => {
+  it("T16a: accepts valid max_rag_chars value", () => {
+    const result = AgentConfigSchema.safeParse({ max_rag_chars: 4000 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.max_rag_chars).toBe(4000);
+  });
+
+  it("T16b: omitting max_rag_chars leaves it undefined (no default limit)", () => {
+    const result = AgentConfigSchema.safeParse({});
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.max_rag_chars).toBeUndefined();
+  });
+
+  it("T16c: rejects max_rag_chars below minimum (500)", () => {
+    const result = AgentConfigSchema.safeParse({ max_rag_chars: 499 });
+    expect(result.success).toBe(false);
+  });
+
+  it("T16d: accepts max_rag_chars at exactly minimum (500)", () => {
+    const result = AgentConfigSchema.safeParse({ max_rag_chars: 500 });
+    expect(result.success).toBe(true);
+    if (result.success) expect(result.data.max_rag_chars).toBe(500);
+  });
+
+  it("T16e: rejects non-integer max_rag_chars", () => {
+    const result = AgentConfigSchema.safeParse({ max_rag_chars: 4000.5 });
+    expect(result.success).toBe(false);
   });
 });

@@ -27,10 +27,14 @@ export function parseRetryAfterMs(errorMessage: string): number | null {
 /**
  * Returns true for errors thrown by the provider library that indicate a
  * transient network-level failure (e.g. "Unhandled stop reason: network_error").
- * These are thrown as exceptions rather than returned as stopReason:"error" responses.
+ * Also handles AbortError/TimeoutError thrown when the LLM request timeout fires.
  */
 export function isNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
+  // AbortSignal.timeout() throws a DOMException with name "TimeoutError"
+  if ("name" in error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return true;
+  }
   return isNetworkErrorMessage(error.message);
 }
 
@@ -38,7 +42,8 @@ export function isNetworkError(error: unknown): boolean {
  * Returns true if an error message string indicates a transient network-level
  * failure. Used for both thrown exceptions (isNetworkError) and stopReason:"error"
  * responses where errorMessage contains network error details (e.g. from the zai
- * provider returning "Provider finish_reason: network_error").
+ * provider returning "Provider finish_reason: network_error", "Connection error.",
+ * or "Request timed out.").
  */
 export function isNetworkErrorMessage(message: string): boolean {
   const msg = message.toLowerCase();
@@ -49,7 +54,9 @@ export function isNetworkErrorMessage(message: string): boolean {
     msg.includes("econnrefused") ||
     msg.includes("etimedout") ||
     msg.includes("fetch failed") ||
-    msg.includes("unhandled stop reason")
+    msg.includes("unhandled stop reason") ||
+    msg.includes("connection error") ||
+    msg.includes("request timed out")
   );
 }
 
@@ -96,4 +103,15 @@ export function extractContextSummary(context: Context, maxMessages: number = 10
   }
 
   return summaryParts.join("\n");
+}
+
+/**
+ * Trims RAG context to `maxChars` to reduce token cost and response latency.
+ * Returns the original string unchanged if `maxChars` is undefined or the
+ * string is already within budget. When trimming occurs, appends a marker so
+ * the model knows the context was truncated.
+ */
+export function trimRagContext(context: string, maxChars: number | undefined): string {
+  if (maxChars === undefined || context.length <= maxChars) return context;
+  return context.slice(0, maxChars) + "\n...[context trimmed]";
 }

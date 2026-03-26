@@ -73,6 +73,7 @@ import {
   parseRetryAfterMs,
   isNetworkError,
   isNetworkErrorMessage,
+  trimRagContext,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -398,14 +399,23 @@ export class AgentRuntime {
 
           if (contextParts.length > 0) {
             relevantContext = contextParts.join("\n\n");
-            log.debug(
-              `🔍 Found ${dbContext.relevantKnowledge.length} knowledge chunks, ${dbContext.relevantFeed.length} feed messages`
+            log.info(
+              `🔍 RAG context: ${dbContext.relevantKnowledge.length} knowledge chunks, ${dbContext.relevantFeed.length} feed messages (${relevantContext.length} chars, ~${Math.ceil(relevantContext.length / 4)} tokens)`
             );
           }
         } catch (error) {
           log.warn({ err: error }, "Context building failed");
         }
       }
+
+      // Trim RAG context to configured budget to reduce token cost and response latency
+      const maxRagChars = this.config.agent.max_rag_chars;
+      if (maxRagChars !== undefined && relevantContext.length > maxRagChars) {
+        log.info(
+          `✂️  RAG context trimmed: ${relevantContext.length} → ${maxRagChars} chars (max_rag_chars limit)`
+        );
+      }
+      relevantContext = trimRagContext(relevantContext, maxRagChars);
 
       const memoryStats = this.getMemoryStats();
       const statsContext = `[Memory Status: ${memoryStats.totalMessages} messages across ${memoryStats.totalChats} chats, ${memoryStats.knowledgeChunks} knowledge chunks]`;
