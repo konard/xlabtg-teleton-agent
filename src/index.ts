@@ -402,13 +402,14 @@ ${blue}  ┌──────────────────────�
    * Called by lifecycle.start() — do NOT call directly.
    */
   private async startAgent(): Promise<void> {
-    // Load modules
+    // Truncate to builtins before re-loading plugins (prevents duplication on restart)
+    this.modules.length = this.builtinModuleCount;
+
+    // Capture builtin module names AFTER truncation so plugin names from a previous
+    // run are not included in the tools-loaded log line (which caused duplicates).
     const moduleNames = this.modules
       .filter((m) => m.tools(this.config).length > 0)
       .map((m) => m.name);
-
-    // Truncate to builtins before re-loading plugins (prevents duplication on restart)
-    this.modules.length = this.builtinModuleCount;
 
     // Load enhanced plugins from ~/.teleton/plugins/
     const builtinNames = this.modules.map((m) => m.name);
