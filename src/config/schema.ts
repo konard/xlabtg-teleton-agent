@@ -57,6 +57,16 @@ export const AgentConfigSchema = z.object({
     .number()
     .default(5)
     .describe("Maximum number of agentic loop iterations (tool call → result → tool call cycles)"),
+  max_rag_chars: z
+    .number()
+    .int()
+    .min(500)
+    .optional()
+    .describe(
+      "Max characters of RAG context (knowledge + feed) injected per request. " +
+        "Reduces token cost and speeds up responses for smaller/cheaper providers. " +
+        "Unset = no limit. Recommended: 4000-8000 for ZAI/budget providers."
+    ),
   session_reset_policy: SessionResetPolicySchema.default(SessionResetPolicySchema.parse({})),
 });
 

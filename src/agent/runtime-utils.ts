@@ -104,3 +104,14 @@ export function extractContextSummary(context: Context, maxMessages: number = 10
 
   return summaryParts.join("\n");
 }
+
+/**
+ * Trims RAG context to `maxChars` to reduce token cost and response latency.
+ * Returns the original string unchanged if `maxChars` is undefined or the
+ * string is already within budget. When trimming occurs, appends a marker so
+ * the model knows the context was truncated.
+ */
+export function trimRagContext(context: string, maxChars: number | undefined): string {
+  if (maxChars === undefined || context.length <= maxChars) return context;
+  return context.slice(0, maxChars) + "\n...[context trimmed]";
+}
