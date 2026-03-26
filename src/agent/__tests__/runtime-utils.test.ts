@@ -324,4 +324,14 @@ describe("isNetworkErrorMessage", () => {
   it("T14k: returns false for empty string", () => {
     expect(isNetworkErrorMessage("")).toBe(false);
   });
+
+  it("T14l: detects 'Connection error' (ZAI provider stopReason:error path)", () => {
+    expect(isNetworkErrorMessage("Connection error.")).toBe(true);
+    expect(isNetworkErrorMessage("connection error")).toBe(true);
+  });
+
+  it("T14m: detects 'Request timed out' (ZAI provider stopReason:error path)", () => {
+    expect(isNetworkErrorMessage("Request timed out.")).toBe(true);
+    expect(isNetworkErrorMessage("request timed out")).toBe(true);
+  });
 });

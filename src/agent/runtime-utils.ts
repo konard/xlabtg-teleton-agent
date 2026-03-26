@@ -42,7 +42,8 @@ export function isNetworkError(error: unknown): boolean {
  * Returns true if an error message string indicates a transient network-level
  * failure. Used for both thrown exceptions (isNetworkError) and stopReason:"error"
  * responses where errorMessage contains network error details (e.g. from the zai
- * provider returning "Provider finish_reason: network_error").
+ * provider returning "Provider finish_reason: network_error", "Connection error.",
+ * or "Request timed out.").
  */
 export function isNetworkErrorMessage(message: string): boolean {
   const msg = message.toLowerCase();
@@ -53,7 +54,9 @@ export function isNetworkErrorMessage(message: string): boolean {
     msg.includes("econnrefused") ||
     msg.includes("etimedout") ||
     msg.includes("fetch failed") ||
-    msg.includes("unhandled stop reason")
+    msg.includes("unhandled stop reason") ||
+    msg.includes("connection error") ||
+    msg.includes("request timed out")
   );
 }
 
