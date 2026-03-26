@@ -33,15 +33,22 @@ const DEFAULT_TTS_MODELS: ModelOption[] = [
   { value: 'canopylabs/orpheus-arabic-saudi', name: 'Orpheus TTS Arabic (Saudi)', description: 'Arabic (Saudi) TTS, Orpheus' },
 ];
 
-const DEFAULT_VOICES = [
-  'tara', 'leah', 'jess', 'leo', 'dan', 'mia', 'zac', 'zoe',
-  'ahmad', 'nadia',
-];
+const ENGLISH_VOICES = ['tara', 'leah', 'jess', 'leo', 'dan', 'mia', 'zac', 'zoe'];
+const ARABIC_VOICES = ['ahmad', 'nadia'];
+
+function getDefaultVoicesForModel(model: string): string[] {
+  return model.includes('arabic') ? ARABIC_VOICES : ENGLISH_VOICES;
+}
 
 export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: GroqSettingsPanelProps) {
   const [sttModels, setSttModels] = useState<ModelOption[]>(DEFAULT_STT_MODELS);
   const [ttsModels, setTtsModels] = useState<ModelOption[]>(DEFAULT_TTS_MODELS);
-  const [voices, setVoices] = useState<string[]>(DEFAULT_VOICES);
+  const [selectedTtsModel, setSelectedTtsModel] = useState(
+    getLocal('groq.tts_model') || 'canopylabs/orpheus-v1-english'
+  );
+  const [voices, setVoices] = useState<string[]>(() =>
+    getDefaultVoicesForModel(getLocal('groq.tts_model') || 'canopylabs/orpheus-v1-english')
+  );
   const [testingKey, setTestingKey] = useState(false);
   const [testResult, setTestResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const [healthCheck, setHealthCheck] = useState<HealthCheck | null>(null);
@@ -49,7 +56,7 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
   const [apiKeyInput, setApiKeyInput] = useState('');
   const [savingApiKey, setSavingApiKey] = useState(false);
 
-  // Load available models when the panel mounts or isGroqProvider changes
+  // Load available models when the panel mounts
   useEffect(() => {
     api.getGroqSttModels()
       .then((res) => { if (res.data) setSttModels(res.data); })
@@ -58,11 +65,23 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
     api.getGroqTtsModels()
       .then((res) => { if (res.data) setTtsModels(res.data); })
       .catch(() => {});
-
-    api.getGroqTtsVoices()
-      .then((res) => { if (res.data) setVoices(res.data); })
-      .catch(() => {});
   }, []);
+
+  // Reload voices when the selected TTS model changes, and reset voice if incompatible
+  useEffect(() => {
+    api.getGroqTtsVoices(selectedTtsModel)
+      .then((res) => {
+        if (res.data) {
+          setVoices(res.data);
+          // If the currently configured voice is not valid for the new model, reset to first voice
+          const currentVoice = getLocal('groq.tts_voice') || 'tara';
+          if (!res.data.includes(currentVoice)) {
+            saveConfig('groq.tts_voice', res.data[0]);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [selectedTtsModel]);
 
   const handleTestKey = async () => {
     setTestingKey(true);
@@ -105,7 +124,7 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
   };
 
   const sttModel = getLocal('groq.stt_model') || 'whisper-large-v3-turbo';
-  const ttsModel = getLocal('groq.tts_model') || 'canopylabs/orpheus-v1-english';
+  const ttsModel = selectedTtsModel;
   const ttsVoice = getLocal('groq.tts_voice') || 'tara';
   const ttsFormat = getLocal('groq.tts_format') || 'mp3';
   const ttsMode = getLocal('groq.tts_mode') || 'voice_calls_only';
@@ -254,7 +273,10 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
               value={ttsModel}
               options={ttsModels.map((m) => m.value)}
               labels={ttsModels.map((m) => m.name)}
-              onChange={(v) => saveConfig('groq.tts_model', v)}
+              onChange={(v) => {
+                setSelectedTtsModel(v);
+                saveConfig('groq.tts_model', v);
+              }}
             />
             {ttsModels.find((m) => m.value === ttsModel) && (
               <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0 0' }}>

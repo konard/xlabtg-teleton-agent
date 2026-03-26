@@ -441,6 +441,61 @@ async function generateGroqTTS(
 
   writeFileSync(outputPath, audioBuffer);
 
+  // Telegram requires OGG/Opus for proper voice message rendering.
+  // WAV files sent as-is will appear as file attachments instead of voice messages.
+  // Convert WAV to OGG/Opus using ffmpeg (same approach as Piper TTS).
+  if (resolvedFormat === "wav") {
+    const oggPath = join(tempDir, `${randomUUID()}.ogg`);
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const proc = spawn("ffmpeg", [
+          "-y",
+          "-i",
+          outputPath,
+          "-c:a",
+          "libopus",
+          "-b:a",
+          "48k",
+          "-application",
+          "voip",
+          oggPath,
+        ]);
+
+        let stderr = "";
+        proc.stderr?.on("data", (data) => {
+          stderr += data.toString();
+        });
+
+        proc.on("close", (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`ffmpeg failed (code ${code}): ${stderr}`));
+          }
+        });
+
+        proc.on("error", (err) => {
+          reject(new Error(`ffmpeg spawn error: ${err.message}`));
+        });
+      });
+
+      unlinkSync(outputPath); // Remove the WAV file after successful conversion
+      return {
+        filePath: oggPath,
+        provider: "groq",
+        voice,
+      };
+    } catch {
+      // If ffmpeg is not available or fails, fall back to WAV
+      // Note: WAV voice messages may not render correctly in Telegram
+      return {
+        filePath: outputPath,
+        provider: "groq",
+        voice,
+      };
+    }
+  }
+
   return {
     filePath: outputPath,
     provider: "groq",

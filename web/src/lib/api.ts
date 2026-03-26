@@ -1194,8 +1194,9 @@ export const api = {
     );
   },
 
-  async getGroqTtsVoices() {
-    return fetchAPI<APIResponse<string[]>>("/groq/tts/voices");
+  async getGroqTtsVoices(model?: string) {
+    const qs = model ? `?model=${encodeURIComponent(model)}` : "";
+    return fetchAPI<APIResponse<string[]>>(`/groq/tts/voices${qs}`);
   },
 
   async testGroqKey(apiKey?: string) {
