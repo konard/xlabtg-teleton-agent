@@ -4,8 +4,10 @@ import { Type } from "@sinclair/typebox";
 import { tavily } from "@tavily/core";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import { WEB_FETCH_MAX_TEXT_LENGTH } from "../../../constants/limits.js";
+import { RETRY_WEB_FETCH_TIMEOUT_MS } from "../../../constants/timeouts.js";
 import { sanitizeForContext } from "../../../utils/sanitize.js";
 import { getErrorMessage } from "../../../utils/errors.js";
+import { withRetry } from "../../../utils/retry.js";
 
 interface WebFetchParams {
   url: string;
@@ -60,8 +62,14 @@ export const webFetchExecutor: ToolExecutor<WebFetchParams> = async (
     }
 
     const client = tavily({ apiKey });
-    const response = await client.extract([url], {
-      extractDepth: "basic",
+    const response = await withRetry(() => client.extract([url], { extractDepth: "basic" }), {
+      timeout: RETRY_WEB_FETCH_TIMEOUT_MS,
+    }).catch((error) => {
+      const msg = getErrorMessage(error);
+      if (msg === "Operation timeout") {
+        throw new Error(`Web fetch timed out after ${RETRY_WEB_FETCH_TIMEOUT_MS / 1000}s`);
+      }
+      throw error;
     });
 
     if (!response.results?.length) {
