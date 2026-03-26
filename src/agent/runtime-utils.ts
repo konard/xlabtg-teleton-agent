@@ -31,7 +31,17 @@ export function parseRetryAfterMs(errorMessage: string): number | null {
  */
 export function isNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
-  const msg = error.message.toLowerCase();
+  return isNetworkErrorMessage(error.message);
+}
+
+/**
+ * Returns true if an error message string indicates a transient network-level
+ * failure. Used for both thrown exceptions (isNetworkError) and stopReason:"error"
+ * responses where errorMessage contains network error details (e.g. from the zai
+ * provider returning "Provider finish_reason: network_error").
+ */
+export function isNetworkErrorMessage(message: string): boolean {
+  const msg = message.toLowerCase();
   return (
     msg.includes("network_error") ||
     msg.includes("network error") ||

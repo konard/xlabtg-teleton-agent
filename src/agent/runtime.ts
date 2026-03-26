@@ -72,6 +72,7 @@ import {
   extractContextSummary,
   parseRetryAfterMs,
   isNetworkError,
+  isNetworkErrorMessage,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -701,6 +702,21 @@ export class AgentRuntime {
             log.error(`🚨 Server error after ${SERVER_ERROR_MAX_RETRIES} retries: ${errorMsg}`);
             throw new Error(
               `API server error after ${SERVER_ERROR_MAX_RETRIES} retries. The provider may be experiencing issues.`
+            );
+          } else if (isNetworkErrorMessage(errorMsg)) {
+            networkErrorRetries++;
+            if (networkErrorRetries <= NETWORK_ERROR_MAX_RETRIES) {
+              const delay = 2000 * Math.pow(2, networkErrorRetries - 1);
+              log.warn(
+                `🌐 Network error, retrying in ${delay}ms (attempt ${networkErrorRetries}/${NETWORK_ERROR_MAX_RETRIES})...`
+              );
+              await new Promise((r) => setTimeout(r, delay));
+              iteration--;
+              continue;
+            }
+            log.error(`🌐 Network error after ${NETWORK_ERROR_MAX_RETRIES} retries: ${errorMsg}`);
+            throw new Error(
+              `Network error after ${NETWORK_ERROR_MAX_RETRIES} retries. Please check your connection and try again.`
             );
           } else {
             log.error(`🚨 API error: ${errorMsg}`);
