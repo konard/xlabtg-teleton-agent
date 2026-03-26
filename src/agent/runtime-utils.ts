@@ -27,10 +27,14 @@ export function parseRetryAfterMs(errorMessage: string): number | null {
 /**
  * Returns true for errors thrown by the provider library that indicate a
  * transient network-level failure (e.g. "Unhandled stop reason: network_error").
- * These are thrown as exceptions rather than returned as stopReason:"error" responses.
+ * Also handles AbortError/TimeoutError thrown when the LLM request timeout fires.
  */
 export function isNetworkError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
+  // AbortSignal.timeout() throws a DOMException with name "TimeoutError"
+  if ("name" in error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return true;
+  }
   return isNetworkErrorMessage(error.message);
 }
 

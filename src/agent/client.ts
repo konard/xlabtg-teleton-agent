@@ -19,6 +19,7 @@ import {
   getClaudeCodeApiKey,
   refreshClaudeCodeApiKey,
 } from "../providers/claude-code-credentials.js";
+import { LLM_REQUEST_TIMEOUT_MS } from "../constants/timeouts.js";
 
 const log = createLogger("LLM");
 
@@ -263,6 +264,7 @@ export async function chatWithContext(
     temperature,
     sessionId: options.sessionId,
     cacheRetention: "long",
+    signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
   };
   if (isCocoon) {
     const { stripCocoonPayload } = await import("../cocoon/tool-adapter.js");

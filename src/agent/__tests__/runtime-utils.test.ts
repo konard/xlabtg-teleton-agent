@@ -262,6 +262,16 @@ describe("isNetworkError", () => {
     expect(isNetworkError(undefined)).toBe(false);
     expect(isNetworkError(42)).toBe(false);
   });
+
+  it("T13k: detects TimeoutError thrown by AbortSignal.timeout()", () => {
+    const err = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    expect(isNetworkError(err)).toBe(true);
+  });
+
+  it("T13l: detects AbortError thrown when AbortController.abort() is called", () => {
+    const err = new DOMException("The operation was aborted", "AbortError");
+    expect(isNetworkError(err)).toBe(true);
+  });
 });
 
 // ─── T14: isNetworkErrorMessage ──────────────────────────────────
