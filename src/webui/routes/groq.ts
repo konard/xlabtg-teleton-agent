@@ -7,7 +7,12 @@ import {
 } from "../../providers/groq/modelRegistry.js";
 import { testGroqApiKey, groqListModels } from "../../providers/groq/GroqTextProvider.js";
 import { GROQ_API_BASE, groqTranscribe } from "../../providers/groq/GroqSTTProvider.js";
-import { groqSpeak, GROQ_TTS_VOICES } from "../../providers/groq/GroqTTSProvider.js";
+import {
+  groqSpeak,
+  GROQ_TTS_VOICES,
+  GROQ_TTS_VOICES_ENGLISH,
+  GROQ_TTS_VOICES_ARABIC,
+} from "../../providers/groq/GroqTTSProvider.js";
 import { getGroqSttModels, getGroqTtsModels } from "../../config/model-catalog.js";
 import { getNestedValue, readRawConfig } from "../../config/configurable-keys.js";
 import { createLogger } from "../../utils/logger.js";
@@ -70,8 +75,18 @@ export function createGroqRoutes(deps: WebUIServerDeps) {
   });
 
   // GET /api/groq/tts/voices — list available TTS voices
+  // Optional query param: ?model=<tts-model-id> to filter voices by model
   app.get("/tts/voices", (c) => {
-    return c.json({ success: true, data: GROQ_TTS_VOICES } as APIResponse);
+    const model = c.req.query("model");
+    let voices: readonly string[];
+    if (model === "canopylabs/orpheus-arabic-saudi") {
+      voices = GROQ_TTS_VOICES_ARABIC;
+    } else if (model === "canopylabs/orpheus-v1-english") {
+      voices = GROQ_TTS_VOICES_ENGLISH;
+    } else {
+      voices = GROQ_TTS_VOICES;
+    }
+    return c.json({ success: true, data: voices } as APIResponse);
   });
 
   // POST /api/groq/test — test API key connectivity

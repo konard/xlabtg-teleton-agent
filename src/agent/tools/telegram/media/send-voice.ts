@@ -39,7 +39,7 @@ interface SendVoiceParams {
 export const telegramSendVoiceTool: Tool = {
   name: "telegram_send_voice",
   description:
-    "Send a voice message. Either provide voicePath for an existing file, or text for TTS generation. Default TTS: piper (Trump voice). Available providers: piper, edge, openai, elevenlabs, groq.",
+    "Send a voice message. Either provide voicePath for an existing file, or text for TTS generation. Uses the configured TTS provider and voice from settings. Available providers: piper, edge, openai, elevenlabs, groq.",
 
   parameters: Type.Object({
     chatId: Type.String({
@@ -57,13 +57,14 @@ export const telegramSendVoiceTool: Tool = {
     ),
     voice: Type.Optional(
       Type.String({
-        description: "TTS voice (e.g., 'en-us-male', 'fr-fr-female', or full voice name)",
+        description:
+          "TTS voice override. If omitted, uses the voice configured in settings. For Edge TTS: 'en-us-male', 'fr-fr-female', etc. For Groq: 'tara', 'leah', etc.",
       })
     ),
     ttsProvider: Type.Optional(
       Type.String({
         description:
-          "TTS provider: 'piper' (default, Trump voice), 'edge', 'openai', 'elevenlabs', or 'groq'",
+          "TTS provider override (uses configured default if omitted): 'piper', 'edge', 'openai', 'elevenlabs', or 'groq'",
         enum: ["piper", "edge", "openai", "elevenlabs", "groq"],
       })
     ),
@@ -153,31 +154,27 @@ export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
 
       const provider: TTSProvider = (ttsProvider as TTSProvider) ?? (groqApiKey ? "groq" : "piper");
 
-      // Resolve voice shorthand based on provider
-      let resolvedVoice = voice;
+      // Resolve voice: for Groq, the configured tts_voice always takes priority over
+      // any caller-supplied voice to ensure user settings are respected.
+      let resolvedVoice: string | undefined;
 
-      if (voice) {
+      if (provider === "groq" && groqConfig?.tts_voice) {
+        // Config voice wins for Groq — ensures user's voice setting is always honored
+        resolvedVoice = groqConfig.tts_voice;
+      } else if (voice) {
         if (provider === "groq") {
-          // Check Groq voices (case-insensitive)
+          // No config voice set — use caller-supplied voice (case-insensitive match)
           const groqVoiceMatch = (GROQ_TTS_VOICES as readonly string[]).find(
             (v) => v.toLowerCase() === voice.toLowerCase()
           );
-          if (groqVoiceMatch) {
-            resolvedVoice = groqVoiceMatch;
-          }
-          // else pass through as-is
+          resolvedVoice = groqVoiceMatch ?? voice;
         } else if (provider === "piper" && voice.toLowerCase() in PIPER_VOICES) {
-          // Check Piper voices first (if using piper or no provider specified)
           resolvedVoice = voice.toLowerCase();
         } else if (voice in EDGE_VOICES) {
-          // Then check Edge voices
           resolvedVoice = EDGE_VOICES[voice as keyof typeof EDGE_VOICES];
+        } else {
+          resolvedVoice = voice;
         }
-      }
-
-      // Use configured Groq voice if no explicit voice given and using Groq
-      if (!resolvedVoice && provider === "groq" && groqConfig?.tts_voice) {
-        resolvedVoice = groqConfig.tts_voice;
       }
 
       const ttsResult = await generateSpeech({
