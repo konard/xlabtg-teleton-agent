@@ -11,6 +11,7 @@ import {
   RATE_LIMIT_MAX_RETRIES,
   RATE_LIMIT_MAX_BACKOFF_MS,
   SERVER_ERROR_MAX_RETRIES,
+  NETWORK_ERROR_MAX_RETRIES,
   TOOL_CONCURRENCY_LIMIT,
   EMBEDDING_QUERY_MAX_CHARS,
 } from "../constants/limits.js";
@@ -70,6 +71,8 @@ import {
   isTrivialMessage,
   extractContextSummary,
   parseRetryAfterMs,
+  isNetworkError,
+  isNetworkErrorMessage,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -536,6 +539,7 @@ export class AgentRuntime {
       let overflowResets = 0;
       let rateLimitRetries = 0;
       let serverErrorRetries = 0;
+      let networkErrorRetries = 0;
       let finalResponse: ChatResponse | null = null;
       const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
       const accumulatedTexts: string[] = [];
@@ -567,13 +571,36 @@ export class AgentRuntime {
         });
         const maskedContext: Context = { ...context, messages: maskedMessages };
 
-        const response: ChatResponse = await chatWithContext(this.config.agent, {
-          systemPrompt,
-          context: maskedContext,
-          sessionId: session.sessionId,
-          persistTranscript: true,
-          tools,
-        });
+        let response: ChatResponse;
+        try {
+          response = await chatWithContext(this.config.agent, {
+            systemPrompt,
+            context: maskedContext,
+            sessionId: session.sessionId,
+            persistTranscript: true,
+            tools,
+          });
+        } catch (err) {
+          if (isNetworkError(err)) {
+            networkErrorRetries++;
+            if (networkErrorRetries <= NETWORK_ERROR_MAX_RETRIES) {
+              const delay = 2000 * Math.pow(2, networkErrorRetries - 1);
+              log.warn(
+                `🌐 Network error, retrying in ${delay}ms (attempt ${networkErrorRetries}/${NETWORK_ERROR_MAX_RETRIES})...`
+              );
+              await new Promise((r) => setTimeout(r, delay));
+              iteration--;
+              continue;
+            }
+            log.error(
+              `🌐 Network error after ${NETWORK_ERROR_MAX_RETRIES} retries: ${(err as Error).message}`
+            );
+            throw new Error(
+              `Network error after ${NETWORK_ERROR_MAX_RETRIES} retries. Please check your connection and try again.`
+            );
+          }
+          throw err;
+        }
 
         const assistantMsg = response.message;
         if (assistantMsg.stopReason === "error") {
@@ -597,7 +624,7 @@ export class AgentRuntime {
               errorCode,
               provider: provider,
               model: this.config.agent.model,
-              retryCount: rateLimitRetries + serverErrorRetries,
+              retryCount: rateLimitRetries + serverErrorRetries + networkErrorRetries,
               durationMs: Date.now() - processStartTime,
             };
             await this.hookRunner.runObservingHook("response:error", responseErrorEvent);
@@ -675,6 +702,21 @@ export class AgentRuntime {
             log.error(`🚨 Server error after ${SERVER_ERROR_MAX_RETRIES} retries: ${errorMsg}`);
             throw new Error(
               `API server error after ${SERVER_ERROR_MAX_RETRIES} retries. The provider may be experiencing issues.`
+            );
+          } else if (isNetworkErrorMessage(errorMsg)) {
+            networkErrorRetries++;
+            if (networkErrorRetries <= NETWORK_ERROR_MAX_RETRIES) {
+              const delay = 2000 * Math.pow(2, networkErrorRetries - 1);
+              log.warn(
+                `🌐 Network error, retrying in ${delay}ms (attempt ${networkErrorRetries}/${NETWORK_ERROR_MAX_RETRIES})...`
+              );
+              await new Promise((r) => setTimeout(r, delay));
+              iteration--;
+              continue;
+            }
+            log.error(`🌐 Network error after ${NETWORK_ERROR_MAX_RETRIES} retries: ${errorMsg}`);
+            throw new Error(
+              `Network error after ${NETWORK_ERROR_MAX_RETRIES} retries. Please check your connection and try again.`
             );
           } else {
             log.error(`🚨 API error: ${errorMsg}`);

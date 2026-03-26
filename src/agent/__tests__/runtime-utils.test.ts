@@ -3,6 +3,8 @@ import {
   isContextOverflowError,
   isTrivialMessage,
   parseRetryAfterMs,
+  isNetworkError,
+  isNetworkErrorMessage,
 } from "../../agent/runtime-utils.js";
 
 // ─── T10: isContextOverflowError ────────────────────────────────
@@ -208,5 +210,108 @@ describe("parseRetryAfterMs", () => {
 
   it("T12f: returns null for unrelated error messages", () => {
     expect(parseRetryAfterMs("Internal server error 500")).toBeNull();
+  });
+});
+
+// ─── T13: isNetworkError ─────────────────────────────────────────
+
+describe("isNetworkError", () => {
+  it("T13a: detects 'network_error' from provider library (e.g. Anthropic finish reason)", () => {
+    expect(isNetworkError(new Error("Unhandled stop reason: network_error"))).toBe(true);
+  });
+
+  it("T13b: detects 'network error' (with space)", () => {
+    expect(isNetworkError(new Error("API network error occurred"))).toBe(true);
+  });
+
+  it("T13c: detects ECONNRESET", () => {
+    expect(isNetworkError(new Error("read ECONNRESET"))).toBe(true);
+  });
+
+  it("T13d: detects ECONNREFUSED", () => {
+    expect(isNetworkError(new Error("connect ECONNREFUSED 127.0.0.1:443"))).toBe(true);
+  });
+
+  it("T13e: detects ETIMEDOUT", () => {
+    expect(isNetworkError(new Error("connect ETIMEDOUT 10.0.0.1:443"))).toBe(true);
+  });
+
+  it("T13f: detects 'fetch failed'", () => {
+    expect(isNetworkError(new Error("fetch failed"))).toBe(true);
+  });
+
+  it("T13g: detects 'Unhandled stop reason' (generic provider error)", () => {
+    expect(isNetworkError(new Error("Unhandled stop reason: connection_error"))).toBe(true);
+  });
+
+  it("T13h: case-insensitive matching", () => {
+    expect(isNetworkError(new Error("NETWORK_ERROR encountered"))).toBe(true);
+    expect(isNetworkError(new Error("Fetch Failed"))).toBe(true);
+  });
+
+  it("T13i: returns false for non-network errors", () => {
+    expect(isNetworkError(new Error("Rate limit exceeded"))).toBe(false);
+    expect(isNetworkError(new Error("Internal server error"))).toBe(false);
+    expect(isNetworkError(new Error("Invalid API key"))).toBe(false);
+    expect(isNetworkError(new Error("Context length exceeded"))).toBe(false);
+  });
+
+  it("T13j: returns false for non-Error values", () => {
+    expect(isNetworkError("network_error")).toBe(false);
+    expect(isNetworkError(null)).toBe(false);
+    expect(isNetworkError(undefined)).toBe(false);
+    expect(isNetworkError(42)).toBe(false);
+  });
+});
+
+// ─── T14: isNetworkErrorMessage ──────────────────────────────────
+
+describe("isNetworkErrorMessage", () => {
+  it("T14a: detects 'Provider finish_reason: network_error' (zai/openai-compat stopReason:error path)", () => {
+    expect(isNetworkErrorMessage("Provider finish_reason: network_error")).toBe(true);
+  });
+
+  it("T14b: detects plain 'network_error'", () => {
+    expect(isNetworkErrorMessage("network_error")).toBe(true);
+  });
+
+  it("T14c: detects 'network error' (with space)", () => {
+    expect(isNetworkErrorMessage("API network error occurred")).toBe(true);
+  });
+
+  it("T14d: detects ECONNRESET", () => {
+    expect(isNetworkErrorMessage("read ECONNRESET")).toBe(true);
+  });
+
+  it("T14e: detects ECONNREFUSED", () => {
+    expect(isNetworkErrorMessage("connect ECONNREFUSED 127.0.0.1:443")).toBe(true);
+  });
+
+  it("T14f: detects ETIMEDOUT", () => {
+    expect(isNetworkErrorMessage("connect ETIMEDOUT 10.0.0.1:443")).toBe(true);
+  });
+
+  it("T14g: detects 'fetch failed'", () => {
+    expect(isNetworkErrorMessage("fetch failed")).toBe(true);
+  });
+
+  it("T14h: detects 'Unhandled stop reason' (thrown by provider library)", () => {
+    expect(isNetworkErrorMessage("Unhandled stop reason: network_error")).toBe(true);
+  });
+
+  it("T14i: case-insensitive matching", () => {
+    expect(isNetworkErrorMessage("NETWORK_ERROR encountered")).toBe(true);
+    expect(isNetworkErrorMessage("Fetch Failed")).toBe(true);
+  });
+
+  it("T14j: returns false for non-network error messages", () => {
+    expect(isNetworkErrorMessage("Rate limit exceeded")).toBe(false);
+    expect(isNetworkErrorMessage("Internal server error")).toBe(false);
+    expect(isNetworkErrorMessage("Invalid API key")).toBe(false);
+    expect(isNetworkErrorMessage("Context length exceeded")).toBe(false);
+  });
+
+  it("T14k: returns false for empty string", () => {
+    expect(isNetworkErrorMessage("")).toBe(false);
   });
 });

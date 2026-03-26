@@ -24,6 +24,35 @@ export function parseRetryAfterMs(errorMessage: string): number | null {
   return match ? Number(match[1]) * 1000 : null;
 }
 
+/**
+ * Returns true for errors thrown by the provider library that indicate a
+ * transient network-level failure (e.g. "Unhandled stop reason: network_error").
+ * These are thrown as exceptions rather than returned as stopReason:"error" responses.
+ */
+export function isNetworkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return isNetworkErrorMessage(error.message);
+}
+
+/**
+ * Returns true if an error message string indicates a transient network-level
+ * failure. Used for both thrown exceptions (isNetworkError) and stopReason:"error"
+ * responses where errorMessage contains network error details (e.g. from the zai
+ * provider returning "Provider finish_reason: network_error").
+ */
+export function isNetworkErrorMessage(message: string): boolean {
+  const msg = message.toLowerCase();
+  return (
+    msg.includes("network_error") ||
+    msg.includes("network error") ||
+    msg.includes("econnreset") ||
+    msg.includes("econnrefused") ||
+    msg.includes("etimedout") ||
+    msg.includes("fetch failed") ||
+    msg.includes("unhandled stop reason")
+  );
+}
+
 export function isTrivialMessage(text: string): boolean {
   const stripped = text.trim();
   if (!stripped) return true;
