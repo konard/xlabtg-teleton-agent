@@ -13,14 +13,12 @@ const log = createLogger("GroqTTS");
 
 /** Available voices for Orpheus TTS English */
 export const GROQ_TTS_VOICES_ENGLISH = [
-  "tara",
-  "leah",
-  "jess",
-  "leo",
-  "dan",
-  "mia",
-  "zac",
-  "zoe",
+  "autumn",
+  "diana",
+  "hannah",
+  "austin",
+  "daniel",
+  "troy",
 ] as const;
 
 /** Available voices for Orpheus TTS Arabic */
@@ -58,7 +56,7 @@ export async function groqSpeak(text: string, options: GroqSpeechOptions): Promi
   const {
     apiKey,
     model = "canopylabs/orpheus-v1-english",
-    voice = "tara",
+    voice = "autumn",
     responseFormat = "mp3",
     speed,
   } = options;

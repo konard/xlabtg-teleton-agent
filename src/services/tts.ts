@@ -61,7 +61,7 @@ const DEFAULT_VOICES: Record<TTSProvider, string> = {
   edge: "en-US-BrianNeural", // Casual, sincere - fallback
   openai: "onyx", // Deep male voice
   elevenlabs: "21m00Tcm4TlvDq8ikWAM", // Rachel
-  groq: "tara", // Groq Orpheus default
+  groq: "autumn", // Groq Orpheus default
 };
 
 // Popular Edge TTS voices

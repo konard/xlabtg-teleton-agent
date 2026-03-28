@@ -300,7 +300,7 @@ export function createGroqRoutes(deps: WebUIServerDeps) {
       const audioBuffer = await groqSpeak(body.text, {
         apiKey,
         model: body.model || "canopylabs/orpheus-v1-english",
-        voice: body.voice || "tara",
+        voice: body.voice || "autumn",
         responseFormat: (body.responseFormat as "mp3") || "mp3",
         speed: body.speed,
       });

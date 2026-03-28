@@ -58,7 +58,7 @@ export const telegramSendVoiceTool: Tool = {
     voice: Type.Optional(
       Type.String({
         description:
-          "TTS voice override. If omitted, uses the voice configured in settings. For Edge TTS: 'en-us-male', 'fr-fr-female', etc. For Groq: 'tara', 'leah', etc.",
+          "TTS voice override. If omitted, uses the voice configured in settings. For Edge TTS: 'en-us-male', 'fr-fr-female', etc. For Groq: 'autumn', 'diana', 'hannah', 'austin', 'daniel', 'troy'.",
       })
     ),
     ttsProvider: Type.Optional(
