@@ -791,7 +791,8 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     type: "string",
     category: "Agent",
     label: "Groq TTS Voice",
-    description: "Voice name for Groq Orpheus TTS (e.g. tara, leah, jess, leo)",
+    description:
+      "Voice name for Groq Orpheus TTS (e.g. autumn, diana, hannah, austin, daniel, troy)",
     sensitive: false,
     hotReload: "instant",
     validate: noValidation,

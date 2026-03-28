@@ -39,7 +39,7 @@ function makeContext(groqApiKey?: string): ToolContext {
             api_key: groqApiKey,
             stt_model: "whisper-large-v3-turbo",
             tts_model: "canopylabs/orpheus-v1-english",
-            tts_voice: "tara",
+            tts_voice: "autumn",
             tts_format: "mp3",
             tts_mode: "voice_calls_only",
             rate_limit_mode: "auto",
@@ -111,7 +111,7 @@ describe("telegramTranscribeAudioExecutor", () => {
           groq: {
             stt_model: "whisper-large-v3-turbo",
             tts_model: "canopylabs/orpheus-v1-english",
-            tts_voice: "tara",
+            tts_voice: "autumn",
             tts_format: "mp3",
             tts_mode: "voice_calls_only",
             rate_limit_mode: "auto",

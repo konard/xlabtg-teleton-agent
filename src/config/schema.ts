@@ -440,8 +440,8 @@ export const ConfigSchema = z.object({
         ),
       tts_voice: z
         .string()
-        .default("tara")
-        .describe("Groq TTS voice name (e.g. tara, leah, jess, leo)"),
+        .default("autumn")
+        .describe("Groq TTS voice name (e.g. autumn, diana, hannah, austin, daniel, troy)"),
       tts_format: z
         .enum(["mp3", "opus", "aac", "flac", "wav", "pcm"])
         .default("mp3")
