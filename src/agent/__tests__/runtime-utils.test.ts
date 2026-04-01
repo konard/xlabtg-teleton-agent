@@ -408,3 +408,95 @@ describe("AgentConfigSchema max_rag_chars", () => {
     expect(result.success).toBe(false);
   });
 });
+
+// ─── T17: Empty-response fallback condition ordering (issue #133) ────────────
+//
+// Replicates the condition logic from runtime.ts to verify correct precedence:
+//   1. Zero-tokens first  → API-level failure, tools may not have run
+//   2. Telegram send tool → silent success, no text needed
+//   3. Tools ran but no text → LLM didn't generate a summary (most common issue)
+//
+// Previously, condition 3 was first, making condition 1 unreachable when
+// totalToolCalls.length > 0.
+
+function classifyEmptyResponse(opts: {
+  content: string;
+  totalToolCalls: string[];
+  usedTelegramSendTool: boolean;
+  inputTokens: number;
+  outputTokens: number;
+}): string {
+  const { content, totalToolCalls, usedTelegramSendTool, inputTokens, outputTokens } = opts;
+  if (!content && inputTokens === 0 && outputTokens === 0) {
+    return "zero-tokens";
+  } else if (!content && usedTelegramSendTool) {
+    return "telegram-sent";
+  } else if (!content && totalToolCalls.length > 0) {
+    return "empty-after-tools";
+  }
+  return "has-content";
+}
+
+describe("Empty-response fallback condition ordering (issue #133)", () => {
+  it("T17a: zero-token case is classified correctly even when tool calls present", () => {
+    const result = classifyEmptyResponse({
+      content: "",
+      totalToolCalls: ["ton_trading_get_portfolio"],
+      usedTelegramSendTool: false,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect(result).toBe("zero-tokens");
+  });
+
+  it("T17b: telegram-send case is classified correctly (content empty, no text needed)", () => {
+    const result = classifyEmptyResponse({
+      content: "",
+      totalToolCalls: ["telegram_send_message"],
+      usedTelegramSendTool: true,
+      inputTokens: 1000,
+      outputTokens: 50,
+    });
+    expect(result).toBe("telegram-sent");
+  });
+
+  it("T17c: tools ran with tokens consumed but LLM returned no text → empty-after-tools", () => {
+    // This is the primary scenario from issue #133:
+    // tools executed (✓ in logs), tokens consumed (145.1K in, 980 out), but content is empty
+    const result = classifyEmptyResponse({
+      content: "",
+      totalToolCalls: [
+        "ton_trading_get_portfolio",
+        "ton_trading_get_arbitrage_opportunities",
+        "ton_trading_validate_token",
+        "ton_trading_calculate_risk_metrics",
+      ],
+      usedTelegramSendTool: false,
+      inputTokens: 145100,
+      outputTokens: 980,
+    });
+    expect(result).toBe("empty-after-tools");
+  });
+
+  it("T17d: non-empty content passes through without fallback", () => {
+    const result = classifyEmptyResponse({
+      content: "Your portfolio contains 3 tokens.",
+      totalToolCalls: ["ton_trading_get_portfolio"],
+      usedTelegramSendTool: false,
+      inputTokens: 5000,
+      outputTokens: 20,
+    });
+    expect(result).toBe("has-content");
+  });
+
+  it("T17e: zero tokens with no tool calls → zero-tokens (API issue, not tool failure)", () => {
+    const result = classifyEmptyResponse({
+      content: "",
+      totalToolCalls: [],
+      usedTelegramSendTool: false,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+    expect(result).toBe("zero-tokens");
+  });
+});
