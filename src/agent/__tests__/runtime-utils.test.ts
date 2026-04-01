@@ -500,3 +500,92 @@ describe("Empty-response fallback condition ordering (issue #133)", () => {
     expect(result).toBe("zero-tokens");
   });
 });
+
+// ─── T18: generateToolSummary fallback (issue #135) ──────────────────────────
+//
+// Replicates the generateToolSummary() logic from runtime.ts to verify
+// that complex tool chain empty-response fallback produces meaningful output
+// instead of a generic "couldn't generate a response" message.
+
+function generateToolSummary(
+  results: Array<{ toolName: string; result: { success: boolean; data?: unknown; error?: string } }>
+): string {
+  const successes = results.filter((r) => r.result.success);
+  const failures = results.filter((r) => !r.result.success);
+
+  if (failures.length === 0) {
+    const names = successes.map((r) => r.toolName).join(", ");
+    return `✅ Completed ${successes.length} operation${successes.length !== 1 ? "s" : ""} (${names}).`;
+  } else if (successes.length === 0) {
+    const errors = failures
+      .map((r) => `${r.toolName}: ${r.result.error || "unknown error"}`)
+      .join("; ");
+    return `⚠️ ${failures.length} operation${failures.length !== 1 ? "s" : ""} failed: ${errors}`;
+  } else {
+    const errorDetails = failures
+      .map((r) => `${r.toolName}: ${r.result.error || "unknown error"}`)
+      .join("; ");
+    return (
+      `✅ ${successes.length} succeeded, ⚠️ ${failures.length} failed. ` + `Errors: ${errorDetails}`
+    );
+  }
+}
+
+describe("generateToolSummary fallback (issue #135)", () => {
+  it("T18a: all tools succeed → lists tool names with checkmark", () => {
+    const result = generateToolSummary([
+      { toolName: "ton_trading_get_portfolio", result: { success: true } },
+      { toolName: "ton_trading_get_arbitrage_opportunities", result: { success: true } },
+      { toolName: "ton_trading_validate_token", result: { success: true } },
+      { toolName: "ton_trading_calculate_risk_metrics", result: { success: true } },
+    ]);
+    expect(result).toContain("✅");
+    expect(result).toContain("4 operations");
+    expect(result).toContain("ton_trading_get_portfolio");
+    expect(result).toContain("ton_trading_calculate_risk_metrics");
+  });
+
+  it("T18b: all tools fail → reports errors with tool names", () => {
+    const result = generateToolSummary([
+      {
+        toolName: "tonapi_account_jettons",
+        result: { success: false, error: "API key invalid" },
+      },
+      {
+        toolName: "ton_trading_simulate_trade",
+        result: { success: false, error: "Insufficient balance" },
+      },
+    ]);
+    expect(result).toContain("⚠️");
+    expect(result).toContain("2 operations failed");
+    expect(result).toContain("API key invalid");
+    expect(result).toContain("Insufficient balance");
+  });
+
+  it("T18c: mixed results → reports both successes and failures", () => {
+    const result = generateToolSummary([
+      { toolName: "ton_trading_get_portfolio", result: { success: true } },
+      { toolName: "ton_trading_validate_token", result: { success: true } },
+      {
+        toolName: "ton_trading_simulate_trade",
+        result: { success: false, error: "Slippage too high" },
+      },
+    ]);
+    expect(result).toContain("✅ 2 succeeded");
+    expect(result).toContain("⚠️ 1 failed");
+    expect(result).toContain("Slippage too high");
+  });
+
+  it("T18d: single successful tool → singular 'operation' (not 'operations')", () => {
+    const result = generateToolSummary([{ toolName: "ton_price", result: { success: true } }]);
+    expect(result).toContain("1 operation");
+    expect(result).not.toContain("1 operations");
+  });
+
+  it("T18e: failure with no error message → shows 'unknown error'", () => {
+    const result = generateToolSummary([
+      { toolName: "ton_trading_validate_token", result: { success: false } },
+    ]);
+    expect(result).toContain("unknown error");
+  });
+});

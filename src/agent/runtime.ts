@@ -110,6 +110,34 @@ export interface AgentResponse {
   }>;
 }
 
+/**
+ * Generate a human-readable summary from tool execution results.
+ * Used as a fallback when the LLM returns no text after tool calls.
+ */
+function generateToolSummary(
+  results: Array<{ toolName: string; result: { success: boolean; data?: unknown; error?: string } }>
+): string {
+  const successes = results.filter((r) => r.result.success);
+  const failures = results.filter((r) => !r.result.success);
+
+  if (failures.length === 0) {
+    const names = successes.map((r) => r.toolName).join(", ");
+    return `✅ Completed ${successes.length} operation${successes.length !== 1 ? "s" : ""} (${names}).`;
+  } else if (successes.length === 0) {
+    const errors = failures
+      .map((r) => `${r.toolName}: ${r.result.error || "unknown error"}`)
+      .join("; ");
+    return `⚠️ ${failures.length} operation${failures.length !== 1 ? "s" : ""} failed: ${errors}`;
+  } else {
+    const errorDetails = failures
+      .map((r) => `${r.toolName}: ${r.result.error || "unknown error"}`)
+      .join("; ");
+    return (
+      `✅ ${successes.length} succeeded, ⚠️ ${failures.length} failed. ` + `Errors: ${errorDetails}`
+    );
+  }
+}
+
 /** Compact summary of tool params for the iteration log line. */
 function summarizeToolParams(toolName: string, params: Record<string, unknown>): string {
   const MAX = 60;
@@ -552,6 +580,10 @@ export class AgentRuntime {
       let networkErrorRetries = 0;
       let finalResponse: ChatResponse | null = null;
       const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
+      const allToolExecResults: Array<{
+        toolName: string;
+        result: { success: boolean; data?: unknown; error?: string };
+      }> = [];
       const accumulatedTexts: string[] = [];
       const accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalCost: 0 };
       const seenToolSignatures = new Set<string>();
@@ -581,10 +613,26 @@ export class AgentRuntime {
         });
         const maskedContext: Context = { ...context, messages: maskedMessages };
 
+        // For complex tool chains (4+ calls accumulated so far), reinforce the
+        // "always respond with text" instruction in the system prompt, since LLMs
+        // tend to skip text generation when the context is large and tools succeeded.
+        let effectiveSystemPrompt = systemPrompt;
+        if (totalToolCalls.length >= 4) {
+          effectiveSystemPrompt +=
+            "\n\n⚠️ IMPORTANT: You MUST generate a human-readable summary now. " +
+            "After all tool executions, always respond with: " +
+            "1) Brief confirmation of what was completed, " +
+            "2) Key results in plain language, " +
+            "3) Any next steps or questions for the user. Never return empty content.";
+          log.debug(
+            `🔧 Injecting response reinforcement (${totalToolCalls.length} tool calls so far)`
+          );
+        }
+
         let response: ChatResponse;
         try {
           response = await chatWithContext(this.config.agent, {
-            systemPrompt,
+            systemPrompt: effectiveSystemPrompt,
             context: maskedContext,
             sessionId: session.sessionId,
             persistTranscript: true,
@@ -906,6 +954,7 @@ export class AgentRuntime {
             name: block.name,
             input: block.arguments,
           });
+          allToolExecResults.push({ toolName: block.name, result: exec.result });
 
           const resultText = truncateToolResult(exec.result, MAX_TOOL_RESULT_SIZE);
           if (resultText.includes('"_truncated":true')) {
@@ -1029,8 +1078,8 @@ export class AgentRuntime {
         content = "";
       } else if (!content && totalToolCalls.length > 0) {
         log.warn("⚠️ Empty response after tool calls - generating fallback");
-        content =
-          "I executed the requested action but couldn't generate a response. Please try again.";
+        content = generateToolSummary(allToolExecResults);
+        log.info(`✅ Generated fallback summary from ${allToolExecResults.length} tool result(s)`);
       }
 
       // Hook: response:before — plugins can mutate or block the response text
