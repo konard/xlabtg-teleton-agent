@@ -171,6 +171,27 @@ describe("DEFAULT_SOUL / loadSoul()", () => {
   });
 });
 
+// ── Response Format — tool-call instruction (issue #133) ────────────────────
+
+describe("buildSystemPrompt() Response Format section — tool call instruction", () => {
+  // Scenario 24: Verifies the fix for issue #133 — LLM must always respond after tool calls
+  it('includes "After tool calls" instruction in Response Format', () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toContain("After tool calls");
+    expect(prompt).toContain("human-readable response");
+  });
+
+  // Scenario 25: Instruction must be present in the Response Format section (not elsewhere)
+  it('"After tool calls" instruction appears within "## Response Format" block', () => {
+    const prompt = buildSystemPrompt({});
+    const formatStart = prompt.indexOf("## Response Format");
+    const formatEnd = prompt.indexOf("\n##", formatStart + 1);
+    const formatSection =
+      formatEnd > 0 ? prompt.slice(formatStart, formatEnd) : prompt.slice(formatStart);
+    expect(formatSection).toContain("After tool calls");
+  });
+});
+
 // ── loadHeartbeat() ─────────────────────────────────────────────────────────
 
 describe("loadHeartbeat()", () => {

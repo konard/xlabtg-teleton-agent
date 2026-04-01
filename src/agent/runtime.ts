@@ -1021,16 +1021,16 @@ export class AgentRuntime {
 
       const usedTelegramSendTool = totalToolCalls.some((tc) => TELEGRAM_SEND_TOOLS.has(tc.name));
 
-      if (!content && totalToolCalls.length > 0 && !usedTelegramSendTool) {
-        log.warn("⚠️ Empty response after tool calls - generating fallback");
-        content =
-          "I executed the requested action but couldn't generate a response. Please try again.";
+      if (!content && accumulatedUsage.input === 0 && accumulatedUsage.output === 0) {
+        log.warn("⚠️ Empty response with zero tokens - possible API issue");
+        content = "I couldn't process your request. Please try again.";
       } else if (!content && usedTelegramSendTool) {
         log.info("✅ Response sent via Telegram tool - no additional text needed");
         content = "";
-      } else if (!content && accumulatedUsage.input === 0 && accumulatedUsage.output === 0) {
-        log.warn("⚠️ Empty response with zero tokens - possible API issue");
-        content = "I couldn't process your request. Please try again.";
+      } else if (!content && totalToolCalls.length > 0) {
+        log.warn("⚠️ Empty response after tool calls - generating fallback");
+        content =
+          "I executed the requested action but couldn't generate a response. Please try again.";
       }
 
       // Hook: response:before — plugins can mutate or block the response text

@@ -199,6 +199,7 @@ You have a personal workspace at \`~/.teleton/workspace/\` where you can store a
 - Use markdown sparingly (bold, italic, code blocks)
 - Don't use headers in short responses
 - NEVER use ASCII art or ASCII tables - they render poorly on mobile
+- **After tool calls**: Always formulate a human-readable response based on the tool results, even if the result is brief (e.g. "Done.", "Your balance is X.", "No results found."). Never return empty content after executing tools.
 `);
 
   if (options.ownerName || options.ownerUsername) {
