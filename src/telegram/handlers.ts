@@ -16,6 +16,8 @@ import { createLogger } from "../utils/logger.js";
 import { groqTranscribe } from "../providers/groq/GroqSTTProvider.js";
 import { generateSpeech } from "../services/tts.js";
 import { unlinkSync } from "fs";
+import { splitMessageForTelegram } from "./message-splitter.js";
+import { sanitizeMarkdownForTelegram } from "./sanitize-markdown.js";
 
 const log = createLogger("Telegram");
 import type { PluginMessageEvent } from "@teleton-agent/sdk";
@@ -493,12 +495,17 @@ export class MessageHandler {
             response.content &&
             response.content.trim().length > 0
           ) {
-            // Agent returned text but didn't use the send tool - send it manually
-            let responseText = response.content;
+            // Agent returned text but didn't use the send tool - send it manually.
+            // Sanitize markdown (fix unclosed fences, remove empty code blocks) then
+            // split into Telegram-safe parts (≤ max_message_length chars each).
+            const sanitized = sanitizeMarkdownForTelegram(response.content);
+            const parts = splitMessageForTelegram(sanitized, this.config.max_message_length);
+            const totalParts = parts.length;
 
-            // Truncate if needed
-            if (responseText.length > this.config.max_message_length) {
-              responseText = responseText.slice(0, this.config.max_message_length - 3) + "...";
+            if (totalParts > 1) {
+              log.info(
+                `Response split into ${totalParts} parts for chat ${message.chatId} (original length: ${response.content.length})`
+              );
             }
 
             // Check if Groq TTS mode requires a voice response
@@ -515,15 +522,15 @@ export class MessageHandler {
               ttsMode !== "use_primary_text" &&
               (ttsMode === "always" || (ttsMode === "voice_calls_only" && isVoiceMessage));
 
-            let sentMessageId = 0;
-            let sentMessageDate = Math.floor(Date.now() / 1000);
-
+            // For voice TTS we send the full (first-part) text as audio; text fallback
+            // still benefits from splitting below.
+            let voiceSentForFirst = false;
             if (shouldSendVoice) {
+              const firstPart = parts[0];
               let ttsFilePath: string | undefined;
-              let voiceSent = false;
               try {
                 const ttsResult = await generateSpeech({
-                  text: responseText,
+                  text: firstPart,
                   provider: "groq",
                   voice: groqConfig?.tts_voice,
                   groqApiKey,
@@ -540,10 +547,25 @@ export class MessageHandler {
                   replyTo: message.id,
                   attributes: [new Api.DocumentAttributeAudio({ voice: true, duration: 0 })],
                 });
-                sentMessageId = voiceMsg.id ?? message.id + 1;
-                sentMessageDate = voiceMsg.date ?? Math.floor(Date.now() / 1000);
-                voiceSent = true;
                 log.info(`🎙️ Groq TTS voice reply sent for chat ${message.chatId}`);
+                voiceSentForFirst = true;
+
+                // Store the first part in feed using voice message id
+                await this.storeTelegramMessage(
+                  {
+                    id: voiceMsg.id ?? message.id + 1,
+                    chatId: message.chatId,
+                    senderId: this.ownUserId ? parseInt(this.ownUserId) : 0,
+                    text: firstPart,
+                    isGroup: message.isGroup,
+                    isChannel: message.isChannel,
+                    isBot: false,
+                    mentionsMe: false,
+                    timestamp: new Date((voiceMsg.date ?? Math.floor(Date.now() / 1000)) * 1000),
+                    hasMedia: false,
+                  },
+                  true
+                );
               } catch (err) {
                 log.warn({ err }, "Groq TTS voice reply failed, falling back to text");
               } finally {
@@ -555,43 +577,40 @@ export class MessageHandler {
                   }
                 }
               }
-
-              if (!voiceSent) {
-                // Fall back to text message
-                const sentMessage = await this.bridge.sendMessage({
-                  chatId: message.chatId,
-                  text: responseText,
-                  replyToId: message.id,
-                });
-                sentMessageId = sentMessage.id;
-                sentMessageDate = sentMessage.date;
-              }
-            } else {
-              const sentMessage = await this.bridge.sendMessage({
-                chatId: message.chatId,
-                text: responseText,
-                replyToId: message.id,
-              });
-              sentMessageId = sentMessage.id;
-              sentMessageDate = sentMessage.date;
             }
 
-            // Store agent's response to feed
-            await this.storeTelegramMessage(
-              {
-                id: sentMessageId,
+            // Send remaining parts (or all parts if voice was not used / failed).
+            // Note: bridge.sendMessage → TelegramUserClient.sendMessage applies
+            // markdownToTelegramHtml internally (parseMode defaults to "html"),
+            // so we pass the sanitized markdown as-is.
+            const startIndex = voiceSentForFirst ? 1 : 0;
+            for (let i = startIndex; i < parts.length; i++) {
+              const part = parts[i];
+              const replyToId = i === 0 ? message.id : undefined;
+
+              const sentMessage = await this.bridge.sendMessage({
                 chatId: message.chatId,
-                senderId: this.ownUserId ? parseInt(this.ownUserId) : 0,
-                text: responseText,
-                isGroup: message.isGroup,
-                isChannel: message.isChannel,
-                isBot: false,
-                mentionsMe: false,
-                timestamp: new Date(sentMessageDate * 1000),
-                hasMedia: false,
-              },
-              true
-            );
+                text: part,
+                replyToId,
+              });
+
+              // Store each part in the feed
+              await this.storeTelegramMessage(
+                {
+                  id: sentMessage.id,
+                  chatId: message.chatId,
+                  senderId: this.ownUserId ? parseInt(this.ownUserId) : 0,
+                  text: part,
+                  isGroup: message.isGroup,
+                  isChannel: message.isChannel,
+                  isBot: false,
+                  mentionsMe: false,
+                  timestamp: new Date(sentMessage.date * 1000),
+                  hasMedia: false,
+                },
+                true
+              );
+            }
           }
 
           // 9. Clear pending history after responding (for groups)
