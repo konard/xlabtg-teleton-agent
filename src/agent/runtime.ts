@@ -479,6 +479,17 @@ export class AgentRuntime {
         .join("\n\n");
       const finalContext = additionalContext + (allHookContext ? `\n\n${allHookContext}` : "");
 
+      // Determine if the sender is the owner to protect private data in group chats.
+      // owner_id takes precedence; admin_ids is used as fallback when owner_id is absent.
+      const ownerId = this.config.telegram.owner_id;
+      const senderIdNum = toolContext?.senderId;
+      const isOwner =
+        ownerId !== undefined
+          ? senderIdNum === ownerId
+          : senderIdNum !== undefined && this.config.telegram.admin_ids.includes(senderIdNum);
+
+      const chatType: "private" | "group" | "channel" = effectiveIsGroup ? "group" : "private";
+
       const systemPrompt = buildSystemPrompt({
         soul: this.soul,
         userName,
@@ -489,6 +500,9 @@ export class AgentRuntime {
         context: finalContext,
         includeMemory: !effectiveIsGroup,
         includeStrategy: !effectiveIsGroup,
+        includeOwnerPersonalFiles: isOwner,
+        chatType,
+        isOwner,
         memoryFlushWarning: needsMemoryFlush,
         isHeartbeat,
         agentModel: this.config.agent.model,
