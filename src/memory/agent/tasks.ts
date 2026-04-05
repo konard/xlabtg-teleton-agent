@@ -19,6 +19,7 @@ export interface Task {
   payload?: string;
   reason?: string;
   scheduledMessageId?: number;
+  repeatIntervalSeconds?: number;
 }
 
 export class TaskStore {
@@ -33,6 +34,7 @@ export class TaskStore {
     reason?: string;
     scheduledMessageId?: number;
     dependsOn?: string[];
+    repeatIntervalSeconds?: number;
   }): Task {
     const id = randomUUID();
     const now = Math.floor(Date.now() / 1000);
@@ -40,8 +42,8 @@ export class TaskStore {
     this.db
       .prepare(
         `
-      INSERT INTO tasks (id, description, status, priority, created_by, created_at, scheduled_for, payload, reason, scheduled_message_id)
-      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, description, status, priority, created_by, created_at, scheduled_for, payload, reason, scheduled_message_id, repeat_interval_seconds)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?)
     `
       )
       .run(
@@ -53,7 +55,8 @@ export class TaskStore {
         task.scheduledFor ? Math.floor(task.scheduledFor.getTime() / 1000) : null,
         task.payload ?? null,
         task.reason ?? null,
-        task.scheduledMessageId ?? null
+        task.scheduledMessageId ?? null,
+        task.repeatIntervalSeconds ?? null
       );
 
     if (task.dependsOn && task.dependsOn.length > 0) {
@@ -73,6 +76,7 @@ export class TaskStore {
       payload: task.payload,
       reason: task.reason,
       scheduledMessageId: task.scheduledMessageId,
+      repeatIntervalSeconds: task.repeatIntervalSeconds,
     };
   }
 
@@ -172,6 +176,7 @@ export class TaskStore {
       payload: row.payload ?? undefined,
       reason: row.reason ?? undefined,
       scheduledMessageId: row.scheduled_message_id ?? undefined,
+      repeatIntervalSeconds: row.repeat_interval_seconds ?? undefined,
     };
   }
 
@@ -208,6 +213,7 @@ export class TaskStore {
       payload: row.payload ?? undefined,
       reason: row.reason ?? undefined,
       scheduledMessageId: row.scheduled_message_id ?? undefined,
+      repeatIntervalSeconds: row.repeat_interval_seconds ?? undefined,
     }));
   }
 
@@ -237,6 +243,7 @@ export class TaskStore {
       payload: row.payload ?? undefined,
       reason: row.reason ?? undefined,
       scheduledMessageId: row.scheduled_message_id ?? undefined,
+      repeatIntervalSeconds: row.repeat_interval_seconds ?? undefined,
     }));
   }
 

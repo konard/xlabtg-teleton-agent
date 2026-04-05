@@ -67,6 +67,7 @@ export const telegramGetTaskExecutor: ToolExecutor<GetTaskParams> = async (
       result: task.result ?? null,
       error: task.error ?? null,
       scheduledMessageId: task.scheduledMessageId ?? null,
+      repeatIntervalSeconds: task.repeatIntervalSeconds ?? null,
       dependencies: taskStore.getDependencies(task.id),
       dependents: taskStore.getDependents(task.id),
       parentResults: taskStore.getParentResults(task.id),
