@@ -1019,12 +1019,16 @@ export interface TonSDK {
    * @param opts — Optional body, bounce, stateInit, sendMode
    * @throws {PluginSDKError} WALLET_NOT_INITIALIZED, INVALID_ADDRESS, OPERATION_FAILED
    */
-  send(to: string, value: number, opts?: {
-    body?: Cell | string;
-    bounce?: boolean;
-    stateInit?: { code: Cell; data: Cell };
-    sendMode?: number;
-  }): Promise<TonTransferResult>;
+  send(
+    to: string,
+    value: number,
+    opts?: {
+      body?: Cell | string;
+      bounce?: boolean;
+      stateInit?: { code: Cell; data: Cell };
+      sendMode?: number;
+    }
+  ): Promise<TonTransferResult>;
 
   /**
    * Send multiple messages in a single wallet transfer.
@@ -2055,6 +2059,10 @@ export interface InlineQueryContext {
   userId: number;
   /** Pagination offset */
   offset: string;
+  /** Chat type where the inline query was sent ("sender", "private", "group", "supergroup", "channel") */
+  chatType?: string;
+  /** Full user object who triggered the query */
+  from: TelegramUser;
 }
 
 /** Context passed to callback query handlers */
