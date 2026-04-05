@@ -157,8 +157,10 @@ describe("TaskStore recurrence fields", () => {
 
     const loaded = store.getTask(task.id);
     expect(loaded?.recurrenceInterval).toBe(3600);
-    // Allow 1s tolerance for timestamp rounding
-    expect(loaded?.recurrenceUntil?.getTime()).toBeCloseTo(until.getTime(), -3);
+    // Allow 2s tolerance for timestamp rounding (stored as Unix seconds, so precision is 1s)
+    expect(Math.abs((loaded?.recurrenceUntil?.getTime() ?? 0) - until.getTime())).toBeLessThan(
+      2000
+    );
   });
 
   it("returns undefined recurrenceInterval when not set", () => {
