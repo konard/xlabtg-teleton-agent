@@ -367,6 +367,16 @@ export class AgentRuntime {
       let queryEmbedding: number[] | undefined;
       const isNonTrivial = !isTrivialMessage(effectiveMessage);
 
+      // Determine if the sender is the owner to protect private data.
+      // owner_id takes precedence; admin_ids is used as fallback when owner_id is absent.
+      // Computed early so it can be used to gate RAG context access.
+      const ownerId = this.config.telegram.owner_id;
+      const senderIdNum = toolContext?.senderId;
+      const isOwner =
+        ownerId !== undefined
+          ? senderIdNum === ownerId
+          : senderIdNum !== undefined && this.config.telegram.admin_ids.includes(senderIdNum);
+
       // Start embedding computation concurrently
       const embeddingPromise = (async () => {
         if (!this.embedder || !isNonTrivial) return;
@@ -399,8 +409,8 @@ export class AgentRuntime {
           const dbContext = await this.contextBuilder.buildContext({
             query: effectiveMessage,
             chatId,
-            includeAgentMemory: true,
-            includeFeedHistory: true,
+            includeAgentMemory: isOwner,
+            includeFeedHistory: isOwner,
             searchAllChats: !isGroup,
             maxRecentMessages: CONTEXT_MAX_RECENT_MESSAGES,
             maxRelevantChunks: CONTEXT_MAX_RELEVANT_CHUNKS,
@@ -478,15 +488,6 @@ export class AgentRuntime {
         .filter(Boolean)
         .join("\n\n");
       const finalContext = additionalContext + (allHookContext ? `\n\n${allHookContext}` : "");
-
-      // Determine if the sender is the owner to protect private data in group chats.
-      // owner_id takes precedence; admin_ids is used as fallback when owner_id is absent.
-      const ownerId = this.config.telegram.owner_id;
-      const senderIdNum = toolContext?.senderId;
-      const isOwner =
-        ownerId !== undefined
-          ? senderIdNum === ownerId
-          : senderIdNum !== undefined && this.config.telegram.admin_ids.includes(senderIdNum);
 
       const chatType: "private" | "group" | "channel" = effectiveIsGroup ? "group" : "private";
 

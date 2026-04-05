@@ -100,10 +100,11 @@ interface CreateScheduledTaskParams {
 export const telegramCreateScheduledTaskTool: Tool = {
   name: "telegram_create_scheduled_task",
   description:
-    "Schedule a task for future execution. Stores in DB and schedules a reminder in Saved Messages. Supports tool_call, agent_task payloads, or simple reminders. Can depend on other tasks.",
+    "Schedule a task for future automatic execution — use this to automate function calls, trading operations, or multi-step workflows at a specific time. Stores in DB and schedules a reminder in Saved Messages. Unlike telegram_schedule_message (text-only), this tool actually executes other tools and agent instructions automatically. Supports tool_call (auto-execute a single tool), agent_task (multi-step instructions executed by the agent), or simple reminders. Tasks can depend on other tasks, forming automated pipelines.",
   parameters: Type.Object({
     description: Type.String({
-      description: "What the task is about (e.g., 'Check TON price and alert if > $5')",
+      description:
+        "What the task is about (e.g., 'Run trade simulation and send results report at 19:15')",
     }),
     scheduleDate: Type.Optional(
       Type.String({
@@ -113,13 +114,13 @@ export const telegramCreateScheduledTaskTool: Tool = {
     ),
     payload: Type.Optional(
       Type.String({
-        description: `JSON payload defining task execution. Two types:
+        description: `JSON payload defining what to execute automatically. Two types:
 
 1. Simple tool call (auto-executed, result fed to you):
    {"type":"tool_call","tool":"ton_get_price","params":{},"condition":"price > 5"}
 
-2. Complex agent task (you execute step-by-step):
-   {"type":"agent_task","instructions":"1. Check price\\n2. If > $5, swap 50 TON","context":{"chatId":"123"}}
+2. Complex agent task — multi-step instructions the agent executes (e.g., trading automation):
+   {"type":"agent_task","instructions":"1. Run trade simulation\\n2. Check journal for results\\n3. Send report via telegram_send_message","context":{"chatId":"123"}}
 
 3. Skip on parent failure (continues even if parent fails):
    {"type":"agent_task","instructions":"Send daily report","skipOnParentFailure":false}
