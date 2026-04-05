@@ -192,6 +192,106 @@ describe("buildSystemPrompt() Response Format section — tool call instruction"
   });
 });
 
+// ── Sender Context + owner privacy (issue #148) ─────────────────────────────
+
+describe("buildSystemPrompt() sender context and owner privacy", () => {
+  it("includes Sender Context section when senderId is provided", () => {
+    const prompt = buildSystemPrompt({ senderId: 12345 });
+    expect(prompt).toContain("## Sender Context");
+    expect(prompt).toContain("Sender ID: 12345");
+  });
+
+  it("includes Sender Context section when chatType is provided", () => {
+    const prompt = buildSystemPrompt({ chatType: "group" });
+    expect(prompt).toContain("## Sender Context");
+    expect(prompt).toContain("Chat Type: group");
+  });
+
+  it("does NOT include Sender Context when neither senderId nor chatType is provided", () => {
+    const prompt = buildSystemPrompt({});
+    expect(prompt).not.toContain("## Sender Context");
+  });
+
+  it('shows "Is Owner: true" when isOwner is true', () => {
+    const prompt = buildSystemPrompt({ senderId: 42, isOwner: true });
+    expect(prompt).toContain("Is Owner: true");
+  });
+
+  it('shows "Is Owner: false" when isOwner is false', () => {
+    const prompt = buildSystemPrompt({ senderId: 42, isOwner: false });
+    expect(prompt).toContain("Is Owner: false");
+  });
+
+  it("includes Identity section content when includeOwnerPersonalFiles is true and file exists", () => {
+    mockExistsSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.IDENTITY ? true : false
+    );
+    mockReadFileSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.IDENTITY ? "Owner identity data" : ""
+    );
+
+    const prompt = buildSystemPrompt({ includeOwnerPersonalFiles: true });
+    expect(prompt).toContain("[sanitized]Owner identity data");
+  });
+
+  it("excludes Identity file content when includeOwnerPersonalFiles is false", () => {
+    mockExistsSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.IDENTITY ? true : false
+    );
+    mockReadFileSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.IDENTITY ? "Owner identity data" : ""
+    );
+
+    const prompt = buildSystemPrompt({ includeOwnerPersonalFiles: false });
+    // The identity FILE content should not appear in the prompt
+    expect(prompt).not.toContain("[sanitized]Owner identity data");
+  });
+
+  it("includes User Profile section content when includeOwnerPersonalFiles is true and file exists", () => {
+    mockExistsSync.mockImplementation((p: string) => (p === WORKSPACE_PATHS.USER ? true : false));
+    mockReadFileSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.USER ? "Owner user profile" : ""
+    );
+
+    const prompt = buildSystemPrompt({ includeOwnerPersonalFiles: true });
+    expect(prompt).toContain("## User Profile");
+    expect(prompt).toContain("[sanitized]Owner user profile");
+  });
+
+  it("excludes User Profile section content when includeOwnerPersonalFiles is false", () => {
+    mockExistsSync.mockImplementation((p: string) => (p === WORKSPACE_PATHS.USER ? true : false));
+    mockReadFileSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.USER ? "Owner user profile" : ""
+    );
+
+    const prompt = buildSystemPrompt({ includeOwnerPersonalFiles: false });
+    expect(prompt).not.toContain("## User Profile");
+    expect(prompt).not.toContain("[sanitized]Owner user profile");
+  });
+
+  it("includes IMPORTANT warning about not exposing owner data to non-owners in Sender Context", () => {
+    const prompt = buildSystemPrompt({ senderId: 99, isOwner: false, chatType: "group" });
+    expect(prompt).toContain("Is Owner: false");
+    expect(prompt).toContain("do NOT expose owner-private data");
+  });
+
+  it("defaults to including Identity/User Profile content when includeOwnerPersonalFiles is omitted", () => {
+    mockExistsSync.mockImplementation((p: string) =>
+      p === WORKSPACE_PATHS.IDENTITY || p === WORKSPACE_PATHS.USER ? true : false
+    );
+    mockReadFileSync.mockImplementation((p: string) => {
+      if (p === WORKSPACE_PATHS.IDENTITY) return "My identity";
+      if (p === WORKSPACE_PATHS.USER) return "User info";
+      return "";
+    });
+
+    const prompt = buildSystemPrompt({});
+    expect(prompt).toContain("[sanitized]My identity");
+    expect(prompt).toContain("## User Profile");
+    expect(prompt).toContain("[sanitized]User info");
+  });
+});
+
 // ── loadHeartbeat() ─────────────────────────────────────────────────────────
 
 describe("loadHeartbeat()", () => {
