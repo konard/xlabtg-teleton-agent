@@ -1166,7 +1166,7 @@ describe("Memory Schema", () => {
       expect(columnNames).toContain("output_tokens");
     });
 
-    it("runMigrations from version 1.18.0 adds repeat_interval_seconds to tasks", () => {
+    it("runMigrations from version 1.18.0 adds recurrence columns to tasks", () => {
       ensureSchema(db);
       setSchemaVersion(db, "1.18.0");
 
@@ -1177,7 +1177,8 @@ describe("Memory Schema", () => {
       }>;
       const columnNames = info.map((c) => c.name);
 
-      expect(columnNames).toContain("repeat_interval_seconds");
+      expect(columnNames).toContain("recurrence_interval");
+      expect(columnNames).toContain("recurrence_until");
     });
 
     it("runMigrations is idempotent (can run multiple times)", () => {

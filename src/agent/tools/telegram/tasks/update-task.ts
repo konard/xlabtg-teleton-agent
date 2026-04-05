@@ -17,7 +17,8 @@ interface UpdateTaskParams {
   reason?: string;
   priority?: number;
   rescheduleDate?: string;
-  repeatIntervalSeconds?: number | null;
+  recurrenceInterval?: number | null;
+  recurrenceUntil?: string | null;
 }
 
 /**
@@ -26,7 +27,7 @@ interface UpdateTaskParams {
 export const telegramUpdateTaskTool: Tool = {
   name: "telegram_update_task",
   description:
-    "Update a pending scheduled task. Can modify description, payload, reason, priority, repeat interval, or reschedule to a new time. Only pending tasks can be updated.",
+    "Update a pending scheduled task. Can modify description, payload, reason, priority, recurrence interval, or reschedule to a new time. Only pending tasks can be updated.",
   parameters: Type.Object({
     taskId: Type.String({
       description: "The task ID to update (UUID format)",
@@ -62,18 +63,31 @@ Set to empty string "" to convert to a simple reminder with no automatic executi
           "New execution time (ISO 8601 format or Unix timestamp). Must be in the future. This cancels the old Telegram scheduled message and creates a new one.",
       })
     ),
-    repeatIntervalSeconds: Type.Optional(
+    recurrenceInterval: Type.Optional(
       Type.Union(
         [
           Type.Number({
-            description: "New repeat interval in seconds (minimum 60)",
+            description: "New recurrence interval in seconds (minimum 60)",
             minimum: 60,
           }),
           Type.Null(),
         ],
         {
           description:
-            "New repeat interval in seconds (minimum 60), or null to remove recurring behaviour.",
+            "New recurrence interval in seconds (minimum 60), or null to remove recurring behaviour.",
+        }
+      )
+    ),
+    recurrenceUntil: Type.Optional(
+      Type.Union(
+        [
+          Type.String({
+            description: "New stop date for recurrence (ISO 8601 or Unix timestamp)",
+          }),
+          Type.Null(),
+        ],
+        {
+          description: "When to stop recurring, or null to recur indefinitely.",
         }
       )
     ),
@@ -154,13 +168,36 @@ export const telegramUpdateTaskExecutor: ToolExecutor<UpdateTaskParams> = async 
       }
     }
 
-    // Validate repeatIntervalSeconds
-    if (params.repeatIntervalSeconds !== undefined && params.repeatIntervalSeconds !== null) {
-      if (!Number.isInteger(params.repeatIntervalSeconds) || params.repeatIntervalSeconds < 60) {
+    // Validate recurrenceInterval
+    if (params.recurrenceInterval !== undefined && params.recurrenceInterval !== null) {
+      if (!Number.isInteger(params.recurrenceInterval) || params.recurrenceInterval < 60) {
         return {
           success: false,
-          error: "repeatIntervalSeconds must be an integer >= 60 (minimum 1 minute)",
+          error: "recurrenceInterval must be an integer >= 60 (minimum 1 minute)",
         };
+      }
+    }
+
+    // Parse recurrenceUntil if provided
+    let recurrenceUntilTimestamp: number | null | undefined;
+    if (params.recurrenceUntil !== undefined) {
+      if (params.recurrenceUntil === null) {
+        recurrenceUntilTimestamp = null;
+      } else {
+        const parsed = new Date(params.recurrenceUntil);
+        if (!isNaN(parsed.getTime())) {
+          recurrenceUntilTimestamp = Math.floor(parsed.getTime() / 1000);
+        } else {
+          const ts = parseInt(params.recurrenceUntil, 10);
+          if (!isNaN(ts)) {
+            recurrenceUntilTimestamp = ts;
+          } else {
+            return {
+              success: false,
+              error: "Invalid recurrenceUntil format",
+            };
+          }
+        }
       }
     }
 
@@ -199,7 +236,7 @@ export const telegramUpdateTaskExecutor: ToolExecutor<UpdateTaskParams> = async 
       taskStore.updateTask(params.taskId, dbUpdates);
     }
 
-    // Update payload, reason, repeatIntervalSeconds, scheduledFor via direct SQL
+    // Update payload, reason, recurrenceInterval, recurrenceUntil, scheduledFor via direct SQL
     // (these fields are not exposed on the standard updateTask method)
     const extraFields: string[] = [];
     const extraValues: (string | number | null)[] = [];
@@ -212,9 +249,13 @@ export const telegramUpdateTaskExecutor: ToolExecutor<UpdateTaskParams> = async 
       extraFields.push("reason = ?");
       extraValues.push(params.reason);
     }
-    if (params.repeatIntervalSeconds !== undefined) {
-      extraFields.push("repeat_interval_seconds = ?");
-      extraValues.push(params.repeatIntervalSeconds);
+    if (params.recurrenceInterval !== undefined) {
+      extraFields.push("recurrence_interval = ?");
+      extraValues.push(params.recurrenceInterval);
+    }
+    if (recurrenceUntilTimestamp !== undefined) {
+      extraFields.push("recurrence_until = ?");
+      extraValues.push(recurrenceUntilTimestamp);
     }
     if (newScheduleTimestamp !== undefined) {
       extraFields.push("scheduled_for = ?");
@@ -297,7 +338,8 @@ export const telegramUpdateTaskExecutor: ToolExecutor<UpdateTaskParams> = async 
         description: updatedTask?.description ?? task.description,
         scheduledFor:
           updatedTask?.scheduledFor?.toISOString() ?? task.scheduledFor?.toISOString() ?? null,
-        repeatIntervalSeconds: updatedTask?.repeatIntervalSeconds ?? null,
+        recurrenceInterval: updatedTask?.recurrenceInterval ?? null,
+        recurrenceUntil: updatedTask?.recurrenceUntil?.toISOString() ?? null,
         scheduledMessageId: updatedTask?.scheduledMessageId ?? null,
         oldScheduledMessageDeleted: oldMessageDeleted,
         message: `Task "${updatedTask?.description ?? task.description}" updated successfully`,

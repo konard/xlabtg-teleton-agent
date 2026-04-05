@@ -1105,7 +1105,7 @@ ${blue}  ┌──────────────────────�
       await this.dependencyResolver.onTaskComplete(taskId);
 
       // Reschedule recurring tasks
-      if (task.repeatIntervalSeconds) {
+      if (task.recurrenceInterval && task.recurrenceInterval > 0) {
         await this.rescheduleRecurringTask(task, taskStore);
       }
     } catch (error) {
@@ -1130,16 +1130,29 @@ ${blue}  ┌──────────────────────�
 
   /**
    * Reschedule a recurring task after it has completed.
-   * Creates a new task with the same config, scheduled repeatIntervalSeconds from now.
+   * Creates a new task with the same config, scheduled recurrenceInterval seconds from now.
+   * Respects recurrenceUntil — stops rescheduling when the boundary is passed.
    */
   private async rescheduleRecurringTask(completedTask: Task, taskStore: TaskStore): Promise<void> {
-    if (!completedTask.repeatIntervalSeconds) return;
+    if (!completedTask.recurrenceInterval) return;
 
     try {
       const { Api } = await import("telegram");
       const { randomLong } = await import("./utils/gramjs-bigint.js");
 
-      const nextRunAt = Math.floor(Date.now() / 1000) + completedTask.repeatIntervalSeconds;
+      const nextRunAt = Math.floor(Date.now() / 1000) + completedTask.recurrenceInterval;
+
+      // Stop recurring if recurrenceUntil has passed
+      const until = completedTask.recurrenceUntil
+        ? Math.floor(completedTask.recurrenceUntil.getTime() / 1000)
+        : null;
+      if (until !== null && nextRunAt > until) {
+        log.info(
+          `⏹️ Recurrence for task "${completedTask.description}" has ended (recurrenceUntil passed)`
+        );
+        return;
+      }
+
       const nextRunDate = new Date(nextRunAt * 1000);
 
       const newTask = taskStore.createTask({
@@ -1149,7 +1162,8 @@ ${blue}  ┌──────────────────────�
         scheduledFor: nextRunDate,
         payload: completedTask.payload,
         reason: completedTask.reason,
-        repeatIntervalSeconds: completedTask.repeatIntervalSeconds,
+        recurrenceInterval: completedTask.recurrenceInterval,
+        recurrenceUntil: completedTask.recurrenceUntil,
       });
 
       // Schedule Telegram message for the next run

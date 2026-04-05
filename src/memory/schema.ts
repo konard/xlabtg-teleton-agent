@@ -127,7 +127,8 @@ export function ensureSchema(db: Database.Database): void {
       payload TEXT,
       reason TEXT,
       scheduled_message_id INTEGER,
-      repeat_interval_seconds INTEGER
+      recurrence_interval INTEGER,
+      recurrence_until INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -796,7 +797,7 @@ export function runMigrations(db: Database.Database): void {
   }
 
   if (!currentVersion || versionLessThan(currentVersion, "1.19.0")) {
-    log.info("Running migration 1.19.0: Add repeat_interval_seconds to tasks for recurring tasks");
+    log.info("Running migration 1.19.0: Add recurrence columns to tasks table");
     try {
       const addColumnIfNotExists = (table: string, column: string, type: string) => {
         try {
@@ -808,9 +809,10 @@ export function runMigrations(db: Database.Database): void {
         }
       };
 
-      addColumnIfNotExists("tasks", "repeat_interval_seconds", "INTEGER");
+      addColumnIfNotExists("tasks", "recurrence_interval", "INTEGER");
+      addColumnIfNotExists("tasks", "recurrence_until", "INTEGER");
 
-      log.info("Migration 1.19.0 complete: repeat_interval_seconds column added to tasks table");
+      log.info("Migration 1.19.0 complete: recurrence columns added to tasks table");
     } catch (error) {
       log.error({ err: error }, "Migration 1.19.0 failed");
       throw error;
