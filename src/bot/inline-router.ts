@@ -151,6 +151,13 @@ export class InlineRouter {
         queryId: inlineQuery.id,
         userId: from.id,
         offset: inlineQuery.offset,
+        chatType: inlineQuery.chat_type,
+        from: {
+          id: from.id,
+          username: from.username,
+          firstName: from.first_name,
+          isBot: from.is_bot,
+        },
       };
 
       const results = await withTimeout(

@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { InlineRouter, compileGlob } from "../inline-router.js";
 
 // Minimal Grammy context mock
-function createInlineQueryCtx(query: string, userId = 123) {
+function createInlineQueryCtx(query: string, userId = 123, chatType?: string) {
   const answered = { called: false, results: [] as any[], opts: {} as any };
   return {
-    inlineQuery: { query, id: "q123", offset: "", from: { id: userId } },
-    from: { id: userId, username: "testuser" },
+    inlineQuery: { query, id: "q123", offset: "", chat_type: chatType, from: { id: userId } },
+    from: { id: userId, username: "testuser", first_name: "Test", is_bot: false },
     callbackQuery: undefined,
     chosenInlineResult: undefined,
     chat: undefined,
@@ -81,6 +81,28 @@ describe("InlineRouter", () => {
       );
       expect(ctx.answerInlineQuery).toHaveBeenCalled();
       expect(next).not.toHaveBeenCalled();
+    });
+
+    it("passes chatType and from fields to handler", async () => {
+      const handler = vi.fn(async () => []);
+      router.registerPlugin("cats", { onInlineQuery: handler });
+
+      const ctx = createInlineQueryCtx("cats:random", 42, "supergroup");
+      await router.middleware()(ctx, vi.fn());
+
+      expect(handler).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: "random",
+          userId: 42,
+          chatType: "supergroup",
+          from: expect.objectContaining({
+            id: 42,
+            username: "testuser",
+            firstName: "Test",
+            isBot: false,
+          }),
+        })
+      );
     });
 
     it("falls through to next() when no prefix match", async () => {

@@ -158,7 +158,13 @@ describe("createBotSDK", () => {
     sdk.onInlineQuery(handler);
 
     const registeredHandler = router._plugins.get("cats")!.onInlineQuery!;
-    await registeredHandler({ query: "test", queryId: "q1", userId: 1, offset: "" });
+    await registeredHandler({
+      query: "test",
+      queryId: "q1",
+      userId: 1,
+      offset: "",
+      from: { id: 1, isBot: false },
+    });
 
     expect(limiter.check).toHaveBeenCalledWith("cats", "inline", 30);
     expect(handler).toHaveBeenCalled();
@@ -194,7 +200,13 @@ describe("createBotSDK", () => {
 
     sdk.onInlineQuery(vi.fn(async () => []));
     const registeredHandler = router._plugins.get("cats")!.onInlineQuery!;
-    await registeredHandler({ query: "test", queryId: "q1", userId: 1, offset: "" });
+    await registeredHandler({
+      query: "test",
+      queryId: "q1",
+      userId: 1,
+      offset: "",
+      from: { id: 1, isBot: false },
+    });
 
     expect(limiter.check).toHaveBeenCalledWith("cats", "inline", 10);
   });
