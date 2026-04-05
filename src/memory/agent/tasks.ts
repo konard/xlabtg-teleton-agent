@@ -4,6 +4,27 @@ import type { TaskRow } from "../types/db-rows.js";
 
 export type TaskStatus = "pending" | "in_progress" | "done" | "failed" | "cancelled";
 
+function rowToTask(row: TaskRow): Task {
+  return {
+    id: row.id,
+    description: row.description,
+    status: row.status as TaskStatus,
+    priority: row.priority,
+    createdBy: row.created_by ?? undefined,
+    createdAt: new Date(row.created_at * 1000),
+    startedAt: row.started_at ? new Date(row.started_at * 1000) : undefined,
+    completedAt: row.completed_at ? new Date(row.completed_at * 1000) : undefined,
+    result: row.result ?? undefined,
+    error: row.error ?? undefined,
+    scheduledFor: row.scheduled_for ? new Date(row.scheduled_for * 1000) : undefined,
+    payload: row.payload ?? undefined,
+    reason: row.reason ?? undefined,
+    scheduledMessageId: row.scheduled_message_id ?? undefined,
+    recurrenceInterval: row.recurrence_interval ?? undefined,
+    recurrenceUntil: row.recurrence_until ? new Date(row.recurrence_until * 1000) : undefined,
+  };
+}
+
 export interface Task {
   id: string;
   description: string;
@@ -19,6 +40,10 @@ export interface Task {
   payload?: string;
   reason?: string;
   scheduledMessageId?: number;
+  /** Recurrence interval in seconds. When set, a new task occurrence is scheduled after each completion. */
+  recurrenceInterval?: number;
+  /** Unix timestamp (seconds) after which recurrence stops. Undefined means repeat indefinitely. */
+  recurrenceUntil?: Date;
 }
 
 export class TaskStore {
@@ -33,6 +58,8 @@ export class TaskStore {
     reason?: string;
     scheduledMessageId?: number;
     dependsOn?: string[];
+    recurrenceInterval?: number;
+    recurrenceUntil?: Date;
   }): Task {
     const id = randomUUID();
     const now = Math.floor(Date.now() / 1000);
@@ -40,8 +67,8 @@ export class TaskStore {
     this.db
       .prepare(
         `
-      INSERT INTO tasks (id, description, status, priority, created_by, created_at, scheduled_for, payload, reason, scheduled_message_id)
-      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?)
+      INSERT INTO tasks (id, description, status, priority, created_by, created_at, scheduled_for, payload, reason, scheduled_message_id, recurrence_interval, recurrence_until)
+      VALUES (?, ?, 'pending', ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `
       )
       .run(
@@ -53,7 +80,9 @@ export class TaskStore {
         task.scheduledFor ? Math.floor(task.scheduledFor.getTime() / 1000) : null,
         task.payload ?? null,
         task.reason ?? null,
-        task.scheduledMessageId ?? null
+        task.scheduledMessageId ?? null,
+        task.recurrenceInterval ?? null,
+        task.recurrenceUntil ? Math.floor(task.recurrenceUntil.getTime() / 1000) : null
       );
 
     if (task.dependsOn && task.dependsOn.length > 0) {
@@ -73,6 +102,8 @@ export class TaskStore {
       payload: task.payload,
       reason: task.reason,
       scheduledMessageId: task.scheduledMessageId,
+      recurrenceInterval: task.recurrenceInterval,
+      recurrenceUntil: task.recurrenceUntil,
     };
   }
 
@@ -157,22 +188,7 @@ export class TaskStore {
 
     if (!row) return undefined;
 
-    return {
-      id: row.id,
-      description: row.description,
-      status: row.status as TaskStatus,
-      priority: row.priority,
-      createdBy: row.created_by ?? undefined,
-      createdAt: new Date(row.created_at * 1000),
-      startedAt: row.started_at ? new Date(row.started_at * 1000) : undefined,
-      completedAt: row.completed_at ? new Date(row.completed_at * 1000) : undefined,
-      result: row.result ?? undefined,
-      error: row.error ?? undefined,
-      scheduledFor: row.scheduled_for ? new Date(row.scheduled_for * 1000) : undefined,
-      payload: row.payload ?? undefined,
-      reason: row.reason ?? undefined,
-      scheduledMessageId: row.scheduled_message_id ?? undefined,
-    };
+    return rowToTask(row);
   }
 
   listTasks(filter?: { status?: TaskStatus; createdBy?: string }): Task[] {
@@ -193,22 +209,7 @@ export class TaskStore {
 
     const rows = this.db.prepare(sql).all(...params) as TaskRow[];
 
-    return rows.map((row) => ({
-      id: row.id,
-      description: row.description,
-      status: row.status as TaskStatus,
-      priority: row.priority,
-      createdBy: row.created_by ?? undefined,
-      createdAt: new Date(row.created_at * 1000),
-      startedAt: row.started_at ? new Date(row.started_at * 1000) : undefined,
-      completedAt: row.completed_at ? new Date(row.completed_at * 1000) : undefined,
-      result: row.result ?? undefined,
-      error: row.error ?? undefined,
-      scheduledFor: row.scheduled_for ? new Date(row.scheduled_for * 1000) : undefined,
-      payload: row.payload ?? undefined,
-      reason: row.reason ?? undefined,
-      scheduledMessageId: row.scheduled_message_id ?? undefined,
-    }));
+    return rows.map(rowToTask);
   }
 
   getActiveTasks(): Task[] {
@@ -222,22 +223,7 @@ export class TaskStore {
       )
       .all() as TaskRow[];
 
-    return rows.map((row) => ({
-      id: row.id,
-      description: row.description,
-      status: row.status as TaskStatus,
-      priority: row.priority,
-      createdBy: row.created_by ?? undefined,
-      createdAt: new Date(row.created_at * 1000),
-      startedAt: row.started_at ? new Date(row.started_at * 1000) : undefined,
-      completedAt: row.completed_at ? new Date(row.completed_at * 1000) : undefined,
-      result: row.result ?? undefined,
-      error: row.error ?? undefined,
-      scheduledFor: row.scheduled_for ? new Date(row.scheduled_for * 1000) : undefined,
-      payload: row.payload ?? undefined,
-      reason: row.reason ?? undefined,
-      scheduledMessageId: row.scheduled_message_id ?? undefined,
-    }));
+    return rows.map(rowToTask);
   }
 
   deleteTask(taskId: string): boolean {

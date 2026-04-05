@@ -18,6 +18,8 @@ export interface TaskRow {
   payload: string | null;
   reason: string | null;
   scheduled_message_id: number | null;
+  recurrence_interval: number | null;
+  recurrence_until: number | null;
 }
 
 export interface SessionRow {

@@ -9,6 +9,53 @@ import { createLogger } from "../../../../utils/logger.js";
 const log = createLogger("Tools");
 
 /**
+ * Parse a human-readable recurrence string into an interval in seconds.
+ *
+ * Accepts:
+ *  - Plain seconds as a number string: "2700"
+ *  - "every N seconds/minutes/hours/days/weeks"
+ *  - Shorthands: "minutely", "hourly", "daily", "weekly"
+ *
+ * Returns the interval in seconds, or null if unparseable.
+ */
+export function parseRecurrenceInterval(recurrence: string): number | null {
+  const s = recurrence.trim().toLowerCase();
+
+  // Plain integer (seconds)
+  if (/^\d+$/.test(s)) {
+    const n = parseInt(s, 10);
+    return n > 0 ? n : null;
+  }
+
+  // Shorthands
+  const shorthands: Record<string, number> = {
+    minutely: 60,
+    hourly: 3600,
+    daily: 86400,
+    weekly: 604800,
+  };
+  if (shorthands[s] !== undefined) return shorthands[s];
+
+  // "every N unit"
+  const match = s.match(/^every\s+(\d+(?:\.\d+)?)\s+(second|minute|hour|day|week)s?$/);
+  if (match) {
+    const n = parseFloat(match[1]);
+    const unit = match[2];
+    const multipliers: Record<string, number> = {
+      second: 1,
+      minute: 60,
+      hour: 3600,
+      day: 86400,
+      week: 604800,
+    };
+    const seconds = Math.round(n * multipliers[unit]);
+    return seconds > 0 ? seconds : null;
+  }
+
+  return null;
+}
+
+/**
  * Parameters for telegram_create_scheduled_task tool
  */
 interface CreateScheduledTaskParams {
@@ -18,6 +65,8 @@ interface CreateScheduledTaskParams {
   reason?: string;
   priority?: number;
   dependsOn?: string[];
+  recurrence?: string;
+  recurrenceUntil?: string;
 }
 
 /**
@@ -96,6 +145,25 @@ If omitted, task is a simple reminder.`,
           "Array of parent task IDs that must complete before this task executes. When dependencies are provided, task executes automatically when all parents are done (scheduleDate is ignored).",
       })
     ),
+    recurrence: Type.Optional(
+      Type.String({
+        description: `How often to repeat this task after each execution. Examples:
+- "every 45 minutes" — run every 45 minutes
+- "every 6 hours" — run every 6 hours
+- "daily" — run once per day
+- "weekly" — run once per week
+- "hourly" — run once per hour
+- "2700" — run every 2700 seconds (45 minutes)
+
+When set, the task is automatically rescheduled after each completion until recurrenceUntil (if given).`,
+      })
+    ),
+    recurrenceUntil: Type.Optional(
+      Type.String({
+        description:
+          "When to stop recurring. ISO 8601 date (e.g., '2025-12-31T23:59:59Z') or Unix timestamp. If omitted, the task recurs indefinitely.",
+      })
+    ),
   }),
 };
 
@@ -107,7 +175,16 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
   context
 ): Promise<ToolResult> => {
   try {
-    const { description, scheduleDate, payload, reason, priority, dependsOn } = params;
+    const {
+      description,
+      scheduleDate,
+      payload,
+      reason,
+      priority,
+      dependsOn,
+      recurrence,
+      recurrenceUntil,
+    } = params;
 
     // Validate: either scheduleDate OR dependsOn must be provided
     if (!scheduleDate && (!dependsOn || dependsOn.length === 0)) {
@@ -115,6 +192,38 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
         success: false,
         error: "Either scheduleDate or dependsOn must be provided",
       };
+    }
+
+    // Parse recurrence interval if provided
+    let recurrenceIntervalSeconds: number | undefined;
+    if (recurrence) {
+      const parsed = parseRecurrenceInterval(recurrence);
+      if (parsed === null) {
+        return {
+          success: false,
+          error: `Invalid recurrence format: "${recurrence}". Use formats like "every 45 minutes", "hourly", "daily", "weekly", or a plain number of seconds.`,
+        };
+      }
+      recurrenceIntervalSeconds = parsed;
+    }
+
+    // Parse recurrenceUntil if provided
+    let recurrenceUntilDate: Date | undefined;
+    if (recurrenceUntil) {
+      const parsed = new Date(recurrenceUntil);
+      if (!isNaN(parsed.getTime())) {
+        recurrenceUntilDate = parsed;
+      } else {
+        const ts = parseInt(recurrenceUntil, 10);
+        if (!isNaN(ts)) {
+          recurrenceUntilDate = new Date(ts * 1000);
+        } else {
+          return {
+            success: false,
+            error: "Invalid recurrenceUntil format",
+          };
+        }
+      }
     }
 
     // Parse schedule date if provided
@@ -233,6 +342,8 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
       payload,
       reason,
       dependsOn,
+      recurrenceInterval: recurrenceIntervalSeconds,
+      recurrenceUntil: recurrenceUntilDate,
     });
 
     // 2. Schedule Telegram message with [TASK:uuid] format (only if not dependent on other tasks)
@@ -245,6 +356,8 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
         data: {
           taskId: task.id,
           dependsOn,
+          recurrenceInterval: recurrenceIntervalSeconds,
+          recurrenceUntil: recurrenceUntilDate?.toISOString(),
           message: `Task created: "${description}" (will execute when ${dependsOn.length} parent task(s) complete)`,
         },
       };
@@ -281,13 +394,19 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
         taskStore.updateTask(task.id, { scheduledMessageId });
       }
 
+      const recurrenceMsg = recurrenceIntervalSeconds
+        ? `, repeating ${recurrence}${recurrenceUntilDate ? ` until ${recurrenceUntilDate.toISOString()}` : " indefinitely"}`
+        : "";
+
       return {
         success: true,
         data: {
           taskId: task.id,
           scheduledFor: new Date(scheduleTimestamp * 1000).toISOString(),
           scheduledMessageId,
-          message: `Task scheduled: "${description}" at ${new Date(scheduleTimestamp * 1000).toLocaleString()}`,
+          recurrenceInterval: recurrenceIntervalSeconds,
+          recurrenceUntil: recurrenceUntilDate?.toISOString(),
+          message: `Task scheduled: "${description}" at ${new Date(scheduleTimestamp * 1000).toLocaleString()}${recurrenceMsg}`,
         },
       };
     }

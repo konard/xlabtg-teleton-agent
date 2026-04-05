@@ -126,7 +126,9 @@ export function ensureSchema(db: Database.Database): void {
       scheduled_for INTEGER,
       payload TEXT,
       reason TEXT,
-      scheduled_message_id INTEGER
+      scheduled_message_id INTEGER,
+      recurrence_interval INTEGER,
+      recurrence_until INTEGER
     );
 
     CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
@@ -410,7 +412,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.18.0";
+export const CURRENT_SCHEMA_VERSION = "1.19.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -790,6 +792,29 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.18.0 complete: workflows table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.18.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.19.0")) {
+    log.info("Running migration 1.19.0: Add recurrence columns to tasks table");
+    try {
+      const addColumnIfNotExists = (table: string, column: string, type: string) => {
+        try {
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+        } catch (e: unknown) {
+          if (!(e instanceof Error) || !e.message.includes("duplicate column name")) {
+            throw e;
+          }
+        }
+      };
+
+      addColumnIfNotExists("tasks", "recurrence_interval", "INTEGER");
+      addColumnIfNotExists("tasks", "recurrence_until", "INTEGER");
+
+      log.info("Migration 1.19.0 complete: recurrence columns added to tasks table");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.19.0 failed");
       throw error;
     }
   }
