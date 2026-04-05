@@ -244,4 +244,106 @@ describe("executeScheduledTask()", () => {
     expect(prompt).toContain("[SCHEDULED TASK");
     // Should not throw, falls through to reminder-like prompt
   });
+
+  // ── Trading automation use case (issue #138) ─────────────────────────────
+  // Verifies that telegram_create_scheduled_task with agent_task payload can
+  // automate a full trading workflow: simulate trade → check results → send report.
+
+  it("builds automation prompt for trading workflow (simulate + journal + report)", async () => {
+    const instructions =
+      "1. Run trade simulation using ton_trading_simulate_trade\n" +
+      "2. Call journal_query to check the simulation results\n" +
+      "3. Send a summary report via telegram_send_message";
+    const payload = JSON.stringify({
+      type: "agent_task",
+      instructions,
+      context: { chatId: "user-chat-id" },
+    });
+    const task = makeTask({
+      description: "Run trade simulation and send report at 19:15",
+      scheduledFor: new Date("2025-06-15T19:15:00Z"),
+      payload,
+      reason: "Automated daily trading strategy",
+    });
+
+    const prompt = await executeScheduledTask(
+      task,
+      makeAgent(),
+      makeToolContext(),
+      makeToolRegistry()
+    );
+
+    expect(prompt).toContain("[SCHEDULED TASK");
+    expect(prompt).toContain("Run trade simulation and send report at 19:15");
+    expect(prompt).toContain("Automated daily trading strategy");
+    expect(prompt).toContain("INSTRUCTIONS:");
+    expect(prompt).toContain("ton_trading_simulate_trade");
+    expect(prompt).toContain("journal_query");
+    expect(prompt).toContain("telegram_send_message");
+    expect(prompt).toContain("Execute these instructions step by step");
+    expect(prompt).toContain("Scheduled for: 2025-06-15T19:15:00.000Z");
+  });
+
+  it("builds automation prompt for tool_call trading use case", async () => {
+    const tradeResult = { success: true, simulatedProfit: 12.5, tradeId: "sim-001" };
+    const toolRegistry = makeToolRegistry();
+    toolRegistry.execute.mockResolvedValue(tradeResult);
+
+    const payload = JSON.stringify({
+      type: "tool_call",
+      tool: "ton_trading_simulate_trade",
+      params: { amount: 50, fromToken: "TON", toToken: "USDT" },
+      condition: "simulatedProfit > 0",
+    });
+    const task = makeTask({
+      description: "Simulate TON trade at 19:15",
+      scheduledFor: new Date("2025-06-15T19:15:00Z"),
+      payload,
+    });
+
+    const prompt = await executeScheduledTask(task, makeAgent(), makeToolContext(), toolRegistry);
+
+    expect(toolRegistry.execute).toHaveBeenCalledWith(
+      "ton_trading_simulate_trade",
+      { amount: 50, fromToken: "TON", toToken: "USDT" },
+      makeToolContext()
+    );
+    expect(prompt).toContain("TOOL EXECUTED:");
+    expect(prompt).toContain("ton_trading_simulate_trade");
+    expect(prompt).toContain("Condition: simulatedProfit > 0");
+    expect(prompt).toContain("Analyze this result");
+    expect(prompt).toContain("sim-001");
+  });
+
+  it("builds chained task prompt: simulation result fed to report task as parent result", async () => {
+    const task = makeTask({
+      description: "Send trade simulation report",
+      payload: JSON.stringify({
+        type: "agent_task",
+        instructions: "Send the simulation results as a report via telegram_send_message",
+      }),
+    });
+    const parentResults = [
+      {
+        taskId: "sim-task-id",
+        description: "Run trade simulation",
+        result: { success: true, simulatedProfit: 12.5, tradeId: "sim-001" },
+      },
+    ];
+
+    const prompt = await executeScheduledTask(
+      task,
+      makeAgent(),
+      makeToolContext(),
+      makeToolRegistry(),
+      parentResults
+    );
+
+    expect(prompt).toContain("PARENT TASK COMPLETED:");
+    expect(prompt).toContain("Run trade simulation");
+    expect(prompt).toContain("sim-001");
+    expect(prompt).toContain("12.5");
+    expect(prompt).toContain("INSTRUCTIONS:");
+    expect(prompt).toContain("telegram_send_message");
+  });
 });
