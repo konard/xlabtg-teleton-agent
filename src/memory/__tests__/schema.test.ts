@@ -1081,7 +1081,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.17.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.19.0");
     });
   });
 
@@ -1164,6 +1164,20 @@ describe("Memory Schema", () => {
 
       expect(columnNames).toContain("input_tokens");
       expect(columnNames).toContain("output_tokens");
+    });
+
+    it("runMigrations from version 1.18.0 adds repeat_interval_seconds to tasks", () => {
+      ensureSchema(db);
+      setSchemaVersion(db, "1.18.0");
+
+      runMigrations(db);
+
+      const info = db.prepare("PRAGMA table_info(tasks)").all() as Array<{
+        name: string;
+      }>;
+      const columnNames = info.map((c) => c.name);
+
+      expect(columnNames).toContain("repeat_interval_seconds");
     });
 
     it("runMigrations is idempotent (can run multiple times)", () => {

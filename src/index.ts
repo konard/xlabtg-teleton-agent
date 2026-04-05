@@ -42,6 +42,7 @@ import { InlineRouter } from "./bot/inline-router.js";
 import { PluginRateLimiter } from "./bot/rate-limiter.js";
 import { setBotPreMiddleware, getDealBot } from "./deals/module.js";
 import type { TaskDependencyResolver } from "./telegram/task-dependency-resolver.js";
+import type { Task, TaskStore } from "./memory/agent/tasks.js";
 import type { WebUIServer } from "./webui/server.js";
 import type { ApiServer } from "./api/server.js";
 import { initMetrics } from "./services/metrics.js";
@@ -1102,6 +1103,11 @@ ${blue}  ┌──────────────────────�
 
       // Trigger any dependent tasks
       await this.dependencyResolver.onTaskComplete(taskId);
+
+      // Reschedule recurring tasks
+      if (task.repeatIntervalSeconds) {
+        await this.rescheduleRecurringTask(task, taskStore);
+      }
     } catch (error) {
       log.error({ err: error }, "Error handling scheduled task");
 
@@ -1119,6 +1125,66 @@ ${blue}  ┌──────────────────────�
       } catch {
         // Ignore if we can't update task
       }
+    }
+  }
+
+  /**
+   * Reschedule a recurring task after it has completed.
+   * Creates a new task with the same config, scheduled repeatIntervalSeconds from now.
+   */
+  private async rescheduleRecurringTask(completedTask: Task, taskStore: TaskStore): Promise<void> {
+    if (!completedTask.repeatIntervalSeconds) return;
+
+    try {
+      const { Api } = await import("telegram");
+      const { randomLong } = await import("./utils/gramjs-bigint.js");
+
+      const nextRunAt = Math.floor(Date.now() / 1000) + completedTask.repeatIntervalSeconds;
+      const nextRunDate = new Date(nextRunAt * 1000);
+
+      const newTask = taskStore.createTask({
+        description: completedTask.description,
+        priority: completedTask.priority,
+        createdBy: completedTask.createdBy,
+        scheduledFor: nextRunDate,
+        payload: completedTask.payload,
+        reason: completedTask.reason,
+        repeatIntervalSeconds: completedTask.repeatIntervalSeconds,
+      });
+
+      // Schedule Telegram message for the next run
+      const gramJsClient = this.bridge.getClient().getClient();
+      const me = await gramJsClient.getMe();
+      const taskMessage = `[TASK:${newTask.id}] ${newTask.description}`;
+
+      const result = await gramJsClient.invoke(
+        new Api.messages.SendMessage({
+          peer: me,
+          message: taskMessage,
+          scheduleDate: nextRunAt,
+          randomId: randomLong(),
+        })
+      );
+
+      // Extract and persist the new scheduled message ID
+      let scheduledMessageId: number | undefined;
+      if (result instanceof Api.Updates || result instanceof Api.UpdatesCombined) {
+        for (const update of result.updates) {
+          if (update instanceof Api.UpdateMessageID) {
+            scheduledMessageId = update.id;
+            break;
+          }
+        }
+      }
+      if (scheduledMessageId !== undefined) {
+        taskStore.updateTask(newTask.id, { scheduledMessageId });
+      }
+
+      log.info(
+        `🔁 Rescheduled recurring task "${newTask.description}" → next run at ${nextRunDate.toISOString()} (taskId: ${newTask.id})`
+      );
+    } catch (error) {
+      log.error({ err: error }, `Failed to reschedule recurring task ${completedTask.id}`);
     }
   }
 

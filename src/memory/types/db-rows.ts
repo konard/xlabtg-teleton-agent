@@ -18,6 +18,7 @@ export interface TaskRow {
   payload: string | null;
   reason: string | null;
   scheduled_message_id: number | null;
+  repeat_interval_seconds: number | null;
 }
 
 export interface SessionRow {

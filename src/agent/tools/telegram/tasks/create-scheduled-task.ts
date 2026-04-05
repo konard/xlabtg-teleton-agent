@@ -18,6 +18,7 @@ interface CreateScheduledTaskParams {
   reason?: string;
   priority?: number;
   dependsOn?: string[];
+  repeatIntervalSeconds?: number;
 }
 
 /**
@@ -51,7 +52,7 @@ interface CreateScheduledTaskParams {
 export const telegramCreateScheduledTaskTool: Tool = {
   name: "telegram_create_scheduled_task",
   description:
-    "Schedule a task for future automatic execution — use this to automate function calls, trading operations, or multi-step workflows at a specific time. Stores in DB and schedules a reminder in Saved Messages. Unlike telegram_schedule_message (text-only), this tool actually executes other tools and agent instructions automatically. Supports tool_call (auto-execute a single tool), agent_task (multi-step instructions executed by the agent), or simple reminders. Tasks can depend on other tasks, forming automated pipelines.",
+    "Schedule a task for future automatic execution — use this to automate function calls, trading operations, or multi-step workflows at a specific time. Stores in DB and schedules a reminder in Saved Messages. Unlike telegram_schedule_message (text-only), this tool actually executes other tools and agent instructions automatically. Supports tool_call (auto-execute a single tool), agent_task (multi-step instructions executed by the agent), or simple reminders. Tasks can depend on other tasks, forming automated pipelines. Supports recurring execution via repeatIntervalSeconds.",
   parameters: Type.Object({
     description: Type.String({
       description:
@@ -97,6 +98,13 @@ If omitted, task is a simple reminder.`,
           "Array of parent task IDs that must complete before this task executes. When dependencies are provided, task executes automatically when all parents are done (scheduleDate is ignored).",
       })
     ),
+    repeatIntervalSeconds: Type.Optional(
+      Type.Number({
+        description:
+          "Interval in seconds between recurring executions (minimum 60). When set, the task automatically reschedules itself after each execution. Example: 2700 = every 45 minutes, 3600 = every hour, 86400 = every day.",
+        minimum: 60,
+      })
+    ),
   }),
 };
 
@@ -108,7 +116,15 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
   context
 ): Promise<ToolResult> => {
   try {
-    const { description, scheduleDate, payload, reason, priority, dependsOn } = params;
+    const {
+      description,
+      scheduleDate,
+      payload,
+      reason,
+      priority,
+      dependsOn,
+      repeatIntervalSeconds,
+    } = params;
 
     // Validate: either scheduleDate OR dependsOn must be provided
     if (!scheduleDate && (!dependsOn || dependsOn.length === 0)) {
@@ -116,6 +132,23 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
         success: false,
         error: "Either scheduleDate or dependsOn must be provided",
       };
+    }
+
+    // Validate repeatIntervalSeconds
+    if (repeatIntervalSeconds !== undefined) {
+      if (!Number.isInteger(repeatIntervalSeconds) || repeatIntervalSeconds < 60) {
+        return {
+          success: false,
+          error: "repeatIntervalSeconds must be an integer >= 60 (minimum 1 minute)",
+        };
+      }
+      // Recurring tasks require a scheduleDate (first occurrence must be explicit)
+      if (!scheduleDate) {
+        return {
+          success: false,
+          error: "repeatIntervalSeconds requires scheduleDate for the first occurrence",
+        };
+      }
     }
 
     // Parse schedule date if provided
@@ -234,6 +267,7 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
       payload,
       reason,
       dependsOn,
+      repeatIntervalSeconds,
     });
 
     // 2. Schedule Telegram message with [TASK:uuid] format (only if not dependent on other tasks)
@@ -288,7 +322,10 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
           taskId: task.id,
           scheduledFor: new Date(scheduleTimestamp * 1000).toISOString(),
           scheduledMessageId,
-          message: `Task scheduled: "${description}" at ${new Date(scheduleTimestamp * 1000).toLocaleString()}`,
+          repeatIntervalSeconds: repeatIntervalSeconds ?? null,
+          message: repeatIntervalSeconds
+            ? `Recurring task scheduled: "${description}" — first run at ${new Date(scheduleTimestamp * 1000).toLocaleString()}, repeating every ${repeatIntervalSeconds}s`
+            : `Task scheduled: "${description}" at ${new Date(scheduleTimestamp * 1000).toLocaleString()}`,
         },
       };
     }
