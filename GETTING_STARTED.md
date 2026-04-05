@@ -144,6 +144,39 @@ agent:
 
 Supported: `anthropic`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`
 
+### Free Tier Usage (OpenRouter)
+
+OpenRouter provides free models that require no payment — only a free API key from [openrouter.ai/keys](https://openrouter.ai/keys).
+
+```yaml
+agent:
+  provider: "openrouter"
+  api_key: "sk-or-v1-..."
+  model: "openrouter/free"   # Auto-selects an available free model
+```
+
+**Available free models** (suffix `:free`, rate-limited to ~20 RPM):
+
+| Model | Context | Notes |
+|-------|---------|-------|
+| `openrouter/free` | 200K | Router — auto-picks an available free model |
+| `qwen/qwen3.6-plus:free` | 1M | MoE, SWE-bench 78.8 |
+| `minimax/minimax-m2.5:free` | 197K | SWE-Bench Verified 80.2% |
+| `openai/gpt-oss-120b:free` | 131K | MoE 117B/5.1B, Apache 2.0 |
+| `qwen/qwen3-coder-480b-a35b:free` | 262K | Coding specialist |
+| `nousresearch/hermes-3-405b-instruct:free` | 131K | Frontier-level 405B |
+| `meta-llama/llama-3.3-70b-instruct:free` | 66K | Multilingual |
+| `google/gemma-3-27b:free` | 131K | Multimodal, 140+ languages |
+| `google/gemma-3-12b:free` | 33K | Balanced quality/speed |
+| `nvidia/nemotron-3-super-120b-a12b:free` | 262K | Mamba-Transformer hybrid |
+| `stepfun/step-3.5-flash:free` | 256K | MoE 196B/11B, high-speed |
+| `google/gemma-3n-2b:free` | 8K | Ultra-lightweight edge model |
+
+> **Tips for free tier:**
+> - If you hit rate limits (429), wait a minute or switch to a different `:free` model
+> - `openrouter/free` automatically falls back to another free model when one is unavailable
+> - Free model availability can change; check [openrouter.ai/models?q=free](https://openrouter.ai/models?q=free) for the current list
+
 ---
 
 ## Admin Commands

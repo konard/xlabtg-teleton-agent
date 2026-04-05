@@ -205,6 +205,132 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     },
     { value: "minimax/minimax-m2.5", name: "MiniMax M2.5", description: "Latest MiniMax" },
     { value: "x-ai/grok-4", name: "Grok 4", description: "256K ctx, $3/M" },
+    // Free models (no cost, rate-limited ~20 RPM)
+    {
+      value: "openrouter/free",
+      name: "Free Models Router",
+      description: "Auto-selects available free model, 200K ctx, FREE",
+    },
+    {
+      value: "qwen/qwen3.6-plus:free",
+      name: "Qwen3.6 Plus (free)",
+      description: "1M ctx, MoE, SWE-bench 78.8, FREE",
+    },
+    {
+      value: "stepfun/step-3.5-flash:free",
+      name: "Step 3.5 Flash (free)",
+      description: "256K ctx, MoE 196B/11B, high-speed, FREE",
+    },
+    {
+      value: "nvidia/nemotron-3-super-120b-a12b:free",
+      name: "Nemotron 3 Super 120B (free)",
+      description: "262K ctx, Mamba-Transformer hybrid, FREE",
+    },
+    {
+      value: "arcee-ai/trinity-large-preview:free",
+      name: "Trinity Large Preview (free)",
+      description: "131K ctx, 400B/13B MoE, FREE",
+    },
+    {
+      value: "z-ai/glm-4.5-air:free",
+      name: "GLM 4.5 Air (free)",
+      description: "131K ctx, lightweight MoE, FREE",
+    },
+    {
+      value: "nvidia/nemotron-nano-30b-a3b:free",
+      name: "Nemotron Nano 30B A3B (free)",
+      description: "256K ctx, compact MoE for agents, FREE",
+    },
+    {
+      value: "nvidia/nemotron-nano-12b-2-vl:free",
+      name: "Nemotron Nano 12B VL (free)",
+      description: "128K ctx, multimodal text+images, FREE",
+    },
+    {
+      value: "minimax/minimax-m2.5:free",
+      name: "MiniMax M2.5 (free)",
+      description: "197K ctx, SWE-Bench 80.2%, FREE",
+    },
+    {
+      value: "nvidia/nemotron-nano-9b-v2:free",
+      name: "Nemotron Nano 9B V2 (free)",
+      description: "128K ctx, reasoning + non-reasoning, FREE",
+    },
+    {
+      value: "openai/gpt-oss-120b:free",
+      name: "GPT OSS 120B (free)",
+      description: "131K ctx, MoE 117B/5.1B, Apache 2.0, FREE",
+    },
+    {
+      value: "qwen/qwen3-coder-480b-a35b:free",
+      name: "Qwen3 Coder 480B A35B (free)",
+      description: "262K ctx, coding specialist 480B/35B MoE, FREE",
+    },
+    {
+      value: "openai/gpt-oss-20b:free",
+      name: "GPT OSS 20B (free)",
+      description: "131K ctx, MoE 21B/3.6B, low-latency, FREE",
+    },
+    {
+      value: "qwen/qwen3-next-80b-a3b-instruct:free",
+      name: "Qwen3 Next 80B A3B (free)",
+      description: "262K ctx, stable without thinking mode, FREE",
+    },
+    {
+      value: "meta-llama/llama-3.3-70b-instruct:free",
+      name: "Llama 3.3 70B Instruct (free)",
+      description: "66K ctx, multilingual 8 languages, FREE",
+    },
+    {
+      value: "liquidai/lfm2.5-1.2b-thinking:free",
+      name: "LFM2.5 1.2B Thinking (free)",
+      description: "33K ctx, edge-optimized reasoning, FREE",
+    },
+    {
+      value: "liquidai/lfm2.5-1.2b-instruct:free",
+      name: "LFM2.5 1.2B Instruct (free)",
+      description: "33K ctx, compact chat for edge, FREE",
+    },
+    {
+      value: "venice/uncensored:free",
+      name: "Venice Uncensored (free)",
+      description: "33K ctx, uncensored, FREE",
+    },
+    {
+      value: "nousresearch/hermes-3-405b-instruct:free",
+      name: "Hermes 3 405B Instruct (free)",
+      description: "131K ctx, frontier-level Llama-3.1 405B fine-tune, FREE",
+    },
+    {
+      value: "meta-llama/llama-3.2-3b-instruct:free",
+      name: "Llama 3.2 3B Instruct (free)",
+      description: "131K ctx, lightweight multilingual, FREE",
+    },
+    {
+      value: "google/gemma-3-27b:free",
+      name: "Gemma 3 27B (free)",
+      description: "131K ctx, multimodal 140+ languages, FREE",
+    },
+    {
+      value: "google/gemma-3-4b:free",
+      name: "Gemma 3 4B (free)",
+      description: "33K ctx, compact multimodal, FREE",
+    },
+    {
+      value: "google/gemma-3n-4b:free",
+      name: "Gemma 3n 4B (free)",
+      description: "8K ctx, optimized for mobile, FREE",
+    },
+    {
+      value: "google/gemma-3n-2b:free",
+      name: "Gemma 3n 2B (free)",
+      description: "8K ctx, ultra-lightweight edge model, FREE",
+    },
+    {
+      value: "google/gemma-3-12b:free",
+      name: "Gemma 3 12B (free)",
+      description: "33K ctx, balanced quality/speed, FREE",
+    },
   ],
   moonshot: [
     { value: "k2p5", name: "Kimi K2.5", description: "Free, 262K ctx, multimodal" },
