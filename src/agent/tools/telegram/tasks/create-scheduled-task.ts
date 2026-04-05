@@ -100,7 +100,7 @@ interface CreateScheduledTaskParams {
 export const telegramCreateScheduledTaskTool: Tool = {
   name: "telegram_create_scheduled_task",
   description:
-    "Schedule a task for future automatic execution — use this to automate function calls, trading operations, or multi-step workflows at a specific time. Stores in DB and schedules a reminder in Saved Messages. Unlike telegram_schedule_message (text-only), this tool actually executes other tools and agent instructions automatically. Supports tool_call (auto-execute a single tool), agent_task (multi-step instructions executed by the agent), or simple reminders. Tasks can depend on other tasks, forming automated pipelines.",
+    "Schedule a task for future automatic execution — use this to automate function calls, trading operations, or multi-step workflows at a specific time. Stores in DB and schedules a reminder in Saved Messages. Unlike telegram_schedule_message (text-only), this tool actually executes other tools and agent instructions automatically. Supports tool_call (auto-execute a single tool), agent_task (multi-step instructions executed by the agent), or simple reminders. Tasks can depend on other tasks, forming automated pipelines. Supports recurring execution via repeatIntervalSeconds.",
   parameters: Type.Object({
     description: Type.String({
       description:

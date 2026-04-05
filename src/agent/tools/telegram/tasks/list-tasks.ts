@@ -63,6 +63,8 @@ export const telegramListTasksExecutor: ToolExecutor<ListTasksParams> = async (
       scheduledFor: t.scheduledFor?.toISOString() ?? null,
       payload: t.payload ?? null,
       reason: t.reason ?? null,
+      recurrenceInterval: t.recurrenceInterval ?? null,
+      recurrenceUntil: t.recurrenceUntil?.toISOString() ?? null,
       dependencies: taskStore.getDependencies(t.id),
       dependents: taskStore.getDependents(t.id),
     }));

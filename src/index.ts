@@ -42,6 +42,7 @@ import { InlineRouter } from "./bot/inline-router.js";
 import { PluginRateLimiter } from "./bot/rate-limiter.js";
 import { setBotPreMiddleware, getDealBot } from "./deals/module.js";
 import type { TaskDependencyResolver } from "./telegram/task-dependency-resolver.js";
+import type { Task, TaskStore } from "./memory/agent/tasks.js";
 import type { WebUIServer } from "./webui/server.js";
 import type { ApiServer } from "./api/server.js";
 import { initMetrics } from "./services/metrics.js";
@@ -1095,75 +1096,6 @@ ${blue}  ┌──────────────────────�
 
       log.info(`✅ Executed scheduled task ${taskId}: ${task.description}`);
 
-      // Schedule next recurrence if applicable
-      if (task.recurrenceInterval && task.recurrenceInterval > 0) {
-        const now = Math.floor(Date.now() / 1000);
-        const nextRun = now + task.recurrenceInterval;
-
-        // Stop recurring if recurrenceUntil has passed
-        const until = task.recurrenceUntil
-          ? Math.floor(task.recurrenceUntil.getTime() / 1000)
-          : null;
-        if (until === null || nextRun <= until) {
-          try {
-            const { getTaskStore: getTS } = await import("./memory/agent/tasks.js");
-            const ts2 = getTS(db);
-            const nextTask = ts2.createTask({
-              description: task.description,
-              priority: task.priority,
-              createdBy: task.createdBy,
-              scheduledFor: new Date(nextRun * 1000),
-              payload: task.payload,
-              reason: task.reason,
-              recurrenceInterval: task.recurrenceInterval,
-              recurrenceUntil: task.recurrenceUntil,
-            });
-
-            // Schedule telegram message for next occurrence
-            const gramJsClient = this.bridge.getClient().getClient();
-            const me = await gramJsClient.getMe();
-            const { randomLong } = await import("./utils/gramjs-bigint.js");
-            const { Api: TgApi } = await import("telegram");
-            const nextTaskMessage = `[TASK:${nextTask.id}] ${nextTask.description}`;
-            const schedResult = await gramJsClient.invoke(
-              new TgApi.messages.SendMessage({
-                peer: me,
-                message: nextTaskMessage,
-                scheduleDate: nextRun,
-                randomId: randomLong(),
-              })
-            );
-
-            // Persist the scheduled message ID
-            let nextScheduledMessageId: number | undefined;
-            if (
-              schedResult instanceof TgApi.Updates ||
-              schedResult instanceof TgApi.UpdatesCombined
-            ) {
-              for (const update of schedResult.updates) {
-                if (update instanceof TgApi.UpdateMessageID) {
-                  nextScheduledMessageId = update.id;
-                  break;
-                }
-              }
-            }
-            if (nextScheduledMessageId !== undefined) {
-              ts2.updateTask(nextTask.id, { scheduledMessageId: nextScheduledMessageId });
-            }
-
-            log.info(
-              `🔁 Scheduled next recurrence of task "${task.description}" at ${new Date(nextRun * 1000).toISOString()} (id: ${nextTask.id})`
-            );
-          } catch (recurErr) {
-            log.error({ err: recurErr }, `Failed to schedule next recurrence for task ${taskId}`);
-          }
-        } else {
-          log.info(
-            `⏹️ Recurrence for task "${task.description}" has ended (recurrenceUntil passed)`
-          );
-        }
-      }
-
       // Initialize dependency resolver if needed
       if (!this.dependencyResolver) {
         this.dependencyResolver = new TaskDependencyResolver(taskStore, this.bridge);
@@ -1171,6 +1103,11 @@ ${blue}  ┌──────────────────────�
 
       // Trigger any dependent tasks
       await this.dependencyResolver.onTaskComplete(taskId);
+
+      // Reschedule recurring tasks
+      if (task.recurrenceInterval && task.recurrenceInterval > 0) {
+        await this.rescheduleRecurringTask(task, taskStore);
+      }
     } catch (error) {
       log.error({ err: error }, "Error handling scheduled task");
 
@@ -1188,6 +1125,80 @@ ${blue}  ┌──────────────────────�
       } catch {
         // Ignore if we can't update task
       }
+    }
+  }
+
+  /**
+   * Reschedule a recurring task after it has completed.
+   * Creates a new task with the same config, scheduled recurrenceInterval seconds from now.
+   * Respects recurrenceUntil — stops rescheduling when the boundary is passed.
+   */
+  private async rescheduleRecurringTask(completedTask: Task, taskStore: TaskStore): Promise<void> {
+    if (!completedTask.recurrenceInterval) return;
+
+    try {
+      const { Api } = await import("telegram");
+      const { randomLong } = await import("./utils/gramjs-bigint.js");
+
+      const nextRunAt = Math.floor(Date.now() / 1000) + completedTask.recurrenceInterval;
+
+      // Stop recurring if recurrenceUntil has passed
+      const until = completedTask.recurrenceUntil
+        ? Math.floor(completedTask.recurrenceUntil.getTime() / 1000)
+        : null;
+      if (until !== null && nextRunAt > until) {
+        log.info(
+          `⏹️ Recurrence for task "${completedTask.description}" has ended (recurrenceUntil passed)`
+        );
+        return;
+      }
+
+      const nextRunDate = new Date(nextRunAt * 1000);
+
+      const newTask = taskStore.createTask({
+        description: completedTask.description,
+        priority: completedTask.priority,
+        createdBy: completedTask.createdBy,
+        scheduledFor: nextRunDate,
+        payload: completedTask.payload,
+        reason: completedTask.reason,
+        recurrenceInterval: completedTask.recurrenceInterval,
+        recurrenceUntil: completedTask.recurrenceUntil,
+      });
+
+      // Schedule Telegram message for the next run
+      const gramJsClient = this.bridge.getClient().getClient();
+      const me = await gramJsClient.getMe();
+      const taskMessage = `[TASK:${newTask.id}] ${newTask.description}`;
+
+      const result = await gramJsClient.invoke(
+        new Api.messages.SendMessage({
+          peer: me,
+          message: taskMessage,
+          scheduleDate: nextRunAt,
+          randomId: randomLong(),
+        })
+      );
+
+      // Extract and persist the new scheduled message ID
+      let scheduledMessageId: number | undefined;
+      if (result instanceof Api.Updates || result instanceof Api.UpdatesCombined) {
+        for (const update of result.updates) {
+          if (update instanceof Api.UpdateMessageID) {
+            scheduledMessageId = update.id;
+            break;
+          }
+        }
+      }
+      if (scheduledMessageId !== undefined) {
+        taskStore.updateTask(newTask.id, { scheduledMessageId });
+      }
+
+      log.info(
+        `🔁 Rescheduled recurring task "${newTask.description}" → next run at ${nextRunDate.toISOString()} (taskId: ${newTask.id})`
+      );
+    } catch (error) {
+      log.error({ err: error }, `Failed to reschedule recurring task ${completedTask.id}`);
     }
   }
 

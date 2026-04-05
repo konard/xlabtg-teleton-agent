@@ -1166,6 +1166,21 @@ describe("Memory Schema", () => {
       expect(columnNames).toContain("output_tokens");
     });
 
+    it("runMigrations from version 1.18.0 adds recurrence columns to tasks", () => {
+      ensureSchema(db);
+      setSchemaVersion(db, "1.18.0");
+
+      runMigrations(db);
+
+      const info = db.prepare("PRAGMA table_info(tasks)").all() as Array<{
+        name: string;
+      }>;
+      const columnNames = info.map((c) => c.name);
+
+      expect(columnNames).toContain("recurrence_interval");
+      expect(columnNames).toContain("recurrence_until");
+    });
+
     it("runMigrations is idempotent (can run multiple times)", () => {
       ensureSchema(db);
       runMigrations(db);
