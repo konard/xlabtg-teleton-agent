@@ -598,9 +598,10 @@ describe("MessageHandler", () => {
   // ── Edge cases ───────────────────────────────────────────────────────────
 
   describe("handleMessage edge cases", () => {
-    it("truncates response exceeding max_message_length", async () => {
+    it("splits response exceeding max_message_length into multiple messages", async () => {
       const agent = makeAgent();
-      const longText = "x".repeat(5000);
+      // Build a 5000-char message as words so the splitter can find space-based split points
+      const longText = "word ".repeat(1000).trimEnd(); // 4999 chars
       agent.processMessage.mockResolvedValue({
         content: longText,
         toolCalls: [],
@@ -612,9 +613,16 @@ describe("MessageHandler", () => {
       );
       await handler.handleMessage(makeMessage({ id: 101 }));
 
-      const sentText = bridge.sendMessage.mock.calls[0][0].text as string;
-      expect(sentText.length).toBe(100);
-      expect(sentText.endsWith("...")).toBe(true);
+      // Should have been called multiple times (one per part)
+      expect(bridge.sendMessage.mock.calls.length).toBeGreaterThan(1);
+      // Every individual part must be within the limit
+      for (const call of bridge.sendMessage.mock.calls) {
+        const sentText = call[0].text as string;
+        expect(sentText.length).toBeLessThanOrEqual(100);
+      }
+      // Must NOT truncate with "..."
+      const firstSentText = bridge.sendMessage.mock.calls[0][0].text as string;
+      expect(firstSentText.endsWith("...")).toBe(false);
     });
 
     it("writes offset after successful processing", async () => {
