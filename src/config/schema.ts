@@ -420,6 +420,14 @@ export const ConfigSchema = z.object({
     .string()
     .optional()
     .describe("Tavily API key for web search & extract (free at https://tavily.com)"),
+  wallet_encryption_key: z
+    .string()
+    .optional()
+    .describe(
+      "AES-256-GCM encryption key for wallet.json mnemonic (hex, 64 chars). " +
+        "Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\" " +
+        "or set TELETON_WALLET_KEY env var."
+    ),
   groq: z
     .object({
       api_key: z
