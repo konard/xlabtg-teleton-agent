@@ -638,6 +638,31 @@ export interface ConfigBundle {
   soul: Record<string, string>;
 }
 
+export interface SelfImprovementAnalysisEntry {
+  id: number;
+  timestamp: number;
+  repo: string;
+  branch: string;
+  files_analyzed: number;
+  issues_found: number;
+  issues_created: number;
+  summary: string | null;
+}
+
+export interface SelfImprovementTask {
+  id: number;
+  analysis_id: number | null;
+  task_type: string;
+  priority: string;
+  file_path: string | null;
+  description: string;
+  suggestion: string | null;
+  code_snippet: string | null;
+  status: string;
+  created_at: number;
+  github_issue_url: string | null;
+}
+
 // ── Fetch helpers ───────────────────────────────────────────────────
 
 async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
@@ -1528,6 +1553,31 @@ export const api = {
     return fetchAPI<APIResponse<{ content: string; suppressed: boolean; sentToTelegram: boolean }>>(
       "/agent-actions/heartbeat/trigger",
       { method: "POST" }
+    );
+  },
+
+  // ── Self-Improvement ───────────────────────────────────────────────
+
+  async getSelfImprovementStatus() {
+    return fetchAPI<
+      APIResponse<{
+        installed: boolean;
+        analysis_count?: number;
+        pending_tasks?: number;
+        last_analysis?: number | null;
+      }>
+    >("/self-improvement/status");
+  },
+
+  async getSelfImprovementAnalysis(limit = 20) {
+    return fetchAPI<APIResponse<SelfImprovementAnalysisEntry[]>>(
+      `/self-improvement/analysis?limit=${limit}`
+    );
+  },
+
+  async getSelfImprovementTasks(status: "pending" | "created" | "dismissed" | "all" = "all", limit = 50) {
+    return fetchAPI<APIResponse<SelfImprovementTask[]>>(
+      `/self-improvement/tasks?status=${status}&limit=${limit}`
     );
   },
 

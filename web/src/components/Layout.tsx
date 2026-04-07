@@ -71,6 +71,9 @@ function DashboardNav() {
         <Link to="/security" className={isActive("/security") ? "active" : ""}>
           Security
         </Link>
+        <Link to="/self-improve" className={isActive("/self-improve") ? "active" : ""}>
+          Self-Improve
+        </Link>
         <Link to="/config" className={isActive("/config") ? "active" : ""}>
           Config
         </Link>
