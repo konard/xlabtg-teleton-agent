@@ -20,6 +20,7 @@ import {
   COOKIE_NAME,
   COOKIE_MAX_AGE,
 } from "./middleware/auth.js";
+import { createCsrfMiddleware } from "./middleware/csrf.js";
 import { logInterceptor } from "./log-interceptor.js";
 import { createStatusRoutes } from "./routes/status.js";
 import { createToolsRoutes } from "./routes/tools.js";
@@ -109,10 +110,14 @@ export class WebUIServer {
         origin: this.deps.config.cors_origins,
         credentials: true,
         allowMethods: ["GET", "HEAD", "PUT", "POST", "DELETE", "PATCH"],
-        allowHeaders: ["Content-Type", "Authorization"],
+        allowHeaders: ["Content-Type", "Authorization", "X-CSRF-Token"],
         maxAge: 3600,
       })
     );
+
+    // CSRF protection (double-submit cookie pattern)
+    // Must come after CORS (which handles preflight) but before auth.
+    this.app.use("*", createCsrfMiddleware());
 
     // Request logging (if enabled)
     if (this.deps.config.log_requests) {

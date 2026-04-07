@@ -20,7 +20,22 @@ export type AuditActionType =
   | "security_change"
   | "login"
   | "logout"
+  | "financial_operation"
   | "other";
+
+/** Structured record for a financial (TON/jetton) audit entry. */
+export interface FinancialAuditDetails {
+  operation: "ton_transfer" | "jetton_transfer" | "ton_swap" | string;
+  amount: number;
+  asset: string; // "TON" or jetton ticker
+  recipient: string;
+  comment?: string;
+  /** Pseudo-hash or transaction ID returned by the operation */
+  txId?: string | null;
+  /** "success" | "failed" */
+  status: "success" | "failed";
+  error?: string;
+}
 
 export interface AuditLogEntry {
   id: number;
@@ -74,6 +89,15 @@ export class AuditService {
          VALUES (?, ?, ?, ?)`
       )
       .run(action, details, opts.ip ?? null, opts.userAgent ?? null);
+  }
+
+  /**
+   * Record a financial operation (TON transfer, jetton send, swap, etc.) to the
+   * dedicated financial audit trail. The structured details are serialized as JSON
+   * so they can be queried and exported separately from generic admin actions.
+   */
+  logFinancial(details: FinancialAuditDetails): void {
+    this.log("financial_operation", JSON.stringify(details));
   }
 
   /** List audit log entries with optional filtering. */
@@ -177,5 +201,14 @@ export function initAudit(db: Database): AuditService {
   if (!_instance) {
     _instance = new AuditService(db);
   }
+  return _instance;
+}
+
+/**
+ * Return the existing AuditService singleton without initializing it.
+ * Returns null if initAudit() has not been called yet (e.g. in standalone
+ * scripts or during TON transfers before the WebUI/API starts).
+ */
+export function getAuditInstance(): AuditService | null {
   return _instance;
 }
