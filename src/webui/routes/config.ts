@@ -103,8 +103,10 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
       );
     }
 
-    // Guard: heartbeat.* keys require self_configurable to be true
-    if (key.startsWith("heartbeat.") && key !== "heartbeat.self_configurable") {
+    // Guard: heartbeat prompt/interval keys require self_configurable to be true
+    // (heartbeat.enabled and heartbeat.self_configurable are always admin-editable)
+    const heartbeatLockedKeys = new Set(["heartbeat.interval_ms", "heartbeat.prompt"]);
+    if (heartbeatLockedKeys.has(key)) {
       const config = deps.agent.getConfig();
       if (config.heartbeat?.self_configurable !== true) {
         return c.json(
@@ -266,8 +268,10 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
       );
     }
 
-    // Guard: heartbeat.* keys require self_configurable to be true
-    if (key.startsWith("heartbeat.") && key !== "heartbeat.self_configurable") {
+    // Guard: heartbeat prompt/interval keys require self_configurable to be true
+    // (heartbeat.enabled and heartbeat.self_configurable are always admin-editable)
+    const heartbeatLockedKeysDelete = new Set(["heartbeat.interval_ms", "heartbeat.prompt"]);
+    if (heartbeatLockedKeysDelete.has(key)) {
       const config = deps.agent.getConfig();
       if (config.heartbeat?.self_configurable !== true) {
         return c.json(

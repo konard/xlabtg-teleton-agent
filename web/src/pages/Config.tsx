@@ -43,6 +43,250 @@ const SESSION_KEYS = [
   'agent.session_reset_policy.idle_expiry_minutes',
 ];
 
+function HeartbeatTab({ config }: { config: ReturnType<typeof useConfigState> }) {
+  const selfConfigurable =
+    config.getLocal('heartbeat.self_configurable') === 'true' ||
+    config.getLocal('heartbeat.self_configurable') === true;
+
+  const [promptDraft, setPromptDraft] = useState<string | null>(null);
+  const [promptSaving, setPromptSaving] = useState(false);
+
+  const [triggerLoading, setTriggerLoading] = useState(false);
+  const [triggerResult, setTriggerResult] = useState<{
+    content: string;
+    suppressed: boolean;
+    sentToTelegram: boolean;
+  } | null>(null);
+  const [triggerError, setTriggerError] = useState<string | null>(null);
+
+  const serverPrompt = String(
+    config.getServer('heartbeat.prompt') ||
+    'Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION.'
+  );
+  const localPrompt = promptDraft ?? String(config.getLocal('heartbeat.prompt') || serverPrompt);
+  const promptDirty = localPrompt !== serverPrompt;
+
+  const intervalMs = Number(config.getLocal('heartbeat.interval_ms') || 1800000);
+  const intervalMin = Math.round(intervalMs / 60000);
+
+  const handleSavePrompt = async () => {
+    if (!promptDirty || promptSaving) return;
+    setPromptSaving(true);
+    try {
+      await config.saveConfig('heartbeat.prompt', localPrompt);
+      setPromptDraft(null);
+    } finally {
+      setPromptSaving(false);
+    }
+  };
+
+  const handleTrigger = async () => {
+    setTriggerLoading(true);
+    setTriggerResult(null);
+    setTriggerError(null);
+    try {
+      const res = await api.triggerHeartbeat();
+      setTriggerResult(res.data);
+    } catch (err) {
+      setTriggerError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setTriggerLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="card-header">
+        <div className="section-title">Heartbeat</div>
+        <p className="card-description">
+          Periodic autonomous wake-up. The agent reads HEARTBEAT.md and acts on its tasks, or stays silent.
+        </p>
+      </div>
+
+      {/* Enable / Interval / Self-configurable */}
+      <div className="card">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label className="toggle" style={{ margin: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={
+                    config.getLocal('heartbeat.enabled') === 'true' ||
+                    config.getLocal('heartbeat.enabled') === true
+                  }
+                  onChange={async (e) => {
+                    await config.saveConfig('heartbeat.enabled', String(e.target.checked));
+                  }}
+                />
+                <span className="toggle-track" />
+                <span className="toggle-thumb" />
+              </label>
+              <span>Enabled</span>
+              <InfoTip text="When enabled, the agent wakes up periodically to check HEARTBEAT.md and act on pending tasks. Replies NO_ACTION (silently suppressed) when nothing needs attention." />
+            </div>
+          </div>
+
+          <EditableField
+            label="Interval"
+            description={`Time between heartbeat ticks (in minutes). Requires restart to take effect.`}
+            configKey="heartbeat.interval_ms"
+            type="number"
+            value={String(intervalMin)}
+            serverValue={String(Math.round(Number(config.getServer('heartbeat.interval_ms') || 1800000) / 60000))}
+            onChange={(v) => config.setLocal('heartbeat.interval_ms', String(Number(v) * 60000))}
+            onSave={(v) => config.saveConfig('heartbeat.interval_ms', String(Number(v) * 60000))}
+            onCancel={() => config.cancelLocal('heartbeat.interval_ms')}
+            min={1}
+            max={1440}
+            placeholder="30"
+            hotReload="restart"
+          />
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label className="toggle" style={{ margin: 0 }}>
+                <input
+                  type="checkbox"
+                  checked={selfConfigurable}
+                  onChange={async (e) => {
+                    await config.saveConfig('heartbeat.self_configurable', String(e.target.checked));
+                  }}
+                />
+                <span className="toggle-track" />
+                <span className="toggle-thumb" />
+              </label>
+              <span>Self-configurable</span>
+              <InfoTip text="Allow the agent to modify its own heartbeat settings (interval, prompt). When off, only the admin can change these via the web UI." />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Prompt editor */}
+      <div className="card-header" style={{ marginTop: 16 }}>
+        <div className="section-title">Heartbeat Prompt</div>
+      </div>
+      <div className="card">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+            Prompt sent to the agent on each heartbeat tick.{' '}
+            {!selfConfigurable && (
+              <span style={{ color: 'var(--warning, #f59e0b)' }}>
+                Enable <strong>Self-configurable</strong> above to edit this field.
+              </span>
+            )}
+          </p>
+          <textarea
+            rows={4}
+            disabled={!selfConfigurable || promptSaving}
+            value={localPrompt}
+            onChange={(e) => setPromptDraft(e.target.value)}
+            style={{
+              width: '100%',
+              resize: 'vertical',
+              fontFamily: 'monospace',
+              fontSize: 13,
+              padding: '8px 10px',
+              boxSizing: 'border-box',
+              borderRadius: 6,
+              border: '1px solid var(--border)',
+              background: selfConfigurable ? 'var(--input-bg, var(--bg))' : 'var(--bg-muted, var(--bg))',
+              color: 'var(--text)',
+              opacity: selfConfigurable ? 1 : 0.6,
+            }}
+          />
+          {selfConfigurable && promptDirty && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button
+                className="btn btn-primary"
+                onClick={handleSavePrompt}
+                disabled={promptSaving}
+                style={{ fontSize: 13, padding: '4px 14px' }}
+              >
+                {promptSaving ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                className="btn"
+                onClick={() => setPromptDraft(null)}
+                disabled={promptSaving}
+                style={{ fontSize: 13, padding: '4px 14px' }}
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Manual trigger */}
+      <div className="card-header" style={{ marginTop: 16 }}>
+        <div className="section-title">Manual Trigger</div>
+      </div>
+      <div className="card">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary)' }}>
+            Run a heartbeat tick immediately. The agent will execute its heartbeat prompt and any
+            actionable response will be delivered to the configured admin Telegram chat.
+            Next scheduled tick: every <strong>{intervalMin} min</strong>.
+          </p>
+          <div>
+            <button
+              className="btn btn-primary"
+              onClick={handleTrigger}
+              disabled={triggerLoading}
+              style={{ fontSize: 13, padding: '6px 18px' }}
+            >
+              {triggerLoading ? 'Running…' : 'Run Heartbeat Now'}
+            </button>
+          </div>
+          {triggerError && (
+            <div className="alert error" style={{ marginTop: 4 }}>
+              {triggerError}
+            </div>
+          )}
+          {triggerResult && (
+            <div
+              style={{
+                background: 'var(--bg-muted, var(--bg))',
+                border: '1px solid var(--border)',
+                borderRadius: 6,
+                padding: '10px 14px',
+                fontSize: 13,
+              }}
+            >
+              <div style={{ marginBottom: 6, fontWeight: 600 }}>
+                Result:{' '}
+                {triggerResult.suppressed ? (
+                  <span style={{ color: 'var(--text-secondary)' }}>NO_ACTION (suppressed)</span>
+                ) : triggerResult.sentToTelegram ? (
+                  <span style={{ color: 'var(--success, #22c55e)' }}>Sent to Telegram</span>
+                ) : (
+                  <span style={{ color: 'var(--warning, #f59e0b)' }}>Response (Telegram unavailable)</span>
+                )}
+              </div>
+              {triggerResult.content && (
+                <pre
+                  style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontFamily: 'monospace',
+                    fontSize: 12,
+                    color: 'var(--text)',
+                  }}
+                >
+                  {triggerResult.content}
+                </pre>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
 export function Config() {
   const { confirm } = useConfirm();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -210,72 +454,7 @@ export function Config() {
 
       {/* Heartbeat Tab */}
       {activeTab === 'heartbeat' && (
-        <>
-          <div className="card-header">
-            <div className="section-title">Heartbeat</div>
-            <p className="card-description">
-              Periodic autonomous wake-up. The agent reads HEARTBEAT.md and acts on its tasks, or stays silent.
-            </p>
-          </div>
-          <div className="card">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label className="toggle" style={{ margin: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={config.getLocal('heartbeat.enabled') === 'true' || config.getLocal('heartbeat.enabled') === true}
-                      onChange={async (e) => {
-                        const val = e.target.checked;
-                        await config.saveConfig('heartbeat.enabled', String(val));
-                      }}
-                    />
-                    <span className="toggle-track" />
-                    <span className="toggle-thumb" />
-                  </label>
-                  <span>Enabled</span>
-                  <InfoTip text="When enabled, the agent wakes up periodically to check HEARTBEAT.md and act on pending tasks. Replies NO_ACTION (silently suppressed) when nothing needs attention." />
-                </div>
-              </div>
-
-              <EditableField
-                label="Interval"
-                description="Time between heartbeat ticks (in minutes). Requires restart to take effect."
-                configKey="heartbeat.interval_ms"
-                type="number"
-                value={String(Math.round(Number(config.getLocal('heartbeat.interval_ms') || 1800000) / 60000))}
-                serverValue={String(Math.round(Number(config.getServer('heartbeat.interval_ms') || 1800000) / 60000))}
-                onChange={(v) => config.setLocal('heartbeat.interval_ms', String(Number(v) * 60000))}
-                onSave={(v) => config.saveConfig('heartbeat.interval_ms', String(Number(v) * 60000))}
-                onCancel={() => config.cancelLocal('heartbeat.interval_ms')}
-                min={1}
-                max={1440}
-                placeholder="30"
-                hotReload="restart"
-                suffix="min"
-              />
-
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <label className="toggle" style={{ margin: 0 }}>
-                    <input
-                      type="checkbox"
-                      checked={config.getLocal('heartbeat.self_configurable') === 'true' || config.getLocal('heartbeat.self_configurable') === true}
-                      onChange={async (e) => {
-                        const val = e.target.checked;
-                        await config.saveConfig('heartbeat.self_configurable', String(val));
-                      }}
-                    />
-                    <span className="toggle-track" />
-                    <span className="toggle-thumb" />
-                  </label>
-                  <span>Self-configurable</span>
-                  <InfoTip text="Allow the agent to modify its own heartbeat settings (interval, prompt). When off, only the admin can change these." />
-                </div>
-              </div>
-            </div>
-          </div>
-        </>
+        <HeartbeatTab config={config} />
       )}
 
       {/* API Keys Tab */}
