@@ -638,6 +638,17 @@ export interface ConfigBundle {
   soul: Record<string, string>;
 }
 
+export interface SelfImprovementConfig {
+  selected_plugin: string;
+  guide_url: string;
+  target_repo: string;
+  focus_areas: string[];
+  auto_create_issues: boolean;
+  schedule_enabled: boolean;
+  schedule_interval_hours: number;
+  require_approval: boolean;
+}
+
 export interface SelfImprovementAnalysisEntry {
   id: number;
   timestamp: number;
@@ -1557,6 +1568,23 @@ export const api = {
   },
 
   // ── Self-Improvement ───────────────────────────────────────────────
+
+  async getSelfImprovementConfig() {
+    return fetchAPI<APIResponse<SelfImprovementConfig>>("/self-improvement/config");
+  },
+
+  async saveSelfImprovementConfig(config: Partial<SelfImprovementConfig>) {
+    return fetchAPI<APIResponse<SelfImprovementConfig>>("/self-improvement/config", {
+      method: "POST",
+      body: JSON.stringify(config),
+    });
+  },
+
+  async triggerSelfImprovement() {
+    return fetchAPI<APIResponse<{ message: string }>>("/self-improvement/trigger", {
+      method: "POST",
+    });
+  },
 
   async getSelfImprovementStatus() {
     return fetchAPI<

@@ -1,8 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
 import {
   api,
+  type SelfImprovementConfig,
   type SelfImprovementAnalysisEntry,
   type SelfImprovementTask,
+  type PluginManifest,
 } from "../lib/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -85,15 +87,114 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// ── Toggle switch ─────────────────────────────────────────────────────────────
+
+function Toggle({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  label: string;
+}) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: "8px",
+        cursor: "pointer",
+        fontSize: "13px",
+      }}
+    >
+      <span
+        onClick={() => onChange(!checked)}
+        style={{
+          display: "inline-block",
+          width: 36,
+          height: 20,
+          borderRadius: 10,
+          background: checked ? "var(--primary, #2563eb)" : "var(--border, #d1d5db)",
+          position: "relative",
+          cursor: "pointer",
+          transition: "background 0.2s",
+          flexShrink: 0,
+        }}
+      >
+        <span
+          style={{
+            position: "absolute",
+            top: 2,
+            left: checked ? 18 : 2,
+            width: 16,
+            height: 16,
+            borderRadius: "50%",
+            background: "#fff",
+            transition: "left 0.2s",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+          }}
+        />
+      </span>
+      {label}
+    </label>
+  );
+}
+
+// ── Focus area chips ──────────────────────────────────────────────────────────
+
+const ALL_FOCUS_AREAS = ["security", "performance", "readability", "tests", "documentation"];
+
+function FocusAreaPicker({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (areas: string[]) => void;
+}) {
+  const toggle = (area: string) => {
+    if (selected.includes(area)) {
+      onChange(selected.filter((a) => a !== area));
+    } else {
+      onChange([...selected, area]);
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+      {ALL_FOCUS_AREAS.map((area) => {
+        const active = selected.includes(area);
+        return (
+          <button
+            key={area}
+            onClick={() => toggle(area)}
+            style={{
+              padding: "4px 12px",
+              borderRadius: "20px",
+              fontSize: "12px",
+              fontWeight: 600,
+              border: `1px solid ${active ? "var(--primary, #2563eb)" : "var(--border, #e5e7eb)"}`,
+              background: active ? "var(--primary, #2563eb)" : "transparent",
+              color: active ? "#fff" : "inherit",
+              cursor: "pointer",
+            }}
+          >
+            {area}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // ── Analysis history table ────────────────────────────────────────────────────
 
 function AnalysisHistory({ entries }: { entries: SelfImprovementAnalysisEntry[] }) {
   if (entries.length === 0) {
     return (
       <p style={{ fontSize: "14px", opacity: 0.6, margin: "16px 0" }}>
-        No analysis runs yet. Install the{" "}
-        <code>self-improvement-assistant</code> plugin and run{" "}
-        <code>analyze_codebase_quality</code> via the agent.
+        No analysis runs yet. Configure a plugin executor and click{" "}
+        <strong>Run Analysis</strong> to start.
       </p>
     );
   }
@@ -271,34 +372,219 @@ function ImprovementTaskList({
   );
 }
 
+// ── Settings panel ────────────────────────────────────────────────────────────
+
+function SettingsPanel({
+  config,
+  plugins,
+  onSave,
+}: {
+  config: SelfImprovementConfig;
+  plugins: PluginManifest[];
+  onSave: (cfg: SelfImprovementConfig) => Promise<void>;
+}) {
+  const [draft, setDraft] = useState<SelfImprovementConfig>(config);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  // Sync when parent config changes (e.g. after load)
+  useEffect(() => {
+    setDraft(config);
+  }, [config]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    try {
+      await onSave(draft);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const inputStyle: React.CSSProperties = {
+    width: "100%",
+    padding: "7px 10px",
+    fontSize: "13px",
+    border: "1px solid var(--border, #e5e7eb)",
+    borderRadius: "6px",
+    background: "var(--surface, #fff)",
+    color: "inherit",
+    boxSizing: "border-box",
+  };
+
+  const labelStyle: React.CSSProperties = {
+    display: "block",
+    fontSize: "12px",
+    fontWeight: 600,
+    marginBottom: "5px",
+    opacity: 0.75,
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+      {/* Executor plugin */}
+      <div>
+        <label style={labelStyle}>Executor Plugin</label>
+        <select
+          value={draft.selected_plugin}
+          onChange={(e) => setDraft({ ...draft, selected_plugin: e.target.value })}
+          style={inputStyle}
+        >
+          <option value="">— select a plugin —</option>
+          {plugins.map((p) => (
+            <option key={p.name} value={p.name}>
+              {p.name}{p.version ? ` (v${p.version})` : ""}
+            </option>
+          ))}
+        </select>
+        <p style={{ margin: "5px 0 0", fontSize: "12px", opacity: 0.6 }}>
+          The agent will delegate analysis to this plugin's tools (e.g.{" "}
+          <code>github-dev-assistant</code>).
+        </p>
+      </div>
+
+      {/* Guide URL */}
+      <div>
+        <label style={labelStyle}>Guide / Instruction URL (optional)</label>
+        <input
+          type="url"
+          value={draft.guide_url}
+          onChange={(e) => setDraft({ ...draft, guide_url: e.target.value })}
+          placeholder="https://github.com/…/GUIDE.md"
+          style={inputStyle}
+        />
+        <p style={{ margin: "5px 0 0", fontSize: "12px", opacity: 0.6 }}>
+          Paste a GUIDE.md URL to give the agent context on available tools and workflows.
+        </p>
+      </div>
+
+      {/* Target repository */}
+      <div>
+        <label style={labelStyle}>Target Repository</label>
+        <input
+          type="text"
+          value={draft.target_repo}
+          onChange={(e) => setDraft({ ...draft, target_repo: e.target.value })}
+          placeholder="owner/repo"
+          style={inputStyle}
+        />
+        <p style={{ margin: "5px 0 0", fontSize: "12px", opacity: 0.6 }}>
+          GitHub repository to analyze, e.g. <code>xlabtg/teleton-agent</code>.
+        </p>
+      </div>
+
+      {/* Focus areas */}
+      <div>
+        <label style={labelStyle}>Focus Areas</label>
+        <FocusAreaPicker
+          selected={draft.focus_areas}
+          onChange={(areas) => setDraft({ ...draft, focus_areas: areas })}
+        />
+      </div>
+
+      {/* Autonomous schedule */}
+      <div
+        style={{
+          padding: "14px 16px",
+          border: "1px solid var(--border, #e5e7eb)",
+          borderRadius: "8px",
+          display: "flex",
+          flexDirection: "column",
+          gap: "12px",
+        }}
+      >
+        <Toggle
+          checked={draft.schedule_enabled}
+          onChange={(v) => setDraft({ ...draft, schedule_enabled: v })}
+          label="Enable autonomous scheduled analysis"
+        />
+
+        {draft.schedule_enabled && (
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <label style={{ fontSize: "13px", whiteSpace: "nowrap" }}>Run every</label>
+            <select
+              value={draft.schedule_interval_hours}
+              onChange={(e) =>
+                setDraft({ ...draft, schedule_interval_hours: Number(e.target.value) })
+              }
+              style={{ ...inputStyle, width: "auto" }}
+            >
+              <option value={6}>6 hours</option>
+              <option value={12}>12 hours</option>
+              <option value={24}>24 hours</option>
+              <option value={168}>1 week</option>
+            </select>
+          </div>
+        )}
+
+        <Toggle
+          checked={draft.require_approval}
+          onChange={(v) => setDraft({ ...draft, require_approval: v })}
+          label="Require approval before creating GitHub issues"
+        />
+
+        <Toggle
+          checked={draft.auto_create_issues}
+          onChange={(v) => setDraft({ ...draft, auto_create_issues: v })}
+          label="Auto-create GitHub issues for critical findings"
+        />
+      </div>
+
+      <div>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          style={{ padding: "8px 20px", fontSize: "13px", fontWeight: 600 }}
+        >
+          {saving ? "Saving…" : saved ? "✓ Saved" : "Save Settings"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export function SelfImprove() {
-  const [status, setStatus] = useState<{
-    installed: boolean;
-    analysis_count?: number;
-    pending_tasks?: number;
-    last_analysis?: number | null;
-  } | null>(null);
+  const [config, setConfig] = useState<SelfImprovementConfig>({
+    selected_plugin: "",
+    guide_url: "",
+    target_repo: "",
+    focus_areas: ["security", "performance", "readability"],
+    auto_create_issues: false,
+    schedule_enabled: false,
+    schedule_interval_hours: 24,
+    require_approval: true,
+  });
+  const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [analysis, setAnalysis] = useState<SelfImprovementAnalysisEntry[]>([]);
   const [tasks, setTasks] = useState<SelfImprovementTask[]>([]);
   const [taskFilter, setTaskFilter] = useState<"all" | "pending" | "created" | "dismissed">("all");
   const [loading, setLoading] = useState(true);
+  const [triggering, setTriggering] = useState(false);
+  const [triggerMsg, setTriggerMsg] = useState<{ type: "success" | "error"; text: string } | null>(
+    null
+  );
   const [error, setError] = useState<string | null>(null);
-  const [activeSection, setActiveSection] = useState<"overview" | "history" | "tasks">("overview");
+  const [activeSection, setActiveSection] = useState<"settings" | "history" | "tasks">("settings");
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const [statusRes, analysisRes, tasksRes] = await Promise.all([
-        api.getSelfImprovementStatus(),
+      const [cfgRes, pluginsRes, analysisRes, tasksRes] = await Promise.all([
+        api.getSelfImprovementConfig(),
+        api.getPlugins(),
         api.getSelfImprovementAnalysis(20),
         api.getSelfImprovementTasks("all", 50),
       ]);
-      setStatus(statusRes.data);
-      setAnalysis(analysisRes.data);
-      setTasks(tasksRes.data);
+      if (cfgRes.success && cfgRes.data) setConfig(cfgRes.data);
+      if (pluginsRes.success && pluginsRes.data) setPlugins(pluginsRes.data);
+      if (analysisRes.success && analysisRes.data) setAnalysis(analysisRes.data);
+      if (tasksRes.success && tasksRes.data) setTasks(tasksRes.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -310,13 +596,43 @@ export function SelfImprove() {
     load();
   }, [load]);
 
-  if (loading) return <div className="loading">Loading...</div>;
+  const handleSaveConfig = async (cfg: SelfImprovementConfig) => {
+    const res = await api.saveSelfImprovementConfig(cfg);
+    if (res.success && res.data) setConfig(res.data);
+  };
+
+  const handleTrigger = async () => {
+    setTriggering(true);
+    setTriggerMsg(null);
+    try {
+      const res = await api.triggerSelfImprovement();
+      if (res.success && res.data) {
+        setTriggerMsg({ type: "success", text: res.data.message });
+      } else {
+        setTriggerMsg({ type: "error", text: res.error ?? "Unknown error" });
+      }
+    } catch (err) {
+      setTriggerMsg({
+        type: "error",
+        text: err instanceof Error ? err.message : String(err),
+      });
+    } finally {
+      setTriggering(false);
+    }
+  };
+
+  if (loading) return <div className="loading">Loading…</div>;
+
+  const hasPlugin = !!config.selected_plugin;
 
   return (
     <div>
       <div className="header">
         <h1>Self-Improvement</h1>
-        <p>Autonomous codebase analysis and improvement tracking</p>
+        <p>
+          Meta-orchestrator: delegate autonomous codebase analysis to an installed plugin (e.g.{" "}
+          <code>github-dev-assistant</code>).
+        </p>
       </div>
 
       {error && (
@@ -331,76 +647,76 @@ export function SelfImprove() {
         </div>
       )}
 
-      {/* Status cards */}
+      {/* Run bar */}
       <div
+        className="card"
         style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          marginBottom: "20px",
+          padding: "16px",
+          display: "flex",
+          alignItems: "center",
           gap: "12px",
-          marginBottom: "24px",
+          flexWrap: "wrap",
         }}
       >
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", opacity: 0.6, marginBottom: "4px" }}>Plugin Status</div>
-          <div style={{ fontWeight: 700, fontSize: "16px" }}>
-            {status?.installed ? (
-              <span style={{ color: "#16a34a" }}>Installed</span>
-            ) : (
-              <span style={{ color: "#6b7280" }}>Not installed</span>
+        <button
+          onClick={handleTrigger}
+          disabled={triggering || !hasPlugin}
+          style={{
+            padding: "9px 22px",
+            fontWeight: 600,
+            fontSize: "14px",
+            background: hasPlugin ? "var(--primary, #2563eb)" : undefined,
+            color: hasPlugin ? "#fff" : undefined,
+            border: hasPlugin ? "none" : undefined,
+          }}
+          title={!hasPlugin ? "Select a plugin in Settings first" : undefined}
+        >
+          {triggering ? "⏳ Running…" : "▶ Run Analysis"}
+        </button>
+
+        {config.selected_plugin && (
+          <span style={{ fontSize: "13px", opacity: 0.7 }}>
+            via <strong>{config.selected_plugin}</strong>
+            {config.target_repo && (
+              <>
+                {" "}
+                on <code>{config.target_repo}</code>
+              </>
             )}
-          </div>
-        </div>
+          </span>
+        )}
 
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", opacity: 0.6, marginBottom: "4px" }}>Analysis Runs</div>
-          <div style={{ fontWeight: 700, fontSize: "22px" }}>
-            {status?.analysis_count ?? 0}
-          </div>
-        </div>
+        {!hasPlugin && (
+          <span style={{ fontSize: "13px", color: "#d97706" }}>
+            ⚠ No plugin selected — configure one in the Settings tab.
+          </span>
+        )}
 
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", opacity: 0.6, marginBottom: "4px" }}>Pending Tasks</div>
-          <div
+        {triggerMsg && (
+          <span
             style={{
-              fontWeight: 700,
-              fontSize: "22px",
-              color: (status?.pending_tasks ?? 0) > 0 ? "#d97706" : "inherit",
+              fontSize: "13px",
+              color: triggerMsg.type === "success" ? "#16a34a" : "#dc2626",
             }}
           >
-            {status?.pending_tasks ?? 0}
-          </div>
-        </div>
-
-        <div className="card" style={{ padding: "16px" }}>
-          <div style={{ fontSize: "12px", opacity: 0.6, marginBottom: "4px" }}>Last Analysis</div>
-          <div style={{ fontWeight: 600, fontSize: "14px" }}>
-            {status?.last_analysis ? timeAgo(status.last_analysis) : "—"}
-          </div>
-        </div>
+            {triggerMsg.type === "success" ? "✓ " : "✗ "}
+            {triggerMsg.text}
+          </span>
+        )}
       </div>
 
-      {/* Plugin not installed notice */}
-      {!status?.installed && (
-        <div
-          className="card"
-          style={{ padding: "20px", marginBottom: "24px", borderLeft: "3px solid #d97706" }}
-        >
-          <h3 style={{ margin: "0 0 8px", fontSize: "15px" }}>Plugin not installed</h3>
-          <p style={{ margin: "0 0 12px", fontSize: "13px", lineHeight: 1.6 }}>
-            The <code>self-improvement-assistant</code> plugin is not installed yet. Copy the
-            example from the repository and place it in{" "}
-            <code>~/.teleton/plugins/self-improvement-assistant/</code>, then restart the agent.
-          </p>
-          <p style={{ margin: 0, fontSize: "13px", opacity: 0.7 }}>
-            Example plugin source:{" "}
-            <code>examples/plugins/self-improvement-assistant/index.js</code>
-          </p>
-        </div>
-      )}
-
       {/* Section tabs */}
-      <div style={{ display: "flex", gap: "4px", marginBottom: "16px", borderBottom: "1px solid var(--border, #e5e7eb)", paddingBottom: "0" }}>
-        {(["overview", "history", "tasks"] as const).map((section) => (
+      <div
+        style={{
+          display: "flex",
+          gap: "4px",
+          marginBottom: "16px",
+          borderBottom: "1px solid var(--border, #e5e7eb)",
+          paddingBottom: "0",
+        }}
+      >
+        {(["settings", "history", "tasks"] as const).map((section) => (
           <button
             key={section}
             onClick={() => setActiveSection(section)}
@@ -408,8 +724,12 @@ export function SelfImprove() {
               padding: "8px 16px",
               background: "none",
               border: "none",
-              borderBottom: activeSection === section ? "2px solid var(--primary, #2563eb)" : "2px solid transparent",
-              color: activeSection === section ? "var(--primary, #2563eb)" : "inherit",
+              borderBottom:
+                activeSection === section
+                  ? "2px solid var(--primary, #2563eb)"
+                  : "2px solid transparent",
+              color:
+                activeSection === section ? "var(--primary, #2563eb)" : "inherit",
               fontWeight: activeSection === section ? 600 : 400,
               cursor: "pointer",
               fontSize: "14px",
@@ -444,69 +764,18 @@ export function SelfImprove() {
         </div>
       </div>
 
-      {/* Overview section */}
-      {activeSection === "overview" && (
-        <div>
-          <div className="card">
-            <div className="card-header">
-              <div className="section-title">About Self-Improvement</div>
-            </div>
-            <div style={{ padding: "16px", fontSize: "14px", lineHeight: 1.7 }}>
-              <p style={{ margin: "0 0 12px" }}>
-                The <strong>self-improvement-assistant</strong> plugin enables the agent to
-                autonomously analyze its own codebase for potential improvements, bugs, and
-                refactoring opportunities, and optionally create GitHub issues from findings.
-              </p>
-              <p style={{ margin: "0 0 12px" }}>
-                <strong>Available agent tools after installing the plugin:</strong>
-              </p>
-              <ul style={{ margin: "0 0 12px", paddingLeft: "20px" }}>
-                <li>
-                  <code>analyze_codebase_quality</code> — Scan a GitHub repository for issues
-                </li>
-                <li>
-                  <code>create_github_issue_from_finding</code> — Open a GitHub issue from a finding
-                </li>
-                <li>
-                  <code>list_analysis_history</code> — View past analysis runs
-                </li>
-                <li>
-                  <code>list_improvement_tasks</code> — Browse discovered improvement tasks
-                </li>
-                <li>
-                  <code>configure_autonomous_analysis</code> — Enable periodic scheduled analysis
-                </li>
-              </ul>
-              <p style={{ margin: 0, opacity: 0.7 }}>
-                Requires a GitHub Personal Access Token with <code>repo</code> scope, stored as the{" "}
-                <code>github_token</code> plugin secret.
-              </p>
-            </div>
+      {/* Settings section */}
+      {activeSection === "settings" && (
+        <div className="card">
+          <div className="card-header">
+            <div className="section-title">Orchestrator Settings</div>
           </div>
-
-          <div className="card" style={{ marginTop: "16px" }}>
-            <div className="card-header">
-              <div className="section-title">Quick Start</div>
-            </div>
-            <div style={{ padding: "16px" }}>
-              <ol style={{ margin: 0, paddingLeft: "20px", fontSize: "13px", lineHeight: 2 }}>
-                <li>
-                  Copy{" "}
-                  <code>examples/plugins/self-improvement-assistant/</code> to{" "}
-                  <code>~/.teleton/plugins/self-improvement-assistant/</code>
-                </li>
-                <li>Restart the agent to load the plugin</li>
-                <li>
-                  Set the GitHub token secret:{" "}
-                  <code>/plugin keys self-improvement-assistant github_token YOUR_PAT</code>
-                </li>
-                <li>
-                  Run the analysis:{" "}
-                  <code>analyze_codebase_quality repo="xlabtg/teleton-agent"</code>
-                </li>
-                <li>Review findings on the Tasks tab and create GitHub issues as needed</li>
-              </ol>
-            </div>
+          <div style={{ padding: "16px" }}>
+            <SettingsPanel
+              config={config}
+              plugins={plugins}
+              onSave={handleSaveConfig}
+            />
           </div>
         </div>
       )}

@@ -243,7 +243,7 @@ export class WebUIServer {
     this.app.route("/api/health-check", createHealthRoutes(this.deps));
     this.app.route("/api/export", createExportImportRoutes(this.deps));
     this.app.route("/api/workflows", createWorkflowsRoutes(this.deps));
-    this.app.route("/api/self-improvement", createSelfImprovementRoutes());
+    this.app.route("/api/self-improvement", createSelfImprovementRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {

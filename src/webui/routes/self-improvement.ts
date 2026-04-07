@@ -2,12 +2,37 @@ import { Hono } from "hono";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import type { APIResponse } from "../types.js";
+import type { APIResponse, WebUIServerDeps } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 
 const PLUGIN_DATA_DIR = join(TELETON_ROOT, "plugins", "data");
 const PLUGIN_DB_PATH = join(PLUGIN_DATA_DIR, "self-improvement-assistant.db");
+
+/** Key used to persist the meta-orchestrator config in the agent's main DB. */
+const CONFIG_KEY = "self_improvement_orchestrator_config";
+
+export interface MetaOrchestratorConfig {
+  selected_plugin: string;
+  guide_url: string;
+  target_repo: string;
+  focus_areas: string[];
+  auto_create_issues: boolean;
+  schedule_enabled: boolean;
+  schedule_interval_hours: number;
+  require_approval: boolean;
+}
+
+const DEFAULT_CONFIG: MetaOrchestratorConfig = {
+  selected_plugin: "",
+  guide_url: "",
+  target_repo: "",
+  focus_areas: ["security", "performance", "readability"],
+  auto_create_issues: false,
+  schedule_enabled: false,
+  schedule_interval_hours: 24,
+  require_approval: true,
+};
 
 export interface AnalysisLogEntry {
   id: number;
@@ -40,11 +65,167 @@ function openPluginDb(): Database.Database | null {
   return new Database(PLUGIN_DB_PATH, { readonly: true });
 }
 
-export function createSelfImprovementRoutes() {
+/** Load config from the main agent DB's user_hook_config table. */
+function loadConfig(db: Database.Database): MetaOrchestratorConfig {
+  try {
+    const row = db.prepare(`SELECT value FROM user_hook_config WHERE key = ?`).get(CONFIG_KEY) as
+      | { value: string }
+      | undefined;
+    if (!row) return { ...DEFAULT_CONFIG };
+    return { ...DEFAULT_CONFIG, ...(JSON.parse(row.value) as Partial<MetaOrchestratorConfig>) };
+  } catch {
+    return { ...DEFAULT_CONFIG };
+  }
+}
+
+/** Persist config into the main agent DB's user_hook_config table. */
+function saveConfig(db: Database.Database, config: MetaOrchestratorConfig): void {
+  db.prepare(
+    `INSERT OR REPLACE INTO user_hook_config (key, value, updated_at)
+     VALUES (?, ?, datetime('now'))`
+  ).run(CONFIG_KEY, JSON.stringify(config));
+}
+
+export function createSelfImprovementRoutes(deps?: WebUIServerDeps) {
   const app = new Hono();
 
+  // ── Config endpoints ────────────────────────────────────────────────────────
+
+  // GET /api/self-improvement/config
+  app.get("/config", (c) => {
+    if (!deps?.memory?.db) {
+      return c.json<APIResponse<MetaOrchestratorConfig>>({
+        success: true,
+        data: { ...DEFAULT_CONFIG },
+      });
+    }
+    try {
+      const config = loadConfig(deps.memory.db);
+      return c.json<APIResponse<MetaOrchestratorConfig>>({ success: true, data: config });
+    } catch (error) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
+    }
+  });
+
+  // POST /api/self-improvement/config
+  app.post("/config", async (c) => {
+    if (!deps?.memory?.db) {
+      return c.json<APIResponse>({ success: false, error: "Memory DB not available" }, 503);
+    }
+    try {
+      const body = await c.req.json<Partial<MetaOrchestratorConfig>>();
+      const current = loadConfig(deps.memory.db);
+      const updated: MetaOrchestratorConfig = { ...current, ...body };
+      saveConfig(deps.memory.db, updated);
+      return c.json<APIResponse<MetaOrchestratorConfig>>({ success: true, data: updated });
+    } catch (error) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
+    }
+  });
+
+  // ── Trigger endpoint ────────────────────────────────────────────────────────
+
+  // POST /api/self-improvement/trigger
+  // Dispatches a self-improvement analysis task via the configured plugin.
+  app.post("/trigger", async (c) => {
+    if (!deps) {
+      return c.json<APIResponse>({ success: false, error: "Server deps not available" }, 503);
+    }
+    if (!deps.memory?.db) {
+      return c.json<APIResponse>({ success: false, error: "Memory DB not available" }, 503);
+    }
+
+    try {
+      const cfg = loadConfig(deps.memory.db);
+
+      if (!cfg.selected_plugin) {
+        return c.json<APIResponse>(
+          {
+            success: false,
+            error: "No plugin selected. Configure a plugin in Self-Improve settings.",
+          },
+          422
+        );
+      }
+
+      const agentConfig = deps.agent.getConfig();
+      const adminChatId = agentConfig.telegram?.admin_ids?.[0];
+      if (!adminChatId) {
+        return c.json<APIResponse>(
+          { success: false, error: "No admin_ids configured in Telegram settings" },
+          422
+        );
+      }
+
+      // Build the self-improvement prompt that will be processed by the agent.
+      // The prompt references the selected plugin and guide URL so the agent can
+      // use the plugin's tools to perform the analysis.
+      const focusAreasText =
+        cfg.focus_areas.length > 0 ? cfg.focus_areas.join(", ") : "general code quality";
+      const repoText = cfg.target_repo || "the teleton-agent codebase";
+      const guideText = cfg.guide_url
+        ? `Use the guide at ${cfg.guide_url} for context on available tools and workflows.`
+        : "";
+
+      const prompt =
+        `Perform a self-improvement analysis of ${repoText} using the ${cfg.selected_plugin} plugin. ` +
+        `Focus areas: ${focusAreasText}. ` +
+        guideText +
+        (cfg.auto_create_issues
+          ? " Automatically create GitHub issues for critical and high severity findings."
+          : " List findings but do NOT create GitHub issues automatically — await user approval.") +
+        " Report a summary of findings when complete.";
+
+      const sessionChatId = `telegram:direct:${adminChatId}`;
+      const { getDatabase } = await import("../../memory/index.js");
+      const toolContext = {
+        bridge: deps.bridge,
+        db: getDatabase().getDb(),
+        chatId: sessionChatId,
+        isGroup: false,
+        senderId: adminChatId,
+        config: agentConfig,
+      };
+
+      // Fire-and-forget: start the analysis in the background so the HTTP
+      // response returns immediately.
+      void deps.agent
+        .processMessage({
+          chatId: sessionChatId,
+          userMessage: prompt,
+          userName: "self-improve",
+          timestamp: Date.now(),
+          isGroup: false,
+          toolContext,
+        })
+        .then(async (response) => {
+          const content = response.content ?? "";
+          if (content && deps.bridge?.isAvailable()) {
+            await deps.bridge.sendMessage({
+              chatId: String(adminChatId),
+              text: `🔄 Self-Improve result:\n${content}`,
+            });
+          }
+        })
+        .catch(() => {
+          // Errors are logged by the agent runtime itself
+        });
+
+      return c.json<APIResponse<{ message: string }>>({
+        success: true,
+        data: {
+          message: `Analysis dispatched via ${cfg.selected_plugin}. Results will be sent to Telegram when complete.`,
+        },
+      });
+    } catch (error) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
+    }
+  });
+
+  // ── Legacy plugin DB endpoints ──────────────────────────────────────────────
+
   // GET /api/self-improvement/status
-  // Returns whether the plugin DB exists and basic stats.
+  // Returns whether the legacy self-improvement-assistant plugin DB exists and basic stats.
   app.get("/status", (c) => {
     const installed = existsSync(PLUGIN_DB_PATH);
     if (!installed) {
@@ -113,7 +294,6 @@ export function createSelfImprovementRoutes() {
   });
 
   // GET /api/self-improvement/analysis?limit=10
-  // Returns recent analysis log entries.
   app.get("/analysis", (c) => {
     let db: Database.Database | null = null;
     try {
@@ -145,7 +325,6 @@ export function createSelfImprovementRoutes() {
   });
 
   // GET /api/self-improvement/tasks?status=pending&limit=20
-  // Returns improvement tasks, optionally filtered by status.
   app.get("/tasks", (c) => {
     let db: Database.Database | null = null;
     try {
