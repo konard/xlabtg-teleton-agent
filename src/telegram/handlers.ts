@@ -241,8 +241,9 @@ export class MessageHandler {
             };
           }
           break;
-        case "allowlist":
-          if (!this.config.group_allow_from.includes(parseInt(message.chatId))) {
+        case "allowlist": {
+          const chatIdNum = Number(message.chatId);
+          if (!Number.isInteger(chatIdNum) || !this.config.group_allow_from.includes(chatIdNum)) {
             return {
               message,
               isAdmin,
@@ -251,6 +252,7 @@ export class MessageHandler {
             };
           }
           break;
+        }
         case "open":
           break;
       }
