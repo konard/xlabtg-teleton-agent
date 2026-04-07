@@ -685,6 +685,72 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     parse: identity,
   },
 
+  // ─── Compaction ────────────────────────────────────────────────────
+  "agent.compaction.enabled": {
+    type: "boolean",
+    category: "Agent",
+    label: "Compaction Enabled",
+    description: "Enable automatic context compaction when message count or token limit is reached",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "true",
+  },
+  "agent.compaction.max_messages": {
+    type: "number",
+    category: "Agent",
+    label: "Compaction Max Messages",
+    description:
+      "Trigger compaction after this many messages (lower = more aggressive, higher = keeps more history)",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(10, 10000),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "1000",
+  },
+  "agent.compaction.keep_recent": {
+    type: "number",
+    category: "Agent",
+    label: "Compaction Keep Recent",
+    description:
+      "Number of recent messages always preserved and never summarised during compaction",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(5, 500),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "20",
+  },
+  "agent.compaction.log_compaction": {
+    type: "boolean",
+    category: "Agent",
+    label: "Compaction Audit Log",
+    description:
+      "Write a compaction audit entry (summary + preserved identifiers) to the daily log before discarding old messages",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "true",
+  },
+  "agent.compaction.auto_preserve": {
+    type: "boolean",
+    category: "Agent",
+    label: "Auto-Preserve Identifiers",
+    description:
+      "Automatically extract wallet addresses, transaction hashes, URLs, and large numbers from messages before compaction so they survive summarisation",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "true",
+  },
+
   // ─── Heartbeat ─────────────────────────────────────────────────────
   "heartbeat.enabled": {
     type: "boolean",

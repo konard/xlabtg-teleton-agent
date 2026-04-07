@@ -952,6 +952,11 @@ async function runInteractiveOnboarding(
         idle_expiry_enabled: true,
         idle_expiry_minutes: 1440,
       },
+      compaction: {
+        enabled: true,
+        log_compaction: true,
+        auto_preserve: true,
+      },
     },
     telegram: {
       api_id: apiId,
@@ -1142,6 +1147,11 @@ async function runNonInteractiveOnboarding(
         daily_reset_hour: 4,
         idle_expiry_enabled: true,
         idle_expiry_minutes: 1440,
+      },
+      compaction: {
+        enabled: true,
+        log_compaction: true,
+        auto_preserve: true,
       },
     },
     telegram: {

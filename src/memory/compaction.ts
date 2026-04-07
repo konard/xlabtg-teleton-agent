@@ -1,7 +1,7 @@
 import type { Context, Message, TextContent } from "@mariozechner/pi-ai";
 import { appendToTranscript } from "../session/transcript.js";
 import { randomUUID } from "crypto";
-import { writeSummaryToDailyLog } from "./daily-logs.js";
+import { writeSummaryToDailyLog, appendToDailyLog } from "./daily-logs.js";
 import { summarizeWithFallback } from "./ai-summarization.js";
 import { saveSessionMemory } from "../session/memory-hook.js";
 
@@ -25,6 +25,8 @@ export interface CompactionConfig {
   keepRecentMessages?: number; // Number of recent messages to preserve
   memoryFlushEnabled?: boolean; // Write memory to daily log before compaction
   softThresholdTokens?: number; // Token count to trigger pre-compaction flush
+  logCompaction?: boolean; // Write compaction audit entry to daily log
+  autoPreserve?: boolean; // Extract critical identifiers before compaction
 }
 
 export const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
@@ -34,6 +36,8 @@ export const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
   keepRecentMessages: COMPACTION_KEEP_RECENT,
   memoryFlushEnabled: true,
   softThresholdTokens: DEFAULT_SOFT_THRESHOLD_TOKENS,
+  logCompaction: true,
+  autoPreserve: true,
 };
 
 const log = createLogger("Memory");
@@ -84,6 +88,96 @@ export function shouldFlushMemory(
   }
 
   return false;
+}
+
+/**
+ * Extract critical identifiers from messages that must survive compaction.
+ * Scans for wallet addresses, transaction hashes, URLs, numbers, and similar
+ * values that an LLM summariser might paraphrase rather than preserve verbatim.
+ */
+export function extractCriticalIdentifiers(messages: Message[]): string {
+  const found: string[] = [];
+
+  // Patterns for values that must be preserved verbatim
+  const patterns: Array<{ label: string; re: RegExp }> = [
+    // Blockchain / crypto addresses (TON, ETH, BTC, etc.)
+    { label: "TON address", re: /\bEQ[A-Za-z0-9_-]{46}\b/g },
+    { label: "ETH address", re: /\b0x[0-9a-fA-F]{40}\b/g },
+    // Transaction / hash identifiers
+    { label: "tx hash", re: /\b[0-9a-fA-F]{64}\b/g },
+    // URLs
+    { label: "URL", re: /https?:\/\/[^\s"'<>]+/g },
+    // Large numbers (likely amounts / IDs)
+    { label: "number", re: /\b\d{6,}\b/g },
+    // Telegram usernames
+    { label: "username", re: /@[A-Za-z0-9_]{5,}/g },
+  ];
+
+  for (const msg of messages) {
+    let text = "";
+    if (msg.role === "user") {
+      text = typeof msg.content === "string" ? msg.content : "";
+    } else if (msg.role === "assistant") {
+      text = msg.content
+        .filter((b): b is TextContent => b.type === "text")
+        .map((b) => b.text)
+        .join("\n");
+    }
+
+    if (!text) continue;
+
+    for (const { label, re } of patterns) {
+      const matches = text.match(re);
+      if (matches) {
+        for (const m of matches) {
+          found.push(`${label}: ${m}`);
+        }
+      }
+    }
+  }
+
+  // Deduplicate while preserving order
+  const seen = new Set<string>();
+  return found
+    .filter((v) => {
+      if (seen.has(v)) return false;
+      seen.add(v);
+      return true;
+    })
+    .join("\n");
+}
+
+/**
+ * Write a structured compaction audit entry to the daily log.
+ * Captures what was compacted, when, and the resulting summary
+ * so there is always an audit trail even after messages are discarded.
+ */
+function writeCompactionAuditLog(params: {
+  sessionId: string;
+  chatId?: string;
+  messageCount: number;
+  keptCount: number;
+  summary: string;
+  preservedIdentifiers: string;
+}): void {
+  const lines: string[] = [
+    `### Compaction Audit`,
+    ``,
+    `**Session:** ${params.sessionId}`,
+    params.chatId ? `**Chat:** ${params.chatId}` : "",
+    `**Compacted:** ${params.messageCount} messages → kept ${params.keptCount} recent`,
+    `**Time:** ${new Date().toISOString()}`,
+    ``,
+    `#### Summary`,
+    params.summary,
+  ].filter((l) => l !== undefined);
+
+  if (params.preservedIdentifiers) {
+    lines.push(``, `#### Preserved Identifiers`, params.preservedIdentifiers);
+  }
+
+  appendToDailyLog(lines.join("\n"));
+  log.info(`Compaction audit written to daily log`);
 }
 
 function flushMemoryToDailyLog(context: Context): void {
@@ -145,7 +239,9 @@ export async function compactContext(
   config: CompactionConfig,
   apiKey: string,
   provider?: SupportedProvider,
-  utilityModel?: string
+  utilityModel?: string,
+  sessionId?: string,
+  chatId?: string
 ): Promise<Context> {
   const keepCount = config.keepRecentMessages ?? 10;
 
@@ -202,6 +298,20 @@ export async function compactContext(
     `Compacting ${oldMessages.length} old messages, keeping ${recentMessages.length} recent (cut at clean boundary)`
   );
 
+  // Extract critical identifiers before they are summarised away
+  const preservedIdentifiers =
+    config.autoPreserve !== false ? extractCriticalIdentifiers(oldMessages) : "";
+
+  if (preservedIdentifiers) {
+    log.info(
+      `Auto-preserve: extracted ${preservedIdentifiers.split("\n").length} identifiers from compacted messages`
+    );
+  }
+
+  const preserveNote = preservedIdentifiers
+    ? `\n\nIMPORTANT — preserve these verbatim in the summary:\n${preservedIdentifiers}`
+    : "";
+
   try {
     const result = await summarizeWithFallback({
       messages: oldMessages,
@@ -225,12 +335,24 @@ What was done: tools used, messages sent, transactions made (with specific value
 ## Open Items
 Unfinished tasks, pending questions, or next steps.
 
-Keep each section concise. Omit a section if empty. Preserve specific names, numbers, and identifiers.`,
+Keep each section concise. Omit a section if empty. Preserve specific names, numbers, and identifiers.${preserveNote}`,
       provider,
       utilityModel,
     });
 
     log.info(`AI Summary: ${result.tokensUsed} tokens, ${result.chunksProcessed} chunks processed`);
+
+    // Write compaction audit to daily log before discarding old messages
+    if (config.logCompaction !== false) {
+      writeCompactionAuditLog({
+        sessionId: sessionId ?? "unknown",
+        chatId,
+        messageCount: oldMessages.length,
+        keptCount: recentMessages.length,
+        summary: result.summary,
+        preservedIdentifiers,
+      });
+    }
 
     const summaryText = `[Auto-compacted ${oldMessages.length} messages]\n\n${result.summary}`;
 
@@ -248,6 +370,18 @@ Keep each section concise. Omit a section if empty. Preserve specific names, num
     log.error({ err: error }, "AI summarization failed, using fallback");
 
     const summaryText = `[Auto-compacted: ${oldMessages.length} earlier messages from this conversation]`;
+
+    // Still write audit log even on failure so there is a record
+    if (config.logCompaction !== false) {
+      writeCompactionAuditLog({
+        sessionId: sessionId ?? "unknown",
+        chatId,
+        messageCount: oldMessages.length,
+        keptCount: recentMessages.length,
+        summary: `[AI summarization failed — ${oldMessages.length} messages discarded without summary]`,
+        preservedIdentifiers,
+      });
+    }
 
     const summaryMessage: Message = {
       role: "user",
@@ -287,7 +421,15 @@ export async function compactAndSaveTranscript(
     });
   }
 
-  const compactedContext = await compactContext(context, config, apiKey, provider, utilityModel);
+  const compactedContext = await compactContext(
+    context,
+    config,
+    apiKey,
+    provider,
+    utilityModel,
+    sessionId,
+    chatId
+  );
 
   for (const message of compactedContext.messages) {
     appendToTranscript(newSessionId, message);
