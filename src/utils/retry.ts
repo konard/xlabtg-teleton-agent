@@ -55,16 +55,22 @@ export async function withRetry<T>(fn: () => Promise<T>, options: RetryOptions =
 
   throw lastError || new Error("All retry attempts failed");
 }
+export interface BlockchainRetryOptions {
+  /** Override the default 30 s timeout. Useful for slow TON queries under high load. */
+  timeout?: number;
+}
+
 export async function withBlockchainRetry<T>(
   fn: () => Promise<T>,
-  operation: string = "blockchain operation"
+  operation: string = "blockchain operation",
+  options: BlockchainRetryOptions = {}
 ): Promise<T> {
   try {
     return await withRetry(fn, {
       maxAttempts: RETRY_DEFAULT_MAX_ATTEMPTS,
       baseDelayMs: RETRY_BLOCKCHAIN_BASE_DELAY_MS,
       maxDelayMs: RETRY_BLOCKCHAIN_MAX_DELAY_MS,
-      timeout: RETRY_BLOCKCHAIN_TIMEOUT_MS,
+      timeout: options.timeout ?? RETRY_BLOCKCHAIN_TIMEOUT_MS,
     });
   } catch (error) {
     const message = getErrorMessage(error);
