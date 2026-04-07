@@ -20,6 +20,15 @@ export const execRunTool: Tool = {
   }),
 };
 
+export function isCommandAllowed(command: string, commandAllowlist: string[]): boolean {
+  const trimmed = command.trim();
+  return commandAllowlist.some((pattern) => {
+    const p = pattern.trim();
+    // Exact match or command starts with the pattern followed by whitespace
+    return trimmed === p || trimmed.startsWith(p + " ");
+  });
+}
+
 export function createExecRunExecutor(
   db: Database.Database,
   execConfig: ExecConfig
@@ -27,6 +36,15 @@ export function createExecRunExecutor(
   return async (params, context): Promise<ToolResult> => {
     const { command } = params;
     const { timeout, max_output } = execConfig.limits;
+
+    if (execConfig.mode === "allowlist") {
+      if (!isCommandAllowed(command, execConfig.command_allowlist)) {
+        return {
+          success: false,
+          error: `Command not permitted. Allowed prefixes: ${execConfig.command_allowlist.length > 0 ? execConfig.command_allowlist.join(", ") : "(none configured)"}`,
+        };
+      }
+    }
 
     let auditId: number | undefined;
     if (execConfig.audit.log_commands) {

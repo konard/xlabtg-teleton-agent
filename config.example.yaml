@@ -107,6 +107,22 @@ webui:
 #   max_verification_retries: 12     # Max payment verification attempts
 #   expiry_check_interval_ms: 60000  # Stale deal check interval
 
+# Exec capability — run shell commands from the agent (DISABLED by default)
+# WARNING: enabling exec gives the agent shell access on your host system.
+# Use "allowlist" mode to restrict which commands can be executed.
+# capabilities:
+#   exec:
+#     mode: "off"          # off (default, safe) | allowlist (recommended) | yolo (dangerous — full shell access)
+#     scope: "admin-only"  # admin-only | allowlist | all
+#     allowlist: []        # Telegram user IDs (when scope = allowlist)
+#     command_allowlist:   # Allowed command prefixes (required when mode = allowlist)
+#       - "git status"
+#       - "git diff"
+#       - "git log"
+#       - "npm run"
+#       - "ls"
+#       - "cat"
+
 # Storage paths (defaults are fine for most users)
 # storage:
 #   sessions_file: "~/.teleton/sessions.json"

@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { ensureSchema } from "../../../../memory/schema.js";
 import type { ExecConfig } from "../../../../config/schema.js";
 import type { ToolContext } from "../../types.js";
-import { createExecRunExecutor } from "../run.js";
+import { createExecRunExecutor, isCommandAllowed } from "../run.js";
 import { createExecInstallExecutor } from "../install.js";
 import { createExecServiceExecutor } from "../service.js";
 import { createExecStatusExecutor } from "../status.js";
@@ -28,6 +28,7 @@ function makeExecConfig(overrides?: Partial<ExecConfig>): ExecConfig {
     mode: "yolo",
     scope: "admin-only",
     allowlist: [],
+    command_allowlist: [],
     limits: { timeout: 120, max_output: 50000 },
     audit: { log_commands: true },
     ...overrides,
@@ -278,6 +279,119 @@ describe("exec_service", () => {
     const rows = db.prepare("SELECT * FROM exec_audit").all() as any[];
     expect(rows[0].tool).toBe("exec_service");
     expect(rows[0].command).toBe("systemctl restart docker");
+  });
+});
+
+describe("isCommandAllowed", () => {
+  it("allows exact match", () => {
+    expect(isCommandAllowed("git status", ["git status"])).toBe(true);
+  });
+
+  it("allows command with extra args when prefix matches", () => {
+    expect(isCommandAllowed("git diff HEAD~1", ["git"])).toBe(true);
+  });
+
+  it("blocks command not in allowlist", () => {
+    expect(isCommandAllowed("rm -rf /", ["ls", "cat"])).toBe(false);
+  });
+
+  it("blocks empty allowlist", () => {
+    expect(isCommandAllowed("ls", [])).toBe(false);
+  });
+
+  it("does not allow prefix substring without whitespace boundary", () => {
+    // 'git' should not match 'gitconfig' without a space after it
+    expect(isCommandAllowed("gitconfig --list", ["git"])).toBe(false);
+  });
+
+  it("trims whitespace before matching", () => {
+    expect(isCommandAllowed("  ls  /tmp", ["ls"])).toBe(true);
+  });
+});
+
+describe("exec_run allowlist mode", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+    vi.clearAllMocks();
+  });
+
+  it("blocks commands not in allowlist without calling runner", async () => {
+    const config = makeExecConfig({
+      mode: "allowlist",
+      command_allowlist: ["git status", "ls"],
+    });
+    const executor = createExecRunExecutor(db, config);
+    const result = await executor({ command: "rm -rf /" }, makeContext());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("not permitted");
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("allows commands matching an allowlist prefix", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "main\n",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 30,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const config = makeExecConfig({
+      mode: "allowlist",
+      command_allowlist: ["git"],
+    });
+    const executor = createExecRunExecutor(db, config);
+    const result = await executor({ command: "git status" }, makeContext());
+
+    expect(result.success).toBe(true);
+    expect(mockRunCommand).toHaveBeenCalledWith("git status", expect.any(Object));
+  });
+
+  it("error message lists configured prefixes", async () => {
+    const config = makeExecConfig({
+      mode: "allowlist",
+      command_allowlist: ["git status", "npm run"],
+    });
+    const executor = createExecRunExecutor(db, config);
+    const result = await executor({ command: "cat /etc/passwd" }, makeContext());
+
+    expect(result.error).toContain("git status");
+    expect(result.error).toContain("npm run");
+  });
+
+  it("error message says none configured when allowlist is empty", async () => {
+    const config = makeExecConfig({
+      mode: "allowlist",
+      command_allowlist: [],
+    });
+    const executor = createExecRunExecutor(db, config);
+    const result = await executor({ command: "ls" }, makeContext());
+
+    expect(result.error).toContain("none configured");
+  });
+
+  it("yolo mode still runs commands without allowlist check", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 10,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const config = makeExecConfig({ mode: "yolo", command_allowlist: [] });
+    const executor = createExecRunExecutor(db, config);
+    const result = await executor({ command: "any command" }, makeContext());
+
+    expect(result.success).toBe(true);
+    expect(mockRunCommand).toHaveBeenCalled();
   });
 });
 

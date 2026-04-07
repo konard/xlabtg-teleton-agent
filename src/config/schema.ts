@@ -316,9 +316,11 @@ const _ExecAuditObject = z.object({
 
 const _ExecObject = z.object({
   mode: z
-    .enum(["off", "yolo"])
+    .enum(["off", "allowlist", "yolo"])
     .default("off")
-    .describe("Exec mode: off (disabled) or yolo (full system access)"),
+    .describe(
+      "Exec mode: off (disabled), allowlist (only permitted commands), or yolo (full system access — dangerous)"
+    ),
   scope: z
     .enum(["admin-only", "allowlist", "all"])
     .default("admin-only")
@@ -327,6 +329,14 @@ const _ExecObject = z.object({
     .array(z.number())
     .default([])
     .describe("Telegram user IDs allowed to use exec (when scope = allowlist)"),
+  command_allowlist: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Allowed command prefixes when mode = allowlist (e.g. 'git status', 'ls', 'npm run'). " +
+        "A command is permitted if it starts with any entry in this list. " +
+        "Empty list blocks all commands."
+    ),
   limits: _ExecLimitsObject.default(_ExecLimitsObject.parse({})),
   audit: _ExecAuditObject.default(_ExecAuditObject.parse({})),
 });
