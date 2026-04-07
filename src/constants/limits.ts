@@ -85,3 +85,33 @@ export const TOOL_RAG_DEFAULT_TOP_K = 25;
 export const TOOL_RAG_MIN_SCORE = 0.1;
 export const TOOL_RAG_VECTOR_WEIGHT = 0.6;
 export const TOOL_RAG_KEYWORD_WEIGHT = 0.4;
+
+// ─── Session / Transcript Cleanup ───────────────────────────────
+/** Age (in days) after which old transcripts and sessions are pruned at startup */
+export const SESSION_PRUNE_DAYS = 30;
+
+// ─── Telegram Bridge ────────────────────────────────────────────
+/** Maximum number of peers to keep in the in-memory peer cache */
+export const PEER_CACHE_MAX_SIZE = 5_000;
+/** Default number of messages to fetch when no limit is specified */
+export const DEFAULT_GET_MESSAGES_LIMIT = 50;
+/** Timeout (ms) for a single getSender() / getReplyMessage() GramJS call */
+export const TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS = 5_000;
+
+// ─── Message Handler ────────────────────────────────────────────
+/** Maximum number of recent message IDs kept for deduplication */
+export const MESSAGE_DEDUP_MAX_SIZE = 500;
+/** Maximum number of group timestamp entries before stale cleanup runs */
+export const RATE_LIMITER_GROUP_CLEANUP_THRESHOLD = 100;
+/** Preview character count used when logging truncated message text */
+export const LOG_MESSAGE_PREVIEW_CHARS = 80;
+
+// ─── Agent Runtime ──────────────────────────────────────────────
+/** TTL for the in-memory memory-stats cache (5 minutes) */
+export const MEMORY_STATS_CACHE_TTL_MS = 5 * 60 * 1000;
+/** Maximum character length for tool parameter hints in log lines */
+export const TOOL_PARAM_HINT_MAX_CHARS = 60;
+/** Number of recent user messages included in RAG search query enrichment */
+export const RAG_QUERY_RECENT_MESSAGES = 3;
+/** Minimum accumulated tool calls before response-reinforcement prompt is injected */
+export const RESPONSE_REINFORCEMENT_TOOL_CALL_THRESHOLD = 4;

@@ -12,7 +12,11 @@ import { getWalletAddress } from "./ton/wallet-service.js";
 import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
 import { TELETON_ROOT } from "./workspace/paths.js";
-import { TELEGRAM_CONNECTION_RETRIES, TELEGRAM_FLOOD_SLEEP_THRESHOLD } from "./constants/limits.js";
+import {
+  TELEGRAM_CONNECTION_RETRIES,
+  TELEGRAM_FLOOD_SLEEP_THRESHOLD,
+  SESSION_PRUNE_DAYS,
+} from "./constants/limits.js";
 import { join } from "path";
 import { ToolRegistry } from "./agent/tools/registry.js";
 import { registerAllTools } from "./agent/tools/register-all.js";
@@ -228,6 +232,47 @@ export class TeletonApp {
   }
 
   /**
+   * Build a live MCP server info getter for WebUI / API server initialization.
+   * Returns a function (not a snapshot) so it always reflects current connection state.
+   */
+  private buildMcpServerInfoGetter() {
+    return () =>
+      Object.entries(this.config.mcp.servers).map(([name, serverConfig]) => {
+        const type = serverConfig.command
+          ? ("stdio" as const)
+          : serverConfig.url
+            ? ("streamable-http" as const)
+            : ("sse" as const);
+        const target = serverConfig.command ?? serverConfig.url ?? "";
+        const connected = this.mcpConnections.some((c) => c.serverName === name);
+        const moduleName = `mcp_${name}`;
+        const moduleTools = this.toolRegistry.getModuleTools(moduleName);
+        return {
+          name,
+          type,
+          target,
+          scope: serverConfig.scope ?? "always",
+          enabled: serverConfig.enabled ?? true,
+          connected,
+          toolCount: moduleTools.length,
+          tools: moduleTools.map((t) => t.name),
+          envKeys: Object.keys(serverConfig.env ?? {}),
+        };
+      });
+  }
+
+  /**
+   * Build the shared plugin context passed to marketplace / module startup.
+   */
+  private buildPluginContext(): PluginContext {
+    return {
+      bridge: this.bridge,
+      db: getDatabase().getDb(),
+      config: this.config,
+    };
+  }
+
+  /**
    * Start the agent
    */
   async start(): Promise<void> {
@@ -256,46 +301,16 @@ ${blue}  ┌──────────────────────�
     if (this.config.webui.enabled) {
       try {
         const { WebUIServer } = await import("./webui/server.js");
-        // Build MCP server info getter for WebUI (live status, not a snapshot)
-        const mcpServers = () =>
-          Object.entries(this.config.mcp.servers).map(([name, serverConfig]) => {
-            const type = serverConfig.command
-              ? ("stdio" as const)
-              : serverConfig.url
-                ? ("streamable-http" as const)
-                : ("sse" as const);
-            const target = serverConfig.command ?? serverConfig.url ?? "";
-            const connected = this.mcpConnections.some((c) => c.serverName === name);
-            const moduleName = `mcp_${name}`;
-            const moduleTools = this.toolRegistry.getModuleTools(moduleName);
-            return {
-              name,
-              type,
-              target,
-              scope: serverConfig.scope ?? "always",
-              enabled: serverConfig.enabled ?? true,
-              connected,
-              toolCount: moduleTools.length,
-              tools: moduleTools.map((t) => t.name),
-              envKeys: Object.keys(serverConfig.env ?? {}),
-            };
-          });
-
+        const mcpServers = this.buildMcpServerInfoGetter();
+        const pluginContext = this.buildPluginContext();
         const builtinNames = this.modules.map((m) => m.name);
-        const pluginContext: PluginContext = {
-          bridge: this.bridge,
-          db: getDatabase().getDb(),
-          config: this.config,
-        };
 
         this.webuiServer = new WebUIServer({
           agent: this.agent,
           bridge: this.bridge,
           memory: this.memory,
           toolRegistry: this.toolRegistry,
-          plugins: this.modules
-            .filter((m) => this.toolRegistry.isPluginModule(m.name))
-            .map((m) => ({ name: m.name, version: m.version ?? "0.0.0" })),
+          plugins: this.getPlugins(),
           mcpServers,
           config: this.config.webui,
           configPath: this.configPath,
@@ -321,37 +336,9 @@ ${blue}  ┌──────────────────────�
     if (this.config.api?.enabled) {
       try {
         const { ApiServer: ApiServerClass } = await import("./api/server.js");
-        // Build MCP server info getter (same pattern as WebUI)
-        const mcpServers = () =>
-          Object.entries(this.config.mcp.servers).map(([name, serverConfig]) => {
-            const type = serverConfig.command
-              ? ("stdio" as const)
-              : serverConfig.url
-                ? ("streamable-http" as const)
-                : ("sse" as const);
-            const target = serverConfig.command ?? serverConfig.url ?? "";
-            const connected = this.mcpConnections.some((c) => c.serverName === name);
-            const moduleName = `mcp_${name}`;
-            const moduleTools = this.toolRegistry.getModuleTools(moduleName);
-            return {
-              name,
-              type,
-              target,
-              scope: serverConfig.scope ?? "always",
-              enabled: serverConfig.enabled ?? true,
-              connected,
-              toolCount: moduleTools.length,
-              tools: moduleTools.map((t) => t.name),
-              envKeys: Object.keys(serverConfig.env ?? {}),
-            };
-          });
-
+        const mcpServers = this.buildMcpServerInfoGetter();
+        const pluginContext = this.buildPluginContext();
         const builtinNames = this.modules.map((m) => m.name);
-        const pluginContext: PluginContext = {
-          bridge: this.bridge,
-          db: getDatabase().getDb(),
-          config: this.config,
-        };
 
         this.apiServer = new ApiServerClass(
           {
@@ -359,9 +346,7 @@ ${blue}  ┌──────────────────────�
             bridge: this.bridge,
             memory: this.memory,
             toolRegistry: this.toolRegistry,
-            plugins: this.modules
-              .filter((m) => this.toolRegistry.isPluginModule(m.name))
-              .map((m) => ({ name: m.name, version: m.version ?? "0.0.0" })),
+            plugins: this.getPlugins(),
             mcpServers,
             config: this.config.webui,
             configPath: this.configPath,
@@ -503,11 +488,11 @@ ${blue}  ┌──────────────────────�
 
     // Cleanup old transcript files (>30 days)
     const { cleanupOldTranscripts } = await import("./session/transcript.js");
-    cleanupOldTranscripts(30);
+    cleanupOldTranscripts(SESSION_PRUNE_DAYS);
 
-    // Prune old sessions (>30 days)
+    // Prune old sessions (>SESSION_PRUNE_DAYS days)
     const { pruneOldSessions } = await import("./session/store.js");
-    pruneOldSessions(30);
+    pruneOldSessions(SESSION_PRUNE_DAYS);
 
     // Harden permissions on existing files (one-shot, idempotent)
     const { hardenExistingPermissions } = await import("./workspace/harden-permissions.js");
@@ -643,12 +628,7 @@ ${blue}  ┌──────────────────────�
     setBotPreMiddleware(inlineRouter.middleware());
 
     // Start module background jobs (after bridge connect — deals needs bridge)
-    const moduleDb = getDatabase().getDb();
-    const pluginContext: PluginContext = {
-      bridge: this.bridge,
-      db: moduleDb,
-      config: this.config,
-    };
+    const pluginContext = this.buildPluginContext();
     const startedModules: typeof this.modules = [];
     try {
       for (const mod of this.modules) {

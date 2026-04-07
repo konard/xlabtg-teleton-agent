@@ -18,6 +18,11 @@ import { generateSpeech } from "../services/tts.js";
 import { unlinkSync } from "fs";
 import { splitMessageForTelegram } from "./message-splitter.js";
 import { sanitizeMarkdownForTelegram } from "./sanitize-markdown.js";
+import {
+  MESSAGE_DEDUP_MAX_SIZE,
+  RATE_LIMITER_GROUP_CLEANUP_THRESHOLD,
+  LOG_MESSAGE_PREVIEW_CHARS,
+} from "../constants/limits.js";
 
 const log = createLogger("Telegram");
 import type { PluginMessageEvent } from "@teleton-agent/sdk";
@@ -54,7 +59,8 @@ class RateLimiter {
 
   canSendToGroup(groupId: string): boolean {
     const now = Date.now();
-    const oneMinuteAgo = now - 60000;
+    const oneMinuteMs = 60_000;
+    const oneMinuteAgo = now - oneMinuteMs;
 
     let timestamps = this.groupTimestamps.get(groupId) || [];
     timestamps = timestamps.filter((t) => t > oneMinuteAgo);
@@ -67,7 +73,7 @@ class RateLimiter {
     timestamps.push(now);
     this.groupTimestamps.set(groupId, timestamps);
 
-    if (this.groupTimestamps.size > 100) {
+    if (this.groupTimestamps.size > RATE_LIMITER_GROUP_CLEANUP_THRESHOLD) {
       for (const [id, ts] of this.groupTimestamps) {
         if (ts.length === 0 || ts[ts.length - 1] <= oneMinuteAgo) {
           this.groupTimestamps.delete(id);
@@ -125,7 +131,6 @@ export class MessageHandler {
   private chatQueue: ChatQueue = new ChatQueue();
   private pluginMessageHooks: Array<(e: PluginMessageEvent) => Promise<void>> = [];
   private recentMessageIds: Set<string> = new Set();
-  private static readonly DEDUP_MAX_SIZE = 500;
 
   constructor(
     bridge: TelegramBridge,
@@ -282,7 +287,7 @@ export class MessageHandler {
       return;
     }
     this.recentMessageIds.add(dedupKey);
-    if (this.recentMessageIds.size > MessageHandler.DEDUP_MAX_SIZE) {
+    if (this.recentMessageIds.size > MESSAGE_DEDUP_MAX_SIZE) {
       // Evict oldest half
       const ids = [...this.recentMessageIds];
       this.recentMessageIds = new Set(ids.slice(ids.length >> 1));
@@ -412,7 +417,7 @@ export class MessageHandler {
                   });
                   transcriptionText = result.text;
                   log.info(
-                    `🎤 Groq STT transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
+                    `🎤 Groq STT transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, LOG_MESSAGE_PREVIEW_CHARS)}..."`
                   );
                 }
               } catch (err) {
@@ -441,7 +446,7 @@ export class MessageHandler {
                 if (transcribeResult.success && transcribeData?.text) {
                   transcriptionText = transcribeData.text as string;
                   log.info(
-                    `🎤 Auto-transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
+                    `🎤 Auto-transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, LOG_MESSAGE_PREVIEW_CHARS)}..."`
                   );
                 }
               } catch (err) {
