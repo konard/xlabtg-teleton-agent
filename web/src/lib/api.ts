@@ -1524,6 +1524,13 @@ export const api = {
     );
   },
 
+  async triggerHeartbeat() {
+    return fetchAPI<APIResponse<{ content: string; suppressed: boolean; sentToTelegram: boolean }>>(
+      "/agent-actions/heartbeat/trigger",
+      { method: "POST" }
+    );
+  },
+
   // ── Health Check ───────────────────────────────────────────────────
 
   async getHealthCheck() {

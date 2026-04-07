@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { getDatabase } from "../../memory/index.js";
+import { isHeartbeatOk, isSilentReply } from "../../constants/tokens.js";
 
 export function createAgentActionsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -57,6 +59,74 @@ export function createAgentActionsRoutes(deps: WebUIServerDeps) {
         error: getErrorMessage(error),
       };
       return c.json(response, 500);
+    }
+  });
+
+  // Trigger a heartbeat tick immediately (manual "run now")
+  app.post("/heartbeat/trigger", async (c) => {
+    try {
+      const config = deps.agent.getConfig();
+      const cfg = config.heartbeat;
+
+      if (!cfg?.enabled) {
+        return c.json(
+          { success: false, error: "Heartbeat is disabled. Enable it first." } as APIResponse,
+          422
+        );
+      }
+
+      const adminChatId = config.telegram.admin_ids[0];
+      if (!adminChatId) {
+        return c.json(
+          { success: false, error: "No admin_ids configured in Telegram settings" } as APIResponse,
+          422
+        );
+      }
+
+      const sessionChatId = `telegram:direct:${adminChatId}`;
+      const toolContext = {
+        bridge: deps.bridge,
+        db: getDatabase().getDb(),
+        chatId: sessionChatId,
+        isGroup: false,
+        senderId: adminChatId,
+        config,
+      };
+
+      const response = await deps.agent.processMessage({
+        chatId: sessionChatId,
+        userMessage: cfg.prompt,
+        userName: "heartbeat",
+        timestamp: Date.now(),
+        isGroup: false,
+        toolContext,
+        isHeartbeat: true,
+      });
+
+      const content = response.content ?? "";
+      const suppressed = isHeartbeatOk(content) || isSilentReply(content);
+
+      // Send to Telegram only if bridge is available and response is actionable
+      if (!suppressed && content && deps.bridge?.isAvailable()) {
+        await deps.bridge.sendMessage({
+          chatId: String(adminChatId),
+          text: content,
+        });
+      }
+
+      const result: APIResponse<{ content: string; suppressed: boolean; sentToTelegram: boolean }> =
+        {
+          success: true,
+          data: {
+            content,
+            suppressed,
+            sentToTelegram:
+              !suppressed && content.length > 0 && (deps.bridge?.isAvailable() ?? false),
+          },
+        };
+      return c.json(result);
+    } catch (error) {
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 500);
     }
   });
 

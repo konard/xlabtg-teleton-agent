@@ -708,6 +708,18 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     mask: identity,
     parse: (v) => Number(v),
   },
+  "heartbeat.prompt": {
+    type: "string",
+    category: "Agent",
+    label: "Heartbeat Prompt",
+    description:
+      "Prompt sent to the agent on each heartbeat tick. Must instruct the agent to reply NO_ACTION when nothing needs attention.",
+    sensitive: false,
+    hotReload: "instant",
+    validate: nonEmpty,
+    mask: identity,
+    parse: identity,
+  },
   "heartbeat.self_configurable": {
     type: "boolean",
     category: "Agent",
