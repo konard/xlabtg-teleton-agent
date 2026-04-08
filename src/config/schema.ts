@@ -19,6 +19,42 @@ export const SessionResetPolicySchema = z.object({
     .describe("Minutes of inactivity before session reset (default: 24h)"),
 });
 
+export const CompactionConfigSchema = z.object({
+  enabled: z.boolean().default(true).describe("Enable automatic context compaction"),
+  max_messages: z
+    .number()
+    .int()
+    .min(10)
+    .optional()
+    .describe(
+      "Trigger compaction after N messages (overrides model-derived default). " +
+        "Lower values compact more aggressively; higher values keep more history."
+    ),
+  keep_recent: z
+    .number()
+    .int()
+    .min(5)
+    .optional()
+    .describe(
+      "Number of recent messages always preserved during compaction (overrides default). " +
+        "These messages are never summarised away."
+    ),
+  log_compaction: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Write a compaction audit entry to the daily log before discarding old messages. " +
+        "Preserves an audit trail of what was compacted even when the original messages are gone."
+    ),
+  auto_preserve: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Extract and preserve critical identifiers (wallet addresses, transaction hashes, numbers) " +
+        "from messages before compaction so they survive the summarisation step."
+    ),
+});
+
 export const AgentConfigSchema = z.object({
   provider: z
     .enum([
@@ -68,6 +104,9 @@ export const AgentConfigSchema = z.object({
         "Unset = no limit. Recommended: 4000-8000 for ZAI/budget providers."
     ),
   session_reset_policy: SessionResetPolicySchema.default(SessionResetPolicySchema.parse({})),
+  compaction: CompactionConfigSchema.default(CompactionConfigSchema.parse({})).describe(
+    "Context compaction settings — controls when and how old messages are summarised"
+  ),
 });
 
 export const CommandAccessSchema = z.object({
@@ -489,6 +528,7 @@ export const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type CompactionConfig = z.infer<typeof CompactionConfigSchema>;
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
 export type CommandAccessConfig = z.infer<typeof CommandAccessSchema>;
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;
