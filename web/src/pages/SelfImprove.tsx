@@ -386,6 +386,7 @@ function SettingsPanel({
   const [draft, setDraft] = useState<SelfImprovementConfig>(config);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // Sync when parent config changes (e.g. after load)
   useEffect(() => {
@@ -395,10 +396,13 @@ function SettingsPanel({
   const handleSave = async () => {
     setSaving(true);
     setSaved(false);
+    setSaveError(null);
     try {
       await onSave(draft);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
     } finally {
       setSaving(false);
     }
@@ -533,7 +537,7 @@ function SettingsPanel({
         />
       </div>
 
-      <div>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
         <button
           onClick={handleSave}
           disabled={saving}
@@ -541,6 +545,11 @@ function SettingsPanel({
         >
           {saving ? "Saving…" : saved ? "✓ Saved" : "Save Settings"}
         </button>
+        {saveError && (
+          <span style={{ fontSize: "13px", color: "#dc2626" }}>
+            ✗ {saveError}
+          </span>
+        )}
       </div>
     </div>
   );
