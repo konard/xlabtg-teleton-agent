@@ -12,6 +12,34 @@ const MAX_FAILED = 10;
 const WINDOW_MS = 5 * 60 * 1000; // 5 minutes
 const BLOCK_MS = 15 * 60 * 1000; // 15 minutes
 
+/**
+ * Compute the Shannon entropy (bits) of the key material (the part after "tltn_").
+ * A randomly generated 32-byte base64url key has ~190 bits of entropy.
+ * We require at least 80 bits (i.e. 13+ random-looking characters) to defend
+ * against brute-force even when rate limiting is bypassed.
+ */
+export function computeKeyEntropy(key: string): number {
+  const material = key.startsWith("tltn_") ? key.slice(5) : key;
+  if (material.length === 0) return 0;
+
+  const freq: Record<string, number> = {};
+  for (const ch of material) {
+    freq[ch] = (freq[ch] ?? 0) + 1;
+  }
+
+  let entropy = 0;
+  const len = material.length;
+  for (const count of Object.values(freq)) {
+    const p = count / len;
+    entropy -= p * Math.log2(p);
+  }
+  // Total entropy = per-character entropy * number of characters
+  return entropy * len;
+}
+
+/** Minimum acceptable key entropy in bits */
+export const MIN_KEY_ENTROPY_BITS = 80;
+
 function normalizeIp(ip: string): string {
   if (ip.startsWith("::ffff:")) return ip.slice(7);
   return ip;
@@ -92,6 +120,19 @@ export function createAuthMiddleware(config: {
     }
 
     const apiKey = match[1];
+
+    // Reject keys with insufficient entropy (defense against weak/dictionary keys)
+    if (computeKeyEntropy(apiKey) < MIN_KEY_ENTROPY_BITS) {
+      throw new HTTPException(401, {
+        res: createProblemResponse(
+          c,
+          401,
+          "Unauthorized",
+          "API key has insufficient entropy. Use the auto-generated key or supply at least 128 bits of random material."
+        ),
+      });
+    }
+
     const keyHash = hashApiKey(apiKey);
 
     // Timing-safe comparison of hashes

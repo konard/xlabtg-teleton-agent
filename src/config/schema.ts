@@ -143,7 +143,16 @@ export const TelegramConfigSchema = z.object({
   group_policy: GroupPolicy.default("open"),
   group_allow_from: z.array(z.number()).default([]),
   require_mention: z.boolean().default(true),
-  max_message_length: z.number().default(TELEGRAM_MAX_MESSAGE_LENGTH),
+  max_message_length: z
+    .number()
+    .min(1)
+    .max(TELEGRAM_MAX_MESSAGE_LENGTH)
+    .default(TELEGRAM_MAX_MESSAGE_LENGTH)
+    .describe(
+      "Maximum incoming message length in characters. Messages exceeding this limit are rejected early " +
+        "(DoS/context-overflow defense). Also controls outgoing message splitting. " +
+        "Admins are exempt. Default: 4096 (Telegram max). Reduce for stricter limits."
+    ),
   typing_simulation: z.boolean().default(true),
   rate_limit_messages_per_second: z.number().default(1.0),
   rate_limit_groups_per_minute: z.number().default(20),

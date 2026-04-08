@@ -186,6 +186,23 @@ export class MessageHandler {
       };
     }
 
+    // Reject messages that exceed the configured maximum length to prevent DoS
+    // and context-overflow attacks. Admins are exempt from this limit.
+    const maxLen = this.config.max_message_length;
+    const textLen = message.text?.length ?? 0;
+    if (!isAdmin && textLen > maxLen) {
+      log.warn(
+        { senderId: message.senderId, textLen, maxLen },
+        "Message rejected: exceeds max_message_length"
+      );
+      return {
+        message,
+        isAdmin,
+        shouldRespond: false,
+        reason: `Message too long (${textLen} > ${maxLen} chars)`,
+      };
+    }
+
     if (!message.isGroup && !message.isChannel) {
       switch (this.config.dm_policy) {
         case "disabled":

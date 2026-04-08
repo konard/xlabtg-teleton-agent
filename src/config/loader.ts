@@ -18,6 +18,53 @@ export function expandPath(path: string): string {
   return path;
 }
 
+/**
+ * Known placeholder strings that appear in config.example.yaml.
+ * If any of these values are found in the loaded config, a warning is emitted
+ * so users know they forgot to replace example secrets with real ones.
+ */
+const PLACEHOLDER_PATTERNS = [
+  /^YOUR_/i,
+  /^your_/,
+  /^\+1234567890$/,
+  /^0$/, // telegram.api_id = 0 is the example default
+];
+
+interface PlaceholderCheck {
+  field: string;
+  value: string | number | undefined | null;
+}
+
+function isPlaceholder(value: string | number | undefined | null): boolean {
+  if (value === null || value === undefined) return false;
+  const str = String(value);
+  return PLACEHOLDER_PATTERNS.some((re) => re.test(str));
+}
+
+/**
+ * Emit warnings for any config fields that still contain placeholder values
+ * from config.example.yaml. Does not throw — the config is still usable,
+ * but the agent will likely fail to connect with placeholder credentials.
+ */
+function warnPlaceholders(config: Config): void {
+  const checks: PlaceholderCheck[] = [
+    { field: "agent.api_key", value: config.agent.api_key },
+    { field: "telegram.api_hash", value: config.telegram.api_hash },
+    { field: "telegram.phone", value: config.telegram.phone },
+    { field: "telegram.api_id", value: config.telegram.api_id },
+  ];
+
+  for (const { field, value } of checks) {
+    if (isPlaceholder(value)) {
+      log.warn(
+        { field },
+        `Config field '${field}' still contains a placeholder value. ` +
+          "Replace it with a real value or run 'teleton setup'."
+      );
+    }
+  }
+}
+
 export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
   const fullPath = expandPath(configPath);
 
@@ -64,6 +111,10 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
   config.telegram.session_path = expandPath(config.telegram.session_path);
   config.storage.sessions_file = expandPath(config.storage.sessions_file);
   config.storage.memory_file = expandPath(config.storage.memory_file);
+
+  // Warn when example-file placeholder values are still present in the config.
+  // These indicate the user copied config.example.yaml without filling in real values.
+  warnPlaceholders(config);
 
   if (process.env.TELETON_API_KEY) {
     config.agent.api_key = process.env.TELETON_API_KEY;
