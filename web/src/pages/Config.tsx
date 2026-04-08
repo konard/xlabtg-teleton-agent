@@ -15,6 +15,7 @@ import { ConfigSection } from '../components/ConfigSection';
 import { InfoTip } from '../components/InfoTip';
 import { ExportImportPanel } from '../components/ExportImportPanel';
 import { MtprotoSettingsPanel } from '../components/MtprotoSettingsPanel';
+import { YoloSettingsPanel } from '../components/YoloSettingsPanel';
 
 const TABS = [
   { id: 'llm', label: 'LLM' },
@@ -24,6 +25,7 @@ const TABS = [
   { id: 'api-keys', label: 'API Keys' },
   { id: 'ton-proxy', label: 'TON Proxy' },
   { id: 'mrtpoto', label: 'MRTPOTO' },
+  { id: 'yolo', label: 'YOLO' },
   { id: 'advanced', label: 'Advanced' },
   { id: 'sessions', label: 'Sessions' },
   { id: 'tool-rag', label: 'Tool RAG' },
@@ -626,6 +628,25 @@ export function Config() {
           showSuccess={config.showSuccess}
           setError={config.setError}
         />
+      )}
+
+      {/* YOLO Tab */}
+      {activeTab === 'yolo' && (
+        <>
+          <div className="card-header">
+            <div className="section-title">YOLO — Exec Settings</div>
+            <p className="card-description">
+              Configure shell command execution capabilities for the agent. Choose between disabled, allowlist (safe), or full YOLO access.
+            </p>
+          </div>
+          <div className="card">
+            <YoloSettingsPanel
+              getLocal={config.getLocal}
+              saveConfig={config.saveConfig}
+              onArraySave={handleArraySave}
+            />
+          </div>
+        </>
       )}
 
       {/* Advanced Tab */}

@@ -101,4 +101,19 @@ describe("execModule", () => {
     if (origPlatform) Object.defineProperty(process, "platform", origPlatform);
     else Object.defineProperty(process, "platform", { value: "linux" });
   });
+
+  it("returns 4 tools when mode is allowlist + Linux", () => {
+    const origPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "linux" });
+
+    const config = makeConfig({ mode: "allowlist", command_allowlist: ["git status"] });
+    execModule.configure!(config);
+    execModule.migrate!(db);
+    const tools = execModule.tools(config);
+
+    expect(tools).toHaveLength(4);
+
+    if (origPlatform) Object.defineProperty(process, "platform", origPlatform);
+    else Object.defineProperty(process, "platform", { value: "linux" });
+  });
 });
