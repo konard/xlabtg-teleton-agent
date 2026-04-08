@@ -1225,8 +1225,24 @@ export class AgentRuntime {
     expiry: number;
   } | null = null;
 
+  /** Threshold above which memory pressure is logged. Adjust via config if needed. */
+  private static readonly MEMORY_PRESSURE_HEAP_MB = 512;
+
   getMemoryStats(): { totalMessages: number; totalChats: number; knowledgeChunks: number } {
     const now = Date.now();
+
+    // Invalidate cache under memory pressure so callers get fresh data
+    if (this._memoryStatsCache) {
+      const heapMB = process.memoryUsage().heapUsed / (1024 * 1024);
+      if (heapMB > AgentRuntime.MEMORY_PRESSURE_HEAP_MB) {
+        log.warn(
+          { heapMB: Math.round(heapMB) },
+          "Memory pressure detected — invalidating stats cache"
+        );
+        this._memoryStatsCache = null;
+      }
+    }
+
     if (this._memoryStatsCache && now < this._memoryStatsCache.expiry) {
       return this._memoryStatsCache.data;
     }
