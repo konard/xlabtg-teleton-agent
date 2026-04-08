@@ -22,7 +22,7 @@ export function sanitizeForPrompt(text: string): string {
 
 /**
  * Sanitize multi-line context (RAG results, knowledge chunks) for system prompt injection.
- * Less aggressive than sanitizeForPrompt - preserves line breaks and doesn't truncate.
+ * Less aggressive than sanitizeForPrompt - preserves line breaks and truncates at 32 KB.
  * Removes: control chars, zero-width chars, directional overrides, XML tags, triple backticks.
  */
 export function sanitizeForContext(text: string): string {
@@ -37,5 +37,6 @@ export function sanitizeForContext(text: string): string {
     .replace(/[\u2028\u2029]/g, "\n") // Unicode line/paragraph separators → standard newline
     .replace(/<\/?[a-zA-Z_][^>]*>/g, "") // XML/HTML tags
     .replace(/`{3,}/g, "``") // triple+ backticks → double (prevent code block escape)
-    .trim();
+    .trim()
+    .slice(0, 32768); // 32 KB cap to prevent large payload injection
 }

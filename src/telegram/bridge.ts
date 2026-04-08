@@ -42,6 +42,19 @@ export class TelegramBridge {
   private ownUserId?: bigint;
   private ownUsername?: string;
   private peerCache: Map<string, Api.TypePeer> = new Map();
+  private static readonly PEER_CACHE_MAX = 5000;
+  private static readonly PEER_CACHE_EVICT_TO = 2500;
+
+  /** Evict the oldest half of peerCache entries when the cache exceeds its limit. */
+  private evictPeerCacheIfNeeded(): void {
+    if (this.peerCache.size <= TelegramBridge.PEER_CACHE_MAX) return;
+    const keys = this.peerCache.keys();
+    const toDelete = this.peerCache.size - TelegramBridge.PEER_CACHE_EVICT_TO;
+    for (let i = 0; i < toDelete; i++) {
+      const key = keys.next().value;
+      if (key !== undefined) this.peerCache.delete(key);
+    }
+  }
 
   constructor(config: TelegramClientConfig) {
     this.client = new TelegramUserClient(config);
@@ -287,10 +300,7 @@ export class TelegramBridge {
 
     if (msg.peerId) {
       this.peerCache.set(chatId, msg.peerId);
-      if (this.peerCache.size > 5000) {
-        const oldest = this.peerCache.keys().next().value;
-        if (oldest !== undefined) this.peerCache.delete(oldest);
-      }
+      this.evictPeerCacheIfNeeded();
     }
 
     let senderUsername: string | undefined;
@@ -484,10 +494,7 @@ export class TelegramBridge {
     // Cache peer
     if (msg.peerId) {
       this.peerCache.set(chatId, msg.peerId);
-      if (this.peerCache.size > 5000) {
-        const oldest = this.peerCache.keys().next().value;
-        if (oldest !== undefined) this.peerCache.delete(oldest);
-      }
+      this.evictPeerCacheIfNeeded();
     }
 
     return {

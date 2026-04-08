@@ -250,6 +250,29 @@ describe("MessageHandler", () => {
       expect(ctx.reason).toBe("Group not in allowlist");
     });
 
+    it('group_policy="allowlist" + chatId with non-numeric characters → shouldRespond=false (bypass prevention)', () => {
+      const { handler } = createHandler({
+        group_policy: "allowlist",
+        group_allow_from: [-100123],
+        require_mention: false,
+      });
+      // "-100123abc" would parseInt to -100123, bypassing the allowlist check
+      const ctx = handler.analyzeMessage(makeMessage({ isGroup: true, chatId: "-100123abc" }));
+      expect(ctx.shouldRespond).toBe(false);
+      expect(ctx.reason).toBe("Group not in allowlist");
+    });
+
+    it('group_policy="allowlist" + chatId=NaN string → shouldRespond=false', () => {
+      const { handler } = createHandler({
+        group_policy: "allowlist",
+        group_allow_from: [-100123],
+        require_mention: false,
+      });
+      const ctx = handler.analyzeMessage(makeMessage({ isGroup: true, chatId: "notanumber" }));
+      expect(ctx.shouldRespond).toBe(false);
+      expect(ctx.reason).toBe("Group not in allowlist");
+    });
+
     it("require_mention=true + not mentioned in group → shouldRespond=false", () => {
       const { handler } = createHandler({
         group_policy: "open",
