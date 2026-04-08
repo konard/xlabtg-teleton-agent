@@ -7,7 +7,7 @@ import { getErrorMessage } from "../../utils/errors.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 
 const PLUGIN_DATA_DIR = join(TELETON_ROOT, "plugins", "data");
-const PLUGIN_DB_PATH = join(PLUGIN_DATA_DIR, "self-improvement-assistant.db");
+const PLUGIN_DB_PATH = join(PLUGIN_DATA_DIR, "self-improve-orchestrator.db");
 
 /** Key used to persist the meta-orchestrator config in the agent's main DB. */
 const CONFIG_KEY = "self_improvement_orchestrator_config";
@@ -222,10 +222,10 @@ export function createSelfImprovementRoutes(deps?: WebUIServerDeps) {
     }
   });
 
-  // ── Legacy plugin DB endpoints ──────────────────────────────────────────────
+  // ── Plugin DB endpoints ─────────────────────────────────────────────────────
 
   // GET /api/self-improvement/status
-  // Returns whether the legacy self-improvement-assistant plugin DB exists and basic stats.
+  // Returns whether the self-improve-orchestrator plugin DB exists and basic stats.
   app.get("/status", (c) => {
     const installed = existsSync(PLUGIN_DB_PATH);
     if (!installed) {
