@@ -4,6 +4,9 @@ import {
   type SelfImprovementConfig,
   type SelfImprovementAnalysisEntry,
   type SelfImprovementTask,
+  type SelfImprovementAutomationSettings,
+  type SelfImprovementTargetRepo,
+  type SelfImprovementScanScope,
   type PluginManifest,
 } from "../lib/api";
 
@@ -704,29 +707,35 @@ function OverviewTab({
 
 type FixSeverity = "critical" | "critical_high" | "all";
 
-interface AutomationSettings {
-  auto_create_prs: boolean;
-  fix_severity: FixSeverity;
-  branch_prefix: string;
-  draft_pr: boolean;
-  run_tests: boolean;
-  auto_merge: boolean;
-}
-
-function AutomationTab() {
-  const [settings, setSettings] = useState<AutomationSettings>({
-    auto_create_prs: false,
-    fix_severity: "critical_high",
-    branch_prefix: "fix/auto-",
-    draft_pr: true,
-    run_tests: true,
-    auto_merge: false,
-  });
+function AutomationTab({
+  automation,
+  onSave,
+}: {
+  automation: SelfImprovementAutomationSettings;
+  onSave: (a: SelfImprovementAutomationSettings) => Promise<void>;
+}) {
+  const [settings, setSettings] = useState<SelfImprovementAutomationSettings>(automation);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  useEffect(() => {
+    setSettings(automation);
+  }, [automation]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSaved(false);
+    setSaveError(null);
+    try {
+      await onSave(settings);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const inputStyle: React.CSSProperties = {
@@ -869,13 +878,17 @@ function AutomationTab() {
         </div>
       </div>
 
-      <div>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
         <button
           onClick={handleSave}
+          disabled={saving}
           style={{ padding: "8px 20px", fontSize: "13px", fontWeight: 600 }}
         >
-          {saved ? "✓ Saved" : "💾 Save Settings"}
+          {saving ? "Saving…" : saved ? "✓ Saved" : "💾 Save Settings"}
         </button>
+        {saveError && (
+          <span style={{ fontSize: "13px", color: "#dc2626" }}>✗ {saveError}</span>
+        )}
       </div>
     </div>
   );
@@ -883,37 +896,38 @@ function AutomationTab() {
 
 // ── Targets tab ───────────────────────────────────────────────────────────────
 
-interface TargetRepo {
-  id: string;
-  name: string;
-  lastScan: number | null;
-  issueCount: number;
-  enabled: boolean;
-}
-
-interface ScanScope {
-  source_code: boolean;
-  config_files: boolean;
-  dependencies: boolean;
-  documentation: boolean;
-  exclude_paths: string;
-}
-
-function TargetsTab({ defaultRepo }: { defaultRepo: string }) {
-  const [targets, setTargets] = useState<TargetRepo[]>(
-    defaultRepo
-      ? [{ id: "1", name: defaultRepo, lastScan: Date.now() - 13 * 60_000, issueCount: 0, enabled: true }]
-      : []
-  );
-  const [newRepo, setNewRepo] = useState("");
-  const [scope, setScope] = useState<ScanScope>({
-    source_code: true,
-    config_files: true,
-    dependencies: true,
-    documentation: false,
-    exclude_paths: "/node_modules, /dist, /vendor",
+function TargetsTab({
+  targets: initialTargets,
+  scanScope: initialScope,
+  defaultRepo,
+  onSave,
+}: {
+  targets: SelfImprovementTargetRepo[];
+  scanScope: SelfImprovementScanScope;
+  defaultRepo: string;
+  onSave: (targets: SelfImprovementTargetRepo[], scope: SelfImprovementScanScope) => Promise<void>;
+}) {
+  const [targets, setTargets] = useState<SelfImprovementTargetRepo[]>(() => {
+    if (initialTargets.length > 0) return initialTargets;
+    // Seed from the main target_repo if no saved targets yet
+    if (defaultRepo) {
+      return [{ id: "1", name: defaultRepo, lastScan: null, issueCount: 0, enabled: true }];
+    }
+    return [];
   });
+  const [newRepo, setNewRepo] = useState("");
+  const [scope, setScope] = useState<SelfImprovementScanScope>(initialScope);
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialTargets.length > 0) setTargets(initialTargets);
+  }, [initialTargets]);
+
+  useEffect(() => {
+    setScope(initialScope);
+  }, [initialScope]);
 
   const addRepo = () => {
     const name = newRepo.trim();
@@ -927,6 +941,21 @@ function TargetsTab({ defaultRepo }: { defaultRepo: string }) {
 
   const removeTarget = (id: string) => {
     setTargets(targets.filter((t) => t.id !== id));
+  };
+
+  const handleSave = async (currentTargets: SelfImprovementTargetRepo[], currentScope: SelfImprovementScanScope) => {
+    setSaving(true);
+    setSaved(false);
+    setSaveError(null);
+    try {
+      await onSave(currentTargets, currentScope);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
   };
 
   const inputStyle: React.CSSProperties = {
@@ -1065,13 +1094,17 @@ function TargetsTab({ defaultRepo }: { defaultRepo: string }) {
             />
           </div>
 
-          <div>
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap", marginTop: "8px" }}>
             <button
-              onClick={() => { setSaved(true); setTimeout(() => setSaved(false), 2000); }}
-              style={{ padding: "8px 20px", fontSize: "13px", fontWeight: 600, marginTop: "8px" }}
+              onClick={() => handleSave(targets, scope)}
+              disabled={saving}
+              style={{ padding: "8px 20px", fontSize: "13px", fontWeight: 600 }}
             >
-              {saved ? "✓ Saved" : "💾 Save Settings"}
+              {saving ? "Saving…" : saved ? "✓ Saved" : "💾 Save Settings"}
             </button>
+            {saveError && (
+              <span style={{ fontSize: "13px", color: "#dc2626" }}>✗ {saveError}</span>
+            )}
           </div>
         </div>
       </div>
@@ -1485,6 +1518,22 @@ export function SelfImprove() {
     schedule_enabled: false,
     schedule_interval_hours: 24,
     require_approval: true,
+    automation: {
+      auto_create_prs: false,
+      fix_severity: "critical_high",
+      branch_prefix: "fix/auto-",
+      draft_pr: true,
+      run_tests: true,
+      auto_merge: false,
+    },
+    targets: [],
+    scan_scope: {
+      source_code: true,
+      config_files: true,
+      dependencies: true,
+      documentation: false,
+      exclude_paths: "/node_modules, /dist, /vendor",
+    },
   });
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [analysis, setAnalysis] = useState<SelfImprovementAnalysisEntry[]>([]);
@@ -1508,7 +1557,16 @@ export function SelfImprove() {
         api.getSelfImprovementAnalysis(20),
         api.getSelfImprovementTasks("all", 50),
       ]);
-      if (cfgRes.success && cfgRes.data) setConfig(cfgRes.data);
+      if (cfgRes.success && cfgRes.data) {
+        // Merge with defaults to ensure new fields are always present
+        setConfig((prev) => ({
+          ...prev,
+          ...cfgRes.data,
+          automation: { ...prev.automation, ...(cfgRes.data?.automation ?? {}) },
+          scan_scope: { ...prev.scan_scope, ...(cfgRes.data?.scan_scope ?? {}) },
+          targets: cfgRes.data?.targets ?? prev.targets,
+        }));
+      }
       if (pluginsRes.success && pluginsRes.data) setPlugins(pluginsRes.data);
       if (analysisRes.success && analysisRes.data) setAnalysis(analysisRes.data);
       if (tasksRes.success && tasksRes.data) setTasks(tasksRes.data);
@@ -1594,9 +1652,33 @@ export function SelfImprove() {
         />
       )}
 
-      {activeTab === "automation" && <AutomationTab />}
+      {activeTab === "automation" && (
+        <AutomationTab
+          automation={config.automation}
+          onSave={async (a) => {
+            const res = await api.saveSelfImprovementConfig({ ...config, automation: a });
+            if (res.success && res.data) {
+              const saved = res.data;
+              setConfig((prev) => ({ ...prev, ...saved, automation: saved.automation ?? a }));
+            }
+          }}
+        />
+      )}
 
-      {activeTab === "targets" && <TargetsTab defaultRepo={config.target_repo} />}
+      {activeTab === "targets" && (
+        <TargetsTab
+          targets={config.targets}
+          scanScope={config.scan_scope}
+          defaultRepo={config.target_repo}
+          onSave={async (targets, scope) => {
+            const res = await api.saveSelfImprovementConfig({ ...config, targets, scan_scope: scope });
+            if (res.success && res.data) {
+              const saved = res.data;
+              setConfig((prev) => ({ ...prev, ...saved, targets: saved.targets ?? targets, scan_scope: saved.scan_scope ?? scope }));
+            }
+          }}
+        />
+      )}
 
       {activeTab === "analytics" && <AnalyticsTab tasks={tasks} analysis={analysis} />}
 
