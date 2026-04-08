@@ -46,6 +46,12 @@ telegram:
 # Optional: TonAPI key for higher rate limits
 # tonapi_key: "YOUR_TONAPI_KEY"      # From @tonapi_bot
 
+# Optional: AES-256-GCM encryption key for wallet.json
+# When set, the 24-word mnemonic is stored encrypted at rest.
+# Generate a key: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# Can also be set via the TELETON_WALLET_KEY environment variable (takes precedence).
+# wallet_encryption_key: "your-64-char-hex-key-here"
+
 # Optional: Tavily API key for web search/fetch tools
 # tavily_api_key: "YOUR_TAVILY_KEY"  # From https://tavily.com
 
