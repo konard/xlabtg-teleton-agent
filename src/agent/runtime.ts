@@ -14,6 +14,10 @@ import {
   NETWORK_ERROR_MAX_RETRIES,
   TOOL_CONCURRENCY_LIMIT,
   EMBEDDING_QUERY_MAX_CHARS,
+  MEMORY_STATS_CACHE_TTL_MS,
+  TOOL_PARAM_HINT_MAX_CHARS,
+  RAG_QUERY_RECENT_MESSAGES,
+  RESPONSE_REINFORCEMENT_TOOL_CALL_THRESHOLD,
 } from "../constants/limits.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import {
@@ -140,7 +144,7 @@ function generateToolSummary(
 
 /** Compact summary of tool params for the iteration log line. */
 function summarizeToolParams(toolName: string, params: Record<string, unknown>): string {
-  const MAX = 60;
+  const MAX = TOOL_PARAM_HINT_MAX_CHARS;
   let hint = "";
 
   if (toolName === "exec_run" && typeof params.command === "string") {
@@ -377,10 +381,6 @@ export class AgentRuntime {
       const msgType = isGroup ? `Group ${chatId} ${who}` : `DM ${who}`;
       log.info(`📨 ${msgType}: "${preview}${formattedMessage.length > 50 ? "..." : ""}"`);
 
-      let relevantContext = "";
-      let queryEmbedding: number[] | undefined;
-      const isNonTrivial = !isTrivialMessage(effectiveMessage);
-
       // Determine if the sender is the owner to protect private data.
       // owner_id takes precedence; admin_ids is used as fallback when owner_id is absent.
       // Computed early so it can be used to gate RAG context access.
@@ -391,83 +391,28 @@ export class AgentRuntime {
           ? senderIdNum === ownerId
           : senderIdNum !== undefined && this.config.telegram.admin_ids.includes(senderIdNum);
 
-      // Start embedding computation concurrently
-      const embeddingPromise = (async () => {
-        if (!this.embedder || !isNonTrivial) return;
-        // Enrich query with recent conversation context for better RAG retrieval
-        let searchQuery = effectiveMessage;
-        const recentUserMsgs = context.messages
-          .filter((m) => m.role === "user" && typeof m.content === "string")
-          .slice(-3)
-          .map((m) => {
-            const text = m.content as string;
-            const bodyMatch = text.match(/\] (.+)/s);
-            return (bodyMatch ? bodyMatch[1] : text).trim();
-          })
-          .filter((t) => t.length > 0);
-        if (recentUserMsgs.length > 0) {
-          searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
-        }
-        queryEmbedding = await this.embedder.embedQuery(
-          searchQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS)
-        );
-      })().catch((error) => {
-        log.warn({ err: error }, "Embedding computation failed");
-      });
+      // Start embedding computation concurrently with session:start hook
+      let queryEmbedding: number[] | undefined;
+      const embeddingPromise = this.computeQueryEmbedding(effectiveMessage, context.messages)
+        .then((embedding) => {
+          queryEmbedding = embedding;
+        })
+        .catch((error) => {
+          log.warn({ err: error }, "Embedding computation failed");
+        });
 
       // Await session:start and embedding concurrently before building context
       await Promise.all([sessionStartPromise, embeddingPromise]);
 
-      if (this.contextBuilder && isNonTrivial) {
-        try {
-          const dbContext = await this.contextBuilder.buildContext({
-            query: effectiveMessage,
-            chatId,
-            includeAgentMemory: isOwner,
-            includeFeedHistory: isOwner,
-            searchAllChats: !isGroup,
-            maxRecentMessages: CONTEXT_MAX_RECENT_MESSAGES,
-            maxRelevantChunks: CONTEXT_MAX_RELEVANT_CHUNKS,
-            queryEmbedding,
-          });
-
-          const contextParts: string[] = [];
-
-          if (dbContext.relevantKnowledge.length > 0) {
-            const sanitizedKnowledge = dbContext.relevantKnowledge.map((chunk) =>
-              sanitizeForContext(chunk)
-            );
-            contextParts.push(
-              `[Relevant knowledge from memory]\n${sanitizedKnowledge.join("\n---\n")}`
-            );
-          }
-
-          if (dbContext.relevantFeed.length > 0) {
-            const sanitizedFeed = dbContext.relevantFeed.map((msg) => sanitizeForContext(msg));
-            contextParts.push(
-              `[Relevant messages from Telegram feed]\n${sanitizedFeed.join("\n")}`
-            );
-          }
-
-          if (contextParts.length > 0) {
-            relevantContext = contextParts.join("\n\n");
-            log.info(
-              `🔍 RAG context: ${dbContext.relevantKnowledge.length} knowledge chunks, ${dbContext.relevantFeed.length} feed messages (${relevantContext.length} chars, ~${Math.ceil(relevantContext.length / 4)} tokens)`
-            );
-          }
-        } catch (error) {
-          log.warn({ err: error }, "Context building failed");
-        }
-      }
-
-      // Trim RAG context to configured budget to reduce token cost and response latency
       const maxRagChars = this.config.agent.max_rag_chars;
-      if (maxRagChars !== undefined && relevantContext.length > maxRagChars) {
-        log.info(
-          `✂️  RAG context trimmed: ${relevantContext.length} → ${maxRagChars} chars (max_rag_chars limit)`
-        );
-      }
-      relevantContext = trimRagContext(relevantContext, maxRagChars);
+      const relevantContext = await this.buildRagContext({
+        effectiveMessage,
+        chatId,
+        isGroup: effectiveIsGroup,
+        isOwner,
+        queryEmbedding,
+        maxRagChars,
+      });
 
       const memoryStats = this.getMemoryStats();
       const statsContext = `[Memory Status: ${memoryStats.totalMessages} messages across ${memoryStats.totalChats} chats, ${memoryStats.knowledgeChunks} knowledge chunks]`;
@@ -569,37 +514,14 @@ export class AgentRuntime {
       const isAdmin =
         toolContext?.config?.telegram.admin_ids.includes(toolContext.senderId) ?? false;
 
-      let tools: PiAiTool[] | undefined;
-      {
-        const toolIndex = this.toolRegistry?.getToolIndex();
-        const useRAG =
-          toolIndex?.isIndexed &&
-          this.config.tool_rag?.enabled !== false &&
-          !isTrivialMessage(effectiveMessage) &&
-          !(
-            providerMeta.toolLimit === null &&
-            this.config.tool_rag?.skip_unlimited_providers !== false
-          );
-
-        if (useRAG && this.toolRegistry && queryEmbedding) {
-          tools = await this.toolRegistry.getForContextWithRAG(
-            effectiveMessage,
-            queryEmbedding,
-            effectiveIsGroup,
-            providerMeta.toolLimit,
-            chatId,
-            isAdmin
-          );
-          log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
-        } else {
-          tools = this.toolRegistry?.getForContext(
-            effectiveIsGroup,
-            providerMeta.toolLimit,
-            chatId,
-            isAdmin
-          );
-        }
-      }
+      const tools = await this.selectTools({
+        effectiveMessage,
+        effectiveIsGroup,
+        chatId,
+        isAdmin,
+        queryEmbedding,
+        providerMeta,
+      });
 
       const maxIterations = this.config.agent.max_agentic_iterations || 5;
       let iteration = 0;
@@ -642,11 +564,11 @@ export class AgentRuntime {
         });
         const maskedContext: Context = { ...context, messages: maskedMessages };
 
-        // For complex tool chains (4+ calls accumulated so far), reinforce the
-        // "always respond with text" instruction in the system prompt, since LLMs
-        // tend to skip text generation when the context is large and tools succeeded.
+        // For complex tool chains, reinforce the "always respond with text" instruction
+        // in the system prompt, since LLMs tend to skip text generation when the context
+        // is large and tools succeeded.
         let effectiveSystemPrompt = systemPrompt;
-        if (totalToolCalls.length >= 4) {
+        if (totalToolCalls.length >= RESPONSE_REINFORCEMENT_TOOL_CALL_THRESHOLD) {
           effectiveSystemPrompt +=
             "\n\n⚠️ IMPORTANT: You MUST generate a human-readable summary now. " +
             "After all tool executions, always respond with: " +
@@ -1181,6 +1103,143 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * Build enriched query embedding from the current message and recent conversation history.
+   * Returns undefined if no embedder is configured or the message is trivial.
+   */
+  private async computeQueryEmbedding(
+    effectiveMessage: string,
+    contextMessages: Context["messages"]
+  ): Promise<number[] | undefined> {
+    if (!this.embedder || isTrivialMessage(effectiveMessage)) return undefined;
+
+    let searchQuery = effectiveMessage;
+    const recentUserMsgs = contextMessages
+      .filter((m) => m.role === "user" && typeof m.content === "string")
+      .slice(-RAG_QUERY_RECENT_MESSAGES)
+      .map((m) => {
+        const text = m.content as string;
+        const bodyMatch = text.match(/\] (.+)/s);
+        return (bodyMatch ? bodyMatch[1] : text).trim();
+      })
+      .filter((t) => t.length > 0);
+    if (recentUserMsgs.length > 0) {
+      searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
+    }
+
+    return this.embedder.embedQuery(searchQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS));
+  }
+
+  /**
+   * Fetch and assemble RAG context (relevant knowledge + feed history) for the given message.
+   * Returns an empty string when RAG is unavailable or the message is trivial.
+   */
+  private async buildRagContext(opts: {
+    effectiveMessage: string;
+    chatId: string;
+    isGroup: boolean;
+    isOwner: boolean;
+    queryEmbedding: number[] | undefined;
+    maxRagChars: number | undefined;
+  }): Promise<string> {
+    const { effectiveMessage, chatId, isGroup, isOwner, queryEmbedding, maxRagChars } = opts;
+
+    if (!this.contextBuilder || isTrivialMessage(effectiveMessage)) return "";
+
+    let relevantContext = "";
+    try {
+      const dbContext = await this.contextBuilder.buildContext({
+        query: effectiveMessage,
+        chatId,
+        includeAgentMemory: isOwner,
+        includeFeedHistory: isOwner,
+        searchAllChats: !isGroup,
+        maxRecentMessages: CONTEXT_MAX_RECENT_MESSAGES,
+        maxRelevantChunks: CONTEXT_MAX_RELEVANT_CHUNKS,
+        queryEmbedding,
+      });
+
+      const contextParts: string[] = [];
+
+      if (dbContext.relevantKnowledge.length > 0) {
+        const sanitizedKnowledge = dbContext.relevantKnowledge.map((chunk) =>
+          sanitizeForContext(chunk)
+        );
+        contextParts.push(
+          `[Relevant knowledge from memory]\n${sanitizedKnowledge.join("\n---\n")}`
+        );
+      }
+
+      if (dbContext.relevantFeed.length > 0) {
+        const sanitizedFeed = dbContext.relevantFeed.map((msg) => sanitizeForContext(msg));
+        contextParts.push(`[Relevant messages from Telegram feed]\n${sanitizedFeed.join("\n")}`);
+      }
+
+      if (contextParts.length > 0) {
+        relevantContext = contextParts.join("\n\n");
+        log.info(
+          `🔍 RAG context: ${dbContext.relevantKnowledge.length} knowledge chunks, ${dbContext.relevantFeed.length} feed messages (${relevantContext.length} chars, ~${Math.ceil(relevantContext.length / 4)} tokens)`
+        );
+      }
+    } catch (error) {
+      log.warn({ err: error }, "Context building failed");
+    }
+
+    // Trim to configured budget to reduce token cost and response latency
+    if (maxRagChars !== undefined && relevantContext.length > maxRagChars) {
+      log.info(
+        `✂️  RAG context trimmed: ${relevantContext.length} → ${maxRagChars} chars (max_rag_chars limit)`
+      );
+    }
+    return trimRagContext(relevantContext, maxRagChars);
+  }
+
+  /**
+   * Select tools for the current request using RAG or full registry based on config.
+   */
+  private async selectTools(opts: {
+    effectiveMessage: string;
+    effectiveIsGroup: boolean;
+    chatId: string;
+    isAdmin: boolean;
+    queryEmbedding: number[] | undefined;
+    providerMeta: ReturnType<typeof getProviderMetadata>;
+  }): Promise<PiAiTool[] | undefined> {
+    const { effectiveMessage, effectiveIsGroup, chatId, isAdmin, queryEmbedding, providerMeta } =
+      opts;
+
+    if (!this.toolRegistry) return undefined;
+
+    const toolIndex = this.toolRegistry.getToolIndex();
+    const useRAG =
+      toolIndex?.isIndexed &&
+      this.config.tool_rag?.enabled !== false &&
+      !isTrivialMessage(effectiveMessage) &&
+      !(
+        providerMeta.toolLimit === null && this.config.tool_rag?.skip_unlimited_providers !== false
+      );
+
+    if (useRAG && queryEmbedding) {
+      const tools = await this.toolRegistry.getForContextWithRAG(
+        effectiveMessage,
+        queryEmbedding,
+        effectiveIsGroup,
+        providerMeta.toolLimit,
+        chatId,
+        isAdmin
+      );
+      log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
+      return tools;
+    }
+
+    return this.toolRegistry.getForContext(
+      effectiveIsGroup,
+      providerMeta.toolLimit,
+      chatId,
+      isAdmin
+    );
+  }
+
   clearHistory(chatId: string): void {
     const db = getDatabase().getDb();
 
@@ -1281,7 +1340,7 @@ export class AgentRuntime {
       knowledgeChunks: knowledgeCount.count,
     };
 
-    this._memoryStatsCache = { data, expiry: now + 5 * 60 * 1000 };
+    this._memoryStatsCache = { data, expiry: now + MEMORY_STATS_CACHE_TTL_MS };
     return data;
   }
 }

@@ -2,6 +2,10 @@ import { TelegramUserClient, type TelegramClientConfig } from "./client.js";
 import { Api } from "telegram";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { createLogger } from "../utils/logger.js";
+import {
+  DEFAULT_GET_MESSAGES_LIMIT,
+  TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS,
+} from "../constants/limits.js";
 
 const log = createLogger("Telegram");
 
@@ -106,7 +110,10 @@ export class TelegramBridge {
     return me?.username;
   }
 
-  async getMessages(chatId: string, limit: number = 50): Promise<TelegramMessage[]> {
+  async getMessages(
+    chatId: string,
+    limit: number = DEFAULT_GET_MESSAGES_LIMIT
+  ): Promise<TelegramMessage[]> {
     try {
       const peer = this.getPeer(chatId) || chatId;
       const messages = await this.client.getMessages(peer, { limit });
@@ -325,7 +332,9 @@ export class TelegramBridge {
       try {
         const sender = await Promise.race([
           msg.getSender(),
-          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
+          new Promise<undefined>((resolve) =>
+            setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
+          ),
         ]);
         if (sender && "username" in sender) {
           senderUsername = sender.username ?? undefined;
@@ -344,9 +353,10 @@ export class TelegramBridge {
             expiresAt: Date.now() + SENDER_CACHE_TTL_MS,
           });
         }
-      } catch {
+      } catch (err) {
         // getSender() can fail on deleted accounts, timeouts, etc.
         // Non-critical: message still processed with default sender info
+        log.debug({ err, msgId: msg.id }, "Could not resolve sender info");
       }
     }
 
@@ -447,7 +457,9 @@ export class TelegramBridge {
       try {
         const sender = await Promise.race([
           msg.getSender(),
-          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
+          new Promise<undefined>((resolve) =>
+            setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
+          ),
         ]);
         if (sender && "username" in sender) {
           senderUsername = sender.username ?? undefined;
@@ -466,8 +478,9 @@ export class TelegramBridge {
             expiresAt: Date.now() + SENDER_CACHE_TTL_MS,
           });
         }
-      } catch {
-        // getSender() can fail — non-critical
+      } catch (err) {
+        // getSender() can fail on deleted accounts, timeouts, etc. — non-critical
+        log.debug({ err, msgId: msg.id }, "Could not resolve sender info for service message");
       }
     }
 
@@ -586,7 +599,9 @@ export class TelegramBridge {
     try {
       const replyMsg = await Promise.race([
         rawMsg.getReplyMessage(),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
+        new Promise<undefined>((resolve) =>
+          setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
+        ),
       ]);
       if (!replyMsg) return undefined;
 
@@ -594,7 +609,9 @@ export class TelegramBridge {
       try {
         const sender = await Promise.race([
           replyMsg.getSender(),
-          new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
+          new Promise<undefined>((resolve) =>
+            setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
+          ),
         ]);
         if (sender && "firstName" in sender) {
           senderName = (sender.firstName as string) ?? undefined;
@@ -602,8 +619,9 @@ export class TelegramBridge {
         if (sender && "username" in sender && !senderName) {
           senderName = (sender.username as string) ?? undefined;
         }
-      } catch {
-        // Non-critical
+      } catch (err) {
+        // Non-critical: reply context sender name is optional
+        log.debug({ err, replyMsgId: replyMsg.id }, "Could not resolve reply sender name");
       }
 
       const replyMsgSenderId = replyMsg.senderId ? BigInt(replyMsg.senderId.toString()) : undefined;
@@ -614,7 +632,8 @@ export class TelegramBridge {
         senderName,
         isAgent,
       };
-    } catch {
+    } catch (err) {
+      log.debug({ err, msgId: rawMsg.id }, "Could not fetch reply context");
       return undefined;
     }
   }
