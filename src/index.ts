@@ -51,6 +51,7 @@ import type { WebUIServer } from "./webui/server.js";
 import type { ApiServer } from "./api/server.js";
 import { initMetrics } from "./services/metrics.js";
 import { initAnalytics } from "./services/analytics.js";
+import { flushOffsets } from "./telegram/offset-store.js";
 
 const log = createLogger("App");
 
@@ -1444,6 +1445,13 @@ ${blue}  ┌──────────────────────�
       await this.messageHandler.drain();
     } catch (e) {
       log.error({ err: e }, "⚠️ Message queue drain failed");
+    }
+
+    // Flush any pending offset writes (deferred disk writes from writeOffset)
+    try {
+      flushOffsets();
+    } catch (e) {
+      log.error({ err: e }, "⚠️ Offset flush failed");
     }
 
     for (const mod of this.modules) {

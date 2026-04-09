@@ -19,6 +19,42 @@ export const SessionResetPolicySchema = z.object({
     .describe("Minutes of inactivity before session reset (default: 24h)"),
 });
 
+export const CompactionConfigSchema = z.object({
+  enabled: z.boolean().default(true).describe("Enable automatic context compaction"),
+  max_messages: z
+    .number()
+    .int()
+    .min(10)
+    .optional()
+    .describe(
+      "Trigger compaction after N messages (overrides model-derived default). " +
+        "Lower values compact more aggressively; higher values keep more history."
+    ),
+  keep_recent: z
+    .number()
+    .int()
+    .min(5)
+    .optional()
+    .describe(
+      "Number of recent messages always preserved during compaction (overrides default). " +
+        "These messages are never summarised away."
+    ),
+  log_compaction: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Write a compaction audit entry to the daily log before discarding old messages. " +
+        "Preserves an audit trail of what was compacted even when the original messages are gone."
+    ),
+  auto_preserve: z
+    .boolean()
+    .default(true)
+    .describe(
+      "Extract and preserve critical identifiers (wallet addresses, transaction hashes, numbers) " +
+        "from messages before compaction so they survive the summarisation step."
+    ),
+});
+
 export const AgentConfigSchema = z.object({
   provider: z
     .enum([
@@ -68,6 +104,9 @@ export const AgentConfigSchema = z.object({
         "Unset = no limit. Recommended: 4000-8000 for ZAI/budget providers."
     ),
   session_reset_policy: SessionResetPolicySchema.default(SessionResetPolicySchema.parse({})),
+  compaction: CompactionConfigSchema.default(CompactionConfigSchema.parse({})).describe(
+    "Context compaction settings — controls when and how old messages are summarised"
+  ),
 });
 
 export const CommandAccessSchema = z.object({
@@ -104,7 +143,16 @@ export const TelegramConfigSchema = z.object({
   group_policy: GroupPolicy.default("open"),
   group_allow_from: z.array(z.number()).default([]),
   require_mention: z.boolean().default(true),
-  max_message_length: z.number().default(TELEGRAM_MAX_MESSAGE_LENGTH),
+  max_message_length: z
+    .number()
+    .min(1)
+    .max(TELEGRAM_MAX_MESSAGE_LENGTH)
+    .default(TELEGRAM_MAX_MESSAGE_LENGTH)
+    .describe(
+      "Maximum incoming message length in characters. Messages exceeding this limit are rejected early " +
+        "(DoS/context-overflow defense). Also controls outgoing message splitting. " +
+        "Admins are exempt. Default: 4096 (Telegram max). Reduce for stricter limits."
+    ),
   typing_simulation: z.boolean().default(true),
   rate_limit_messages_per_second: z.number().default(1.0),
   rate_limit_groups_per_minute: z.number().default(20),
@@ -316,9 +364,11 @@ const _ExecAuditObject = z.object({
 
 const _ExecObject = z.object({
   mode: z
-    .enum(["off", "yolo"])
+    .enum(["off", "allowlist", "yolo"])
     .default("off")
-    .describe("Exec mode: off (disabled) or yolo (full system access)"),
+    .describe(
+      "Exec mode: off (disabled), allowlist (only permitted commands), or yolo (full system access — dangerous)"
+    ),
   scope: z
     .enum(["admin-only", "allowlist", "all"])
     .default("admin-only")
@@ -327,6 +377,14 @@ const _ExecObject = z.object({
     .array(z.number())
     .default([])
     .describe("Telegram user IDs allowed to use exec (when scope = allowlist)"),
+  command_allowlist: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Allowed command prefixes when mode = allowlist (e.g. 'git status', 'ls', 'npm run'). " +
+        "A command is permitted if it starts with any entry in this list. " +
+        "Empty list blocks all commands."
+    ),
   limits: _ExecLimitsObject.default(_ExecLimitsObject.parse({})),
   audit: _ExecAuditObject.default(_ExecAuditObject.parse({})),
 });
@@ -420,6 +478,14 @@ export const ConfigSchema = z.object({
     .string()
     .optional()
     .describe("Tavily API key for web search & extract (free at https://tavily.com)"),
+  wallet_encryption_key: z
+    .string()
+    .optional()
+    .describe(
+      "AES-256-GCM encryption key for wallet.json mnemonic (hex, 64 chars). " +
+        "Generate with: node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\" " +
+        "or set TELETON_WALLET_KEY env var."
+    ),
   groq: z
     .object({
       api_key: z
@@ -471,6 +537,7 @@ export const ConfigSchema = z.object({
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
+export type CompactionConfig = z.infer<typeof CompactionConfigSchema>;
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
 export type CommandAccessConfig = z.infer<typeof CommandAccessSchema>;
 export type StorageConfig = z.infer<typeof StorageConfigSchema>;

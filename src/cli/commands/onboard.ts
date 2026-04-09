@@ -198,7 +198,7 @@ async function runInteractiveOnboarding(
   let groupPolicy: "open" | "allowlist" | "admin-only" | "disabled" = "admin-only";
   let requireMention = true;
   let maxAgenticIterations = "5";
-  let execMode: "off" | "yolo" = "off";
+  let execMode: "off" | "allowlist" | "yolo" = "off";
   let cocoonInstance = 10000;
 
   // Intro
@@ -952,6 +952,11 @@ async function runInteractiveOnboarding(
         idle_expiry_enabled: true,
         idle_expiry_minutes: 1440,
       },
+      compaction: {
+        enabled: true,
+        log_compaction: true,
+        auto_preserve: true,
+      },
     },
     telegram: {
       api_id: apiId,
@@ -1012,6 +1017,7 @@ async function runInteractiveOnboarding(
         mode: execMode,
         scope: "admin-only",
         allowlist: [],
+        command_allowlist: [],
         limits: { timeout: 120, max_output: 50000 },
         audit: { log_commands: true },
       },
@@ -1143,6 +1149,11 @@ async function runNonInteractiveOnboarding(
         idle_expiry_enabled: true,
         idle_expiry_minutes: 1440,
       },
+      compaction: {
+        enabled: true,
+        log_compaction: true,
+        auto_preserve: true,
+      },
     },
     telegram: {
       api_id: options.apiId,
@@ -1202,6 +1213,7 @@ async function runNonInteractiveOnboarding(
         mode: "off",
         scope: "admin-only",
         allowlist: [],
+        command_allowlist: [],
         limits: { timeout: 120, max_output: 50000 },
         audit: { log_commands: true },
       },

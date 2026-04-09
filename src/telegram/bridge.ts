@@ -3,12 +3,30 @@ import { Api } from "telegram";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { createLogger } from "../utils/logger.js";
 import {
-  PEER_CACHE_MAX_SIZE,
   DEFAULT_GET_MESSAGES_LIMIT,
   TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS,
 } from "../constants/limits.js";
 
 const log = createLogger("Telegram");
+
+/** TTL for sender info cache entries (1 hour). Balances freshness vs. API calls. */
+const SENDER_CACHE_TTL_MS = 60 * 60 * 1000;
+/** TTL for peer cache entries (1 hour). Prevents stale entries accumulating in long sessions. */
+const PEER_CACHE_TTL_MS = 60 * 60 * 1000;
+/** Max number of entries in peerCache before LRU eviction kicks in. */
+const PEER_CACHE_MAX_SIZE = 1000;
+
+interface SenderCacheEntry {
+  username?: string;
+  firstName?: string;
+  isBot: boolean;
+  expiresAt: number;
+}
+
+interface PeerCacheEntry {
+  peer: Api.TypePeer;
+  expiresAt: number;
+}
 
 export interface TelegramMessage {
   id: number;
@@ -46,7 +64,10 @@ export class TelegramBridge {
   private client: TelegramUserClient;
   private ownUserId?: bigint;
   private ownUsername?: string;
-  private peerCache: Map<string, Api.TypePeer> = new Map();
+  /** LRU peer cache: chatId → {peer, expiresAt}. Bounded by PEER_CACHE_MAX_SIZE + TTL. */
+  private peerCache: Map<string, PeerCacheEntry> = new Map();
+  /** Sender info cache: senderId → entry. Avoids repeated getSender() calls per sender in group chats. */
+  private senderCache: Map<number, SenderCacheEntry> = new Map();
 
   constructor(config: TelegramClientConfig) {
     this.client = new TelegramUserClient(config);
@@ -94,7 +115,7 @@ export class TelegramBridge {
     limit: number = DEFAULT_GET_MESSAGES_LIMIT
   ): Promise<TelegramMessage[]> {
     try {
-      const peer = this.peerCache.get(chatId) || chatId;
+      const peer = this.getPeer(chatId) || chatId;
       const messages = await this.client.getMessages(peer, { limit });
       const results = await Promise.allSettled(messages.map((msg) => this.parseMessage(msg)));
       return results
@@ -110,7 +131,7 @@ export class TelegramBridge {
     options: SendMessageOptions & { _rawPeer?: Api.TypePeer }
   ): Promise<Api.Message> {
     try {
-      const peer = options._rawPeer || this.peerCache.get(options.chatId) || options.chatId;
+      const peer = options._rawPeer || this.getPeer(options.chatId) || options.chatId;
 
       if (options.inlineKeyboard && options.inlineKeyboard.length > 0) {
         const buttons = new Api.ReplyInlineMarkup({
@@ -153,7 +174,7 @@ export class TelegramBridge {
     inlineKeyboard?: InlineButton[][];
   }): Promise<Api.Message> {
     try {
-      const peer = this.peerCache.get(options.chatId) || options.chatId;
+      const peer = this.getPeer(options.chatId) || options.chatId;
 
       let buttons;
       if (options.inlineKeyboard && options.inlineKeyboard.length > 0) {
@@ -231,7 +252,7 @@ export class TelegramBridge {
 
   async sendReaction(chatId: string, messageId: number, emoji: string): Promise<void> {
     try {
-      const peer = this.peerCache.get(chatId) || chatId;
+      const peer = this.getPeer(chatId) || chatId;
 
       await this.client.getClient().invoke(
         new Api.messages.SendReaction({
@@ -294,36 +315,49 @@ export class TelegramBridge {
     const isGroup = !isChannel && chatId.startsWith("-");
 
     if (msg.peerId) {
-      this.peerCache.set(chatId, msg.peerId);
-      if (this.peerCache.size > PEER_CACHE_MAX_SIZE) {
-        const oldest = this.peerCache.keys().next().value;
-        if (oldest !== undefined) this.peerCache.delete(oldest);
-      }
+      this.setPeer(chatId, msg.peerId);
     }
 
     let senderUsername: string | undefined;
     let senderFirstName: string | undefined;
     let isBot = false;
-    try {
-      const sender = await Promise.race([
-        msg.getSender(),
-        new Promise<undefined>((resolve) =>
-          setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
-        ),
-      ]);
-      if (sender && "username" in sender) {
-        senderUsername = sender.username ?? undefined;
+
+    // Check sender cache first to avoid repeated getSender() calls (N+1 in group chats)
+    const cachedSender = senderId !== 0 ? this.senderCache.get(senderId) : undefined;
+    if (cachedSender && Date.now() < cachedSender.expiresAt) {
+      senderUsername = cachedSender.username;
+      senderFirstName = cachedSender.firstName;
+      isBot = cachedSender.isBot;
+    } else {
+      try {
+        const sender = await Promise.race([
+          msg.getSender(),
+          new Promise<undefined>((resolve) =>
+            setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
+          ),
+        ]);
+        if (sender && "username" in sender) {
+          senderUsername = sender.username ?? undefined;
+        }
+        if (sender && "firstName" in sender) {
+          senderFirstName = sender.firstName ?? undefined;
+        }
+        if (sender instanceof Api.User) {
+          isBot = sender.bot ?? false;
+        }
+        if (senderId !== 0) {
+          this.senderCache.set(senderId, {
+            username: senderUsername,
+            firstName: senderFirstName,
+            isBot,
+            expiresAt: Date.now() + SENDER_CACHE_TTL_MS,
+          });
+        }
+      } catch (err) {
+        // getSender() can fail on deleted accounts, timeouts, etc.
+        // Non-critical: message still processed with default sender info
+        log.debug({ err, msgId: msg.id }, "Could not resolve sender info");
       }
-      if (sender && "firstName" in sender) {
-        senderFirstName = sender.firstName ?? undefined;
-      }
-      if (sender instanceof Api.User) {
-        isBot = sender.bot ?? false;
-      }
-    } catch (err) {
-      // getSender() can fail on deleted accounts, timeouts, etc.
-      // Non-critical: message still processed with default sender info
-      log.debug({ err, msgId: msg.id }, "Could not resolve sender info");
     }
 
     const hasMedia = !!(
@@ -412,25 +446,42 @@ export class TelegramBridge {
     let senderUsername: string | undefined;
     let senderFirstName: string | undefined;
     let isBot = false;
-    try {
-      const sender = await Promise.race([
-        msg.getSender(),
-        new Promise<undefined>((resolve) =>
-          setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
-        ),
-      ]);
-      if (sender && "username" in sender) {
-        senderUsername = sender.username ?? undefined;
+
+    // Check sender cache first to avoid repeated getSender() calls
+    const cachedSender = senderId !== 0 ? this.senderCache.get(senderId) : undefined;
+    if (cachedSender && Date.now() < cachedSender.expiresAt) {
+      senderUsername = cachedSender.username;
+      senderFirstName = cachedSender.firstName;
+      isBot = cachedSender.isBot;
+    } else {
+      try {
+        const sender = await Promise.race([
+          msg.getSender(),
+          new Promise<undefined>((resolve) =>
+            setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
+          ),
+        ]);
+        if (sender && "username" in sender) {
+          senderUsername = sender.username ?? undefined;
+        }
+        if (sender && "firstName" in sender) {
+          senderFirstName = sender.firstName ?? undefined;
+        }
+        if (sender instanceof Api.User) {
+          isBot = sender.bot ?? false;
+        }
+        if (senderId !== 0) {
+          this.senderCache.set(senderId, {
+            username: senderUsername,
+            firstName: senderFirstName,
+            isBot,
+            expiresAt: Date.now() + SENDER_CACHE_TTL_MS,
+          });
+        }
+      } catch (err) {
+        // getSender() can fail on deleted accounts, timeouts, etc. — non-critical
+        log.debug({ err, msgId: msg.id }, "Could not resolve sender info for service message");
       }
-      if (sender && "firstName" in sender) {
-        senderFirstName = sender.firstName ?? undefined;
-      }
-      if (sender instanceof Api.User) {
-        isBot = sender.bot ?? false;
-      }
-    } catch (err) {
-      // getSender() can fail on deleted accounts, timeouts, etc. — non-critical
-      log.debug({ err, msgId: msg.id }, "Could not resolve sender info for service message");
     }
 
     let text = "";
@@ -497,11 +548,7 @@ export class TelegramBridge {
 
     // Cache peer
     if (msg.peerId) {
-      this.peerCache.set(chatId, msg.peerId);
-      if (this.peerCache.size > PEER_CACHE_MAX_SIZE) {
-        const oldest = this.peerCache.keys().next().value;
-        if (oldest !== undefined) this.peerCache.delete(oldest);
-      }
+      this.setPeer(chatId, msg.peerId);
     }
 
     return {
@@ -522,7 +569,28 @@ export class TelegramBridge {
   }
 
   getPeer(chatId: string): Api.TypePeer | undefined {
-    return this.peerCache.get(chatId);
+    const entry = this.peerCache.get(chatId);
+    if (!entry) return undefined;
+    if (Date.now() > entry.expiresAt) {
+      this.peerCache.delete(chatId);
+      return undefined;
+    }
+    // LRU: re-insert to move to end (Map iteration is insertion-ordered)
+    this.peerCache.delete(chatId);
+    this.peerCache.set(chatId, entry);
+    return entry.peer;
+  }
+
+  private setPeer(chatId: string, peer: Api.TypePeer): void {
+    // Delete first (if present) so the new entry goes to the end of insertion order
+    this.peerCache.delete(chatId);
+    this.peerCache.set(chatId, { peer, expiresAt: Date.now() + PEER_CACHE_TTL_MS });
+
+    // Evict oldest entries when over capacity
+    while (this.peerCache.size > PEER_CACHE_MAX_SIZE) {
+      const oldest = this.peerCache.keys().next().value;
+      if (oldest !== undefined) this.peerCache.delete(oldest);
+    }
   }
 
   async fetchReplyContext(

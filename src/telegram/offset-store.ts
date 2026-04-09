@@ -21,6 +21,22 @@ const STORE_VERSION = 2;
 let offsetCache: OffsetState | null = null;
 
 /**
+ * Deferred flush: batches disk writes so that bursts of messages in the same
+ * second result in a single fsync instead of one per message.  The in-memory
+ * state is always authoritative; the disk is purely a durability store.
+ */
+const FLUSH_DEBOUNCE_MS = 500;
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+
+function scheduleDiskFlush(state: OffsetState): void {
+  if (flushTimer !== null) return; // already scheduled
+  flushTimer = setTimeout(() => {
+    flushTimer = null;
+    saveStateToDisk(state);
+  }, FLUSH_DEBOUNCE_MS);
+}
+
+/**
  * Load offset state from disk (or cache)
  */
 function loadState(): OffsetState {
@@ -51,9 +67,10 @@ function loadState(): OffsetState {
 }
 
 /**
- * Save offset state to disk
+ * Flush in-memory state to disk immediately (atomic rename).
+ * Called by the debounce timer and by flushOffsets() for graceful shutdown.
  */
-function saveState(state: OffsetState): void {
+function saveStateToDisk(state: OffsetState): void {
   try {
     const dir = dirname(OFFSET_FILE);
     if (!existsSync(dir)) {
@@ -64,7 +81,6 @@ function saveState(state: OffsetState): void {
     const tmpFile = OFFSET_FILE + ".tmp";
     writeFileSync(tmpFile, JSON.stringify(state, null, 2), { encoding: "utf-8", mode: 0o600 });
     renameSync(tmpFile, OFFSET_FILE);
-    offsetCache = state;
   } catch (error) {
     log.error({ err: error }, "Failed to write offset store");
   }
@@ -80,7 +96,9 @@ export function readOffset(chatId?: string): number | null {
 }
 
 /**
- * Write the last processed message ID for a specific chat
+ * Write the last processed message ID for a specific chat.
+ * Updates the in-memory state immediately for correctness, then schedules a
+ * debounced disk flush to avoid a synchronous file write per message.
  */
 export function writeOffset(messageId: number, chatId?: string): void {
   if (!chatId) return;
@@ -91,7 +109,22 @@ export function writeOffset(messageId: number, chatId?: string): void {
   // Only update if new message ID is higher
   if (messageId > currentOffset) {
     state.perChat[chatId] = messageId;
-    saveState(state);
+    offsetCache = state;
+    scheduleDiskFlush(state);
+  }
+}
+
+/**
+ * Flush any pending offset writes to disk immediately.
+ * Should be called during graceful shutdown to avoid losing the last offset.
+ */
+export function flushOffsets(): void {
+  if (flushTimer !== null) {
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  }
+  if (offsetCache) {
+    saveStateToDisk(offsetCache);
   }
 }
 

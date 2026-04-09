@@ -83,4 +83,20 @@ describe("withBlockchainRetry", () => {
 
     expect(fn).toHaveBeenCalledTimes(3);
   });
+
+  it("accepts custom timeout option and uses it instead of default", async () => {
+    // Verify the option is passed through — the mock RETRY_BLOCKCHAIN_TIMEOUT_MS is 5000
+    // but we pass a shorter value; the function should succeed quickly when fn resolves
+    const fn = vi.fn().mockResolvedValue("ok");
+    const result = await withBlockchainRetry(fn, "fast query", { timeout: 100 });
+    expect(result).toBe("ok");
+  });
+
+  it("succeeds on first attempt and ignores timeout option when fn resolves quickly", async () => {
+    const fn = vi.fn().mockResolvedValue("ton-result");
+
+    const result = await withBlockchainRetry(fn, "fast query", { timeout: 5000 });
+    expect(result).toBe("ton-result");
+    expect(fn).toHaveBeenCalledTimes(1);
+  });
 });

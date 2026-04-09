@@ -180,19 +180,33 @@ export class AgentRuntime {
     this.toolRegistry = toolRegistry ?? null;
 
     const provider = (config.agent.provider || "anthropic") as SupportedProvider;
+    const compactionOverride = config.agent.compaction;
     try {
       const model = getProviderModel(provider, config.agent.model);
       const ctx = model.contextWindow;
       this.compactionManager = new CompactionManager({
-        enabled: true,
-        maxMessages: COMPACTION_MAX_MESSAGES,
+        enabled: compactionOverride.enabled,
+        maxMessages: compactionOverride.max_messages ?? COMPACTION_MAX_MESSAGES,
         maxTokens: Math.floor(ctx * COMPACTION_MAX_TOKENS_RATIO),
-        keepRecentMessages: COMPACTION_KEEP_RECENT,
+        keepRecentMessages: compactionOverride.keep_recent ?? COMPACTION_KEEP_RECENT,
         memoryFlushEnabled: true,
         softThresholdTokens: Math.floor(ctx * COMPACTION_SOFT_THRESHOLD_RATIO),
+        logCompaction: compactionOverride.log_compaction,
+        autoPreserve: compactionOverride.auto_preserve,
       });
     } catch {
-      this.compactionManager = new CompactionManager(DEFAULT_COMPACTION_CONFIG);
+      this.compactionManager = new CompactionManager({
+        ...DEFAULT_COMPACTION_CONFIG,
+        enabled: compactionOverride.enabled,
+        ...(compactionOverride.max_messages !== undefined && {
+          maxMessages: compactionOverride.max_messages,
+        }),
+        ...(compactionOverride.keep_recent !== undefined && {
+          keepRecentMessages: compactionOverride.keep_recent,
+        }),
+        logCompaction: compactionOverride.log_compaction,
+        autoPreserve: compactionOverride.auto_preserve,
+      });
     }
   }
 
@@ -1284,8 +1298,24 @@ export class AgentRuntime {
     expiry: number;
   } | null = null;
 
+  /** Threshold above which memory pressure is logged. Adjust via config if needed. */
+  private static readonly MEMORY_PRESSURE_HEAP_MB = 512;
+
   getMemoryStats(): { totalMessages: number; totalChats: number; knowledgeChunks: number } {
     const now = Date.now();
+
+    // Invalidate cache under memory pressure so callers get fresh data
+    if (this._memoryStatsCache) {
+      const heapMB = process.memoryUsage().heapUsed / (1024 * 1024);
+      if (heapMB > AgentRuntime.MEMORY_PRESSURE_HEAP_MB) {
+        log.warn(
+          { heapMB: Math.round(heapMB) },
+          "Memory pressure detected — invalidating stats cache"
+        );
+        this._memoryStatsCache = null;
+      }
+    }
+
     if (this._memoryStatsCache && now < this._memoryStatsCache.expiry) {
       return this._memoryStatsCache.data;
     }

@@ -91,8 +91,6 @@ export const TOOL_RAG_KEYWORD_WEIGHT = 0.4;
 export const SESSION_PRUNE_DAYS = 30;
 
 // ─── Telegram Bridge ────────────────────────────────────────────
-/** Maximum number of peers to keep in the in-memory peer cache */
-export const PEER_CACHE_MAX_SIZE = 5_000;
 /** Default number of messages to fetch when no limit is specified */
 export const DEFAULT_GET_MESSAGES_LIMIT = 50;
 /** Timeout (ms) for a single getSender() / getReplyMessage() GramJS call */

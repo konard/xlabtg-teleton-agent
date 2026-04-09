@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import { Select } from './Select';
 import { InfoTip } from './InfoTip';
 
@@ -7,7 +8,9 @@ interface ExecSettingsPanelProps {
 }
 
 export function ExecSettingsPanel({ getLocal, saveConfig }: ExecSettingsPanelProps) {
-  const isYolo = getLocal('capabilities.exec.mode') === 'yolo';
+  const mode = getLocal('capabilities.exec.mode') || 'off';
+  const isYolo = mode === 'yolo';
+  const isAllowlist = mode === 'allowlist';
 
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexWrap: 'wrap' }}>
@@ -51,6 +54,23 @@ export function ExecSettingsPanel({ getLocal, saveConfig }: ExecSettingsPanelPro
           </span>
         </>
       )}
+
+      {isAllowlist && (
+        <>
+          <div style={{ width: 1, height: 18, background: 'var(--separator)' }} />
+          <span style={{ fontSize: 'var(--font-sm)', color: 'var(--accent, #6366f1)' }}>
+            Allowlist mode
+          </span>
+        </>
+      )}
+
+      <div style={{ width: 1, height: 18, background: 'var(--separator)' }} />
+      <Link
+        to="/config?tab=yolo"
+        style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)', textDecoration: 'none' }}
+      >
+        Configure →
+      </Link>
     </div>
   );
 }

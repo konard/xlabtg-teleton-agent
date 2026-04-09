@@ -7,10 +7,35 @@ import { getErrorMessage } from "../../utils/errors.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 
 const PLUGIN_DATA_DIR = join(TELETON_ROOT, "plugins", "data");
-const PLUGIN_DB_PATH = join(PLUGIN_DATA_DIR, "self-improvement-assistant.db");
+const PLUGIN_DB_PATH = join(PLUGIN_DATA_DIR, "self-improve-orchestrator.db");
 
 /** Key used to persist the meta-orchestrator config in the agent's main DB. */
 const CONFIG_KEY = "self_improvement_orchestrator_config";
+
+export interface TargetRepo {
+  id: string;
+  name: string;
+  lastScan: number | null;
+  issueCount: number;
+  enabled: boolean;
+}
+
+export interface ScanScope {
+  source_code: boolean;
+  config_files: boolean;
+  dependencies: boolean;
+  documentation: boolean;
+  exclude_paths: string;
+}
+
+export interface AutomationSettings {
+  auto_create_prs: boolean;
+  fix_severity: "critical" | "critical_high" | "all";
+  branch_prefix: string;
+  draft_pr: boolean;
+  run_tests: boolean;
+  auto_merge: boolean;
+}
 
 export interface MetaOrchestratorConfig {
   selected_plugin: string;
@@ -21,6 +46,11 @@ export interface MetaOrchestratorConfig {
   schedule_enabled: boolean;
   schedule_interval_hours: number;
   require_approval: boolean;
+  // Automation tab settings
+  automation: AutomationSettings;
+  // Targets tab settings
+  targets: TargetRepo[];
+  scan_scope: ScanScope;
 }
 
 const DEFAULT_CONFIG: MetaOrchestratorConfig = {
@@ -32,6 +62,22 @@ const DEFAULT_CONFIG: MetaOrchestratorConfig = {
   schedule_enabled: false,
   schedule_interval_hours: 24,
   require_approval: true,
+  automation: {
+    auto_create_prs: false,
+    fix_severity: "critical_high",
+    branch_prefix: "fix/auto-",
+    draft_pr: true,
+    run_tests: true,
+    auto_merge: false,
+  },
+  targets: [],
+  scan_scope: {
+    source_code: true,
+    config_files: true,
+    dependencies: true,
+    documentation: false,
+    exclude_paths: "/node_modules, /dist, /vendor",
+  },
 };
 
 export interface AnalysisLogEntry {
@@ -222,10 +268,10 @@ export function createSelfImprovementRoutes(deps?: WebUIServerDeps) {
     }
   });
 
-  // ── Legacy plugin DB endpoints ──────────────────────────────────────────────
+  // ── Plugin DB endpoints ─────────────────────────────────────────────────────
 
   // GET /api/self-improvement/status
-  // Returns whether the legacy self-improvement-assistant plugin DB exists and basic stats.
+  // Returns whether the self-improve-orchestrator plugin DB exists and basic stats.
   app.get("/status", (c) => {
     const installed = existsSync(PLUGIN_DB_PATH);
     if (!installed) {

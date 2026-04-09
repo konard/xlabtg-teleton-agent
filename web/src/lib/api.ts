@@ -638,6 +638,31 @@ export interface ConfigBundle {
   soul: Record<string, string>;
 }
 
+export interface SelfImprovementTargetRepo {
+  id: string;
+  name: string;
+  lastScan: number | null;
+  issueCount: number;
+  enabled: boolean;
+}
+
+export interface SelfImprovementScanScope {
+  source_code: boolean;
+  config_files: boolean;
+  dependencies: boolean;
+  documentation: boolean;
+  exclude_paths: string;
+}
+
+export interface SelfImprovementAutomationSettings {
+  auto_create_prs: boolean;
+  fix_severity: "critical" | "critical_high" | "all";
+  branch_prefix: string;
+  draft_pr: boolean;
+  run_tests: boolean;
+  auto_merge: boolean;
+}
+
 export interface SelfImprovementConfig {
   selected_plugin: string;
   guide_url: string;
@@ -647,6 +672,9 @@ export interface SelfImprovementConfig {
   schedule_enabled: boolean;
   schedule_interval_hours: number;
   require_approval: boolean;
+  automation: SelfImprovementAutomationSettings;
+  targets: SelfImprovementTargetRepo[];
+  scan_scope: SelfImprovementScanScope;
 }
 
 export interface SelfImprovementAnalysisEntry {
@@ -696,9 +724,27 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   return json.data !== undefined ? json.data : json;
 }
 
+/** Read a cookie value by name from document.cookie (browser only). */
+function getCookieValue(name: string): string | null {
+  const prefix = name + "=";
+  for (const part of document.cookie.split(";")) {
+    const trimmed = part.trimStart();
+    if (trimmed.startsWith(prefix)) {
+      return decodeURIComponent(trimmed.slice(prefix.length));
+    }
+  }
+  return null;
+}
+
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const method = options?.method?.toUpperCase() ?? "GET";
+  const csrfToken = MUTATION_METHODS.has(method) ? getCookieValue("teleton_csrf") : null;
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
+    ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
     ...options?.headers,
   };
 

@@ -663,7 +663,12 @@ describe("sanitizeForContext", () => {
       expect(sanitizeForContext(input)).toBe("Text\nWith Lines");
     });
 
-    it("should NOT limit length (unlike sanitizeForPrompt)", () => {
+    it("should limit length to 32768 characters (32 KB cap)", () => {
+      const input = "a".repeat(40000);
+      expect(sanitizeForContext(input)).toHaveLength(32768);
+    });
+
+    it("should not truncate text under 32768 characters", () => {
       const input = "a".repeat(500);
       expect(sanitizeForContext(input)).toBe(input);
       expect(sanitizeForContext(input)).toHaveLength(500);
@@ -689,7 +694,7 @@ describe("sanitizeForContext", () => {
       expect(sanitizeForContext(input)).toBe("");
     });
 
-    it("should handle very long multi-line text", () => {
+    it("should handle very long multi-line text within 32 KB limit", () => {
       const input = "a".repeat(1000) + "\n" + "b".repeat(1000);
       const result = sanitizeForContext(input);
       expect(result).toBe(input);
@@ -787,7 +792,7 @@ describe("sanitizeForContext", () => {
       expect(sanitizeForPrompt(input)).toBe("Header Content");
     });
 
-    it("should NOT truncate to 128 chars (unlike sanitizeForPrompt)", () => {
+    it("should NOT truncate to 128 chars like sanitizeForPrompt (uses 32 KB cap instead)", () => {
       const input = "a".repeat(200);
       expect(sanitizeForContext(input)).toHaveLength(200);
       expect(sanitizeForPrompt(input)).toHaveLength(128);
