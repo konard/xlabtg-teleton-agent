@@ -209,17 +209,46 @@ export function createSelfImprovementRoutes(deps?: WebUIServerDeps) {
       const focusAreasText =
         cfg.focus_areas.length > 0 ? cfg.focus_areas.join(", ") : "general code quality";
       const repoText = cfg.target_repo || "the teleton-agent codebase";
-      const guideText = cfg.guide_url
-        ? `Use the guide at ${cfg.guide_url} for context on available tools and workflows.`
+
+      // Guide URL is the primary instruction — the agent must read and follow it first
+      // before taking any other action.
+      const guideInstruction = cfg.guide_url
+        ? `IMPORTANT: Before doing anything else, read the guide at ${cfg.guide_url} and strictly follow the instructions and workflows described there for all subsequent steps. Do not use web search, browser, or any other tools until you have read this guide.`
         : "";
 
+      // Automation / PR settings
+      const auto = cfg.automation;
+      let prInstruction = "";
+      if (auto.auto_create_prs) {
+        const severityLabel =
+          auto.fix_severity === "critical"
+            ? "critical"
+            : auto.fix_severity === "critical_high"
+              ? "critical and high"
+              : "all";
+        const prType = auto.draft_pr ? "draft " : "";
+        const testStep = auto.run_tests
+          ? " Run the tests first and only create the PR if they pass."
+          : "";
+        const mergeStep = auto.auto_merge
+          ? " After tests pass, enable auto-merge on the PR."
+          : "";
+        prInstruction =
+          ` For every ${severityLabel} severity finding, create a ${prType}Pull Request with a fix using branch prefix "${auto.branch_prefix}".` +
+          testStep +
+          mergeStep;
+      }
+
+      const issueInstruction = cfg.auto_create_issues
+        ? " Automatically create GitHub issues for critical and high severity findings."
+        : " List findings but do NOT create GitHub issues automatically — await user approval.";
+
       const prompt =
+        (guideInstruction ? guideInstruction + " " : "") +
         `Perform a self-improvement analysis of ${repoText} using the ${cfg.selected_plugin} plugin. ` +
-        `Focus areas: ${focusAreasText}. ` +
-        guideText +
-        (cfg.auto_create_issues
-          ? " Automatically create GitHub issues for critical and high severity findings."
-          : " List findings but do NOT create GitHub issues automatically — await user approval.") +
+        `Focus areas: ${focusAreasText}.` +
+        issueInstruction +
+        prInstruction +
         " Report a summary of findings when complete.";
 
       const sessionChatId = `telegram:direct:${adminChatId}`;
