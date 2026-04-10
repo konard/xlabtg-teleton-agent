@@ -223,6 +223,7 @@ function ExpandableHelp({
           fontSize: "13px",
           fontWeight: 600,
           textAlign: "left",
+          color: "inherit",
         }}
       >
         <span>📖 {title}</span>
@@ -513,71 +514,110 @@ function SettingsPanel({
 
 // ── Quick stats (Overview tab) ────────────────────────────────────────────────
 
+interface PluginStatus {
+  installed: boolean;
+  analysis_count?: number;
+  pending_tasks?: number;
+  last_analysis?: number | null;
+}
+
 function QuickStats({
   tasks,
   analysis,
   config,
+  pluginStatus,
 }: {
   tasks: SelfImprovementTask[];
   analysis: SelfImprovementAnalysisEntry[];
   config: SelfImprovementConfig;
+  pluginStatus: PluginStatus | null;
 }) {
   const critical = tasks.filter((t) => t.priority === "critical").length;
   const high = tasks.filter((t) => t.priority === "high").length;
   const medium = tasks.filter((t) => t.priority === "medium").length;
-  const lastScan = analysis[0]?.timestamp;
+  // Prefer status endpoint data (from plugin DB) over in-memory counts when available
+  const lastScan = pluginStatus?.last_analysis ?? analysis[0]?.timestamp ?? null;
+  const totalScans = pluginStatus?.analysis_count ?? analysis.length;
+  const pendingTasks = pluginStatus?.pending_tasks ?? tasks.filter((t) => t.status === "pending").length;
   const nextScheduled =
     config.schedule_enabled && lastScan
       ? lastScan + config.schedule_interval_hours * 3_600_000
       : null;
 
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
-        gap: "12px",
-      }}
-    >
-      {[
-        { label: "Critical", value: critical, color: "#dc2626" },
-        { label: "High", value: high, color: "#d97706" },
-        { label: "Medium", value: medium, color: "#2563eb" },
-      ].map((s) => (
+    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+      {!pluginStatus?.installed && (
         <div
-          key={s.label}
           style={{
-            padding: "14px 16px",
-            border: `1px solid ${s.color}33`,
-            borderRadius: "8px",
-            background: `${s.color}11`,
+            padding: "10px 14px",
+            borderRadius: "6px",
+            background: "#fef3c711",
+            border: "1px solid #d97706",
+            fontSize: "13px",
+            color: "#d97706",
           }}
         >
-          <div style={{ fontSize: "24px", fontWeight: 700, color: s.color }}>{s.value}</div>
-          <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "2px" }}>{s.label}</div>
+          ⚠ Plugin database not found. Install and run the{" "}
+          <code>github-dev-assistant</code> plugin to see real data.
         </div>
-      ))}
+      )}
       <div
         style={{
-          padding: "14px 16px",
-          border: "1px solid var(--border, #e5e7eb)",
-          borderRadius: "8px",
-          gridColumn: "span 1",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          gap: "12px",
         }}
       >
-        <div style={{ fontSize: "12px", fontWeight: 600, opacity: 0.6, marginBottom: "4px" }}>
-          LAST SCAN
-        </div>
-        <div style={{ fontSize: "13px" }}>
-          {lastScan ? timeAgo(lastScan) : "Never"}
-        </div>
-        {nextScheduled && (
-          <div style={{ fontSize: "12px", opacity: 0.5, marginTop: "4px" }}>
-            Next: {timeAgo(nextScheduled - Date.now() * 2 + nextScheduled) === "0m ago"
-              ? "soon"
-              : `in ${Math.max(0, Math.floor((nextScheduled - Date.now()) / 60_000))}m`}
+        {[
+          { label: "Critical", value: critical, color: "#dc2626" },
+          { label: "High", value: high, color: "#d97706" },
+          { label: "Medium", value: medium, color: "#2563eb" },
+          { label: "Pending Tasks", value: pendingTasks, color: "#7c3aed" },
+        ].map((s) => (
+          <div
+            key={s.label}
+            style={{
+              padding: "14px 16px",
+              border: `1px solid ${s.color}33`,
+              borderRadius: "8px",
+              background: `${s.color}11`,
+            }}
+          >
+            <div style={{ fontSize: "24px", fontWeight: 700, color: s.color }}>{s.value}</div>
+            <div style={{ fontSize: "12px", opacity: 0.7, marginTop: "2px" }}>{s.label}</div>
           </div>
-        )}
+        ))}
+        <div
+          style={{
+            padding: "14px 16px",
+            border: "1px solid var(--border, #e5e7eb)",
+            borderRadius: "8px",
+          }}
+        >
+          <div style={{ fontSize: "12px", fontWeight: 600, opacity: 0.6, marginBottom: "4px" }}>
+            LAST SCAN
+          </div>
+          <div style={{ fontSize: "13px" }}>
+            {lastScan ? timeAgo(lastScan) : "Never"}
+          </div>
+          {nextScheduled && (
+            <div style={{ fontSize: "12px", opacity: 0.5, marginTop: "4px" }}>
+              Next: {`in ${Math.max(0, Math.floor((nextScheduled - Date.now()) / 60_000))}m`}
+            </div>
+          )}
+        </div>
+        <div
+          style={{
+            padding: "14px 16px",
+            border: "1px solid var(--border, #e5e7eb)",
+            borderRadius: "8px",
+          }}
+        >
+          <div style={{ fontSize: "12px", fontWeight: 600, opacity: 0.6, marginBottom: "4px" }}>
+            TOTAL SCANS
+          </div>
+          <div style={{ fontSize: "24px", fontWeight: 700 }}>{totalScans}</div>
+        </div>
       </div>
     </div>
   );
@@ -590,6 +630,7 @@ function OverviewTab({
   plugins,
   tasks,
   analysis,
+  pluginStatus,
   onSaveConfig,
   onTrigger,
   triggering,
@@ -599,6 +640,7 @@ function OverviewTab({
   plugins: PluginManifest[];
   tasks: SelfImprovementTask[];
   analysis: SelfImprovementAnalysisEntry[];
+  pluginStatus: PluginStatus | null;
   onSaveConfig: (cfg: SelfImprovementConfig) => Promise<void>;
   onTrigger: () => void;
   triggering: boolean;
@@ -686,7 +728,7 @@ function OverviewTab({
           <div className="section-title">📊 Quick Stats</div>
         </div>
         <div style={{ padding: "16px" }}>
-          <QuickStats tasks={tasks} analysis={analysis} config={config} />
+          <QuickStats tasks={tasks} analysis={analysis} config={config} pluginStatus={pluginStatus} />
         </div>
       </div>
 
@@ -1121,20 +1163,76 @@ function AnalyticsTab({
   tasks: SelfImprovementTask[];
   analysis: SelfImprovementAnalysisEntry[];
 }) {
+  // Scan / repo filter for the report
+  const [selectedScanId, setSelectedScanId] = useState<number | "all">("all");
+  const [selectedRepo, setSelectedRepo] = useState<string>("all");
+
+  // Derive unique repos from analysis history
+  const repos = Array.from(new Set(analysis.map((e) => e.repo).filter(Boolean)));
+
+  // Filter analysis entries for the selected report scope
+  const reportAnalysis = analysis.filter((e) => {
+    if (selectedScanId !== "all" && e.id !== selectedScanId) return false;
+    if (selectedRepo !== "all" && e.repo !== selectedRepo) return false;
+    return true;
+  });
+
   const critical = tasks.filter((t) => t.priority === "critical").length;
   const high = tasks.filter((t) => t.priority === "high").length;
   const medium = tasks.filter((t) => t.priority === "medium").length;
-  const totalFindings = analysis.reduce((sum, e) => sum + e.issues_found, 0);
-  const totalCreated = analysis.reduce((sum, e) => sum + e.issues_created, 0);
+  const totalFindings = reportAnalysis.reduce((sum, e) => sum + e.issues_found, 0);
+  const totalCreated = reportAnalysis.reduce((sum, e) => sum + e.issues_created, 0);
   const securityScore = Math.max(0, 10 - critical * 2 - high * 0.5 - medium * 0.1);
+
+  const exportCSV = () => {
+    const header = "Timestamp,Repo,Branch,FilesAnalyzed,IssuesFound,IssuesCreated,Summary";
+    const rows = reportAnalysis.map((e) =>
+      [
+        fmtTs(e.timestamp),
+        e.repo,
+        e.branch,
+        e.files_analyzed,
+        e.issues_found,
+        e.issues_created,
+        JSON.stringify(e.summary ?? ""),
+      ].join(",")
+    );
+    const blob = new Blob([[header, ...rows].join("\n")], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "self-improve-report.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportJSON = () => {
+    const data = { generated_at: new Date().toISOString(), analysis: reportAnalysis, tasks };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "self-improve-report.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const inputStyle: React.CSSProperties = {
+    padding: "6px 10px",
+    fontSize: "13px",
+    border: "1px solid var(--border, #e5e7eb)",
+    borderRadius: "6px",
+    background: "var(--surface, #fff)",
+    color: "inherit",
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
       <ExpandableHelp title="About Analytics">
         <p style={{ margin: 0 }}>
           Track progress on improving your codebase's security and quality over time. The Security
-          Score is computed from the number and severity of open findings. Export reports to share
-          with your team.
+          Score is computed from the number and severity of open findings. Use the filters below to
+          scope the report to a specific scan or repository, then export in CSV or JSON format.
         </p>
       </ExpandableHelp>
 
@@ -1144,38 +1242,46 @@ function AnalyticsTab({
           <div className="section-title">🛡️ Security Score</div>
         </div>
         <div style={{ padding: "16px" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap" }}>
-            <div
-              style={{
-                width: 80,
-                height: 80,
-                borderRadius: "50%",
-                border: `4px solid ${securityScore >= 8 ? "#16a34a" : securityScore >= 5 ? "#d97706" : "#dc2626"}`,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                flexShrink: 0,
-              }}
-            >
-              <span style={{ fontSize: "22px", fontWeight: 700 }}>{securityScore.toFixed(1)}</span>
-            </div>
-            <div>
-              <div style={{ fontSize: "13px", opacity: 0.7, marginBottom: "8px" }}>
-                Score based on open findings
+          {analysis.length === 0 ? (
+            <p style={{ fontSize: "14px", opacity: 0.6 }}>
+              No analysis data yet. Run your first analysis to see the security score.
+              Make sure the <code>github-dev-assistant</code> plugin is installed and has been run at
+              least once.
+            </p>
+          ) : (
+            <div style={{ display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap" }}>
+              <div
+                style={{
+                  width: 80,
+                  height: 80,
+                  borderRadius: "50%",
+                  border: `4px solid ${securityScore >= 8 ? "#16a34a" : securityScore >= 5 ? "#d97706" : "#dc2626"}`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                <span style={{ fontSize: "22px", fontWeight: 700 }}>{securityScore.toFixed(1)}</span>
               </div>
-              <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
-                <span style={{ fontSize: "13px", color: "#dc2626" }}>
-                  Critical: <strong>{critical}</strong>
-                </span>
-                <span style={{ fontSize: "13px", color: "#d97706" }}>
-                  High: <strong>{high}</strong>
-                </span>
-                <span style={{ fontSize: "13px", color: "#2563eb" }}>
-                  Medium: <strong>{medium}</strong>
-                </span>
+              <div>
+                <div style={{ fontSize: "13px", opacity: 0.7, marginBottom: "8px" }}>
+                  Score based on open findings (10 = perfect, 0 = critical issues)
+                </div>
+                <div style={{ display: "flex", gap: "16px", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: "13px", color: "#dc2626" }}>
+                    Critical: <strong>{critical}</strong>
+                  </span>
+                  <span style={{ fontSize: "13px", color: "#d97706" }}>
+                    High: <strong>{high}</strong>
+                  </span>
+                  <span style={{ fontSize: "13px", color: "#2563eb" }}>
+                    Medium: <strong>{medium}</strong>
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -1188,6 +1294,7 @@ function AnalyticsTab({
           {analysis.length === 0 ? (
             <p style={{ fontSize: "14px", opacity: 0.6 }}>
               No analysis data yet. Run your first analysis to see trends.
+              Make sure the <code>github-dev-assistant</code> plugin is installed and configured.
             </p>
           ) : (
             <>
@@ -1258,30 +1365,81 @@ function AnalyticsTab({
         </div>
       </div>
 
-      {/* Export */}
+      {/* Export with scan/repo selector */}
       <div className="card">
         <div className="card-header">
-          <div className="section-title">📤 Export Report</div>
+          <div className="section-title">📤 Generate Report</div>
         </div>
-        <div style={{ padding: "16px" }}>
-          <p style={{ fontSize: "13px", opacity: 0.7, margin: "0 0 12px" }}>
-            Export the current findings and analysis history in your preferred format.
+        <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
+          <p style={{ fontSize: "13px", opacity: 0.7, margin: 0 }}>
+            Filter by scan or repository, then export the findings in your preferred format.
           </p>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            {["📄 PDF", "📊 CSV", "📋 JSON"].map((fmt) => (
-              <button
-                key={fmt}
-                style={{ padding: "7px 16px", fontSize: "13px" }}
-                onClick={() => {}}
-                title="Export functionality coming soon"
+
+          {/* Scope selectors */}
+          <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "center" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <label style={{ fontSize: "11px", fontWeight: 600, opacity: 0.6 }}>REPOSITORY</label>
+              <select
+                value={selectedRepo}
+                onChange={(e) => {
+                  setSelectedRepo(e.target.value);
+                  setSelectedScanId("all");
+                }}
+                style={inputStyle}
               >
-                {fmt}
-              </button>
-            ))}
+                <option value="all">All repositories</option>
+                {repos.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+              <label style={{ fontSize: "11px", fontWeight: 600, opacity: 0.6 }}>SCAN</label>
+              <select
+                value={selectedScanId === "all" ? "all" : String(selectedScanId)}
+                onChange={(e) =>
+                  setSelectedScanId(e.target.value === "all" ? "all" : Number(e.target.value))
+                }
+                style={inputStyle}
+              >
+                <option value="all">All scans</option>
+                {analysis
+                  .filter((e) => selectedRepo === "all" || e.repo === selectedRepo)
+                  .map((e) => (
+                    <option key={e.id} value={String(e.id)}>
+                      #{e.id} — {fmtTs(e.timestamp)} ({e.repo || "unknown"})
+                    </option>
+                  ))}
+              </select>
+            </div>
           </div>
-          <p style={{ fontSize: "12px", opacity: 0.5, margin: "10px 0 0" }}>
-            Export functionality coming soon.
-          </p>
+
+          {reportAnalysis.length > 0 && (
+            <p style={{ fontSize: "12px", opacity: 0.6, margin: 0 }}>
+              {reportAnalysis.length} scan{reportAnalysis.length !== 1 ? "s" : ""} selected •{" "}
+              {reportAnalysis.reduce((s, e) => s + e.issues_found, 0)} findings
+            </p>
+          )}
+
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              style={{ padding: "7px 16px", fontSize: "13px" }}
+              onClick={exportCSV}
+              disabled={reportAnalysis.length === 0}
+              title={reportAnalysis.length === 0 ? "No data to export" : "Export as CSV"}
+            >
+              📊 Export CSV
+            </button>
+            <button
+              style={{ padding: "7px 16px", fontSize: "13px" }}
+              onClick={exportJSON}
+              disabled={reportAnalysis.length === 0}
+              title={reportAnalysis.length === 0 ? "No data to export" : "Export as JSON"}
+            >
+              📋 Export JSON
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -1298,11 +1456,13 @@ function LogsTab({
   analysis,
   taskFilter,
   onTaskFilterChange,
+  pluginStatus,
 }: {
   tasks: SelfImprovementTask[];
   analysis: SelfImprovementAnalysisEntry[];
   taskFilter: LogTypeFilter;
   onTaskFilterChange: (s: LogTypeFilter) => void;
+  pluginStatus: PluginStatus | null;
 }) {
   const [severityFilter, setSeverityFilter] = useState<LogSeverityFilter>("all");
 
@@ -1327,8 +1487,25 @@ function LogsTab({
         <p style={{ margin: 0 }}>
           Full audit trail of all agent actions. Filter by status and severity to focus on what
           matters. Click <strong>View GitHub Issue</strong> on any task to open it directly.
+          Data is read from the <code>github-dev-assistant</code> plugin database.
         </p>
       </ExpandableHelp>
+
+      {pluginStatus && !pluginStatus.installed && (
+        <div
+          style={{
+            padding: "12px 16px",
+            borderRadius: "8px",
+            background: "#fef3c711",
+            border: "1px solid #d97706",
+            fontSize: "13px",
+            color: "#d97706",
+          }}
+        >
+          ⚠ Plugin database not found. Install the <code>github-dev-assistant</code> plugin and
+          run at least one analysis to see logs here.
+        </div>
+      )}
 
       {/* Analysis run log */}
       {analysis.length > 0 && (
@@ -1423,7 +1600,11 @@ function LogsTab({
 
           {filtered.length === 0 ? (
             <p style={{ fontSize: "14px", opacity: 0.6 }}>
-              No {taskFilter === "all" && severityFilter === "all" ? "" : "matching "}tasks found.
+              {taskFilter === "all" && severityFilter === "all"
+                ? pluginStatus && !pluginStatus.installed
+                  ? "Plugin database not found — run an analysis first."
+                  : "No tasks found. Run an analysis to discover improvement opportunities."
+                : "No matching tasks found. Try adjusting the filters."}
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
@@ -1538,6 +1719,7 @@ export function SelfImprove() {
   const [plugins, setPlugins] = useState<PluginManifest[]>([]);
   const [analysis, setAnalysis] = useState<SelfImprovementAnalysisEntry[]>([]);
   const [tasks, setTasks] = useState<SelfImprovementTask[]>([]);
+  const [pluginStatus, setPluginStatus] = useState<PluginStatus | null>(null);
   const [taskFilter, setTaskFilter] = useState<LogTypeFilter>("all");
   const [loading, setLoading] = useState(true);
   const [triggering, setTriggering] = useState(false);
@@ -1551,11 +1733,12 @@ export function SelfImprove() {
     setLoading(true);
     setError(null);
     try {
-      const [cfgRes, pluginsRes, analysisRes, tasksRes] = await Promise.all([
+      const [cfgRes, pluginsRes, analysisRes, tasksRes, statusRes] = await Promise.all([
         api.getSelfImprovementConfig(),
         api.getPlugins(),
         api.getSelfImprovementAnalysis(20),
         api.getSelfImprovementTasks("all", 50),
+        api.getSelfImprovementStatus(),
       ]);
       if (cfgRes.success && cfgRes.data) {
         // Merge with defaults to ensure new fields are always present
@@ -1570,6 +1753,7 @@ export function SelfImprove() {
       if (pluginsRes.success && pluginsRes.data) setPlugins(pluginsRes.data);
       if (analysisRes.success && analysisRes.data) setAnalysis(analysisRes.data);
       if (tasksRes.success && tasksRes.data) setTasks(tasksRes.data);
+      if (statusRes.success && statusRes.data) setPluginStatus(statusRes.data);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -1645,6 +1829,7 @@ export function SelfImprove() {
           plugins={plugins}
           tasks={tasks}
           analysis={analysis}
+          pluginStatus={pluginStatus}
           onSaveConfig={handleSaveConfig}
           onTrigger={handleTrigger}
           triggering={triggering}
@@ -1688,6 +1873,7 @@ export function SelfImprove() {
           analysis={analysis}
           taskFilter={taskFilter}
           onTaskFilterChange={setTaskFilter}
+          pluginStatus={pluginStatus}
         />
       )}
     </div>
