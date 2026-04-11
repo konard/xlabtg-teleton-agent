@@ -1724,6 +1724,18 @@ export const api = {
   async workflowsDelete(id: string) {
     return fetchAPI<APIResponse<null>>(`/workflows/${id}`, { method: "DELETE" });
   },
+
+  async agentStart() {
+    return fetchAPI<{ state: string }>("/agent/start", { method: "POST" });
+  },
+
+  async agentStop() {
+    return fetchAPI<{ state: string }>("/agent/stop", { method: "POST" });
+  },
+
+  async agentStatus() {
+    return fetchAPI<{ state: string; uptime?: number; error?: string | null }>("/agent/status");
+  },
 };
 
 // ── Setup API (no auth required) ────────────────────────────────────

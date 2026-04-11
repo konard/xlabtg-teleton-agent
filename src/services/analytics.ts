@@ -164,16 +164,13 @@ export class AnalyticsService {
   }
 
   getCostPerTool(periodHours: number): CostPerToolEntry[] {
-    const since = this.sinceUnix(periodHours);
+    const since = Math.floor(Date.now() / 1000) - periodHours * 3600;
     return this.db
       .prepare(
-        `SELECT
-           tool_name AS tool,
-           COUNT(*) AS count,
-           AVG(duration_ms) AS avg_duration_ms
-         FROM request_metrics
-         WHERE created_at >= ? AND tool_name IS NOT NULL
-         GROUP BY tool_name
+        `SELECT tool, SUM(count) AS count, NULL AS avg_duration_ms
+         FROM metric_tool_calls
+         WHERE bucket >= ?
+         GROUP BY tool
          ORDER BY count DESC
          LIMIT 20`
       )
