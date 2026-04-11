@@ -82,7 +82,14 @@ export class TelegramBridge {
     }
 
     try {
-      await this.getDialogs();
+      // Wrap in a timeout — if the proxy silently drops packets, getDialogs()
+      // can hang indefinitely, blocking the entire agent startup.
+      await Promise.race([
+        this.getDialogs(),
+        new Promise<void>((_, reject) =>
+          setTimeout(() => reject(new Error("getDialogs() timed out")), 30_000)
+        ),
+      ]);
     } catch (error) {
       log.warn({ err: error }, "Could not load dialogs");
     }

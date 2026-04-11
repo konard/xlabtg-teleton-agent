@@ -56,18 +56,17 @@ export function QuickActions() {
   async function handleRestartAgent() {
     setLoadingAction('restart');
     try {
-      // Stop first (fire-and-forget stop), then start after a short delay
-      await fetch('/api/agent/stop', { method: 'POST', credentials: 'include' });
+      // Stop first, then poll until stopped, then start
+      await api.agentStop();
       // Poll until stopped, then start
       let waited = 0;
       const poll = setInterval(async () => {
         waited += 500;
         try {
-          const r = await fetch('/api/agent/status', { credentials: 'include' });
-          const j = await r.json();
+          const j = await api.agentStatus();
           if (j.state === 'stopped' || j.state === 'error' || waited > 15000) {
             clearInterval(poll);
-            await fetch('/api/agent/start', { method: 'POST', credentials: 'include' });
+            await api.agentStart();
             showStatus('success', 'Agent restarting…');
             setLoadingAction(null);
           }

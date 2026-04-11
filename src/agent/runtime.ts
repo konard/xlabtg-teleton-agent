@@ -529,6 +529,8 @@ export class AgentRuntime {
       let rateLimitRetries = 0;
       let serverErrorRetries = 0;
       let networkErrorRetries = 0;
+      let emptyResponseRetries = 0;
+      const EMPTY_RESPONSE_MAX_RETRIES = 3;
       let finalResponse: ChatResponse | null = null;
       const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
       const allToolExecResults: Array<{
@@ -750,6 +752,19 @@ export class AgentRuntime {
         const toolCalls = response.message.content.filter((block) => block.type === "toolCall");
 
         if (toolCalls.length === 0) {
+          // Detect empty response with zero tokens — retry the whole loop rather than giving up
+          const hasTokens = !!(response.message.usage?.input || response.message.usage?.output);
+          const hasText = !!response.text;
+          if (!hasText && !hasTokens && emptyResponseRetries < EMPTY_RESPONSE_MAX_RETRIES) {
+            emptyResponseRetries++;
+            const delay = 2000 * emptyResponseRetries;
+            log.warn(
+              `⚠️ Empty response with zero tokens - retrying in ${delay}ms (attempt ${emptyResponseRetries}/${EMPTY_RESPONSE_MAX_RETRIES})...`
+            );
+            await new Promise((r) => setTimeout(r, delay));
+            iteration--;
+            continue;
+          }
           log.info(`🔄 ${iteration}/${maxIterations} → done`);
           finalResponse = response;
           break;

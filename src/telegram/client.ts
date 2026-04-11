@@ -287,7 +287,14 @@ export class TelegramUserClient {
         await this.runAuthFlow();
       }
 
-      const me = (await this.client.getMe()) as Api.User;
+      // Race getMe() against a timeout to avoid hanging on a broken proxy
+      const getMeTimeout = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error("[Telegram] getMe() timed out — proxy may be unresponsive")),
+          MTPROTO_PROXY_CONNECT_TIMEOUT_MS
+        )
+      );
+      const me = (await Promise.race([this.client.getMe(), getMeTimeout])) as Api.User;
       this.me = {
         id: BigInt(me.id.toString()),
         username: me.username,

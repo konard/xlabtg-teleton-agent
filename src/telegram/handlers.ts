@@ -651,20 +651,51 @@ export class MessageHandler {
         log.debug(`Processed message ${message.id} in chat ${message.chatId}`);
       } catch (error) {
         log.error({ err: error }, "Error handling message");
-        // Notify the user when the agent hits persistent API rate limits so they
-        // aren't left waiting in silence.
+        // When the agent exhausts all rate limit retries, wait 90 seconds and
+        // re-process the request automatically before notifying the user.
         if (
           error instanceof Error &&
           (error.message.toLowerCase().includes("rate limit") || error.message.includes("429"))
         ) {
+          log.warn("⚠️ Rate limit exhausted — waiting 90s before final retry attempt");
+          await new Promise((r) => setTimeout(r, 90_000));
           try {
-            await this.bridge.sendMessage({
+            const toolContext: Omit<ToolContext, "chatId" | "isGroup"> = {
+              bridge: this.bridge,
+              db: this.db,
+              senderId: message.senderId,
+              config: this.fullConfig,
+            };
+            const userName =
+              message.senderFirstName || message.senderUsername || `user:${message.senderId}`;
+            const result = await this.agent.processMessage({
               chatId: message.chatId,
-              text: "⚠️ The AI service is currently rate limited. Please try again in a moment.",
-              replyToId: message.id,
+              userMessage: message.text,
+              userName,
+              senderUsername: message.senderUsername,
+              timestamp: message.timestamp.getTime(),
+              isGroup: message.isGroup,
+              toolContext,
+              messageId: message.id,
             });
-          } catch (sendErr) {
-            log.error({ err: sendErr }, "Failed to send rate-limit error message to user");
+            if (result.content) {
+              await this.bridge.sendMessage({
+                chatId: message.chatId,
+                text: result.content,
+                replyToId: message.id,
+              });
+            }
+          } catch (retryErr) {
+            log.error({ err: retryErr }, "Rate limit retry also failed — notifying user");
+            try {
+              await this.bridge.sendMessage({
+                chatId: message.chatId,
+                text: "⚠️ The AI service is temporarily unavailable due to rate limits. Please try again later.",
+                replyToId: message.id,
+              });
+            } catch (sendErr) {
+              log.error({ err: sendErr }, "Failed to send rate-limit error message to user");
+            }
           }
         }
       }
