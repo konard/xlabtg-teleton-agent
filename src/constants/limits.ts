@@ -113,3 +113,12 @@ export const TOOL_PARAM_HINT_MAX_CHARS = 60;
 export const RAG_QUERY_RECENT_MESSAGES = 3;
 /** Minimum accumulated tool calls before response-reinforcement prompt is injected */
 export const RESPONSE_REINFORCEMENT_TOOL_CALL_THRESHOLD = 4;
+
+// ─── Loop Stall Detection ────────────────────────────────────────
+/**
+ * Number of consecutive iterations with the identical tool-call set
+ * required before the stall-detection logic breaks the agentic loop.
+ * A value of 3 means the agent may retry the same call twice (legitimate
+ * transient retries) but will break on the third consecutive repeat.
+ */
+export const LOOP_STALL_CONSECUTIVE_THRESHOLD = 3;

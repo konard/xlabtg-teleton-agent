@@ -6,6 +6,7 @@ import {
   isNetworkError,
   isNetworkErrorMessage,
   trimRagContext,
+  LoopStallDetector,
 } from "../../agent/runtime-utils.js";
 import { AgentConfigSchema } from "../../config/schema.js";
 
@@ -587,5 +588,86 @@ describe("generateToolSummary fallback (issue #135)", () => {
       { toolName: "ton_trading_validate_token", result: { success: false } },
     ]);
     expect(result).toContain("unknown error");
+  });
+});
+
+// ─── T19: LoopStallDetector ─────────────────────────────────────
+
+describe("LoopStallDetector", () => {
+  it("T19a: returns false on first occurrence of a signature set", () => {
+    const detector = new LoopStallDetector(3);
+    expect(detector.record(["tool_a:{\"x\":1}"])).toBe(false);
+  });
+
+  it("T19b: returns false on second consecutive repeat (below threshold)", () => {
+    const detector = new LoopStallDetector(3);
+    detector.record(["tool_a:{\"x\":1}"]);
+    expect(detector.record(["tool_a:{\"x\":1}"])).toBe(false);
+  });
+
+  it("T19c: returns true on third consecutive repeat (at threshold)", () => {
+    const detector = new LoopStallDetector(3);
+    const sigs = ["tool_a:{\"x\":1}"];
+    detector.record(sigs);
+    detector.record(sigs);
+    expect(detector.record(sigs)).toBe(true);
+  });
+
+  it("T19d: resets counter when a different tool call set appears", () => {
+    const detector = new LoopStallDetector(3);
+    const sigs = ["tool_a:{\"x\":1}"];
+    detector.record(sigs);
+    detector.record(sigs); // count = 2
+    detector.record(["tool_b:{\"y\":2}"]); // different — resets
+    // Now back to same sigs: should start counting from 1 again
+    detector.record(sigs); // count = 1
+    expect(detector.record(sigs)).toBe(false); // count = 2, still below threshold=3
+  });
+
+  it("T19e: does not trigger on non-consecutive repeats (previous bug reproduction)", () => {
+    // This test reproduces the original bug: the agent legitimately calls memory_read
+    // twice during a task (before and after a write), which should NOT be a stall.
+    const detector = new LoopStallDetector(3);
+    const readSig = ["memory_read:{\"key\":\"balance\"}"];
+    const writeSig = ["memory_write:{\"key\":\"balance\",\"value\":\"100\"}"];
+
+    detector.record(readSig);  // iter 1: read (new)
+    detector.record(writeSig); // iter 2: write (new, resets)
+    const result = detector.record(readSig); // iter 3: read again — non-consecutive, fine
+    expect(result).toBe(false);
+  });
+
+  it("T19f: empty signatures never trigger stall", () => {
+    const detector = new LoopStallDetector(3);
+    expect(detector.record([])).toBe(false);
+    expect(detector.record([])).toBe(false);
+    expect(detector.record([])).toBe(false);
+    expect(detector.record([])).toBe(false);
+  });
+
+  it("T19g: threshold=1 triggers on the very first call", () => {
+    const detector = new LoopStallDetector(1);
+    expect(detector.record(["tool_a:{\"x\":1}"])).toBe(true);
+  });
+
+  it("T19h: signature order within an iteration does not affect detection", () => {
+    // Two tool calls with the same params but different order in the array
+    // should produce the same signature key (sorted internally)
+    const detector = new LoopStallDetector(3);
+    const sigs1 = ["tool_b:{\"y\":2}", "tool_a:{\"x\":1}"];
+    const sigs2 = ["tool_a:{\"x\":1}", "tool_b:{\"y\":2}"];
+    detector.record(sigs1);
+    detector.record(sigs2); // same set, different order → same key → count = 2
+    expect(detector.record(sigs1)).toBe(true); // count = 3 → stall
+  });
+
+  it("T19i: multiple tool calls — partial overlap is not a stall", () => {
+    const detector = new LoopStallDetector(3);
+    const sigs1 = ["tool_a:{}", "tool_b:{}"];
+    const sigs2 = ["tool_a:{}", "tool_c:{}"]; // one changed
+    detector.record(sigs1);
+    detector.record(sigs1); // count = 2
+    // sigs2 is different — resets counter
+    expect(detector.record(sigs2)).toBe(false);
   });
 });

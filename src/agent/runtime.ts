@@ -18,6 +18,7 @@ import {
   TOOL_PARAM_HINT_MAX_CHARS,
   RAG_QUERY_RECENT_MESSAGES,
   RESPONSE_REINFORCEMENT_TOOL_CALL_THRESHOLD,
+  LOOP_STALL_CONSECUTIVE_THRESHOLD,
 } from "../constants/limits.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import {
@@ -78,6 +79,7 @@ import {
   isNetworkError,
   isNetworkErrorMessage,
   trimRagContext,
+  LoopStallDetector,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -539,7 +541,7 @@ export class AgentRuntime {
       }> = [];
       const accumulatedTexts: string[] = [];
       const accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalCost: 0 };
-      const seenToolSignatures = new Set<string>();
+      const loopStallDetector = new LoopStallDetector(LOOP_STALL_CONSECUTIVE_THRESHOLD);
 
       interface ToolPlan {
         block: ToolCall;
@@ -965,17 +967,17 @@ export class AgentRuntime {
 
         log.info(`🔄 ${iteration}/${maxIterations} → ${iterationToolNames.join(", ")}`);
 
-        // Stall detection: break early if all tool calls are duplicates from prior iterations
+        // Stall detection: break early only when the exact same set of tool calls
+        // repeats LOOP_STALL_CONSECUTIVE_THRESHOLD times in a row. A single repeat
+        // is normal (transient error retry, legitimate re-read after a write); only
+        // persistent consecutive repetition indicates a genuine infinite loop.
         const iterSignatures = toolPlans.map(
           (p) => `${p.block.name}:${JSON.stringify(p.params, Object.keys(p.params).sort())}`
         );
-        const allDuplicates =
-          iterSignatures.length > 0 && iterSignatures.every((sig) => seenToolSignatures.has(sig));
-        for (const sig of iterSignatures) seenToolSignatures.add(sig);
 
-        if (allDuplicates) {
+        if (loopStallDetector.record(iterSignatures)) {
           log.warn(
-            `🔁 Loop stall detected: all ${iterSignatures.length} tool call(s) are repeats — breaking early`
+            `🔁 Loop stall detected: identical tool call(s) [${iterSignatures.join(", ")}] repeated ${LOOP_STALL_CONSECUTIVE_THRESHOLD} times consecutively — breaking early`
           );
           finalResponse = response;
           break;

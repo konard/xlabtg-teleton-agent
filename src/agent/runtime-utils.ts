@@ -115,3 +115,52 @@ export function trimRagContext(context: string, maxChars: number | undefined): s
   if (maxChars === undefined || context.length <= maxChars) return context;
   return context.slice(0, maxChars) + "\n...[context trimmed]";
 }
+
+/**
+ * Smart loop-stall detector for the agentic loop.
+ *
+ * Breaks only when the **same** set of tool-call signatures repeats
+ * `threshold` times **consecutively** — not on the very first repeat.
+ *
+ * Why this is better than the previous "any repeat" approach:
+ * - Legitimate re-use: the agent may read the same key after writing new
+ *   data to it; the context has changed even though the call looks identical.
+ * - Transient retries: a tool may fail on iteration N and succeed on N+1,
+ *   so one repeat is normal and healthy.
+ * - True infinite loops only happen when the agent is genuinely stuck and
+ *   keeps issuing the exact same call iteration after iteration.
+ *
+ * The consecutive counter resets to 1 whenever a new signature set appears,
+ * so interspersed fresh work clears the stall counter.
+ */
+export class LoopStallDetector {
+  private lastSignatureKey: string = "";
+  private consecutiveCount: number = 0;
+  private readonly threshold: number;
+
+  constructor(threshold: number) {
+    this.threshold = threshold;
+  }
+
+  /**
+   * Record the tool-call signatures for the current iteration.
+   * Returns `true` if a stall is detected (loop should break).
+   *
+   * @param signatures - Sorted, stable string representations of each tool
+   *   call (e.g. `"tool_name:{\"param\":\"value\"}"`)
+   */
+  record(signatures: string[]): boolean {
+    if (signatures.length === 0) return false;
+
+    const key = signatures.slice().sort().join("|");
+
+    if (key === this.lastSignatureKey) {
+      this.consecutiveCount++;
+    } else {
+      this.lastSignatureKey = key;
+      this.consecutiveCount = 1;
+    }
+
+    return this.consecutiveCount >= this.threshold;
+  }
+}
