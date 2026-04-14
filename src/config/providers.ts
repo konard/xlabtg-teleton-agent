@@ -12,6 +12,7 @@ export type SupportedProvider =
   | "zai"
   | "minimax"
   | "huggingface"
+  | "nvidia"
   | "cocoon"
   | "local";
 
@@ -184,6 +185,18 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     utilityModel: "Qwen/Qwen3-Next-80B-A3B-Instruct",
     toolLimit: 128,
     piAiProvider: "huggingface",
+  },
+  nvidia: {
+    id: "nvidia",
+    displayName: "NVIDIA NIM",
+    envVar: "NVIDIA_API_KEY",
+    keyPrefix: "nvapi-",
+    keyHint: "nvapi-...",
+    consoleUrl: "https://build.nvidia.com/",
+    defaultModel: "meta/llama-3.1-8b-instruct",
+    utilityModel: "meta/llama-3.1-8b-instruct",
+    toolLimit: 128,
+    piAiProvider: "nvidia",
   },
   cocoon: {
     id: "cocoon",

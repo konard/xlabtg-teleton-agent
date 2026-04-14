@@ -428,6 +428,58 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     },
     { value: "zai-org/GLM-5", name: "GLM-5", description: "202K ctx, $1/$3.20" },
   ],
+  nvidia: [
+    {
+      value: "meta/llama-3.1-8b-instruct",
+      name: "Llama 3.1 8B Instruct",
+      description: "128K ctx, chat + tools + vision, FREE preview",
+    },
+    {
+      value: "meta/llama-3.1-70b-instruct",
+      name: "Llama 3.1 70B Instruct",
+      description: "128K ctx, chat + tools, FREE preview",
+    },
+    {
+      value: "meta/llama-3.1-405b-instruct",
+      name: "Llama 3.1 405B Instruct",
+      description: "128K ctx, frontier quality, FREE preview",
+    },
+    {
+      value: "qwen/qwen-2.5-72b-instruct",
+      name: "Qwen 2.5 72B Instruct",
+      description: "128K ctx, chat + code + tools, FREE preview",
+    },
+    {
+      value: "qwen/qwen-3-32b-instruct",
+      name: "Qwen 3 32B Instruct",
+      description: "256K ctx, chat + code + vision, FREE preview",
+    },
+    {
+      value: "nvidia/nemotron-4-340b-instruct",
+      name: "Nemotron 4 340B Instruct",
+      description: "128K ctx, chat + reasoning, FREE preview",
+    },
+    {
+      value: "mistralai/mistral-large-2411",
+      name: "Mistral Large 2411",
+      description: "128K ctx, chat + tools, FREE preview",
+    },
+    {
+      value: "deepseek-ai/deepseek-v3",
+      name: "DeepSeek V3",
+      description: "128K ctx, chat + code + math, FREE preview",
+    },
+    {
+      value: "google/gemma-2-27b-it",
+      name: "Gemma 2 27B IT",
+      description: "8K ctx, lightweight chat, FREE preview",
+    },
+    {
+      value: "minimax/minimax-01",
+      name: "MiniMax-01",
+      description: "256K ctx, long-context chat, FREE preview",
+    },
+  ],
 };
 
 /** Get models for a provider (claude-code maps to anthropic) */
