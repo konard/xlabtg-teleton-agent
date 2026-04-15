@@ -38,7 +38,7 @@ LLM provider and agentic loop configuration.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`. |
+| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `nvidia`, `cocoon`, `local`. |
 | `agent.api_key` | `string` | `""` | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
 | `agent.model` | `string` | `"claude-opus-4-6"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
 | `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-haiku-4-5-20251001` for Anthropic, `gpt-4o-mini` for OpenAI). |
@@ -96,6 +96,7 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 | `zai` | `glm-4.7` | `glm-4.7-flash` |
 | `minimax` | `MiniMax-M2.5` | `MiniMax-M2` |
 | `huggingface` | `deepseek-ai/DeepSeek-V3.2` | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
+| `nvidia` | `meta/llama-3.1-8b-instruct` | `meta/llama-3.1-8b-instruct` |
 | `cocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
 | `local` | `auto` | `auto` |
 
@@ -606,6 +607,7 @@ Each provider has a dedicated environment variable. Only the key for the configu
 | `ZAI_API_KEY` | ZAI | -- |
 | `MINIMAX_API_KEY` | MiniMax | -- |
 | `HF_TOKEN` | HuggingFace | `hf_...` |
+| `NVIDIA_API_KEY` | NVIDIA NIM | `nvapi-...` |
 
 > The `TELETON_API_KEY` override takes precedence over all provider-specific env vars.
 

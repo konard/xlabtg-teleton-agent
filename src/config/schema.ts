@@ -71,6 +71,7 @@ export const AgentConfigSchema = z.object({
       "zai",
       "minimax",
       "huggingface",
+      "nvidia",
       "cocoon",
       "local",
     ])

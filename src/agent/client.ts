@@ -79,6 +79,31 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
   }
 }
 
+const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+
+/** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
+function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
+  return {
+    id: modelId,
+    name: modelId,
+    api: "openai-completions",
+    provider: "nvidia",
+    baseUrl: NVIDIA_BASE_URL,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 4096,
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      supportsStrictMode: false,
+      maxTokensField: "max_tokens",
+    },
+  };
+}
+
 const LOCAL_MODELS: Record<string, Model<"openai-completions">> = {};
 
 /** Register models discovered from a local OpenAI-compatible server */
@@ -165,6 +190,12 @@ export function getProviderModel(provider: SupportedProvider, modelId: string): 
       return model;
     }
     throw new Error("No local models available. Is the LLM server running?");
+  }
+
+  if (meta.piAiProvider === "nvidia") {
+    const model = buildNvidiaModel(modelId);
+    modelCache.set(cacheKey, model);
+    return model;
   }
 
   // Moonshot backward-compat: remap old model IDs to kimi-coding IDs
