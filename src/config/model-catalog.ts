@@ -430,9 +430,29 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   ],
   nvidia: [
     {
-      value: "minimax/minimax-m2.7",
-      name: "MiniMax M2.7",
-      description: "Current NVIDIA preview chat model",
+      value: "meta/llama-3.1-8b-instruct",
+      name: "Llama 3.1 8B Instruct",
+      description: "128K ctx, chat + tools + vision, FREE preview",
+    },
+    {
+      value: "meta/llama-3.1-70b-instruct",
+      name: "Llama 3.1 70B Instruct",
+      description: "128K ctx, chat + tools, FREE preview",
+    },
+    {
+      value: "meta/llama-3.2-90b-vision-instruct",
+      name: "Llama 3.2 90B Vision Instruct",
+      description: "128K ctx, large multimodal vision + chat, FREE preview",
+    },
+    {
+      value: "meta/llama-3.3-70b-instruct",
+      name: "Llama 3.3 70B Instruct",
+      description: "128K ctx, updated general-purpose instruct, FREE preview",
+    },
+    {
+      value: "qwen/qwen3-next-80b-a3b-instruct",
+      name: "Qwen3 Next 80B",
+      description: "Large MoE chat model, FREE preview",
     },
     {
       value: "qwen/qwen3-coder-480b-a35b-instruct",
@@ -440,39 +460,9 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       description: "Current NVIDIA preview coding model",
     },
     {
-      value: "zai/glm-4.7",
-      name: "GLM 4.7",
-      description: "Current NVIDIA preview general-purpose model",
-    },
-    {
-      value: "deepseek-ai/deepseek-v3.2",
-      name: "DeepSeek V3.2",
-      description: "Current NVIDIA preview reasoning/chat model",
-    },
-    {
-      value: "nvidia/nemotron-voicechat",
-      name: "Nemotron VoiceChat",
-      description: "Current NVIDIA preview voice-enabled chat model",
-    },
-    {
       value: "mistralai/devstral-2-123b-instruct-2512",
       name: "Devstral 2 123B",
       description: "Current NVIDIA preview large instruct model",
-    },
-    {
-      value: "moonshotai/kimi-k2-thinking",
-      name: "Kimi K2 Thinking",
-      description: "Current NVIDIA preview reasoning model",
-    },
-    {
-      value: "mistralai/mistral-large-3-675b-instruct-2512",
-      name: "Mistral Large 3 675B",
-      description: "Current NVIDIA preview frontier instruct model",
-    },
-    {
-      value: "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
-      name: "Llama 3.1 Nemotron Safety Guard 8B v3",
-      description: "Current NVIDIA preview safety model",
     },
     {
       value: "deepseek-ai/deepseek-v3.1-terminus",
@@ -488,21 +478,6 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       value: "stepfun-ai/step-3.5-flash",
       name: "Step 3.5 Flash",
       description: "Current NVIDIA preview fast chat model",
-    },
-    {
-      value: "speakleash/bielik-11b-v2.6-instruct",
-      name: "Bielik 11B v2.6 Instruct",
-      description: "Current NVIDIA preview instruct model",
-    },
-    {
-      value: "bytedance/seed-oss-36b-instruct",
-      name: "Seed OSS 36B Instruct",
-      description: "Current NVIDIA preview instruct model",
-    },
-    {
-      value: "deepseek-ai/deepseek-v3.1",
-      name: "DeepSeek V3.1",
-      description: "Current NVIDIA preview general-purpose model",
     },
   ],
 };
