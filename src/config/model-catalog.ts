@@ -430,304 +430,79 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   ],
   nvidia: [
     {
-      value: "meta/llama-3.1-8b-instruct",
-      name: "Llama 3.1 8B Instruct",
-      description: "128K ctx, chat + tools + vision, FREE preview",
-    },
-    {
-      value: "meta/llama-3.1-70b-instruct",
-      name: "Llama 3.1 70B Instruct",
-      description: "128K ctx, chat + tools, FREE preview",
-    },
-    {
-      value: "meta/llama-3.1-405b-instruct",
-      name: "Llama 3.1 405B Instruct",
-      description: "128K ctx, frontier quality, FREE preview",
-    },
-    {
-      value: "qwen/qwen-2.5-72b-instruct",
-      name: "Qwen 2.5 72B Instruct",
-      description: "128K ctx, chat + code + tools, FREE preview",
-    },
-    {
-      value: "qwen/qwen-3-32b-instruct",
-      name: "Qwen 3 32B Instruct",
-      description: "256K ctx, chat + code + vision, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-4-340b-instruct",
-      name: "Nemotron 4 340B Instruct",
-      description: "128K ctx, chat + reasoning, FREE preview",
-    },
-    {
-      value: "mistralai/mistral-large-2411",
-      name: "Mistral Large 2411",
-      description: "128K ctx, chat + tools, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-v3",
-      name: "DeepSeek V3",
-      description: "128K ctx, chat + code + math, FREE preview",
-    },
-    {
-      value: "google/gemma-2-27b-it",
-      name: "Gemma 2 27B IT",
-      description: "8K ctx, lightweight chat, FREE preview",
-    },
-    {
-      value: "minimax/minimax-01",
-      name: "MiniMax-01",
-      description: "256K ctx, long-context chat, FREE preview",
-    },
-    {
-      value: "meta/llama-3.1-405b-instruct-fp8",
-      name: "Llama 3.1 405B Instruct FP8",
-      description: "128K ctx, optimized frontier inference, FREE preview",
-    },
-    {
-      value: "meta/llama-3.2-1b-instruct",
-      name: "Llama 3.2 1B Instruct",
-      description: "8K ctx, ultra-lightweight chat, FREE preview",
-    },
-    {
-      value: "meta/llama-3.2-3b-instruct",
-      name: "Llama 3.2 3B Instruct",
-      description: "8K ctx, compact multilingual chat, FREE preview",
-    },
-    {
-      value: "meta/llama-3.2-11b-vision-instruct",
-      name: "Llama 3.2 11B Vision Instruct",
-      description: "128K ctx, multimodal vision + chat, FREE preview",
-    },
-    {
-      value: "meta/llama-3.2-90b-vision-instruct",
-      name: "Llama 3.2 90B Vision Instruct",
-      description: "128K ctx, large multimodal vision + chat, FREE preview",
-    },
-    {
-      value: "meta/llama-3.3-70b-instruct",
-      name: "Llama 3.3 70B Instruct",
-      description: "128K ctx, updated general-purpose instruct, FREE preview",
-    },
-    {
-      value: "meta/llama-3.3-70b-instruct-hf",
-      name: "Llama 3.3 70B Instruct HF",
-      description: "128K ctx, Hugging Face-compatible variant, FREE preview",
-    },
-    {
-      value: "meta/llama-4-maverick-17b-128e-instruct",
-      name: "Llama 4 Maverick 17B",
-      description: "Large MoE reasoning/chat model, FREE preview",
-    },
-    {
-      value: "meta/llama-4-scout-17b-16e-instruct",
-      name: "Llama 4 Scout 17B",
-      description: "Fast MoE general model, FREE preview",
-    },
-    {
-      value: "microsoft/phi-3-mini-128k-instruct",
-      name: "Phi-3 Mini 128K Instruct",
-      description: "128K ctx, compact reasoning/chat, FREE preview",
-    },
-    {
-      value: "microsoft/phi-3-medium-128k-instruct",
-      name: "Phi-3 Medium 128K Instruct",
-      description: "128K ctx, balanced reasoning/chat, FREE preview",
-    },
-    {
-      value: "microsoft/phi-3.5-mini-instruct",
-      name: "Phi-3.5 Mini Instruct",
-      description: "Compact high-quality instruction model, FREE preview",
-    },
-    {
-      value: "microsoft/phi-3.5-vision-instruct",
-      name: "Phi-3.5 Vision Instruct",
-      description: "Multimodal Phi model for text + images, FREE preview",
-    },
-    {
-      value: "nvidia/llama-3.1-nemotron-51b-instruct",
-      name: "Llama 3.1 Nemotron 51B",
-      description: "NVIDIA-tuned reasoning/chat model, FREE preview",
-    },
-    {
-      value: "nvidia/llama-3.3-nemotron-super-49b-v1",
-      name: "Nemotron Super 49B",
-      description: "High-quality NVIDIA instruct model, FREE preview",
-    },
-    {
-      value: "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-      name: "Nemotron Super 49B v1.5",
-      description: "Refined NVIDIA instruct model, FREE preview",
-    },
-    {
-      value: "nvidia/llama-3.3-nemotron-super-49b-v1.5-fp8",
-      name: "Nemotron Super 49B v1.5 FP8",
-      description: "Optimized FP8 deployment variant, FREE preview",
-    },
-    {
-      value: "nvidia/llama-3.3-nemotron-super-49b-v1.5-reasoning",
-      name: "Nemotron Super 49B Reasoning",
-      description: "Reasoning-optimized NVIDIA model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-3-super-49b-v1",
-      name: "Nemotron 3 Super 49B",
-      description: "Efficient large instruct model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-3-super-49b-v1.5",
-      name: "Nemotron 3 Super 49B v1.5",
-      description: "Improved efficiency/quality release, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-3-super-120b-v1",
-      name: "Nemotron 3 Super 120B",
-      description: "Large-scale NVIDIA instruct model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-3-super-253b-v1",
-      name: "Nemotron 3 Super 253B",
-      description: "Top-tier NVIDIA MoE model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-nano-9b-v2",
-      name: "Nemotron Nano 9B v2",
-      description: "Fast lightweight agent model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-nano-12b-v2",
-      name: "Nemotron Nano 12B v2",
-      description: "Balanced compact chat model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-nano-12b-2-vl",
-      name: "Nemotron Nano 12B VL",
-      description: "Compact multimodal text+image model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-nano-30b-v1",
-      name: "Nemotron Nano 30B",
-      description: "Compact 30B instruct model, FREE preview",
-    },
-    {
-      value: "nvidia/nemotron-nano-30b-a3b",
-      name: "Nemotron Nano 30B A3B",
-      description: "MoE compact agent model, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-r1",
-      name: "DeepSeek R1",
-      description: "Reasoning-focused open model, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-r1-distill-llama-70b",
-      name: "DeepSeek R1 Distill Llama 70B",
-      description: "Reasoning distilled into 70B class model, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-r1-distill-qwen-32b",
-      name: "DeepSeek R1 Distill Qwen 32B",
-      description: "Reasoning distilled into Qwen 32B, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-r1-distill-qwen-14b",
-      name: "DeepSeek R1 Distill Qwen 14B",
-      description: "Mid-size reasoning model, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-r1-distill-qwen-7b",
-      name: "DeepSeek R1 Distill Qwen 7B",
-      description: "Small reasoning model, FREE preview",
-    },
-    {
-      value: "deepseek-ai/deepseek-r1-distill-qwen-1.5b",
-      name: "DeepSeek R1 Distill Qwen 1.5B",
-      description: "Tiny reasoning model for cheap experimentation, FREE preview",
-    },
-    {
-      value: "google/codegemma-1.1-7b",
-      name: "CodeGemma 1.1 7B",
-      description: "Code-focused compact model, FREE preview",
-    },
-    {
-      value: "google/gemma-2-2b-it",
-      name: "Gemma 2 2B IT",
-      description: "Small general-purpose instruct model, FREE preview",
-    },
-    {
-      value: "google/gemma-2-9b-it",
-      name: "Gemma 2 9B IT",
-      description: "Balanced Gemma instruct model, FREE preview",
-    },
-    {
-      value: "ibm/granite-3.0-8b-instruct",
-      name: "Granite 3.0 8B Instruct",
-      description: "IBM enterprise-focused instruct model, FREE preview",
-    },
-    {
-      value: "ibm/granite-3.1-8b-instruct",
-      name: "Granite 3.1 8B Instruct",
-      description: "Updated Granite 8B release, FREE preview",
-    },
-    {
-      value: "mistralai/codestral-22b-instruct-v0.1",
-      name: "Codestral 22B Instruct",
-      description: "Code generation and editing, FREE preview",
-    },
-    {
-      value: "mistralai/mixtral-8x7b-instruct-v0.1",
-      name: "Mixtral 8x7B Instruct",
-      description: "MoE instruct classic, FREE preview",
-    },
-    {
-      value: "mistralai/mistral-small-24b-instruct-2501",
-      name: "Mistral Small 24B",
-      description: "Balanced general-purpose chat model, FREE preview",
-    },
-    {
-      value: "nv-mistralai/mistral-nemo-12b-instruct",
-      name: "Mistral NeMo 12B Instruct",
-      description: "Efficient multilingual/chat model, FREE preview",
-    },
-    {
-      value: "qwen/qwen-2.5-7b-instruct",
-      name: "Qwen 2.5 7B Instruct",
-      description: "Compact Qwen instruct model, FREE preview",
-    },
-    {
-      value: "qwen/qwen-2.5-coder-32b-instruct",
-      name: "Qwen 2.5 Coder 32B",
-      description: "Code-specialized Qwen model, FREE preview",
-    },
-    {
-      value: "qwen/qwen-2.5-vl-72b-instruct",
-      name: "Qwen 2.5 VL 72B Instruct",
-      description: "Large multimodal text+vision model, FREE preview",
-    },
-    {
-      value: "qwen/qwen-2.5-vl-7b-instruct",
-      name: "Qwen 2.5 VL 7B Instruct",
-      description: "Compact multimodal text+vision model, FREE preview",
-    },
-    {
-      value: "qwen/qwen2.5-coder-7b-instruct",
-      name: "Qwen 2.5 Coder 7B",
-      description: "Fast compact coding model, FREE preview",
-    },
-    {
-      value: "qwen/qwen3-235b-a22b-thinking-2507",
-      name: "Qwen3 235B Thinking",
-      description: "Large reasoning-oriented Qwen3 model, FREE preview",
+      value: "minimax/minimax-m2.7",
+      name: "MiniMax M2.7",
+      description: "Current NVIDIA preview chat model",
     },
     {
       value: "qwen/qwen3-coder-480b-a35b-instruct",
       name: "Qwen3 Coder 480B",
-      description: "Frontier coding model, FREE preview",
+      description: "Current NVIDIA preview coding model",
     },
     {
-      value: "qwen/qwen3-next-80b-a3b-instruct",
-      name: "Qwen3 Next 80B",
-      description: "Large MoE chat model, FREE preview",
+      value: "zai/glm-4.7",
+      name: "GLM 4.7",
+      description: "Current NVIDIA preview general-purpose model",
+    },
+    {
+      value: "deepseek-ai/deepseek-v3.2",
+      name: "DeepSeek V3.2",
+      description: "Current NVIDIA preview reasoning/chat model",
+    },
+    {
+      value: "nvidia/nemotron-voicechat",
+      name: "Nemotron VoiceChat",
+      description: "Current NVIDIA preview voice-enabled chat model",
+    },
+    {
+      value: "mistralai/devstral-2-123b-instruct-2512",
+      name: "Devstral 2 123B",
+      description: "Current NVIDIA preview large instruct model",
+    },
+    {
+      value: "moonshotai/kimi-k2-thinking",
+      name: "Kimi K2 Thinking",
+      description: "Current NVIDIA preview reasoning model",
+    },
+    {
+      value: "mistralai/mistral-large-3-675b-instruct-2512",
+      name: "Mistral Large 3 675B",
+      description: "Current NVIDIA preview frontier instruct model",
+    },
+    {
+      value: "nvidia/llama-3.1-nemotron-safety-guard-8b-v3",
+      name: "Llama 3.1 Nemotron Safety Guard 8B v3",
+      description: "Current NVIDIA preview safety model",
+    },
+    {
+      value: "deepseek-ai/deepseek-v3.1-terminus",
+      name: "DeepSeek V3.1 Terminus",
+      description: "Current NVIDIA preview reasoning/chat model",
+    },
+    {
+      value: "moonshotai/kimi-k2-instruct-0905",
+      name: "Kimi K2 Instruct 0905",
+      description: "Current NVIDIA preview instruct model",
+    },
+    {
+      value: "stepfun-ai/step-3.5-flash",
+      name: "Step 3.5 Flash",
+      description: "Current NVIDIA preview fast chat model",
+    },
+    {
+      value: "speakleash/bielik-11b-v2.6-instruct",
+      name: "Bielik 11B v2.6 Instruct",
+      description: "Current NVIDIA preview instruct model",
+    },
+    {
+      value: "bytedance/seed-oss-36b-instruct",
+      name: "Seed OSS 36B Instruct",
+      description: "Current NVIDIA preview instruct model",
+    },
+    {
+      value: "deepseek-ai/deepseek-v3.1",
+      name: "DeepSeek V3.1",
+      description: "Current NVIDIA preview general-purpose model",
     },
   ],
 };
