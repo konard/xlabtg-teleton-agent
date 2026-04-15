@@ -49,7 +49,8 @@ describe("NVIDIA curated model catalog", () => {
     const models = getModelsForProvider("nvidia");
 
     expect(models.length).toBeGreaterThan(0);
-    expect(models.some((m) => m.value === "meta/llama-3.1-8b-instruct")).toBe(true);
+    expect(models.some((m) => m.value === "qwen/qwen3-coder-480b-a35b-instruct")).toBe(true);
+    expect(models.some((m) => m.value === "deepseek-ai/deepseek-v3.1")).toBe(true);
   });
 
   it("does not expose embedding or reranking models in the chat provider dropdown", () => {
@@ -58,5 +59,15 @@ describe("NVIDIA curated model catalog", () => {
     expect(models.some((m) => m.value === "baai/bge-m3")).toBe(false);
     expect(models.some((m) => m.value === "nvidia/embed-qa-4")).toBe(false);
     expect(models.some((m) => m.value === "nvidia/rerank-qa-mistral-4b")).toBe(false);
+  });
+
+  it("filters out stale preview models that were returning 404/410 errors", () => {
+    const models = getModelsForProvider("nvidia");
+    const values = models.map((m) => m.value);
+
+    expect(values).not.toContain("qwen/qwen-2.5-72b-instruct");
+    expect(values).not.toContain("mistralai/mistral-large-2411");
+    expect(values).not.toContain("google/gemma-2-27b-it");
+    expect(values).not.toContain("nvidia/llama-3.3-nemotron-super-49b-v1");
   });
 });
