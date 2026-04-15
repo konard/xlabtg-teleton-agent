@@ -257,5 +257,6 @@ describe("existing keys unchanged", () => {
   it("agent.provider still has all 16 options", () => {
     const meta = CONFIGURABLE_KEYS["agent.provider"];
     expect(meta.options).toHaveLength(16);
+    expect(meta.options).toContain("nvidia");
   });
 });
