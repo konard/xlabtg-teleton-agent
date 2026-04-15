@@ -450,6 +450,11 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       description: "Current NVIDIA preview reasoning/chat model",
     },
     {
+      value: "nvidia/nemotron-voicechat",
+      name: "Nemotron VoiceChat",
+      description: "Current NVIDIA preview voice-enabled chat model",
+    },
+    {
       value: "mistralai/devstral-2-123b-instruct-2512",
       name: "Devstral 2 123B",
       description: "Current NVIDIA preview large instruct model",
@@ -478,6 +483,11 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       value: "moonshotai/kimi-k2-instruct-0905",
       name: "Kimi K2 Instruct 0905",
       description: "Current NVIDIA preview instruct model",
+    },
+    {
+      value: "stepfun-ai/step-3.5-flash",
+      name: "Step 3.5 Flash",
+      description: "Current NVIDIA preview fast chat model",
     },
     {
       value: "speakleash/bielik-11b-v2.6-instruct",

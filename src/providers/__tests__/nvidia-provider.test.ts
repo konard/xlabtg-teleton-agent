@@ -47,10 +47,15 @@ describe("NVIDIA model routing", () => {
 describe("NVIDIA curated model catalog", () => {
   it("contains chat completion models", () => {
     const models = getModelsForProvider("nvidia");
+    const values = models.map((m) => m.value);
 
     expect(models.length).toBeGreaterThan(0);
-    expect(models.some((m) => m.value === "qwen/qwen3-coder-480b-a35b-instruct")).toBe(true);
-    expect(models.some((m) => m.value === "deepseek-ai/deepseek-v3.1")).toBe(true);
+    expect(values).toContain("qwen/qwen3-coder-480b-a35b-instruct");
+    expect(values).toContain("deepseek-ai/deepseek-v3.1");
+    expect(values).toContain("deepseek-ai/deepseek-v3.2");
+    expect(values).toContain("nvidia/nemotron-voicechat");
+    expect(values).toContain("zai/glm-4.7");
+    expect(values).toContain("stepfun-ai/step-3.5-flash");
   });
 
   it("does not expose embedding or reranking models in the chat provider dropdown", () => {
