@@ -729,21 +729,6 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       name: "Qwen3 Next 80B",
       description: "Large MoE chat model, FREE preview",
     },
-    {
-      value: "baai/bge-m3",
-      name: "BGE-M3",
-      description: "Embedding and retrieval model available on NIM",
-    },
-    {
-      value: "nvidia/embed-qa-4",
-      name: "NVIDIA Embed-QA-4",
-      description: "Embedding model for retrieval and RAG workflows",
-    },
-    {
-      value: "nvidia/rerank-qa-mistral-4b",
-      name: "NVIDIA Rerank-QA Mistral 4B",
-      description: "Reranker for retrieval pipelines",
-    },
   ],
 };
 
