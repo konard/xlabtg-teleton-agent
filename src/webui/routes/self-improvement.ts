@@ -230,9 +230,7 @@ export function createSelfImprovementRoutes(deps?: WebUIServerDeps) {
         const testStep = auto.run_tests
           ? " Run the tests first and only create the PR if they pass."
           : "";
-        const mergeStep = auto.auto_merge
-          ? " After tests pass, enable auto-merge on the PR."
-          : "";
+        const mergeStep = auto.auto_merge ? " After tests pass, enable auto-merge on the PR." : "";
         prInstruction =
           ` For every ${severityLabel} severity finding, create a ${prType}Pull Request with a fix using branch prefix "${auto.branch_prefix}".` +
           testStep +
