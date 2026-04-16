@@ -294,6 +294,8 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
           file: voice,
           caption: opts?.caption,
           replyTo: opts?.replyToId,
+          forceDocument: false,
+          voiceNote: true,
           attributes: [
             new Api.DocumentAttributeAudio({ voice: true, duration: opts?.duration ?? 0 }),
           ],

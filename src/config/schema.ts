@@ -511,8 +511,10 @@ export const ConfigSchema = z.object({
         .describe("Groq TTS voice name (e.g. autumn, diana, hannah, austin, daniel, troy)"),
       tts_format: z
         .enum(["mp3", "opus", "aac", "flac", "wav", "pcm"])
-        .default("mp3")
-        .describe("TTS output audio format"),
+        .default("wav")
+        .describe(
+          "Groq TTS output audio format. Groq Orpheus currently supports only wav; legacy values are coerced to wav at runtime."
+        ),
       tts_mode: z
         .enum(["voice_calls_only", "always", "use_primary_text"])
         .default("voice_calls_only")

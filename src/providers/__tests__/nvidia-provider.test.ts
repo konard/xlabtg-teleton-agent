@@ -51,10 +51,9 @@ describe("NVIDIA curated model catalog", () => {
 
     expect(models.length).toBeGreaterThan(0);
     expect(values).toContain("qwen/qwen3-coder-480b-a35b-instruct");
-    expect(values).toContain("deepseek-ai/deepseek-v3.1");
-    expect(values).toContain("deepseek-ai/deepseek-v3.2");
-    expect(values).toContain("nvidia/nemotron-voicechat");
-    expect(values).toContain("zai/glm-4.7");
+    expect(values).toContain("mistralai/devstral-2-123b-instruct-2512");
+    expect(values).toContain("deepseek-ai/deepseek-v3.1-terminus");
+    expect(values).toContain("moonshotai/kimi-k2-instruct-0905");
     expect(values).toContain("stepfun-ai/step-3.5-flash");
   });
 
