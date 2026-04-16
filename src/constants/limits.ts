@@ -76,6 +76,7 @@ export const EMBEDDING_CACHE_EVICTION_RATIO = 0.1;
 // ─── Web Tools ─────────────────────────────────────────────────
 export const WEB_FETCH_MAX_TEXT_LENGTH = 20_000; // default text truncation
 export const WEB_SEARCH_MAX_RESULTS = 10; // max allowed count
+export const WEB_DOWNLOAD_BINARY_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 // ─── Tool Execution ─────────────────────────────────────────────
 export const TOOL_CONCURRENCY_LIMIT = 2;

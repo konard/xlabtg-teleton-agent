@@ -151,7 +151,10 @@ function summarizeToolParams(toolName: string, params: Record<string, unknown>):
 
   if (toolName === "exec_run" && typeof params.command === "string") {
     hint = params.command;
-  } else if (toolName === "web_fetch" && typeof params.url === "string") {
+  } else if (
+    (toolName === "web_fetch" || toolName === "web_download_binary") &&
+    typeof params.url === "string"
+  ) {
     hint = params.url;
   } else if (toolName.startsWith("telegram_") && typeof params.message === "string") {
     hint = params.message;
