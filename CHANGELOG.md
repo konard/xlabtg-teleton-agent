@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **`web_download_binary` tool**: Download public HTTP(S) binary files into workspace `downloads/` with MIME validation, a 10 MB size cap, redirect support, and optional request headers for authorized URLs.
+
 ## [0.8.1] - 2026-03-05
 
 ### Added
