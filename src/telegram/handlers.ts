@@ -569,6 +569,8 @@ export class MessageHandler {
                 const voiceMsg: any = await gramJsClient.sendFile(message.chatId, {
                   file: ttsFilePath,
                   replyTo: message.id,
+                  forceDocument: false,
+                  voiceNote: true,
                   attributes: [new Api.DocumentAttributeAudio({ voice: true, duration: 0 })],
                 });
                 log.info(`🎙️ Groq TTS voice reply sent for chat ${message.chatId}`);

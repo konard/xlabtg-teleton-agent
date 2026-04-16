@@ -426,6 +426,8 @@ describe("createTelegramMessagesSDK", () => {
         file: expect.any(Buffer),
         caption: undefined,
         replyTo: undefined,
+        forceDocument: false,
+        voiceNote: true,
         attributes: [expect.objectContaining({ _: "DocumentAttributeAudio", voice: true })],
       });
       expect(result).toBe(30);

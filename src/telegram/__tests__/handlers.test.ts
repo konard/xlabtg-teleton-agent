@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
@@ -45,6 +45,25 @@ vi.mock("../../memory/pending-history.js", () => ({
 // Mock transcription
 vi.mock("../../agent/tools/telegram/media/transcribe-audio.js", () => ({
   telegramTranscribeAudioExecutor: vi.fn().mockResolvedValue({ success: false }),
+}));
+
+const mockGenerateSpeech = vi.hoisted(() => vi.fn());
+vi.mock("../../services/tts.js", () => ({
+  generateSpeech: mockGenerateSpeech,
+}));
+
+vi.mock("telegram", () => ({
+  Api: {
+    DocumentAttributeAudio: class {
+      _ = "DocumentAttributeAudio";
+      voice?: boolean;
+      duration?: number;
+
+      constructor(args: { voice?: boolean; duration?: number }) {
+        Object.assign(this, args);
+      }
+    },
+  },
 }));
 
 import { MessageHandler, type MessageContext } from "../handlers.js";
@@ -116,12 +135,21 @@ function createHandler(
   deps?: {
     bridge?: any;
     agent?: any;
+    fullConfig?: any;
   }
 ) {
   const bridge = deps?.bridge ?? makeBridge();
   const agent = deps?.agent ?? makeAgent();
   const config = makeConfig(configOverrides);
-  const handler = new MessageHandler(bridge, config, agent, makeDb(), makeEmbedder(), false);
+  const handler = new MessageHandler(
+    bridge,
+    config,
+    agent,
+    makeDb(),
+    makeEmbedder(),
+    false,
+    deps?.fullConfig
+  );
   return { handler, bridge, agent, config };
 }
 
@@ -131,6 +159,11 @@ describe("MessageHandler", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockReadOffset.mockReturnValue(null);
+    mockGenerateSpeech.mockResolvedValue({
+      filePath: "/tmp/teleton-handler-voice.ogg",
+      provider: "groq",
+      voice: "diana",
+    });
   });
 
   describe("analyzeMessage()", () => {
@@ -554,6 +587,60 @@ describe("MessageHandler", () => {
       expect(bridge.sendMessage).toHaveBeenCalledTimes(1);
     });
 
+    it("sends Groq TTS auto-replies as explicit Telegram voice notes", async () => {
+      const agent = makeAgent();
+      agent.processMessage.mockResolvedValue({
+        content: "spoken response",
+        toolCalls: [],
+      });
+      const sendFile = vi.fn().mockResolvedValue({ id: 777, date: 123 });
+      const bridge = {
+        ...makeBridge(),
+        getClient: () => ({
+          getClient: () => ({ sendFile }),
+        }),
+      };
+
+      const { handler } = createHandler(
+        { dm_policy: "open" },
+        {
+          agent,
+          bridge,
+          fullConfig: {
+            agent: { provider: "anthropic", api_key: "" },
+            telegram: makeConfig(),
+            groq: {
+              api_key: "gsk_test",
+              tts_model: "canopylabs/orpheus-v1-english",
+              tts_voice: "diana",
+              tts_format: "wav",
+              tts_mode: "always",
+            },
+          },
+        }
+      );
+
+      await handler.handleMessage(makeMessage({ id: 101 }));
+
+      expect(mockGenerateSpeech).toHaveBeenCalledWith(
+        expect.objectContaining({
+          text: "spoken response",
+          provider: "groq",
+          groqFormat: "wav",
+        })
+      );
+      expect(sendFile).toHaveBeenCalledWith(
+        "chat1",
+        expect.objectContaining({
+          file: "/tmp/teleton-handler-voice.ogg",
+          forceDocument: false,
+          voiceNote: true,
+          attributes: [expect.objectContaining({ _: "DocumentAttributeAudio", voice: true })],
+        })
+      );
+      expect(bridge.sendMessage).not.toHaveBeenCalled();
+    });
+
     it("empty response content → bridge.sendMessage NOT called", async () => {
       const agent = makeAgent();
       agent.processMessage.mockResolvedValue({
@@ -666,14 +753,29 @@ describe("MessageHandler", () => {
 
   // ── T10: Rate limit error user notification ──────────────────────────────
   describe("rate limit error notification", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
     it("sends a user-facing error message when processMessage throws a rate limit error", async () => {
       const agent = makeAgent();
-      agent.processMessage.mockRejectedValueOnce(
-        new Error("API rate limited after 5 retries. Please try again later.")
-      );
+      agent.processMessage
+        .mockRejectedValueOnce(
+          new Error("API rate limited after 5 retries. Please try again later.")
+        )
+        .mockRejectedValueOnce(
+          new Error("API rate limited after 5 retries. Please try again later.")
+        );
 
       const { handler, bridge } = createHandler({ dm_policy: "open" }, { agent });
-      await handler.handleMessage(makeMessage({ id: 201, chatId: "chat2" }));
+      const handlePromise = handler.handleMessage(makeMessage({ id: 201, chatId: "chat2" }));
+      await vi.waitFor(() => expect(agent.processMessage).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(90_000);
+      await handlePromise;
 
       expect(bridge.sendMessage).toHaveBeenCalledTimes(1);
       expect(bridge.sendMessage).toHaveBeenCalledWith(
@@ -687,10 +789,15 @@ describe("MessageHandler", () => {
 
     it("sends error message for 429-containing rate limit errors", async () => {
       const agent = makeAgent();
-      agent.processMessage.mockRejectedValueOnce(new Error("429 Rate limit reached for requests"));
+      agent.processMessage
+        .mockRejectedValueOnce(new Error("429 Rate limit reached for requests"))
+        .mockRejectedValueOnce(new Error("429 Rate limit reached for requests"));
 
       const { handler, bridge } = createHandler({ dm_policy: "open" }, { agent });
-      await handler.handleMessage(makeMessage({ id: 202, chatId: "chat3" }));
+      const handlePromise = handler.handleMessage(makeMessage({ id: 202, chatId: "chat3" }));
+      await vi.waitFor(() => expect(agent.processMessage).toHaveBeenCalledTimes(1));
+      await vi.advanceTimersByTimeAsync(90_000);
+      await handlePromise;
 
       expect(bridge.sendMessage).toHaveBeenCalledTimes(1);
       expect(bridge.sendMessage).toHaveBeenCalledWith(

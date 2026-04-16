@@ -296,23 +296,28 @@ export function createGroqRoutes(deps: WebUIServerDeps) {
       return c.json({ success: false, error: "Missing or empty 'text' field" } as APIResponse, 400);
     }
 
+    if (body.responseFormat && body.responseFormat !== "wav") {
+      return c.json(
+        {
+          success: false,
+          error: "Groq Orpheus TTS currently supports only wav output",
+        } as APIResponse,
+        400
+      );
+    }
+
     try {
+      const format = "wav";
       const audioBuffer = await groqSpeak(body.text, {
         apiKey,
         model: body.model || "canopylabs/orpheus-v1-english",
         voice: body.voice || "autumn",
-        responseFormat: (body.responseFormat as "mp3") || "mp3",
+        responseFormat: format,
         speed: body.speed,
       });
 
-      const format = body.responseFormat || "mp3";
       const mimeTypes: Record<string, string> = {
-        mp3: "audio/mpeg",
-        opus: "audio/ogg; codecs=opus",
-        aac: "audio/aac",
-        flac: "audio/flac",
         wav: "audio/wav",
-        pcm: "audio/pcm",
       };
 
       // Convert Buffer to a proper Uint8Array<ArrayBuffer> for Hono compatibility

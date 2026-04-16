@@ -61,8 +61,8 @@ telegram:
 # groq:
 #   stt_model: "whisper-large-v3-turbo"         # STT model: whisper-large-v3 | whisper-large-v3-turbo | distil-whisper-large-v3-en
 #   tts_model: "canopylabs/orpheus-v1-english"  # TTS model: canopylabs/orpheus-v1-english | canopylabs/orpheus-arabic-saudi
-#   tts_voice: "tara"                           # Voice name (English: tara, leah, jess, leo, dan, mia, zac, zoe; Arabic: ahmad, nadia)
-#   tts_format: "mp3"                           # Output format: mp3 | opus | aac | flac | wav | pcm
+#   tts_voice: "autumn"                         # Voice name (English: autumn, diana, hannah, austin, daniel, troy; Arabic: ahmad, nadia)
+#   tts_format: "wav"                           # Groq Orpheus output format. Telegram voice replies are converted to OGG/Opus.
 #   stt_language: ""                            # Language hint for STT (e.g. "en"). Empty = auto-detect.
 #   rate_limit_mode: "auto"                     # Rate limit handling: auto | strict | off
 

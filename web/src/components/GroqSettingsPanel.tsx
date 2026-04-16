@@ -125,8 +125,9 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
 
   const sttModel = getLocal('groq.stt_model') || 'whisper-large-v3-turbo';
   const ttsModel = selectedTtsModel;
-  const ttsVoice = getLocal('groq.tts_voice') || 'tara';
-  const ttsFormat = getLocal('groq.tts_format') || 'mp3';
+  const ttsVoice = getLocal('groq.tts_voice') || 'autumn';
+  const configuredTtsFormat = getLocal('groq.tts_format');
+  const ttsFormat = configuredTtsFormat === 'wav' ? configuredTtsFormat : 'wav';
   const ttsMode = getLocal('groq.tts_mode') || 'voice_calls_only';
   const sttLanguage = getLocal('groq.stt_language') || '';
   const rateLimitMode = getLocal('groq.rate_limit_mode') || 'auto';
@@ -300,8 +301,8 @@ export function GroqSettingsPanel({ getLocal, saveConfig, isGroqProvider }: Groq
             <label>TTS Output Format <InfoTip text="Audio format for TTS output" /></label>
             <Select
               value={ttsFormat}
-              options={['mp3', 'opus', 'aac', 'flac', 'wav', 'pcm']}
-              labels={['MP3 (recommended)', 'Opus', 'AAC', 'FLAC', 'WAV', 'PCM (raw)']}
+              options={['wav']}
+              labels={['WAV']}
               onChange={(v) => saveConfig('groq.tts_format', v)}
             />
           </div>

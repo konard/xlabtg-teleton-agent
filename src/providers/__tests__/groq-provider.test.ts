@@ -93,7 +93,7 @@ describe("Groq config schema", () => {
         stt_model: "whisper-large-v3-turbo",
         tts_model: "canopylabs/orpheus-v1-english",
         tts_voice: "autumn",
-        tts_format: "mp3",
+        tts_format: "wav",
         rate_limit_mode: "auto",
       },
     });
@@ -103,7 +103,7 @@ describe("Groq config schema", () => {
       expect(result.data.groq?.stt_model).toBe("whisper-large-v3-turbo");
       expect(result.data.groq?.tts_model).toBe("canopylabs/orpheus-v1-english");
       expect(result.data.groq?.tts_voice).toBe("autumn");
-      expect(result.data.groq?.tts_format).toBe("mp3");
+      expect(result.data.groq?.tts_format).toBe("wav");
       expect(result.data.groq?.rate_limit_mode).toBe("auto");
     }
   });

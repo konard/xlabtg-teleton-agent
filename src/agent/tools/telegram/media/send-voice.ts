@@ -215,6 +215,8 @@ export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
       file: audioPath,
       caption: caption,
       replyTo: replyToId,
+      forceDocument: false,
+      voiceNote: true,
       attributes: [new Api.DocumentAttributeAudio(attrs)],
     });
 

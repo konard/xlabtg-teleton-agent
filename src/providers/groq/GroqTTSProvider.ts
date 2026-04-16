@@ -30,7 +30,7 @@ export const GROQ_TTS_VOICES = [...GROQ_TTS_VOICES_ENGLISH, ...GROQ_TTS_VOICES_A
 export type GroqTTSVoice = (typeof GROQ_TTS_VOICES)[number];
 
 /** Supported output formats for Groq TTS */
-export type GroqTTSFormat = "mp3" | "opus" | "aac" | "flac" | "wav" | "pcm";
+export type GroqTTSFormat = "wav";
 
 export interface GroqSpeechOptions {
   /** API key for Groq */
@@ -39,7 +39,7 @@ export interface GroqSpeechOptions {
   model?: string;
   /** Voice to use */
   voice?: string;
-  /** Output audio format */
+  /** Output audio format. Groq Orpheus currently supports only WAV. */
   responseFormat?: GroqTTSFormat;
   /** Playback speed (0.25–4.0) */
   speed?: number;
@@ -57,7 +57,7 @@ export async function groqSpeak(text: string, options: GroqSpeechOptions): Promi
     apiKey,
     model = "canopylabs/orpheus-v1-english",
     voice = "autumn",
-    responseFormat = "mp3",
+    responseFormat = "wav",
     speed,
   } = options;
 
