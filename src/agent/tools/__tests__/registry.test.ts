@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { ToolRegistry } from "../registry.js";
+import { registerAllTools } from "../register-all.js";
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolContext, ToolScope } from "../types.js";
 import type { ToolCall } from "@mariozechner/pi-ai";
@@ -15,7 +16,25 @@ vi.mock("../module-permissions.js", () => ({
 }));
 
 vi.mock("../../../constants/timeouts.js", () => ({
+  BATCH_TRIGGER_DELAY_MS: 500,
+  DEFAULT_FETCH_TIMEOUT_MS: 30_000,
+  GRAMJS_CONNECT_RETRY_DELAY_MS: 3_000,
+  GRAMJS_RETRY_DELAY_MS: 1_000,
+  LLM_REQUEST_TIMEOUT_MS: 60_000,
+  MTPROTO_PROXY_CONNECT_TIMEOUT_MS: 15_000,
+  ONBOARDING_PROMPT_TIMEOUT_MS: 120_000,
+  RETRY_BLOCKCHAIN_BASE_DELAY_MS: 2_000,
+  RETRY_BLOCKCHAIN_MAX_DELAY_MS: 15_000,
+  RETRY_BLOCKCHAIN_TIMEOUT_MS: 30_000,
+  RETRY_DEFAULT_BASE_DELAY_MS: 1_000,
+  RETRY_DEFAULT_MAX_ATTEMPTS: 3,
+  RETRY_DEFAULT_MAX_DELAY_MS: 10_000,
+  RETRY_DEFAULT_TIMEOUT_MS: 15_000,
+  RETRY_WEB_FETCH_TIMEOUT_MS: 30_000,
+  SHUTDOWN_TIMEOUT_MS: 10_000,
+  TTS_TIMEOUT_MS: 30_000,
   TOOL_EXECUTION_TIMEOUT_MS: 90_000,
+  TYPING_REFRESH_MS: 4_000,
 }));
 
 describe("ToolRegistry", () => {
@@ -125,6 +144,17 @@ describe("ToolRegistry", () => {
 
       const modules = registry.getAvailableModules();
       expect(modules).toContain("telegram");
+    });
+  });
+
+  describe("registerAllTools()", () => {
+    it("registers telegram_send_video in the core toolset", () => {
+      registerAllTools(registry);
+
+      expect(registry.has("telegram_send_video")).toBe(true);
+      expect(registry.getAll()).toEqual(
+        expect.arrayContaining([expect.objectContaining({ name: "telegram_send_video" })])
+      );
     });
   });
 
