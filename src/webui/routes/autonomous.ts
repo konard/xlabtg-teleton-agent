@@ -134,7 +134,7 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
         return c.json({ success: false, error: "goal is required" } as APIResponse, 400);
       }
 
-      const task = store().createTask({
+      const input = {
         goal: body.goal.trim(),
         successCriteria: body.successCriteria,
         failureConditions: body.failureConditions,
@@ -143,7 +143,13 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
         retryPolicy: body.retryPolicy,
         context: body.context,
         priority: body.priority,
-      });
+      };
+
+      // When an autonomous manager is wired in, create+start the task so it actually
+      // begins executing. Without it, the task would sit in "pending" forever.
+      const task = deps.autonomousManager
+        ? await deps.autonomousManager.startTask(input)
+        : store().createTask(input);
 
       const response: APIResponse = { success: true, data: serializeTask(task) };
       return c.json(response, 201);
@@ -169,7 +175,11 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
           409
         );
       }
-      const updated = store().updateTaskStatus(task.id, "paused");
+      // Use manager when available so the running loop is signaled to stop;
+      // otherwise fall back to a status-only update.
+      const updated = deps.autonomousManager
+        ? deps.autonomousManager.pauseTask(task.id)
+        : store().updateTaskStatus(task.id, "paused");
       const response: APIResponse = {
         success: true,
         data: updated ? serializeTask(updated) : null,
@@ -194,7 +204,12 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
           409
         );
       }
-      const updated = store().updateTaskStatus(task.id, "pending");
+      // Resuming must actually restart the execution loop when a manager is wired in.
+      // Falling back to a status change keeps the task "pending" forever — the bug
+      // from issue #222.
+      const updated = deps.autonomousManager
+        ? deps.autonomousManager.resumeTask(task.id)
+        : store().updateTaskStatus(task.id, "pending");
       const response: APIResponse = {
         success: true,
         data: updated ? serializeTask(updated) : null,
@@ -222,7 +237,9 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
           409
         );
       }
-      const updated = store().updateTaskStatus(task.id, "cancelled");
+      const updated = deps.autonomousManager
+        ? deps.autonomousManager.stopTask(task.id)
+        : store().updateTaskStatus(task.id, "cancelled");
       const response: APIResponse = {
         success: true,
         data: updated ? serializeTask(updated) : null,

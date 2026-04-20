@@ -8,6 +8,7 @@ import type { PluginModule, PluginContext } from "../agent/tools/types.js";
 import type { SDKDependencies } from "../sdk/index.js";
 import type { AgentLifecycle } from "../agent/lifecycle.js";
 import type { UserHookEvaluator } from "../agent/hooks/user-hook-evaluator.js";
+import type { AutonomousTaskManager } from "../autonomous/manager.js";
 
 export interface LoadedPlugin {
   name: string;
@@ -42,6 +43,7 @@ export interface WebUIServerDeps {
   lifecycle?: AgentLifecycle;
   marketplace?: MarketplaceDeps;
   userHookEvaluator?: UserHookEvaluator | null;
+  autonomousManager?: AutonomousTaskManager;
 }
 
 // ── Marketplace types ───────────────────────────────────────────────
