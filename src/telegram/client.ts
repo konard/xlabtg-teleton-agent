@@ -9,6 +9,7 @@ import { dirname } from "path";
 import { createInterface } from "readline";
 import { markdownToTelegramHtml } from "./formatting.js";
 import { withFloodRetry } from "./flood-retry.js";
+import { TelegramError } from "./errors.js";
 import { createLogger } from "../utils/logger.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
 import { MTPROTO_PROXY_CONNECT_TIMEOUT_MS } from "../constants/timeouts.js";
@@ -166,6 +167,23 @@ export class TelegramUserClient {
     log.info("Starting authentication flow...");
     const phone = this.config.phone || (await promptInput("Phone number: "));
 
+    const sendResult = await this.sendAuthCode(phone);
+    if (sendResult === "already_authenticated") {
+      this.saveSession();
+      return;
+    }
+
+    const { phoneCodeHash } = sendResult;
+    await this.signInWithCode(phone, phoneCodeHash);
+
+    log.info("Authenticated");
+    this.saveSession();
+  }
+
+  /** Returns "already_authenticated" on SentCodeSuccess (e.g. session migration). */
+  private async sendAuthCode(
+    phone: string
+  ): Promise<"already_authenticated" | { phoneCodeHash: string }> {
     const sendResult = await this.client.invoke(
       new Api.auth.SendCode({
         phoneNumber: phone,
@@ -175,20 +193,21 @@ export class TelegramUserClient {
       })
     );
 
-    // SentCodeSuccess means we're already authorized (e.g. session migration)
     if (sendResult instanceof Api.auth.SentCodeSuccess) {
       log.info("Authenticated (SentCodeSuccess)");
-      this.saveSession();
-      return;
+      return "already_authenticated";
     }
 
     if (!(sendResult instanceof Api.auth.SentCode)) {
-      throw new Error("Unexpected auth response: payment required or unknown type");
+      throw new TelegramError(
+        "Unexpected auth response: payment required or unknown type",
+        "AUTH_UNEXPECTED_RESPONSE",
+        { responseType: sendResult?.constructor?.name }
+      );
     }
 
-    const phoneCodeHash = sendResult.phoneCodeHash;
-
-    // Detect Fragment SMS for anonymous numbers (+888)
+    // Fragment SMS is used for anonymous numbers (+888) — show the URL
+    // the user must open to retrieve the code.
     if (sendResult.type instanceof Api.auth.SentCodeTypeFragmentSms) {
       const url = sendResult.type.url;
       if (url) {
@@ -197,7 +216,11 @@ export class TelegramUserClient {
       }
     }
 
-    let authenticated = false;
+    return { phoneCodeHash: sendResult.phoneCodeHash };
+  }
+
+  /** Retries on PHONE_CODE_INVALID; switches to 2FA on SESSION_PASSWORD_NEEDED. */
+  private async signInWithCode(phone: string, phoneCodeHash: string): Promise<void> {
     const maxAttempts = 3;
 
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -211,38 +234,42 @@ export class TelegramUserClient {
             phoneCode: code,
           })
         );
-        authenticated = true;
-        break;
+        return;
       } catch (err: unknown) {
-        const errObj = err as Record<string, string>;
-        if (errObj.errorMessage === "PHONE_CODE_INVALID") {
-          const remaining = maxAttempts - attempt - 1;
-          if (remaining > 0) {
-            log.warn({ attemptsRemaining: remaining }, "Invalid authentication code");
-          } else {
-            throw new Error("Authentication failed: too many invalid code attempts");
-          }
-        } else if (errObj.errorMessage === "SESSION_PASSWORD_NEEDED") {
-          // 2FA required
-          const pwd = await promptInput("2FA password: ");
-          const { computeCheck } = await import("telegram/Password.js");
-          const srpResult = await this.client.invoke(new Api.account.GetPassword());
-          const srpCheck = await computeCheck(srpResult, pwd);
-          await this.client.invoke(new Api.auth.CheckPassword({ password: srpCheck }));
-          authenticated = true;
-          break;
-        } else {
+        const errorMessage = (err as { errorMessage?: string } | null)?.errorMessage;
+
+        if (errorMessage === "SESSION_PASSWORD_NEEDED") {
+          await this.signInWithPassword();
+          return;
+        }
+
+        if (errorMessage !== "PHONE_CODE_INVALID") {
           throw err;
         }
+
+        const remaining = maxAttempts - attempt - 1;
+        if (remaining <= 0) {
+          throw new TelegramError(
+            "Authentication failed: too many invalid code attempts",
+            "AUTH_INVALID_CODE",
+            { maxAttempts }
+          );
+        }
+        log.warn({ attemptsRemaining: remaining }, "Invalid authentication code");
       }
     }
 
-    if (!authenticated) {
-      throw new Error("Authentication failed");
-    }
+    // Unreachable: the loop either returns on success or throws on the
+    // final attempt, but TypeScript cannot prove that.
+    throw new TelegramError("Authentication failed", "AUTH_FAILED");
+  }
 
-    log.info("Authenticated");
-    this.saveSession();
+  private async signInWithPassword(): Promise<void> {
+    const pwd = await promptInput("2FA password: ");
+    const { computeCheck } = await import("telegram/Password.js");
+    const srpResult = await this.client.invoke(new Api.account.GetPassword());
+    const srpCheck = await computeCheck(srpResult, pwd);
+    await this.client.invoke(new Api.auth.CheckPassword({ password: srpCheck }));
   }
 
   async connect(): Promise<void> {
@@ -290,7 +317,14 @@ export class TelegramUserClient {
       // Race getMe() against a timeout to avoid hanging on a broken proxy
       const getMeTimeout = new Promise<never>((_, reject) =>
         setTimeout(
-          () => reject(new Error("[Telegram] getMe() timed out — proxy may be unresponsive")),
+          () =>
+            reject(
+              new TelegramError(
+                "[Telegram] getMe() timed out — proxy may be unresponsive",
+                "GET_ME_TIMEOUT",
+                { timeoutMs: MTPROTO_PROXY_CONNECT_TIMEOUT_MS }
+              )
+            ),
           MTPROTO_PROXY_CONNECT_TIMEOUT_MS
         )
       );
