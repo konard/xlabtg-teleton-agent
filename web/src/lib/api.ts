@@ -593,6 +593,93 @@ export interface SessionSearchResult {
   score: number;
 }
 
+// ── Autonomous Task types ───────────────────────────────────────────
+
+export type AutonomousTaskStatus =
+  | "pending"
+  | "running"
+  | "paused"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export type AutonomousStrategy = "conservative" | "balanced" | "aggressive";
+export type AutonomousPriority = "low" | "medium" | "high" | "critical";
+export type AutonomousEventType =
+  | "plan"
+  | "tool_call"
+  | "tool_result"
+  | "reflect"
+  | "checkpoint"
+  | "escalate"
+  | "error"
+  | "info";
+
+export interface AutonomousConstraints {
+  maxIterations?: number;
+  maxDurationHours?: number;
+  allowedTools?: string[];
+  restrictedTools?: string[];
+  budgetTON?: number;
+}
+
+export interface AutonomousRetryPolicy {
+  maxRetries: number;
+  backoff: "linear" | "exponential";
+}
+
+export interface AutonomousTaskData {
+  id: string;
+  goal: string;
+  successCriteria: string[];
+  failureConditions: string[];
+  constraints: AutonomousConstraints;
+  strategy: AutonomousStrategy;
+  retryPolicy: AutonomousRetryPolicy;
+  context: Record<string, unknown>;
+  priority: AutonomousPriority;
+  status: AutonomousTaskStatus;
+  currentStep: number;
+  lastCheckpointId?: string;
+  createdAt: string;
+  updatedAt: string | null;
+  startedAt: string | null;
+  completedAt: string | null;
+  result?: string;
+  error?: string;
+}
+
+export interface AutonomousExecutionLog {
+  id: number;
+  taskId: string;
+  step: number;
+  eventType: AutonomousEventType;
+  message: string;
+  data?: unknown;
+  createdAt: string;
+}
+
+export interface AutonomousTaskDetail extends AutonomousTaskData {
+  lastCheckpoint: {
+    id: string;
+    step: number;
+    nextActionHint?: string;
+    createdAt: string;
+  } | null;
+  executionLogs: AutonomousExecutionLog[];
+}
+
+export interface AutonomousCreateInput {
+  goal: string;
+  successCriteria?: string[];
+  failureConditions?: string[];
+  constraints?: AutonomousConstraints;
+  strategy?: AutonomousStrategy;
+  retryPolicy?: AutonomousRetryPolicy;
+  context?: Record<string, unknown>;
+  priority?: AutonomousPriority;
+}
+
 // ── API response wrapper ────────────────────────────────────────────
 
 interface APIResponse<T> {
@@ -1735,6 +1822,61 @@ export const api = {
 
   async agentStatus() {
     return fetchAPI<{ state: string; uptime?: number; error?: string | null }>("/agent/status");
+  },
+
+  // ── Autonomous Task Engine ────────────────────────────────────────
+
+  async autonomousList(status?: AutonomousTaskStatus) {
+    const qs = status ? `?status=${status}` : "";
+    return fetchAPI<APIResponse<AutonomousTaskData[]>>(`/autonomous${qs}`);
+  },
+
+  async autonomousGet(id: string) {
+    return fetchAPI<APIResponse<AutonomousTaskDetail>>(`/autonomous/${id}`);
+  },
+
+  async autonomousCreate(data: AutonomousCreateInput) {
+    return fetchAPI<APIResponse<AutonomousTaskData>>("/autonomous", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async autonomousPause(id: string) {
+    return fetchAPI<APIResponse<AutonomousTaskData>>(`/autonomous/${id}/pause`, { method: "POST" });
+  },
+
+  async autonomousResume(id: string) {
+    return fetchAPI<APIResponse<AutonomousTaskData>>(`/autonomous/${id}/resume`, {
+      method: "POST",
+    });
+  },
+
+  async autonomousStop(id: string) {
+    return fetchAPI<APIResponse<AutonomousTaskData>>(`/autonomous/${id}/stop`, { method: "POST" });
+  },
+
+  async autonomousInjectContext(id: string, context: Record<string, unknown>) {
+    return fetchAPI<APIResponse<AutonomousTaskData>>(`/autonomous/${id}/context`, {
+      method: "POST",
+      body: JSON.stringify({ context }),
+    });
+  },
+
+  async autonomousGetLogs(id: string, limit = 200) {
+    return fetchAPI<APIResponse<AutonomousExecutionLog[]>>(
+      `/autonomous/${id}/logs?limit=${limit}`
+    );
+  },
+
+  async autonomousDelete(id: string) {
+    return fetchAPI<APIResponse<{ message: string }>>(`/autonomous/${id}`, { method: "DELETE" });
+  },
+
+  async autonomousCleanCheckpoints() {
+    return fetchAPI<APIResponse<{ deleted: number }>>("/autonomous/checkpoints/clean", {
+      method: "POST",
+    });
   },
 };
 

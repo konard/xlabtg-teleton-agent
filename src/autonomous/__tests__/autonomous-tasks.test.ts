@@ -1,0 +1,253 @@
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import Database from "better-sqlite3";
+import { ensureSchema } from "../../memory/schema.js";
+import {
+  AutonomousTaskStore,
+  getAutonomousTaskStore,
+} from "../../memory/agent/autonomous-tasks.js";
+
+describe("AutonomousTaskStore", () => {
+  let db: InstanceType<typeof Database>;
+  let store: AutonomousTaskStore;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    ensureSchema(db);
+    store = getAutonomousTaskStore(db);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  // ─── Task CRUD ─────────────────────────────────────────────────────────────
+
+  it("creates a task with default values", () => {
+    const task = store.createTask({ goal: "Monitor DeDust pools" });
+
+    expect(task.id).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+    );
+    expect(task.goal).toBe("Monitor DeDust pools");
+    expect(task.status).toBe("pending");
+    expect(task.priority).toBe("medium");
+    expect(task.strategy).toBe("balanced");
+    expect(task.currentStep).toBe(0);
+    expect(task.successCriteria).toEqual([]);
+    expect(task.failureConditions).toEqual([]);
+    expect(task.constraints).toEqual({});
+  });
+
+  it("creates a task with all optional fields", () => {
+    const task = store.createTask({
+      goal: "Analyze TON project",
+      successCriteria: ["report generated", "data stored"],
+      failureConditions: ["3 consecutive errors"],
+      constraints: { maxIterations: 50, maxDurationHours: 2, budgetTON: 0.5 },
+      strategy: "conservative",
+      retryPolicy: { maxRetries: 5, backoff: "exponential" },
+      context: { projectId: "abc123" },
+      priority: "high",
+    });
+
+    expect(task.successCriteria).toEqual(["report generated", "data stored"]);
+    expect(task.failureConditions).toEqual(["3 consecutive errors"]);
+    expect(task.constraints.maxIterations).toBe(50);
+    expect(task.constraints.budgetTON).toBe(0.5);
+    expect(task.strategy).toBe("conservative");
+    expect(task.priority).toBe("high");
+    expect(task.context).toEqual({ projectId: "abc123" });
+    expect(task.retryPolicy).toEqual({ maxRetries: 5, backoff: "exponential" });
+  });
+
+  it("retrieves a task by id", () => {
+    const created = store.createTask({ goal: "Test goal" });
+    const fetched = store.getTask(created.id);
+
+    expect(fetched).toBeDefined();
+    expect(fetched!.id).toBe(created.id);
+    expect(fetched!.goal).toBe("Test goal");
+  });
+
+  it("returns undefined for non-existent task id", () => {
+    expect(store.getTask("non-existent-id")).toBeUndefined();
+  });
+
+  it("lists all tasks", () => {
+    store.createTask({ goal: "Task 1" });
+    store.createTask({ goal: "Task 2" });
+    store.createTask({ goal: "Task 3" });
+
+    const tasks = store.listTasks();
+    expect(tasks).toHaveLength(3);
+  });
+
+  it("filters tasks by status", () => {
+    const t1 = store.createTask({ goal: "Task 1" });
+    store.createTask({ goal: "Task 2" });
+
+    store.updateTaskStatus(t1.id, "running");
+
+    const running = store.listTasks({ status: "running" });
+    const pending = store.listTasks({ status: "pending" });
+
+    expect(running).toHaveLength(1);
+    expect(running[0].id).toBe(t1.id);
+    expect(pending).toHaveLength(1);
+  });
+
+  it("returns active tasks (pending + running + paused)", () => {
+    const t1 = store.createTask({ goal: "Task 1" });
+    const t2 = store.createTask({ goal: "Task 2" });
+    const t3 = store.createTask({ goal: "Task 3" });
+
+    store.updateTaskStatus(t1.id, "running");
+    store.updateTaskStatus(t2.id, "paused");
+    store.updateTaskStatus(t3.id, "completed");
+
+    const active = store.getActiveTasks();
+    expect(active).toHaveLength(2);
+    const ids = active.map((t) => t.id);
+    expect(ids).toContain(t1.id);
+    expect(ids).toContain(t2.id);
+  });
+
+  it("updates task status to running and sets started_at", () => {
+    const task = store.createTask({ goal: "Test" });
+    expect(task.startedAt).toBeUndefined();
+
+    const updated = store.updateTaskStatus(task.id, "running");
+    expect(updated!.status).toBe("running");
+    expect(updated!.startedAt).toBeDefined();
+  });
+
+  it("updates task status to completed and sets completed_at", () => {
+    const task = store.createTask({ goal: "Test" });
+    store.updateTaskStatus(task.id, "running");
+    const completed = store.updateTaskStatus(task.id, "completed", { result: "done!" });
+
+    expect(completed!.status).toBe("completed");
+    expect(completed!.completedAt).toBeDefined();
+    expect(completed!.result).toBe("done!");
+  });
+
+  it("deletes a task", () => {
+    const task = store.createTask({ goal: "Delete me" });
+    expect(store.deleteTask(task.id)).toBe(true);
+    expect(store.getTask(task.id)).toBeUndefined();
+  });
+
+  it("increments step counter", () => {
+    const task = store.createTask({ goal: "Step test" });
+    expect(task.currentStep).toBe(0);
+
+    store.incrementStep(task.id);
+    store.incrementStep(task.id);
+
+    const updated = store.getTask(task.id);
+    expect(updated!.currentStep).toBe(2);
+  });
+
+  it("updates context", () => {
+    const task = store.createTask({ goal: "Context test", context: { a: 1 } });
+    store.updateContext(task.id, { a: 2, b: "new" });
+
+    const updated = store.getTask(task.id);
+    expect(updated!.context).toEqual({ a: 2, b: "new" });
+  });
+
+  // ─── Checkpoints ──────────────────────────────────────────────────────────
+
+  it("saves and retrieves a checkpoint", () => {
+    const task = store.createTask({ goal: "Checkpoint test" });
+    const cp = store.saveCheckpoint({
+      taskId: task.id,
+      step: 3,
+      state: { key: "value" },
+      toolCalls: [{ tool: "web_fetch" }],
+      nextActionHint: "Try fetching URL",
+    });
+
+    expect(cp.id).toBeDefined();
+    expect(cp.taskId).toBe(task.id);
+    expect(cp.step).toBe(3);
+    expect(cp.state).toEqual({ key: "value" });
+    expect(cp.toolCalls).toHaveLength(1);
+    expect(cp.nextActionHint).toBe("Try fetching URL");
+  });
+
+  it("retrieves last checkpoint for a task", () => {
+    const task = store.createTask({ goal: "Multi-checkpoint" });
+    store.saveCheckpoint({ taskId: task.id, step: 1, state: {}, toolCalls: [] });
+    store.saveCheckpoint({ taskId: task.id, step: 2, state: {}, toolCalls: [] });
+    const last = store.saveCheckpoint({ taskId: task.id, step: 3, state: { last: true }, toolCalls: [] });
+
+    const fetched = store.getLastCheckpoint(task.id);
+    expect(fetched!.id).toBe(last.id);
+    expect(fetched!.step).toBe(3);
+  });
+
+  it("updates last_checkpoint_id on task after save", () => {
+    const task = store.createTask({ goal: "Checkpoint link test" });
+    const cp = store.saveCheckpoint({ taskId: task.id, step: 1, state: {}, toolCalls: [] });
+
+    const updated = store.getTask(task.id);
+    expect(updated!.lastCheckpointId).toBe(cp.id);
+  });
+
+  it("cleans old checkpoints for completed tasks", () => {
+    const task = store.createTask({ goal: "Old task" });
+    store.saveCheckpoint({ taskId: task.id, step: 1, state: {}, toolCalls: [] });
+    store.updateTaskStatus(task.id, "completed");
+
+    // Force old timestamp by updating directly
+    db.prepare("UPDATE task_checkpoints SET created_at = ? WHERE task_id = ?").run(
+      Math.floor(Date.now() / 1000) - 9 * 86400, // 9 days ago
+      task.id
+    );
+
+    const deleted = store.cleanOldCheckpoints(7);
+    expect(deleted).toBeGreaterThan(0);
+  });
+
+  // ─── Execution Logs ───────────────────────────────────────────────────────
+
+  it("appends and retrieves execution logs", () => {
+    const task = store.createTask({ goal: "Log test" });
+
+    store.appendLog({
+      taskId: task.id,
+      step: 1,
+      eventType: "plan",
+      message: "Planning step 1",
+      data: { toolName: "web_fetch" },
+    });
+
+    store.appendLog({
+      taskId: task.id,
+      step: 1,
+      eventType: "tool_call",
+      message: "Calling web_fetch",
+    });
+
+    const logs = store.getExecutionLogs(task.id);
+    expect(logs).toHaveLength(2);
+    expect(logs[0].eventType).toBe("plan");
+    expect(logs[0].data).toEqual({ toolName: "web_fetch" });
+    expect(logs[1].eventType).toBe("tool_call");
+  });
+
+  it("returns empty logs for non-existent task", () => {
+    const logs = store.getExecutionLogs("nonexistent");
+    expect(logs).toHaveLength(0);
+  });
+
+  // ─── Singleton ────────────────────────────────────────────────────────────
+
+  it("getAutonomousTaskStore returns same instance for same db", () => {
+    const s1 = getAutonomousTaskStore(db);
+    const s2 = getAutonomousTaskStore(db);
+    expect(s1).toBe(s2);
+  });
+});

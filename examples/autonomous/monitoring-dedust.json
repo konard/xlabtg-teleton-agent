@@ -1,0 +1,33 @@
+{
+  "goal": "Monitor new liquidity pools on DeDust every 5 minutes and record them in the database. Send a summary report to @tonbankcard channel when done.",
+  "successCriteria": [
+    "At least 1 new pool recorded in database",
+    "Summary report sent to @tonbankcard channel"
+  ],
+  "failureConditions": [
+    "3 consecutive DeDust API errors",
+    "Unable to connect to Telegram channel"
+  ],
+  "constraints": {
+    "maxIterations": 100,
+    "maxDurationHours": 8,
+    "allowedTools": [
+      "dedust_get_pools",
+      "journal_add_entry",
+      "telegram_send_message",
+      "web_fetch"
+    ],
+    "budgetTON": 0
+  },
+  "strategy": "balanced",
+  "retryPolicy": {
+    "maxRetries": 3,
+    "backoff": "exponential"
+  },
+  "priority": "medium",
+  "context": {
+    "targetChannel": "@tonbankcard",
+    "checkIntervalMinutes": 5,
+    "description": "DeDust pool monitoring task — started via CLI"
+  }
+}

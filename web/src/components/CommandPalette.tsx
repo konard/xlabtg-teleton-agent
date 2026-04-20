@@ -23,6 +23,7 @@ const NAV_ITEMS: SearchItem[] = [
   { id: 'nav-sessions', label: 'Sessions', category: 'Pages', path: '/sessions', keywords: 'conversations chats history' },
   { id: 'nav-analytics', label: 'Analytics', category: 'Pages', path: '/analytics', keywords: 'metrics costs usage' },
   { id: 'nav-security', label: 'Security', category: 'Pages', path: '/security', keywords: 'audit access control' },
+  { id: 'nav-autonomous', label: 'Autonomous', category: 'Pages', path: '/autonomous', keywords: 'autonomous mode ate self-managed goals loop agent' },
   { id: 'nav-config', label: 'Config', category: 'Pages', path: '/config', keywords: 'settings configuration api keys' },
 ];
 

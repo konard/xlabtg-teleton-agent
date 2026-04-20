@@ -357,6 +357,66 @@ export function ensureSchema(db: Database.Database): void {
     );
 
     -- =====================================================
+    -- AUTONOMOUS TASK ENGINE (ATE)
+    -- =====================================================
+
+    CREATE TABLE IF NOT EXISTS autonomous_tasks (
+      id TEXT PRIMARY KEY,
+      goal TEXT NOT NULL,
+      success_criteria TEXT NOT NULL DEFAULT '[]',
+      failure_conditions TEXT NOT NULL DEFAULT '[]',
+      constraints TEXT NOT NULL DEFAULT '{}',
+      strategy TEXT NOT NULL DEFAULT 'balanced'
+        CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+      retry_policy TEXT NOT NULL DEFAULT '{}',
+      context TEXT NOT NULL DEFAULT '{}',
+      priority TEXT NOT NULL DEFAULT 'medium'
+        CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+      current_step INTEGER NOT NULL DEFAULT 0,
+      last_checkpoint_id TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER,
+      started_at INTEGER,
+      completed_at INTEGER,
+      result TEXT,
+      error TEXT
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_auto_tasks_status ON autonomous_tasks(status);
+    CREATE INDEX IF NOT EXISTS idx_auto_tasks_priority ON autonomous_tasks(priority, created_at ASC);
+    CREATE INDEX IF NOT EXISTS idx_auto_tasks_created ON autonomous_tasks(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS task_checkpoints (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      step INTEGER NOT NULL,
+      state TEXT NOT NULL DEFAULT '{}',
+      tool_calls TEXT NOT NULL DEFAULT '[]',
+      next_action_hint TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON task_checkpoints(task_id, step DESC);
+
+    CREATE TABLE IF NOT EXISTS execution_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      task_id TEXT NOT NULL,
+      step INTEGER NOT NULL,
+      event_type TEXT NOT NULL
+        CHECK(event_type IN ('plan', 'tool_call', 'tool_result', 'reflect', 'checkpoint', 'escalate', 'error', 'info')),
+      message TEXT NOT NULL,
+      data TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_exec_logs_task ON execution_logs(task_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_exec_logs_type ON execution_logs(event_type);
+
+    -- =====================================================
     -- JOURNAL (Trading & Business Operations)
     -- =====================================================
     ${JOURNAL_SCHEMA}
@@ -412,7 +472,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.19.0";
+export const CURRENT_SCHEMA_VERSION = "1.20.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -815,6 +875,73 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.19.0 complete: recurrence columns added to tasks table");
     } catch (error) {
       log.error({ err: error }, "Migration 1.19.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.20.0")) {
+    log.info("Running migration 1.20.0: Add Autonomous Task Engine tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS autonomous_tasks (
+          id TEXT PRIMARY KEY,
+          goal TEXT NOT NULL,
+          success_criteria TEXT NOT NULL DEFAULT '[]',
+          failure_conditions TEXT NOT NULL DEFAULT '[]',
+          constraints TEXT NOT NULL DEFAULT '{}',
+          strategy TEXT NOT NULL DEFAULT 'balanced'
+            CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+          retry_policy TEXT NOT NULL DEFAULT '{}',
+          context TEXT NOT NULL DEFAULT '{}',
+          priority TEXT NOT NULL DEFAULT 'medium'
+            CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+          current_step INTEGER NOT NULL DEFAULT 0,
+          last_checkpoint_id TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER,
+          started_at INTEGER,
+          completed_at INTEGER,
+          result TEXT,
+          error TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_auto_tasks_status ON autonomous_tasks(status);
+        CREATE INDEX IF NOT EXISTS idx_auto_tasks_priority ON autonomous_tasks(priority, created_at ASC);
+        CREATE INDEX IF NOT EXISTS idx_auto_tasks_created ON autonomous_tasks(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS task_checkpoints (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          step INTEGER NOT NULL,
+          state TEXT NOT NULL DEFAULT '{}',
+          tool_calls TEXT NOT NULL DEFAULT '[]',
+          next_action_hint TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON task_checkpoints(task_id, step DESC);
+
+        CREATE TABLE IF NOT EXISTS execution_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          task_id TEXT NOT NULL,
+          step INTEGER NOT NULL,
+          event_type TEXT NOT NULL
+            CHECK(event_type IN ('plan', 'tool_call', 'tool_result', 'reflect', 'checkpoint', 'escalate', 'error', 'info')),
+          message TEXT NOT NULL,
+          data TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_exec_logs_task ON execution_logs(task_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_exec_logs_type ON execution_logs(event_type);
+      `);
+      log.info("Migration 1.20.0 complete: Autonomous Task Engine tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.20.0 failed");
       throw error;
     }
   }
