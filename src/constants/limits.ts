@@ -100,6 +100,8 @@ export const TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS = 5_000;
 // ─── Message Handler ────────────────────────────────────────────
 /** Maximum number of recent message IDs kept for deduplication */
 export const MESSAGE_DEDUP_MAX_SIZE = 500;
+/** Maximum age (ms) before a dedup entry is considered stale and evicted */
+export const MESSAGE_DEDUP_TTL_MS = 60 * 60 * 1000;
 /** Maximum number of group timestamp entries before stale cleanup runs */
 export const RATE_LIMITER_GROUP_CLEANUP_THRESHOLD = 100;
 /** Preview character count used when logging truncated message text */
