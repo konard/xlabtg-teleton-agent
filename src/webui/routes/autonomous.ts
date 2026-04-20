@@ -9,6 +9,7 @@ import type {
   TaskConstraints,
 } from "../../memory/agent/autonomous-tasks.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { parseGoalFromNaturalLanguage } from "../../autonomous/goal-parser.js";
 
 const VALID_STATUSES: AutonomousTaskStatus[] = [
   "pending",
@@ -94,6 +95,27 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
     }
   });
 
+  // Parse a natural-language description into a structured autonomous task spec.
+  // Must be registered before "/:id" routes so the static path wins.
+  app.post("/parse-goal", async (c) => {
+    try {
+      const body = await c.req.json<{ naturalLanguage?: string }>();
+      const naturalLanguage = typeof body.naturalLanguage === "string" ? body.naturalLanguage : "";
+
+      if (!naturalLanguage.trim()) {
+        return c.json({ success: false, error: "naturalLanguage is required" } as APIResponse, 400);
+      }
+
+      const agentConfig = deps.agent.getConfig().agent;
+      const parsed = await parseGoalFromNaturalLanguage(naturalLanguage, agentConfig);
+
+      return c.json({ success: true, data: parsed } as APIResponse, 200);
+    } catch (error) {
+      const response: APIResponse = { success: false, error: getErrorMessage(error) };
+      return c.json(response, 500);
+    }
+  });
+
   // Create a new autonomous task
   app.post("/", async (c) => {
     try {
@@ -140,12 +162,18 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
       }
       if (task.status !== "running" && task.status !== "pending") {
         return c.json(
-          { success: false, error: `Cannot pause task with status "${task.status}"` } as APIResponse,
+          {
+            success: false,
+            error: `Cannot pause task with status "${task.status}"`,
+          } as APIResponse,
           409
         );
       }
       const updated = store().updateTaskStatus(task.id, "paused");
-      const response: APIResponse = { success: true, data: updated ? serializeTask(updated) : null };
+      const response: APIResponse = {
+        success: true,
+        data: updated ? serializeTask(updated) : null,
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = { success: false, error: getErrorMessage(error) };
@@ -167,7 +195,10 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
         );
       }
       const updated = store().updateTaskStatus(task.id, "pending");
-      const response: APIResponse = { success: true, data: updated ? serializeTask(updated) : null };
+      const response: APIResponse = {
+        success: true,
+        data: updated ? serializeTask(updated) : null,
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = { success: false, error: getErrorMessage(error) };
@@ -184,12 +215,18 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
       }
       if (TERMINAL_STATUSES.includes(task.status)) {
         return c.json(
-          { success: false, error: `Task already in terminal state "${task.status}"` } as APIResponse,
+          {
+            success: false,
+            error: `Task already in terminal state "${task.status}"`,
+          } as APIResponse,
           409
         );
       }
       const updated = store().updateTaskStatus(task.id, "cancelled");
-      const response: APIResponse = { success: true, data: updated ? serializeTask(updated) : null };
+      const response: APIResponse = {
+        success: true,
+        data: updated ? serializeTask(updated) : null,
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = { success: false, error: getErrorMessage(error) };
@@ -221,7 +258,10 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
       });
 
       const updated = store().getTask(task.id);
-      const response: APIResponse = { success: true, data: updated ? serializeTask(updated) : null };
+      const response: APIResponse = {
+        success: true,
+        data: updated ? serializeTask(updated) : null,
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = { success: false, error: getErrorMessage(error) };

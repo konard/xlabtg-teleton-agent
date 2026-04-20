@@ -680,6 +680,16 @@ export interface AutonomousCreateInput {
   priority?: AutonomousPriority;
 }
 
+export interface AutonomousParsedGoal {
+  goal: string;
+  successCriteria: string[];
+  failureConditions: string[];
+  constraints: AutonomousConstraints;
+  suggestedStrategy: AutonomousStrategy;
+  suggestedPriority: AutonomousPriority;
+  confidence: number;
+}
+
 // ── API response wrapper ────────────────────────────────────────────
 
 interface APIResponse<T> {
@@ -1736,7 +1746,10 @@ export const api = {
     );
   },
 
-  async getSelfImprovementTasks(status: "pending" | "created" | "dismissed" | "all" = "all", limit = 50) {
+  async getSelfImprovementTasks(
+    status: "pending" | "created" | "dismissed" | "all" = "all",
+    limit = 50
+  ) {
     return fetchAPI<APIResponse<SelfImprovementTask[]>>(
       `/self-improvement/tasks?status=${status}&limit=${limit}`
     );
@@ -1842,6 +1855,13 @@ export const api = {
     });
   },
 
+  async autonomousParseGoal(naturalLanguage: string) {
+    return fetchAPI<APIResponse<AutonomousParsedGoal>>("/autonomous/parse-goal", {
+      method: "POST",
+      body: JSON.stringify({ naturalLanguage }),
+    });
+  },
+
   async autonomousPause(id: string) {
     return fetchAPI<APIResponse<AutonomousTaskData>>(`/autonomous/${id}/pause`, { method: "POST" });
   },
@@ -1864,9 +1884,7 @@ export const api = {
   },
 
   async autonomousGetLogs(id: string, limit = 200) {
-    return fetchAPI<APIResponse<AutonomousExecutionLog[]>>(
-      `/autonomous/${id}/logs?limit=${limit}`
-    );
+    return fetchAPI<APIResponse<AutonomousExecutionLog[]>>(`/autonomous/${id}/logs?limit=${limit}`);
   },
 
   async autonomousDelete(id: string) {
