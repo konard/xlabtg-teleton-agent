@@ -4,6 +4,7 @@ import { doctorCommand } from "./commands/doctor.js";
 import { mcpAddCommand, mcpRemoveCommand, mcpListCommand } from "./commands/mcp.js";
 import { configCommand } from "./commands/config.js";
 import { apiRotateKeyCommand, apiFingerprintCommand } from "./commands/api.js";
+import { autonomousCommand } from "./commands/autonomous.js";
 import { main as startApp } from "../index.js";
 import { configExists, getDefaultConfigPath } from "../config/loader.js";
 import { readFileSync, existsSync } from "fs";
@@ -229,6 +230,131 @@ program
   .action(async () => {
     try {
       await apiFingerprintCommand();
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+// Autonomous mode commands
+const autonomous = program
+  .command("autonomous")
+  .description("Manage autonomous tasks (Autonomous Task Engine)");
+
+autonomous
+  .command("enable")
+  .description("Create and enqueue a new autonomous task")
+  .requiredOption("--task <goal>", "Goal description in natural language")
+  .option("--priority <level>", "Priority: low|medium|high|critical", "medium")
+  .option("--strategy <s>", "Strategy: conservative|balanced|aggressive", "balanced")
+  .option("--max-iterations <n>", "Maximum loop iterations")
+  .option("--max-hours <n>", "Maximum duration in hours")
+  .option(
+    "--success-criteria <c>",
+    "Success criteria (repeatable)",
+    (v: string, prev: string[]) => [...prev, v],
+    [] as string[]
+  )
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("enable", {
+        task: options.task,
+        priority: options.priority,
+        strategy: options.strategy,
+        maxIterations: options.maxIterations,
+        maxHours: options.maxHours,
+        successCriteria: options.successCriteria,
+        config: options.config,
+      });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+autonomous
+  .command("disable")
+  .description("Stop and cancel autonomous task(s)")
+  .option("--id <taskId>", "Task ID to cancel")
+  .option("--force", "Cancel all active tasks")
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("disable", {
+        id: options.id,
+        force: options.force,
+        config: options.config,
+      });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+autonomous
+  .command("pause")
+  .description("Pause a running autonomous task")
+  .requiredOption("--id <taskId>", "Task ID")
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("pause", { id: options.id, config: options.config });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+autonomous
+  .command("resume")
+  .description("Resume a paused autonomous task")
+  .requiredOption("--id <taskId>", "Task ID")
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("resume", { id: options.id, config: options.config });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+autonomous
+  .command("status")
+  .description("Show status of autonomous task(s)")
+  .option("--id <taskId>", "Task ID (omit to show all active)")
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("status", { id: options.id, config: options.config });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+autonomous
+  .command("list")
+  .description("List all autonomous tasks")
+  .option("--limit <n>", "Max results to show", "20")
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("list", { limit: options.limit, config: options.config });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+autonomous
+  .command("clean")
+  .description("Clean old task checkpoints")
+  .option("-c, --config <path>", "Config file path")
+  .action(async (options) => {
+    try {
+      await autonomousCommand("clean", { config: options.config });
     } catch (error) {
       console.error("Error:", getErrorMessage(error));
       process.exit(1);

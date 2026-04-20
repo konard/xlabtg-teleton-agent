@@ -1,0 +1,35 @@
+{
+  "goal": "Analyze the TON project at https://example-ton-project.com: fetch tokenomics data, check on-chain metrics via TonAPI, and write a structured Markdown report to the workspace.",
+  "successCriteria": [
+    "Markdown report written to workspace/reports/project-analysis.md",
+    "On-chain metrics fetched successfully",
+    "Report contains: token distribution, circulating supply, top holders"
+  ],
+  "failureConditions": [
+    "Project website unreachable after 3 retries",
+    "TonAPI rate limit exceeded"
+  ],
+  "constraints": {
+    "maxIterations": 50,
+    "maxDurationHours": 2,
+    "allowedTools": [
+      "web_fetch",
+      "exec_run",
+      "workspace_write_file",
+      "workspace_read_file",
+      "ton_get_account_info"
+    ],
+    "budgetTON": 0
+  },
+  "strategy": "conservative",
+  "retryPolicy": {
+    "maxRetries": 5,
+    "backoff": "exponential"
+  },
+  "priority": "high",
+  "context": {
+    "outputPath": "workspace/reports/project-analysis.md",
+    "reportFormat": "markdown",
+    "includeCharts": false
+  }
+}
