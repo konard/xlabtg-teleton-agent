@@ -2929,3 +2929,20 @@ button.btn-lg {
     grid-template-columns: repeat(2, 1fr) !important;
   }
 }
+
+/* ---- Autonomous Mode: indeterminate progress bar ---- */
+
+@keyframes autonomous-indeterminate {
+  0% {
+    width: 20%;
+    margin-left: -20%;
+  }
+  100% {
+    width: 20%;
+    margin-left: 100%;
+  }
+}
+
+.autonomous-indeterminate-bar {
+  animation: autonomous-indeterminate 1.4s ease-in-out infinite;
+}
