@@ -8,8 +8,10 @@ import {
   type AutonomousPriority,
   type AutonomousEventType,
   type AutonomousCreateInput,
+  type AutonomousParsedGoal,
 } from "../lib/api";
 import { useConfirm } from "../components/ConfirmDialog";
+import { NaturalLanguageParser } from "../components/NaturalLanguageParser";
 
 const STATUS_COLORS: Record<AutonomousTaskStatus, string> = {
   pending: "#f0ad4e",
@@ -112,7 +114,9 @@ function ProgressBar({ task }: { task: AutonomousTaskData }) {
       </div>
       <span
         style={{ fontSize: "11px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}
-        title={max > 0 ? `${task.currentStep} / ${max} iterations` : `${task.currentStep} iterations`}
+        title={
+          max > 0 ? `${task.currentStep} / ${max} iterations` : `${task.currentStep} iterations`
+        }
       >
         {max > 0 ? `${task.currentStep}/${max}` : `#${task.currentStep}`}
       </span>
@@ -202,19 +206,47 @@ function buildPayload(form: CreateFormState): AutonomousCreateInput | { error: s
   return payload;
 }
 
-function CreateTaskForm({
-  onCreated,
-  onCancel,
-}: {
-  onCreated: () => void;
-  onCancel: () => void;
-}) {
+function applyParsedGoal(form: CreateFormState, parsed: AutonomousParsedGoal): CreateFormState {
+  const next: CreateFormState = { ...form };
+  if (parsed.goal) next.goal = parsed.goal;
+  if (parsed.successCriteria.length > 0) {
+    next.successCriteria = parsed.successCriteria.join("\n");
+  }
+  if (parsed.failureConditions.length > 0) {
+    next.failureConditions = parsed.failureConditions.join("\n");
+  }
+  next.strategy = parsed.suggestedStrategy;
+  next.priority = parsed.suggestedPriority;
+  if (parsed.constraints.maxIterations !== undefined) {
+    next.maxIterations = String(parsed.constraints.maxIterations);
+  }
+  if (parsed.constraints.maxDurationHours !== undefined) {
+    next.maxDurationHours = String(parsed.constraints.maxDurationHours);
+  }
+  if (parsed.constraints.budgetTON !== undefined) {
+    next.budgetTON = String(parsed.constraints.budgetTON);
+  }
+  if (parsed.constraints.allowedTools && parsed.constraints.allowedTools.length > 0) {
+    next.allowedTools = parsed.constraints.allowedTools.join("\n");
+  }
+  if (parsed.constraints.restrictedTools && parsed.constraints.restrictedTools.length > 0) {
+    next.restrictedTools = parsed.constraints.restrictedTools.join("\n");
+  }
+  return next;
+}
+
+function CreateTaskForm({ onCreated, onCancel }: { onCreated: () => void; onCancel: () => void }) {
   const [form, setForm] = useState<CreateFormState>(EMPTY_FORM);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const update = <K extends keyof CreateFormState>(key: K, value: CreateFormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  const handleParsed = (parsed: AutonomousParsedGoal) => {
+    setForm((prev) => applyParsedGoal(prev, parsed));
+    setError(null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -245,6 +277,25 @@ function CreateTaskForm({
       style={{ padding: "16px", marginBottom: "14px" }}
     >
       <h3 style={{ marginTop: 0, marginBottom: "12px" }}>New autonomous task</h3>
+
+      <NaturalLanguageParser onParsed={handleParsed} disabled={submitting} />
+
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: "10px",
+          margin: "4px 0 14px 0",
+          fontSize: "11px",
+          color: "var(--text-secondary)",
+          textTransform: "uppercase",
+          letterSpacing: "0.05em",
+        }}
+      >
+        <div style={{ flex: 1, height: "1px", backgroundColor: "var(--separator)" }} />
+        <span>or fill manually</span>
+        <div style={{ flex: 1, height: "1px", backgroundColor: "var(--separator)" }} />
+      </div>
 
       {error && (
         <div className="alert error" style={{ marginBottom: "12px" }}>
@@ -696,7 +747,9 @@ function TaskDetailPanel({
         </div>
       </div>
 
-      {(detail.status === "running" || detail.status === "pending" || detail.status === "paused") && (
+      {(detail.status === "running" ||
+        detail.status === "pending" ||
+        detail.status === "paused") && (
         <div style={{ marginBottom: "10px" }}>
           <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px" }}>
             Inject context (JSON object)
@@ -810,7 +863,12 @@ export function Autonomous() {
     <div>
       <div
         className="header"
-        style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: "12px" }}
+        style={{
+          display: "flex",
+          alignItems: "flex-start",
+          justifyContent: "space-between",
+          gap: "12px",
+        }}
       >
         <div>
           <h1>Autonomous Mode</h1>
@@ -953,11 +1011,7 @@ export function Autonomous() {
       </div>
 
       {selectedId && (
-        <TaskDetailPanel
-          taskId={selectedId}
-          onClose={() => setSelectedId(null)}
-          onChange={load}
-        />
+        <TaskDetailPanel taskId={selectedId} onClose={() => setSelectedId(null)} onChange={load} />
       )}
 
       {loading && tasks.length === 0 ? (
@@ -1000,7 +1054,9 @@ export function Autonomous() {
                       borderTop: "1px solid var(--separator)",
                       cursor: "pointer",
                       backgroundColor:
-                        selectedId === task.id ? "var(--bg-secondary, rgba(0,0,0,0.03))" : undefined,
+                        selectedId === task.id
+                          ? "var(--bg-secondary, rgba(0,0,0,0.03))"
+                          : undefined,
                     }}
                     onClick={() => setSelectedId(task.id)}
                   >
@@ -1023,12 +1079,20 @@ export function Autonomous() {
                       <ProgressBar task={task} />
                     </td>
                     <td
-                      style={{ padding: "10px 12px", color: "var(--text-secondary)", fontSize: "12px" }}
+                      style={{
+                        padding: "10px 12px",
+                        color: "var(--text-secondary)",
+                        fontSize: "12px",
+                      }}
                     >
                       {task.strategy}
                     </td>
                     <td
-                      style={{ padding: "10px 12px", color: "var(--text-secondary)", fontSize: "12px" }}
+                      style={{
+                        padding: "10px 12px",
+                        color: "var(--text-secondary)",
+                        fontSize: "12px",
+                      }}
                     >
                       {formatDate(task.createdAt)}
                     </td>
