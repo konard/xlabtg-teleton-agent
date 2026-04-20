@@ -6,6 +6,7 @@ import {
   DEFAULT_GET_MESSAGES_LIMIT,
   TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS,
 } from "../constants/limits.js";
+import { WeightedLRUCache, type CacheMetrics } from "../utils/weighted-lru-cache.js";
 import { sanitizeBridgeField } from "./bridge-sanitize.js";
 
 const log = createLogger("Telegram");
@@ -14,19 +15,34 @@ const log = createLogger("Telegram");
 const SENDER_CACHE_TTL_MS = 60 * 60 * 1000;
 /** TTL for peer cache entries (1 hour). Prevents stale entries accumulating in long sessions. */
 const PEER_CACHE_TTL_MS = 60 * 60 * 1000;
-/** Max number of entries in peerCache before LRU eviction kicks in. */
-const PEER_CACHE_MAX_SIZE = 1000;
+/**
+ * Adaptive peer cache bounds. The cache resizes itself on each set() based on host memory:
+ *  - low tier (>80% used): 500 — conservative, preserves memory under pressure
+ *  - normal tier (60-80% used): 1000 — matches the previous fixed ceiling
+ *  - high tier (<60% used): 2000 — aggressive, reduces getPeer() calls for active users
+ */
+const PEER_CACHE_SIZE_LOW = 500;
+const PEER_CACHE_SIZE_NORMAL = 1000;
+const PEER_CACHE_SIZE_HIGH = 2000;
+/**
+ * Biases LRU eviction toward frequently-accessed entries. At 5 minutes, an entry accessed
+ * 8 times survives one that was accessed once but touched ~15 minutes more recently.
+ */
+const PEER_CACHE_FREQUENCY_WEIGHT_MS = 5 * 60 * 1000;
+/** Sender cache caps entries to bound sender-info memory in long-running sessions with many distinct senders. */
+const SENDER_CACHE_SIZE_LOW = 1000;
+const SENDER_CACHE_SIZE_NORMAL = 2000;
+const SENDER_CACHE_SIZE_HIGH = 4000;
 
 interface SenderCacheEntry {
   username?: string;
   firstName?: string;
   isBot: boolean;
-  expiresAt: number;
 }
 
-interface PeerCacheEntry {
-  peer: Api.TypePeer;
-  expiresAt: number;
+export interface TelegramCacheMetrics {
+  peer: CacheMetrics;
+  sender: CacheMetrics;
 }
 
 export interface TelegramMessage {
@@ -65,10 +81,29 @@ export class TelegramBridge {
   private client: TelegramUserClient;
   private ownUserId?: bigint;
   private ownUsername?: string;
-  /** LRU peer cache: chatId → {peer, expiresAt}. Bounded by PEER_CACHE_MAX_SIZE + TTL. */
-  private peerCache: Map<string, PeerCacheEntry> = new Map();
-  /** Sender info cache: senderId → entry. Avoids repeated getSender() calls per sender in group chats. */
-  private senderCache: Map<number, SenderCacheEntry> = new Map();
+  /**
+   * Weighted LRU peer cache: chatId → peer. Eviction prefers infrequently-accessed entries,
+   * so long-lived hot chats survive bursts of one-off lookups.
+   */
+  private peerCache: WeightedLRUCache<string, Api.TypePeer> = new WeightedLRUCache({
+    adaptiveSize: {
+      low: PEER_CACHE_SIZE_LOW,
+      normal: PEER_CACHE_SIZE_NORMAL,
+      high: PEER_CACHE_SIZE_HIGH,
+    },
+    ttlMs: PEER_CACHE_TTL_MS,
+    frequencyWeightMs: PEER_CACHE_FREQUENCY_WEIGHT_MS,
+  });
+  /** Weighted LRU sender cache: senderId → entry. Avoids repeated getSender() calls per sender in group chats. */
+  private senderCache: WeightedLRUCache<number, SenderCacheEntry> = new WeightedLRUCache({
+    adaptiveSize: {
+      low: SENDER_CACHE_SIZE_LOW,
+      normal: SENDER_CACHE_SIZE_NORMAL,
+      high: SENDER_CACHE_SIZE_HIGH,
+    },
+    ttlMs: SENDER_CACHE_TTL_MS,
+    frequencyWeightMs: PEER_CACHE_FREQUENCY_WEIGHT_MS,
+  });
 
   constructor(config: TelegramClientConfig) {
     this.client = new TelegramUserClient(config);
@@ -332,7 +367,7 @@ export class TelegramBridge {
 
     // Check sender cache first to avoid repeated getSender() calls (N+1 in group chats)
     const cachedSender = senderId !== 0 ? this.senderCache.get(senderId) : undefined;
-    if (cachedSender && Date.now() < cachedSender.expiresAt) {
+    if (cachedSender) {
       senderUsername = cachedSender.username;
       senderFirstName = cachedSender.firstName;
       isBot = cachedSender.isBot;
@@ -358,7 +393,6 @@ export class TelegramBridge {
             username: senderUsername,
             firstName: senderFirstName,
             isBot,
-            expiresAt: Date.now() + SENDER_CACHE_TTL_MS,
           });
         }
       } catch (err) {
@@ -460,7 +494,7 @@ export class TelegramBridge {
 
     // Check sender cache first to avoid repeated getSender() calls
     const cachedSender = senderId !== 0 ? this.senderCache.get(senderId) : undefined;
-    if (cachedSender && Date.now() < cachedSender.expiresAt) {
+    if (cachedSender) {
       senderUsername = cachedSender.username;
       senderFirstName = cachedSender.firstName;
       isBot = cachedSender.isBot;
@@ -486,7 +520,6 @@ export class TelegramBridge {
             username: senderUsername,
             firstName: senderFirstName,
             isBot,
-            expiresAt: Date.now() + SENDER_CACHE_TTL_MS,
           });
         }
       } catch (err) {
@@ -588,28 +621,19 @@ export class TelegramBridge {
   }
 
   getPeer(chatId: string): Api.TypePeer | undefined {
-    const entry = this.peerCache.get(chatId);
-    if (!entry) return undefined;
-    if (Date.now() > entry.expiresAt) {
-      this.peerCache.delete(chatId);
-      return undefined;
-    }
-    // LRU: re-insert to move to end (Map iteration is insertion-ordered)
-    this.peerCache.delete(chatId);
-    this.peerCache.set(chatId, entry);
-    return entry.peer;
+    return this.peerCache.get(chatId);
   }
 
   private setPeer(chatId: string, peer: Api.TypePeer): void {
-    // Delete first (if present) so the new entry goes to the end of insertion order
-    this.peerCache.delete(chatId);
-    this.peerCache.set(chatId, { peer, expiresAt: Date.now() + PEER_CACHE_TTL_MS });
+    this.peerCache.set(chatId, peer);
+  }
 
-    // Evict oldest entries when over capacity
-    while (this.peerCache.size > PEER_CACHE_MAX_SIZE) {
-      const oldest = this.peerCache.keys().next().value;
-      if (oldest !== undefined) this.peerCache.delete(oldest);
-    }
+  /** Snapshot of peer + sender cache metrics (hits/misses/evictions/size). */
+  getCacheMetrics(): TelegramCacheMetrics {
+    return {
+      peer: this.peerCache.getMetrics(),
+      sender: this.senderCache.getMetrics(),
+    };
   }
 
   async fetchReplyContext(
