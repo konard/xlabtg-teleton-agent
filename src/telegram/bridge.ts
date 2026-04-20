@@ -6,6 +6,7 @@ import {
   DEFAULT_GET_MESSAGES_LIMIT,
   TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS,
 } from "../constants/limits.js";
+import { sanitizeBridgeField } from "./bridge-sanitize.js";
 
 const log = createLogger("Telegram");
 
@@ -389,16 +390,19 @@ export class TelegramBridge {
     if (!text && msg.media) {
       if (msg.media.className === "MessageMediaDice") {
         const dice = msg.media as Api.MessageMediaDice;
-        text = `[Dice: ${dice.emoticon} = ${dice.value}]`;
+        text = `[Dice: ${sanitizeBridgeField(dice.emoticon, 16)} = ${dice.value}]`;
       } else if (msg.media.className === "MessageMediaGame") {
         const game = msg.media as Api.MessageMediaGame;
-        text = `[Game: ${game.game.title}]`;
+        text = `[Game: ${sanitizeBridgeField(game.game.title)}]`;
       } else if (msg.media.className === "MessageMediaPoll") {
         const poll = msg.media as Api.MessageMediaPoll;
-        text = `[Poll: ${poll.poll.question.text}]`;
+        text = `[Poll: ${sanitizeBridgeField(poll.poll.question.text, 300)}]`;
       } else if (msg.media.className === "MessageMediaContact") {
         const contact = msg.media as Api.MessageMediaContact;
-        text = `[Contact: ${contact.firstName} ${contact.lastName || ""} - ${contact.phoneNumber}]`;
+        const first = sanitizeBridgeField(contact.firstName);
+        const last = sanitizeBridgeField(contact.lastName);
+        const phone = sanitizeBridgeField(contact.phoneNumber, 32);
+        text = `[Contact: ${first}${last ? ` ${last}` : ""} - ${phone}]`;
       } else if (
         msg.media.className === "MessageMediaGeo" ||
         msg.media.className === "MessageMediaGeoLive"
@@ -493,11 +497,19 @@ export class TelegramBridge {
 
     let text = "";
 
+    // Sender display values are interpolated into single-line framework strings,
+    // so they must be sanitized just like attacker-controlled gift fields below.
+    const safeSenderUsername = sanitizeBridgeField(senderUsername, 32);
+    const safeSenderFirstName = sanitizeBridgeField(senderFirstName);
+    const senderDisplay = safeSenderUsername
+      ? `@${safeSenderUsername}`
+      : safeSenderFirstName || `user:${senderId}`;
+
     if (action instanceof Api.MessageActionStarGiftPurchaseOffer) {
       const gift = action.gift;
       const isUnique = gift instanceof Api.StarGiftUnique;
-      const title = gift.title || "Unknown Gift";
-      const slug = isUnique ? gift.slug : undefined;
+      const title = sanitizeBridgeField(gift.title) || "Unknown Gift";
+      const slug = isUnique ? sanitizeBridgeField(gift.slug, 64) : undefined;
       const num = isUnique ? gift.num : undefined;
       const priceStars = action.price.amount?.toString() || "?";
       const status = action.accepted ? "accepted" : action.declined ? "declined" : "pending";
@@ -507,19 +519,19 @@ export class TelegramBridge {
 
       text = `[Gift Offer Received]\n`;
       text += `Offer: ${priceStars} Stars for your NFT "${title}"${num ? ` #${num}` : ""}${slug ? ` (slug: ${slug})` : ""}\n`;
-      text += `From: ${senderUsername ? `@${senderUsername}` : senderFirstName || `user:${senderId}`}\n`;
+      text += `From: ${senderDisplay}\n`;
       text += `Expires: ${expires}\n`;
       text += `Status: ${status}\n`;
       text += `Message ID: ${msg.id} — use telegram_resolve_gift_offer(offerMsgId=${msg.id}) to accept or telegram_resolve_gift_offer(offerMsgId=${msg.id}, decline=true) to decline.`;
 
       log.info(
-        `Gift offer received: ${priceStars} Stars for "${title}" from ${senderUsername || senderId}`
+        `Gift offer received: ${priceStars} Stars for "${title}" from ${safeSenderUsername || senderId}`
       );
     } else if (action instanceof Api.MessageActionStarGiftPurchaseOfferDeclined) {
       const gift = action.gift;
       const isUnique = gift instanceof Api.StarGiftUnique;
-      const title = gift.title || "Unknown Gift";
-      const slug = isUnique ? gift.slug : undefined;
+      const title = sanitizeBridgeField(gift.title) || "Unknown Gift";
+      const slug = isUnique ? sanitizeBridgeField(gift.slug, 64) : undefined;
       const num = isUnique ? gift.num : undefined;
       const priceStars = action.price.amount?.toString() || "?";
       const reason = action.expired ? "expired" : "declined";
@@ -530,14 +542,14 @@ export class TelegramBridge {
       log.info(`Gift offer ${reason}: ${priceStars} Stars for "${title}"`);
     } else if (action instanceof Api.MessageActionStarGift) {
       const gift = action.gift;
-      const title = gift.title || "Unknown Gift";
+      const title = sanitizeBridgeField(gift.title) || "Unknown Gift";
       const stars = gift instanceof Api.StarGift ? gift.stars?.toString() || "?" : "?";
-      const giftMessage = action.message?.text || "";
+      const giftMessage = sanitizeBridgeField(action.message?.text, 512);
       const fromAnonymous = action.nameHidden;
 
       text = `[Gift Received]\n`;
       text += `Gift: "${title}" (${stars} Stars)${action.upgraded ? " [Upgraded to Collectible]" : ""}\n`;
-      text += `From: ${fromAnonymous ? "Anonymous" : senderUsername ? `@${senderUsername}` : senderFirstName || `user:${senderId}`}\n`;
+      text += `From: ${fromAnonymous ? "Anonymous" : senderDisplay}\n`;
       if (giftMessage) text += `Message: "${giftMessage}"\n`;
       if (action.canUpgrade && action.upgradeStars) {
         text += `This gift can be upgraded to a collectible for ${action.upgradeStars.toString()} Stars.\n`;
@@ -547,7 +559,7 @@ export class TelegramBridge {
       }
 
       log.info(
-        `Gift received: "${title}" (${stars} Stars) from ${fromAnonymous ? "Anonymous" : senderUsername || senderId}`
+        `Gift received: "${title}" (${stars} Stars) from ${fromAnonymous ? "Anonymous" : safeSenderUsername || senderId}`
       );
     }
 
