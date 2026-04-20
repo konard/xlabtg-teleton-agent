@@ -6,6 +6,7 @@ import { MessageStore, ChatStore, UserStore } from "../memory/feed/index.js";
 import type Database from "better-sqlite3";
 import type { EmbeddingProvider } from "../memory/embeddings/provider.js";
 import { readOffset, writeOffset } from "./offset-store.js";
+import { validateDM, validateGroup, type PolicyDecision } from "./policy-validator.js";
 import { PendingHistory } from "../memory/pending-history.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
@@ -171,24 +172,38 @@ export class MessageHandler {
 
   analyzeMessage(message: TelegramMessage): MessageContext {
     const isAdmin = this.config.admin_ids.includes(message.senderId);
+    const toContext = (decision: PolicyDecision): MessageContext => ({
+      message,
+      isAdmin,
+      ...decision,
+    });
 
+    const preCheck = this.runPreChecks(message, isAdmin);
+    if (preCheck) return toContext(preCheck);
+
+    if (!message.isGroup && !message.isChannel) {
+      return toContext(validateDM(this.config, message, isAdmin));
+    }
+
+    if (message.isGroup) {
+      return toContext(validateGroup(this.config, message, isAdmin));
+    }
+
+    return toContext({ shouldRespond: false, reason: "Unknown type" });
+  }
+
+  /**
+   * Returns a denying decision if the message should be skipped before policy
+   * checks (stale offset, bot sender, length cap). Returns null to continue.
+   */
+  private runPreChecks(message: TelegramMessage, isAdmin: boolean): PolicyDecision | null {
     const chatOffset = readOffset(message.chatId) ?? 0;
     if (message.id <= chatOffset) {
-      return {
-        message,
-        isAdmin,
-        shouldRespond: false,
-        reason: "Already processed",
-      };
+      return { shouldRespond: false, reason: "Already processed" };
     }
 
     if (message.isBot) {
-      return {
-        message,
-        isAdmin,
-        shouldRespond: false,
-        reason: "Sender is a bot",
-      };
+      return { shouldRespond: false, reason: "Sender is a bot" };
     }
 
     // Reject messages that exceed the configured maximum length to prevent DoS
@@ -201,98 +216,12 @@ export class MessageHandler {
         "Message rejected: exceeds max_message_length"
       );
       return {
-        message,
-        isAdmin,
         shouldRespond: false,
         reason: `Message too long (${textLen} > ${maxLen} chars)`,
       };
     }
 
-    if (!message.isGroup && !message.isChannel) {
-      switch (this.config.dm_policy) {
-        case "disabled":
-          return {
-            message,
-            isAdmin,
-            shouldRespond: false,
-            reason: "DMs disabled",
-          };
-        case "admin-only":
-          if (!isAdmin) {
-            return {
-              message,
-              isAdmin,
-              shouldRespond: false,
-              reason: "DMs restricted to admins",
-            };
-          }
-          break;
-        case "allowlist":
-          if (!this.config.allow_from.includes(message.senderId) && !isAdmin) {
-            return {
-              message,
-              isAdmin,
-              shouldRespond: false,
-              reason: "Not in allowlist",
-            };
-          }
-          break;
-        case "open":
-          break;
-      }
-
-      return { message, isAdmin, shouldRespond: true };
-    }
-
-    if (message.isGroup) {
-      switch (this.config.group_policy) {
-        case "disabled":
-          return {
-            message,
-            isAdmin,
-            shouldRespond: false,
-            reason: "Groups disabled",
-          };
-        case "admin-only":
-          if (!isAdmin) {
-            return {
-              message,
-              isAdmin,
-              shouldRespond: false,
-              reason: "Groups restricted to admins",
-            };
-          }
-          break;
-        case "allowlist": {
-          const chatIdNum = Number(message.chatId);
-          if (!Number.isInteger(chatIdNum) || !this.config.group_allow_from.includes(chatIdNum)) {
-            return {
-              message,
-              isAdmin,
-              shouldRespond: false,
-              reason: "Group not in allowlist",
-            };
-          }
-          break;
-        }
-        case "open":
-          break;
-      }
-
-      // Check if we require mention
-      if (this.config.require_mention && !message.mentionsMe) {
-        return {
-          message,
-          isAdmin,
-          shouldRespond: false,
-          reason: "Not mentioned",
-        };
-      }
-
-      return { message, isAdmin, shouldRespond: true };
-    }
-
-    return { message, isAdmin, shouldRespond: false, reason: "Unknown type" };
+    return null;
   }
 
   /**
