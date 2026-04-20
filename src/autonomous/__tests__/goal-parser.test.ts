@@ -24,8 +24,8 @@ function makeConfig(overrides: Partial<AgentConfig> = {}): AgentConfig {
 }
 
 const fakeModel = {
-  id: "claude-haiku-4-5-20251001",
-  name: "haiku",
+  id: "claude-opus-4-6",
+  name: "claude-opus-4-6",
   api: "anthropic",
   provider: "anthropic",
   reasoning: false,
@@ -153,15 +153,15 @@ describe("parseGoalFromNaturalLanguage", () => {
       ],
     });
 
-    const mockGetUtilityModel = vi.fn().mockReturnValue(fakeModel);
+    const mockGetProviderModel = vi.fn().mockReturnValue(fakeModel);
 
     const result = await parseGoalFromNaturalLanguage(
       "Следи за новыми пулами DeDust каждые 5 минут",
       makeConfig(),
-      { complete: mockComplete, getUtilityModel: mockGetUtilityModel }
+      { complete: mockComplete, getProviderModel: mockGetProviderModel }
     );
 
-    expect(mockGetUtilityModel).toHaveBeenCalledWith("anthropic", "claude-haiku-4-5-20251001");
+    expect(mockGetProviderModel).toHaveBeenCalledWith("anthropic", "claude-opus-4-6");
     expect(mockComplete).toHaveBeenCalledTimes(1);
     const [modelArg, contextArg, optionsArg] = mockComplete.mock.calls[0];
     expect(modelArg).toBe(fakeModel);
@@ -178,7 +178,7 @@ describe("parseGoalFromNaturalLanguage", () => {
     await expect(
       parseGoalFromNaturalLanguage("   ", makeConfig(), {
         complete: vi.fn(),
-        getUtilityModel: vi.fn().mockReturnValue(fakeModel),
+        getProviderModel: vi.fn().mockReturnValue(fakeModel),
       })
     ).rejects.toThrow(/required/);
   });
@@ -187,7 +187,7 @@ describe("parseGoalFromNaturalLanguage", () => {
     await expect(
       parseGoalFromNaturalLanguage("do something", makeConfig({ api_key: "" }), {
         complete: vi.fn(),
-        getUtilityModel: vi.fn().mockReturnValue(fakeModel),
+        getProviderModel: vi.fn().mockReturnValue(fakeModel),
       })
     ).rejects.toThrow(/no API key/);
   });
@@ -197,7 +197,7 @@ describe("parseGoalFromNaturalLanguage", () => {
     await expect(
       parseGoalFromNaturalLanguage("goal", makeConfig(), {
         complete: mockComplete,
-        getUtilityModel: vi.fn().mockReturnValue(fakeModel),
+        getProviderModel: vi.fn().mockReturnValue(fakeModel),
       })
     ).rejects.toThrow(/LLM call failed.*upstream 429/);
   });
@@ -207,8 +207,47 @@ describe("parseGoalFromNaturalLanguage", () => {
     await expect(
       parseGoalFromNaturalLanguage("goal", makeConfig(), {
         complete: mockComplete,
-        getUtilityModel: vi.fn().mockReturnValue(fakeModel),
+        getProviderModel: vi.fn().mockReturnValue(fakeModel),
       })
     ).rejects.toThrow(/empty response/);
+  });
+
+  it("surfaces stopReason=error as a descriptive LLM call failed message", async () => {
+    const mockComplete = vi.fn().mockResolvedValue({
+      stopReason: "error",
+      errorMessage: "No local models available. Is the LLM server running?",
+      content: [],
+    });
+    await expect(
+      parseGoalFromNaturalLanguage("goal", makeConfig(), {
+        complete: mockComplete,
+        getProviderModel: vi.fn().mockReturnValue(fakeModel),
+      })
+    ).rejects.toThrow(/LLM call failed.*No local models available/);
+  });
+
+  it("strips <think> blocks before parsing JSON", async () => {
+    const mockComplete = vi.fn().mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text:
+            "<think>Internal reasoning here</think>" +
+            JSON.stringify({
+              goal: "Monitor pools",
+              successCriteria: ["done"],
+              suggestedStrategy: "balanced",
+              suggestedPriority: "medium",
+              confidence: 0.9,
+            }),
+        },
+      ],
+    });
+    const result = await parseGoalFromNaturalLanguage("monitor pools", makeConfig(), {
+      complete: mockComplete,
+      getProviderModel: vi.fn().mockReturnValue(fakeModel),
+    });
+    expect(result.goal).toBe("Monitor pools");
+    expect(result.confidence).toBe(0.9);
   });
 });

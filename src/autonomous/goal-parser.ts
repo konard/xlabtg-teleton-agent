@@ -1,7 +1,7 @@
 import { complete, type Context, type Model, type Api } from "@mariozechner/pi-ai";
 import type { AgentConfig } from "../config/schema.js";
 import type { SupportedProvider } from "../config/providers.js";
-import { getUtilityModel, getEffectiveApiKey } from "../agent/client.js";
+import { getProviderModel, getEffectiveApiKey } from "../agent/client.js";
 import { createLogger } from "../utils/logger.js";
 import type {
   TaskStrategy,
@@ -170,16 +170,16 @@ export function parseLLMResponse(raw: string, fallbackGoal: string): ParsedGoal 
 }
 
 /**
- * Ask the configured utility LLM to turn free-form user input into a structured
- * autonomous-task spec. Throws if the provider has no usable credentials or the
- * model response cannot be parsed into JSON.
+ * Ask the agent's configured LLM to turn free-form user input into a structured
+ * autonomous-task spec. Uses the same model chosen in agent settings (agentConfig.model).
+ * Throws if the provider has no usable credentials or the model response cannot be parsed into JSON.
  */
 export async function parseGoalFromNaturalLanguage(
   naturalLanguage: string,
   agentConfig: AgentConfig,
   overrides?: {
     complete?: typeof complete;
-    getUtilityModel?: (provider: SupportedProvider, utilityModel?: string) => Model<Api>;
+    getProviderModel?: (provider: SupportedProvider, modelId: string) => Model<Api>;
   }
 ): Promise<ParsedGoal> {
   const input = naturalLanguage.trim();
@@ -188,8 +188,8 @@ export async function parseGoalFromNaturalLanguage(
   }
 
   const provider = (agentConfig.provider || "anthropic") as SupportedProvider;
-  const modelFactory = overrides?.getUtilityModel ?? getUtilityModel;
-  const model = modelFactory(provider, agentConfig.utility_model);
+  const modelFactory = overrides?.getProviderModel ?? getProviderModel;
+  const model = modelFactory(provider, agentConfig.model);
   const apiKey = getEffectiveApiKey(provider, agentConfig.api_key);
 
   if (!apiKey && provider !== "local" && provider !== "cocoon") {
@@ -218,12 +218,20 @@ export async function parseGoalFromNaturalLanguage(
       maxTokens: PARSE_GOAL_MAX_TOKENS,
       temperature: 0,
     });
+
+    if (response.stopReason === "error") {
+      const detail = response.errorMessage || "unknown error";
+      throw new Error(`LLM call failed: ${detail}`);
+    }
+
     const textBlock = response.content.find((block) => block.type === "text");
-    responseText = textBlock?.type === "text" ? textBlock.text : "";
+    // Strip <think> blocks produced by reasoning models (DeepSeek, Mistral, etc.)
+    const rawText = textBlock?.type === "text" ? textBlock.text : "";
+    responseText = rawText.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   } catch (err) {
     log.warn({ err }, "Goal parsing LLM call failed");
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`LLM call failed: ${msg}`);
+    throw new Error(msg.startsWith("LLM call failed:") ? msg : `LLM call failed: ${msg}`);
   }
 
   if (!responseText.trim()) {
