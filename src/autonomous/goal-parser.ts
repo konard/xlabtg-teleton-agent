@@ -218,12 +218,20 @@ export async function parseGoalFromNaturalLanguage(
       maxTokens: PARSE_GOAL_MAX_TOKENS,
       temperature: 0,
     });
+
+    if (response.stopReason === "error") {
+      const detail = response.errorMessage || "unknown error";
+      throw new Error(`LLM call failed: ${detail}`);
+    }
+
     const textBlock = response.content.find((block) => block.type === "text");
-    responseText = textBlock?.type === "text" ? textBlock.text : "";
+    // Strip <think> blocks produced by reasoning models (DeepSeek, Mistral, etc.)
+    const rawText = textBlock?.type === "text" ? textBlock.text : "";
+    responseText = rawText.replace(/<think>[\s\S]*?<\/think>/g, "").trim();
   } catch (err) {
     log.warn({ err }, "Goal parsing LLM call failed");
     const msg = err instanceof Error ? err.message : String(err);
-    throw new Error(`LLM call failed: ${msg}`);
+    throw new Error(msg.startsWith("LLM call failed:") ? msg : `LLM call failed: ${msg}`);
   }
 
   if (!responseText.trim()) {

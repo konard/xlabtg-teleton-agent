@@ -211,4 +211,43 @@ describe("parseGoalFromNaturalLanguage", () => {
       })
     ).rejects.toThrow(/empty response/);
   });
+
+  it("surfaces stopReason=error as a descriptive LLM call failed message", async () => {
+    const mockComplete = vi.fn().mockResolvedValue({
+      stopReason: "error",
+      errorMessage: "No local models available. Is the LLM server running?",
+      content: [],
+    });
+    await expect(
+      parseGoalFromNaturalLanguage("goal", makeConfig(), {
+        complete: mockComplete,
+        getUtilityModel: vi.fn().mockReturnValue(fakeModel),
+      })
+    ).rejects.toThrow(/LLM call failed.*No local models available/);
+  });
+
+  it("strips <think> blocks before parsing JSON", async () => {
+    const mockComplete = vi.fn().mockResolvedValue({
+      content: [
+        {
+          type: "text",
+          text:
+            "<think>Internal reasoning here</think>" +
+            JSON.stringify({
+              goal: "Monitor pools",
+              successCriteria: ["done"],
+              suggestedStrategy: "balanced",
+              suggestedPriority: "medium",
+              confidence: 0.9,
+            }),
+        },
+      ],
+    });
+    const result = await parseGoalFromNaturalLanguage("monitor pools", makeConfig(), {
+      complete: mockComplete,
+      getUtilityModel: vi.fn().mockReturnValue(fakeModel),
+    });
+    expect(result.goal).toBe("Monitor pools");
+    expect(result.confidence).toBe(0.9);
+  });
 });
