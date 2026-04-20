@@ -1,7 +1,7 @@
 import { complete, type Context, type Model, type Api } from "@mariozechner/pi-ai";
 import type { AgentConfig } from "../config/schema.js";
 import type { SupportedProvider } from "../config/providers.js";
-import { getUtilityModel, getEffectiveApiKey } from "../agent/client.js";
+import { getProviderModel, getEffectiveApiKey } from "../agent/client.js";
 import { createLogger } from "../utils/logger.js";
 import type {
   TaskStrategy,
@@ -170,16 +170,16 @@ export function parseLLMResponse(raw: string, fallbackGoal: string): ParsedGoal 
 }
 
 /**
- * Ask the configured utility LLM to turn free-form user input into a structured
- * autonomous-task spec. Throws if the provider has no usable credentials or the
- * model response cannot be parsed into JSON.
+ * Ask the agent's configured LLM to turn free-form user input into a structured
+ * autonomous-task spec. Uses the same model chosen in agent settings (agentConfig.model).
+ * Throws if the provider has no usable credentials or the model response cannot be parsed into JSON.
  */
 export async function parseGoalFromNaturalLanguage(
   naturalLanguage: string,
   agentConfig: AgentConfig,
   overrides?: {
     complete?: typeof complete;
-    getUtilityModel?: (provider: SupportedProvider, utilityModel?: string) => Model<Api>;
+    getProviderModel?: (provider: SupportedProvider, modelId: string) => Model<Api>;
   }
 ): Promise<ParsedGoal> {
   const input = naturalLanguage.trim();
@@ -188,8 +188,8 @@ export async function parseGoalFromNaturalLanguage(
   }
 
   const provider = (agentConfig.provider || "anthropic") as SupportedProvider;
-  const modelFactory = overrides?.getUtilityModel ?? getUtilityModel;
-  const model = modelFactory(provider, agentConfig.utility_model);
+  const modelFactory = overrides?.getProviderModel ?? getProviderModel;
+  const model = modelFactory(provider, agentConfig.model);
   const apiKey = getEffectiveApiKey(provider, agentConfig.api_key);
 
   if (!apiKey && provider !== "local" && provider !== "cocoon") {
