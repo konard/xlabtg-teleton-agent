@@ -8,6 +8,7 @@ import type { Database } from "better-sqlite3";
 import type { AgentLifecycle } from "../agent/lifecycle.js";
 import type { UserHookEvaluator } from "../agent/hooks/user-hook-evaluator.js";
 import type { MarketplaceDeps } from "../webui/types.js";
+import type { AutonomousTaskManager } from "../autonomous/manager.js";
 import { HTTPException } from "hono/http-exception";
 
 export interface ApiServerDeps {
@@ -26,6 +27,7 @@ export interface ApiServerDeps {
   lifecycle?: AgentLifecycle | null;
   marketplace?: MarketplaceDeps | null;
   userHookEvaluator?: UserHookEvaluator | null;
+  autonomousManager?: AutonomousTaskManager | null;
 }
 
 /**
@@ -44,7 +46,8 @@ export function createDepsAdapter(apiDeps: ApiServerDeps): WebUIServerDeps {
         prop === "configPath" ||
         prop === "lifecycle" ||
         prop === "userHookEvaluator" ||
-        prop === "marketplace"
+        prop === "marketplace" ||
+        prop === "autonomousManager"
       ) {
         return value;
       }

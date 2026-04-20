@@ -49,6 +49,7 @@ import type { TaskDependencyResolver } from "./telegram/task-dependency-resolver
 import type { Task, TaskStore } from "./memory/agent/tasks.js";
 import type { WebUIServer } from "./webui/server.js";
 import type { ApiServer } from "./api/server.js";
+import type { AutonomousTaskManager } from "./autonomous/manager.js";
 import { initMetrics } from "./services/metrics.js";
 import { initAnalytics } from "./services/analytics.js";
 import { flushOffsets } from "./telegram/offset-store.js";
@@ -298,6 +299,23 @@ ${blue}  ┌──────────────────────�
       () => this.stopAgent()
     );
 
+    // Shared manager so WebUI and Management API drive the same task queue.
+    let autonomousManager: AutonomousTaskManager | undefined;
+    if (this.config.webui.enabled || this.config.api?.enabled) {
+      const { createAutonomousManager } = await import("./autonomous/integration.js");
+      autonomousManager = createAutonomousManager({
+        agent: this.agent,
+        toolRegistry: this.toolRegistry,
+        bridge: this.bridge,
+        db: this.memory.db,
+      });
+      // Resume tasks that were "running" when the agent last stopped so a
+      // server restart doesn't leave them stuck forever.
+      autonomousManager.restoreInterruptedTasks().catch((err: unknown) => {
+        log.warn({ err }, "Failed to restore interrupted autonomous tasks");
+      });
+    }
+
     // Start WebUI server if enabled (before agent — survives agent stop/restart)
     if (this.config.webui.enabled) {
       try {
@@ -325,6 +343,7 @@ ${blue}  ┌──────────────────────�
             rewireHooks: () => this.wirePluginEventHooks(),
           },
           userHookEvaluator: this.userHookEvaluator,
+          autonomousManager,
         });
         await this.webuiServer.start();
       } catch (error) {
@@ -361,6 +380,7 @@ ${blue}  ┌──────────────────────�
               rewireHooks: () => this.wirePluginEventHooks(),
             },
             userHookEvaluator: this.userHookEvaluator,
+            autonomousManager,
           },
           this.config.api
         );

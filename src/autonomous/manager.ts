@@ -3,7 +3,13 @@ import type { AutonomousTaskStore } from "../memory/agent/autonomous-tasks.js";
 import type { TaskStrategy, TaskPriority } from "../memory/agent/autonomous-tasks.js";
 import { getAutonomousTaskStore } from "../memory/agent/autonomous-tasks.js";
 import { AutonomousLoop } from "./loop.js";
-import type { LoopDependencies, LoopResult, PlannedAction, ToolExecutionResult, Reflection } from "./loop.js";
+import type {
+  LoopDependencies,
+  LoopResult,
+  PlannedAction,
+  ToolExecutionResult,
+  Reflection,
+} from "./loop.js";
 import type { PolicyConfig } from "./policy-engine.js";
 import { DEFAULT_POLICY_CONFIG } from "./policy-engine.js";
 import { createLogger } from "../utils/logger.js";
@@ -88,7 +94,11 @@ export class AutonomousTaskManager {
         log.error({ taskId: task.id, err }, "Autonomous loop error");
       })
       .finally(() => {
-        this.runningLoops.delete(task.id);
+        // Only remove ourselves; if pause/resume replaced the entry with a
+        // fresh loop, leave the newer registration alone.
+        if (this.runningLoops.get(task.id) === loop) {
+          this.runningLoops.delete(task.id);
+        }
       });
   }
 
@@ -100,6 +110,9 @@ export class AutonomousTaskManager {
     const loop = this.runningLoops.get(taskId);
     if (loop) {
       loop.stop();
+      // Drop the loop from the map immediately so resumeTask() can start a new
+      // one. The old loop's .finally() will no-op once the hung await settles.
+      this.runningLoops.delete(taskId);
     }
 
     return this.store.updateTaskStatus(taskId, "paused");
@@ -133,20 +146,35 @@ export class AutonomousTaskManager {
     this.runningLoops.clear();
   }
 
-  /** Restore interrupted tasks on agent restart. */
+  /**
+   * Restore active tasks on agent startup:
+   *   - "running" tasks survived a crash → resume from last checkpoint.
+   *   - "pending" tasks were queued (e.g. from the CLI) while no agent was
+   *     around to execute them → start them now. This is what unblocks the
+   *     bug from issue #222 where CLI-created tasks would sit forever.
+   */
   async restoreInterruptedTasks(): Promise<number> {
     const active = this.store.getActiveTasks();
     let restored = 0;
 
     for (const task of active) {
       if (task.status === "running") {
-        // Task was running when agent crashed — resume from last checkpoint
         log.info({ taskId: task.id }, "Restoring interrupted task from checkpoint");
         this.store.appendLog({
           taskId: task.id,
           step: task.currentStep,
           eventType: "info",
           message: "Agent restarted — resuming from last checkpoint",
+        });
+        this.runLoop(task);
+        restored++;
+      } else if (task.status === "pending") {
+        log.info({ taskId: task.id }, "Starting queued pending task");
+        this.store.appendLog({
+          taskId: task.id,
+          step: task.currentStep,
+          eventType: "info",
+          message: "Agent started — starting queued task",
         });
         this.runLoop(task);
         restored++;

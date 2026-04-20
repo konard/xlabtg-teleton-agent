@@ -80,7 +80,10 @@ export async function autonomousCommand(
       console.log(`  Goal: ${task.goal}`);
       console.log(`  Status: ${task.status}`);
       console.log();
-      console.log("Note: The task will run when the agent is started with autonomous mode support.");
+      console.log(
+        "Note: The task is queued with status 'pending'. It will start executing as soon"
+      );
+      console.log("      as the agent is running (the agent picks up pending tasks on startup).");
       console.log(`      Monitor progress: teleton autonomous status --id ${task.id}`);
       break;
     }
