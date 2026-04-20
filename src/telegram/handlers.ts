@@ -18,8 +18,8 @@ import { generateSpeech } from "../services/tts.js";
 import { unlinkSync } from "fs";
 import { splitMessageForTelegram } from "./message-splitter.js";
 import { sanitizeMarkdownForTelegram } from "./sanitize-markdown.js";
+import { MessageDedupCache } from "./message-dedup-cache.js";
 import {
-  MESSAGE_DEDUP_MAX_SIZE,
   RATE_LIMITER_GROUP_CLEANUP_THRESHOLD,
   LOG_MESSAGE_PREVIEW_CHARS,
 } from "../constants/limits.js";
@@ -130,7 +130,7 @@ export class MessageHandler {
   private db: Database.Database;
   private chatQueue: ChatQueue = new ChatQueue();
   private pluginMessageHooks: Array<(e: PluginMessageEvent) => Promise<void>> = [];
-  private recentMessageIds: Set<string> = new Set();
+  private recentMessageIds: MessageDedupCache = new MessageDedupCache();
 
   constructor(
     bridge: TelegramBridge,
@@ -306,11 +306,6 @@ export class MessageHandler {
       return;
     }
     this.recentMessageIds.add(dedupKey);
-    if (this.recentMessageIds.size > MESSAGE_DEDUP_MAX_SIZE) {
-      // Evict oldest half
-      const ids = [...this.recentMessageIds];
-      this.recentMessageIds = new Set(ids.slice(ids.length >> 1));
-    }
 
     const msgType = message.isGroup ? "group" : message.isChannel ? "channel" : "dm";
     log.debug(
