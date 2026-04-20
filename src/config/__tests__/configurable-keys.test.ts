@@ -9,7 +9,12 @@ vi.mock("../../utils/logger.js", () => ({
   })),
 }));
 
-import { CONFIGURABLE_KEYS } from "../configurable-keys.js";
+import {
+  CONFIGURABLE_KEYS,
+  getNestedValue,
+  setNestedValue,
+  deleteNestedValue,
+} from "../configurable-keys.js";
 
 // ── New scalar keys ─────────────────────────────────────────────────────
 
@@ -258,5 +263,129 @@ describe("existing keys unchanged", () => {
     const meta = CONFIGURABLE_KEYS["agent.provider"];
     expect(meta.options).toHaveLength(16);
     expect(meta.options).toContain("nvidia");
+  });
+});
+
+// ── Prototype-injection hardening ──────────────────────────────────────
+//
+// Regression tests for https://github.com/xlabtg/teleton-agent/issues/190.
+// getNestedValue / setNestedValue / deleteNestedValue must never traverse
+// into Object.prototype or any other inherited property, and must reject
+// any path segment that could escape to a prototype chain (including
+// case-folded variants and nested occurrences).
+
+describe("nested-value helpers — prototype-injection hardening", () => {
+  describe("getNestedValue", () => {
+    it("rejects top-level __proto__", () => {
+      expect(() => getNestedValue({}, "__proto__")).toThrow(/forbidden/i);
+    });
+
+    it("rejects nested __proto__ segment", () => {
+      expect(() => getNestedValue({}, "foo.__proto__.polluted")).toThrow(/forbidden/i);
+    });
+
+    it("rejects 'constructor' segment", () => {
+      expect(() => getNestedValue({}, "constructor")).toThrow(/forbidden/i);
+    });
+
+    it("rejects 'prototype' segment", () => {
+      expect(() => getNestedValue({}, "constructor.prototype")).toThrow(/forbidden/i);
+    });
+
+    it("rejects case-folded __PROTO__", () => {
+      expect(() => getNestedValue({}, "__PROTO__")).toThrow(/forbidden/i);
+    });
+
+    it("rejects mixed-case Constructor", () => {
+      expect(() => getNestedValue({}, "Constructor")).toThrow(/forbidden/i);
+    });
+
+    it("does not return inherited Object.prototype members", () => {
+      // Before the fix, getNestedValue({}, "toString") returned the
+      // inherited Object.prototype.toString function. It must now return
+      // undefined for any non-own property.
+      expect(getNestedValue({}, "toString")).toBeUndefined();
+      expect(getNestedValue({}, "hasOwnProperty")).toBeUndefined();
+      expect(getNestedValue({}, "valueOf")).toBeUndefined();
+    });
+
+    it("returns own properties normally", () => {
+      const obj = { a: { b: { c: 42 } } };
+      expect(getNestedValue(obj, "a.b.c")).toBe(42);
+    });
+
+    it("returns undefined for missing own paths", () => {
+      const obj = { a: 1 };
+      expect(getNestedValue(obj, "a.b.c")).toBeUndefined();
+      expect(getNestedValue(obj, "missing")).toBeUndefined();
+    });
+
+    it("rejects empty segments", () => {
+      expect(() => getNestedValue({}, "")).toThrow(/invalid/i);
+      expect(() => getNestedValue({}, "a..b")).toThrow(/invalid/i);
+    });
+  });
+
+  describe("setNestedValue", () => {
+    it("rejects __proto__ segment", () => {
+      const obj = {};
+      expect(() => setNestedValue(obj, "__proto__.polluted", true)).toThrow(/forbidden/i);
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    it("rejects nested __proto__ segment", () => {
+      const obj: Record<string, unknown> = {};
+      expect(() => setNestedValue(obj, "a.__proto__.polluted", true)).toThrow(/forbidden/i);
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    it("rejects 'constructor.prototype' chain", () => {
+      const obj = {};
+      expect(() => setNestedValue(obj, "constructor.prototype.polluted", true)).toThrow(
+        /forbidden/i
+      );
+      expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+    });
+
+    it("rejects case-folded __PROTO__", () => {
+      const obj = {};
+      expect(() => setNestedValue(obj, "__PROTO__.polluted", true)).toThrow(/forbidden/i);
+    });
+
+    it("rejects empty segments", () => {
+      expect(() => setNestedValue({}, "", 1)).toThrow(/invalid/i);
+      expect(() => setNestedValue({}, "a..b", 1)).toThrow(/invalid/i);
+    });
+
+    it("sets own properties normally", () => {
+      const obj: Record<string, unknown> = {};
+      setNestedValue(obj, "a.b.c", 7);
+      expect(obj).toEqual({ a: { b: { c: 7 } } });
+    });
+  });
+
+  describe("deleteNestedValue", () => {
+    it("rejects __proto__ segment", () => {
+      expect(() => deleteNestedValue({}, "__proto__")).toThrow(/forbidden/i);
+    });
+
+    it("rejects nested __proto__ segment", () => {
+      expect(() => deleteNestedValue({}, "a.__proto__.x")).toThrow(/forbidden/i);
+    });
+
+    it("rejects case-folded variant", () => {
+      expect(() => deleteNestedValue({}, "__Proto__")).toThrow(/forbidden/i);
+    });
+
+    it("rejects empty segments", () => {
+      expect(() => deleteNestedValue({}, "")).toThrow(/invalid/i);
+      expect(() => deleteNestedValue({}, "a..b")).toThrow(/invalid/i);
+    });
+
+    it("deletes own properties normally", () => {
+      const obj: Record<string, unknown> = { a: { b: { c: 1 } } };
+      deleteNestedValue(obj, "a.b.c");
+      expect(obj).toEqual({ a: { b: {} } });
+    });
   });
 });
