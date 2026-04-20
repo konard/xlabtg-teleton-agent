@@ -948,47 +948,62 @@ export const CATEGORY_ORDER: ConfigCategory[] = [
 ];
 
 // ── Dot-notation helpers ───────────────────────────────────────────────
+//
+// These helpers traverse an untrusted dot-separated path against a config
+// object. See https://github.com/xlabtg/teleton-agent/issues/190 — the path
+// must never escape into the prototype chain, and read access must be
+// limited to the object's own enumerable properties.
 
 const FORBIDDEN_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);
 
-function assertSafePath(parts: string[]): void {
-  if (parts.some((p) => FORBIDDEN_SEGMENTS.has(p))) {
-    throw new Error("Invalid config path: forbidden segment");
+function parsePath(path: string): string[] {
+  if (typeof path !== "string" || path.length === 0) {
+    throw new Error("Invalid config path: empty");
   }
+  const parts = path.split(".");
+  for (const part of parts) {
+    if (part.length === 0) {
+      throw new Error("Invalid config path: empty segment");
+    }
+    if (FORBIDDEN_SEGMENTS.has(part.toLowerCase())) {
+      throw new Error(`Invalid config path: forbidden segment "${part}"`);
+    }
+  }
+  return parts;
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- generic config traversal requires any for dynamic dot-notation paths */
 export function getNestedValue(obj: Record<string, any>, path: string): unknown {
-  const parts = path.split(".");
-  assertSafePath(parts);
+  const parts = parsePath(path);
   let current: any = obj;
   for (const part of parts) {
     if (current == null || typeof current !== "object") return undefined;
+    if (!Object.hasOwn(current, part)) return undefined;
     current = current[part];
   }
   return current;
 }
 
 export function setNestedValue(obj: Record<string, any>, path: string, value: unknown): void {
-  const parts = path.split(".");
-  assertSafePath(parts);
+  const parts = parsePath(path);
   let current: any = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (current[parts[i]] == null || typeof current[parts[i]] !== "object") {
-      current[parts[i]] = {};
+    const key = parts[i];
+    if (!Object.hasOwn(current, key) || current[key] == null || typeof current[key] !== "object") {
+      current[key] = {};
     }
-    current = current[parts[i]];
+    current = current[key];
   }
   current[parts[parts.length - 1]] = value;
 }
 
 export function deleteNestedValue(obj: Record<string, any>, path: string): void {
-  const parts = path.split(".");
-  assertSafePath(parts);
+  const parts = parsePath(path);
   let current: any = obj;
   for (let i = 0; i < parts.length - 1; i++) {
-    if (current == null || typeof current !== "object") return;
-    current = current[parts[i]];
+    const key = parts[i];
+    if (current == null || typeof current !== "object" || !Object.hasOwn(current, key)) return;
+    current = current[key];
   }
   if (current != null && typeof current === "object") {
     delete current[parts[parts.length - 1]];
