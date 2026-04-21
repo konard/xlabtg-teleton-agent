@@ -3,7 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
-  pull_request:
+  pull_request_target:
     branches: [main]
 
 concurrency:
@@ -22,6 +22,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -47,7 +49,7 @@ jobs:
         if: matrix.node-version == 20
         uses: actions/upload-artifact@v4
         with:
-          name: dist-ci-${{ github.sha }}
+          name: dist-ci-${{ github.event.pull_request.head.sha || github.sha }}
           path: dist/
           retention-days: 7
 
@@ -58,6 +60,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -78,14 +82,16 @@ jobs:
           fi
           echo "DTS generated successfully: packages/sdk/dist/index.d.ts"
 
-  # ---- Lint (pull_request only) ----
+  # ---- Lint (pull_request_target only) ----
   lint:
     name: CI / Lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -104,14 +110,16 @@ jobs:
       - name: Format check
         run: npm run format:check
 
-  # ---- Tests (pull_request only) ----
+  # ---- Tests (pull_request_target only) ----
   test:
     name: CI / Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -130,7 +138,7 @@ jobs:
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-${{ github.sha }}
+          name: coverage-${{ github.event.pull_request.head.sha }}
           path: coverage/
           retention-days: 7
 
@@ -148,14 +156,16 @@ jobs:
           " || cat coverage/coverage-summary.json
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-  # ---- TypeScript check (pull_request only) ----
+  # ---- TypeScript check (pull_request_target only) ----
   typecheck:
     name: CI / TypeScript
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -178,6 +188,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -219,18 +231,20 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
-  # ---- Deploy to Vercel (pull_request only) ----
+  # ---- Deploy to Vercel (pull_request_target only) ----
   deploy-vercel:
     name: Deploy to Vercel
     runs-on: ubuntu-latest
     needs: [build-runtime, typecheck]
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request_target'
     environment:
       name: pr-preview
       url: ${{ steps.deploy.outputs.preview-url }}
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - uses: actions/setup-node@v4
         with:
@@ -240,7 +254,7 @@ jobs:
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
-          name: dist-ci-${{ github.sha }}
+          name: dist-ci-${{ github.event.pull_request.head.sha }}
           path: dist/
 
       - name: Install WebUI dependencies
