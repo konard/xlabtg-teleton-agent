@@ -9,6 +9,7 @@ import type { AgentLifecycle } from "../agent/lifecycle.js";
 import type { UserHookEvaluator } from "../agent/hooks/user-hook-evaluator.js";
 import type { MarketplaceDeps } from "../webui/types.js";
 import type { AutonomousTaskManager } from "../autonomous/manager.js";
+import type { WorkflowScheduler } from "../services/workflow-scheduler.js";
 import { HTTPException } from "hono/http-exception";
 
 export interface ApiServerDeps {
@@ -31,6 +32,7 @@ export interface ApiServerDeps {
   marketplace?: MarketplaceDeps | null;
   userHookEvaluator?: UserHookEvaluator | null;
   autonomousManager?: AutonomousTaskManager | null;
+  workflowScheduler?: (() => WorkflowScheduler | null) | WorkflowScheduler | null;
 }
 
 /**
@@ -50,7 +52,8 @@ export function createDepsAdapter(apiDeps: ApiServerDeps): WebUIServerDeps {
         prop === "lifecycle" ||
         prop === "userHookEvaluator" ||
         prop === "marketplace" ||
-        prop === "autonomousManager"
+        prop === "autonomousManager" ||
+        prop === "workflowScheduler"
       ) {
         return value;
       }

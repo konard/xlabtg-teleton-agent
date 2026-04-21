@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { randomUUID } from "node:crypto";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getWorkflowStore, type WorkflowConfig, type Workflow } from "../../services/workflows.js";
 import { getErrorMessage } from "../../utils/errors.js";
@@ -74,11 +75,16 @@ export function createWorkflowsRoutes(deps: WebUIServerDeps) {
           ? body.description.trim().slice(0, MAX_DESCRIPTION_LENGTH)
           : undefined;
 
+      const config = body.config;
+      if (config.trigger.type === "webhook" && !config.trigger.secret) {
+        config.trigger.secret = randomUUID().replace(/-/g, "");
+      }
+
       const wf = store().create({
         name,
         description,
         enabled: body.enabled !== false,
-        config: body.config,
+        config,
       });
 
       return c.json<APIResponse<Workflow>>({ success: true, data: wf }, 201);
@@ -176,6 +182,33 @@ export function createWorkflowsRoutes(deps: WebUIServerDeps) {
       const deleted = store().delete(c.req.param("id"));
       if (!deleted) {
         return c.json<APIResponse>({ success: false, error: "Workflow not found" }, 404);
+      }
+      return c.json<APIResponse<null>>({ success: true, data: null });
+    } catch (err) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    }
+  });
+
+  // Webhook trigger endpoint — public, authenticated via secret token in URL
+  app.post("/webhook/:secret", async (c) => {
+    try {
+      const secret = c.req.param("secret");
+      const scheduler =
+        typeof deps.workflowScheduler === "function"
+          ? deps.workflowScheduler()
+          : deps.workflowScheduler;
+      if (!scheduler) {
+        return c.json<APIResponse>(
+          { success: false, error: "Workflow scheduler unavailable" },
+          503
+        );
+      }
+      const triggered = await scheduler.handleWebhook(secret);
+      if (!triggered) {
+        return c.json<APIResponse>(
+          { success: false, error: "No workflow found for this webhook" },
+          404
+        );
       }
       return c.json<APIResponse<null>>({ success: true, data: null });
     } catch (err) {

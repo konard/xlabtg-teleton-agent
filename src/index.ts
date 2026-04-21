@@ -59,6 +59,7 @@ import { CacheInvalidationWatcher, initPreloader } from "./services/preloader.js
 import { initAlerting } from "./services/alerting.js";
 import { initAnomalyDetector } from "./services/anomaly-detector.js";
 import { flushOffsets } from "./telegram/offset-store.js";
+import { WorkflowScheduler } from "./services/workflow-scheduler.js";
 
 const log = createLogger("App");
 
@@ -90,6 +91,7 @@ export class TeletonApp {
   private messagesProcessed: number = 0;
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatRunning = false;
+  private workflowScheduler: WorkflowScheduler | null = null;
 
   private configPath: string;
 
@@ -372,6 +374,7 @@ ${blue}  ┌──────────────────────�
           },
           userHookEvaluator: this.userHookEvaluator,
           autonomousManager,
+          workflowScheduler: () => this.workflowScheduler,
         });
         await this.webuiServer.start();
       } catch (error) {
@@ -409,6 +412,7 @@ ${blue}  ┌──────────────────────�
             },
             userHookEvaluator: this.userHookEvaluator,
             autonomousManager,
+            workflowScheduler: () => this.workflowScheduler,
           },
           this.config.api
         );
@@ -801,6 +805,19 @@ ${blue}  ┌──────────────────────�
       };
       await this.hookRunner.runObservingHook("agent:start", agentStartEvent);
     }
+
+    // Start workflow scheduler
+    this.workflowScheduler = new WorkflowScheduler(getDatabase().getDb(), this.bridge);
+    this.workflowScheduler.start();
+    const scheduler = this.workflowScheduler;
+    this.agent.setOnToolCompleteCallback((_toolName: string) => {
+      void scheduler.fireEvent("tool.complete").catch((err: unknown) => {
+        log.warn({ err }, "Workflow tool.complete event failed");
+      });
+    });
+    void this.workflowScheduler.fireEvent("agent.start").catch((err: unknown) => {
+      log.warn({ err }, "Workflow agent.start event failed");
+    });
 
     // Start heartbeat timer if enabled
     if (this.config.heartbeat.enabled) {
@@ -1454,6 +1471,18 @@ ${blue}  ┌──────────────────────�
    * Called by lifecycle.stop() — do NOT call directly.
    */
   private async stopAgent(): Promise<void> {
+    // Fire workflow agent.stop event and stop scheduler
+    if (this.workflowScheduler) {
+      try {
+        await this.workflowScheduler.fireEvent("agent.stop");
+      } catch (err) {
+        log.warn({ err }, "Workflow agent.stop event failed");
+      }
+      this.workflowScheduler.stop();
+      this.workflowScheduler = null;
+      this.agent.setOnToolCompleteCallback(undefined);
+    }
+
     // Stop heartbeat timer
     if (this.heartbeatTimer) {
       clearInterval(this.heartbeatTimer);

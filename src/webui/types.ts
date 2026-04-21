@@ -9,6 +9,7 @@ import type { SDKDependencies } from "../sdk/index.js";
 import type { AgentLifecycle } from "../agent/lifecycle.js";
 import type { UserHookEvaluator } from "../agent/hooks/user-hook-evaluator.js";
 import type { AutonomousTaskManager } from "../autonomous/manager.js";
+import type { WorkflowScheduler } from "../services/workflow-scheduler.js";
 
 export interface LoadedPlugin {
   name: string;
@@ -47,6 +48,7 @@ export interface WebUIServerDeps {
   marketplace?: MarketplaceDeps;
   userHookEvaluator?: UserHookEvaluator | null;
   autonomousManager?: AutonomousTaskManager;
+  workflowScheduler?: (() => WorkflowScheduler | null) | WorkflowScheduler;
 }
 
 // ── Marketplace types ───────────────────────────────────────────────
