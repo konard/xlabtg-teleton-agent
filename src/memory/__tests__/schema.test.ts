@@ -47,6 +47,8 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("sessions");
       expect(tableNames).toContain("tasks");
       expect(tableNames).toContain("task_dependencies");
+      expect(tableNames).toContain("graph_nodes");
+      expect(tableNames).toContain("graph_edges");
       expect(tableNames).toContain("tg_chats");
       expect(tableNames).toContain("tg_users");
       expect(tableNames).toContain("tg_messages");
@@ -163,6 +165,36 @@ describe("Memory Schema", () => {
           expect.objectContaining({ name: "depends_on_task_id", pk: 2 }),
         ])
       );
+    });
+
+    it("creates memory graph tables with correct schema", () => {
+      ensureSchema(db);
+
+      const nodeInfo = db.prepare("PRAGMA table_info(graph_nodes)").all() as Array<{
+        name: string;
+        type: string;
+      }>;
+      const edgeInfo = db.prepare("PRAGMA table_info(graph_edges)").all() as Array<{
+        name: string;
+        type: string;
+      }>;
+
+      const nodeColumns = nodeInfo.map((c) => c.name);
+      expect(nodeColumns).toContain("id");
+      expect(nodeColumns).toContain("type");
+      expect(nodeColumns).toContain("label");
+      expect(nodeColumns).toContain("normalized_label");
+      expect(nodeColumns).toContain("metadata");
+      expect(nodeColumns).toContain("created_at");
+      expect(nodeColumns).toContain("updated_at");
+
+      const edgeColumns = edgeInfo.map((c) => c.name);
+      expect(edgeColumns).toContain("id");
+      expect(edgeColumns).toContain("source_id");
+      expect(edgeColumns).toContain("target_id");
+      expect(edgeColumns).toContain("relation");
+      expect(edgeColumns).toContain("weight");
+      expect(edgeColumns).toContain("created_at");
     });
 
     it("creates tg_chats table with correct schema", () => {
@@ -1081,7 +1113,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.20.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.21.0");
     });
   });
 

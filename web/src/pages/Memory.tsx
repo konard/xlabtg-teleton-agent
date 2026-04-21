@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, MemorySourceFile, MemoryChunk } from '../lib/api';
+import { KnowledgeGraph } from '../components/KnowledgeGraph';
 
 function formatDate(epoch: number): string {
   return new Date(epoch * 1000).toLocaleDateString(undefined, {
@@ -11,6 +12,7 @@ function formatDate(epoch: number): string {
 }
 
 export function Memory() {
+  const [activeTab, setActiveTab] = useState<'sources' | 'graph'>('sources');
   const [filter, setFilter] = useState('');
   const [sources, setSources] = useState<MemorySourceFile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,9 +88,19 @@ export function Memory() {
     <div>
       <div className="header">
         <h1>Memory</h1>
-        <p>Browse indexed knowledge sources</p>
+        <p>Browse indexed knowledge sources and graph relationships</p>
       </div>
 
+      <div className="tabs">
+        <button className={`tab ${activeTab === 'sources' ? 'active' : ''}`} onClick={() => setActiveTab('sources')}>
+          Sources
+        </button>
+        <button className={`tab ${activeTab === 'graph' ? 'active' : ''}`} onClick={() => setActiveTab('graph')}>
+          Knowledge Graph
+        </button>
+      </div>
+
+      {activeTab === 'sources' ? (
       <div className="card" style={{ padding: 0 }}>
         {/* Search + refresh bar */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--separator)', flexWrap: 'wrap' }}>
@@ -231,6 +243,11 @@ export function Memory() {
           </table>
         )}
       </div>
+      ) : (
+        <div className="card" style={{ padding: 0 }}>
+          <KnowledgeGraph />
+        </div>
+      )}
     </div>
   );
 }

@@ -1,7 +1,10 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { Hono } from "hono";
+import Database from "better-sqlite3";
 import { createMemoryRoutes } from "../routes/memory.js";
 import type { WebUIServerDeps } from "../types.js";
+import { ensureSchema } from "../../memory/schema.js";
+import { MemoryGraphStore } from "../../memory/graph-store.js";
 
 function createTestApp(overrides: Partial<WebUIServerDeps>) {
   const deps = {
@@ -25,6 +28,16 @@ function createTestApp(overrides: Partial<WebUIServerDeps>) {
 }
 
 describe("memory routes", () => {
+  let db: InstanceType<typeof Database> | null = null;
+
+  beforeEach(() => {
+    db = null;
+  });
+
+  afterEach(() => {
+    db?.close();
+  });
+
   it("syncs old memory files to vector memory when Upstash is online", async () => {
     const indexAll = vi.fn().mockResolvedValue({ indexed: 2, skipped: 1 });
     const healthCheck = vi
@@ -86,5 +99,56 @@ describe("memory routes", () => {
     expect(json.data.synced).toBe(false);
     expect(json.data.status.mode).toBe("standby");
     expect(json.data.message).toContain("not configured");
+  });
+
+  it("exposes memory graph nodes, related traversal, path, and task context", async () => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    ensureSchema(db);
+    const store = new MemoryGraphStore(db);
+    const conversation = store.upsertNode({ type: "conversation", label: "Telegram chat 42" });
+    const task = store.upsertNode({
+      type: "task",
+      label: "Review wallet setup",
+      metadata: { taskId: "task-42" },
+    });
+    const tool = store.upsertNode({ type: "tool", label: "telegram_send_message" });
+    store.upsertEdge({ sourceId: conversation.id, targetId: task.id, relation: "ABOUT" });
+    store.upsertEdge({ sourceId: conversation.id, targetId: tool.id, relation: "USED_TOOL" });
+
+    const app = createTestApp({
+      memory: {
+        db,
+        embedder: {} as WebUIServerDeps["memory"]["embedder"],
+        knowledge: { indexAll: vi.fn() } as unknown as WebUIServerDeps["memory"]["knowledge"],
+      },
+    });
+
+    const nodesRes = await app.request("/api/memory/graph/nodes?type=tool&q=telegram");
+    const nodesJson = await nodesRes.json();
+    expect(nodesRes.status).toBe(200);
+    expect(nodesJson.data.nodes).toHaveLength(1);
+    expect(nodesJson.data.nodes[0].label).toBe("telegram_send_message");
+
+    const relatedRes = await app.request(`/api/memory/graph/node/${conversation.id}/related`);
+    const relatedJson = await relatedRes.json();
+    expect(relatedRes.status).toBe(200);
+    expect(
+      relatedJson.data.edges.map((edge: { relation: string }) => edge.relation).sort()
+    ).toEqual(["ABOUT", "USED_TOOL"]);
+
+    const pathRes = await app.request(`/api/memory/graph/path?from=${task.id}&to=${tool.id}`);
+    const pathJson = await pathRes.json();
+    expect(pathRes.status).toBe(200);
+    expect(pathJson.data.nodes.map((node: { id: string }) => node.id)).toEqual([
+      task.id,
+      conversation.id,
+      tool.id,
+    ]);
+
+    const contextRes = await app.request("/api/memory/graph/context?task_id=task-42");
+    const contextJson = await contextRes.json();
+    expect(contextRes.status).toBe(200);
+    expect(contextJson.data.nodes.map((node: { id: string }) => node.id)).toContain(task.id);
   });
 });
