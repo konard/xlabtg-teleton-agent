@@ -40,6 +40,7 @@ import {
   CommandAccessSchema,
   DealsConfigSchema,
   MarketplaceConfigSchema,
+  PredictionsConfigSchema,
   VectorMemoryConfigSchema,
 } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
@@ -997,6 +998,7 @@ async function runInteractiveOnboarding(
       cors_origins: ["http://localhost:5173", "http://localhost:7777"],
       log_requests: false,
     },
+    predictions: PredictionsConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {
       enabled: true,
@@ -1195,6 +1197,7 @@ async function runNonInteractiveOnboarding(
       cors_origins: ["http://localhost:5173", "http://localhost:7777"],
       log_requests: false,
     },
+    predictions: PredictionsConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {
       enabled: true,

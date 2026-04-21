@@ -501,6 +501,16 @@ export interface BudgetStatus {
   projection_usd: number | null;
 }
 
+// ── Prediction types ─────────────────────────────────────────────────
+
+export type PredictionEndpoint = "next" | "tools" | "topics";
+
+export interface PredictionSuggestion {
+  action: string;
+  confidence: number;
+  reason: string;
+}
+
 // ── Security types ────────────────────────────────────────────────────────────
 
 export type AuditActionType =
@@ -1653,6 +1663,40 @@ export const api = {
     return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget", {
       method: "PUT",
       body: JSON.stringify({ monthly_limit_usd }),
+    });
+  },
+
+  // ── Predictions ──────────────────────────────────────────────────
+
+  async getPredictions(endpoint: PredictionEndpoint, context?: string) {
+    const params = new URLSearchParams();
+    if (context) params.set("context", context);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return fetchAPI<APIResponse<PredictionSuggestion[]>>(`/predictions/${endpoint}${suffix}`);
+  },
+
+  async sendPredictionFeedback(input: {
+    endpoint: PredictionEndpoint;
+    action: string;
+    confidence?: number;
+    reason?: string;
+    helpful: boolean;
+  }) {
+    return fetchAPI<APIResponse<{ recorded: true }>>("/predictions/feedback", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async executePrediction(input: {
+    endpoint: PredictionEndpoint;
+    action: string;
+    confidence?: number;
+    reason?: string;
+  }) {
+    return fetchAPI<APIResponse<TaskData>>("/predictions/execute", {
+      method: "POST",
+      body: JSON.stringify(input),
     });
   },
 

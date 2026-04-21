@@ -52,6 +52,8 @@ import type { ApiServer } from "./api/server.js";
 import type { AutonomousTaskManager } from "./autonomous/manager.js";
 import { initMetrics } from "./services/metrics.js";
 import { initAnalytics } from "./services/analytics.js";
+import { initBehaviorTracker } from "./services/behavior-tracker.js";
+import { initPredictions } from "./services/predictions.js";
 import { flushOffsets } from "./telegram/offset-store.js";
 
 const log = createLogger("App");
@@ -144,6 +146,8 @@ export class TeletonApp {
     // Initialize analytics and metrics singletons early so agent runtime can record data
     initMetrics(db);
     initAnalytics(db);
+    initBehaviorTracker(db, { historyLimit: this.config.predictions.history_limit });
+    initPredictions(db);
 
     this.userHookEvaluator = new UserHookEvaluator(db);
     this.agent.setUserHookEvaluator(this.userHookEvaluator);

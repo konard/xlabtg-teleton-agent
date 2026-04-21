@@ -8,6 +8,7 @@ import { LogsWidget } from './LogsWidget';
 import { AgentSettingsWidget } from './AgentSettingsWidget';
 import { TelegramSettingsWidget } from './TelegramSettingsWidget';
 import { ExecSettingsWidget } from './ExecSettingsWidget';
+import { PredictionsWidget } from './PredictionsWidget';
 import { QuickActions } from '../QuickActions';
 import { HealthCheck } from '../HealthCheck';
 import { StatusData } from '../../lib/api';
@@ -26,7 +27,7 @@ const ActivityHeatmap = lazy(() =>
 const STORAGE_KEY = 'dashboard-layout';
 
 // Widget IDs
-export type WidgetId = 'stats' | 'logs' | 'agent' | 'telegram' | 'exec' | 'quick-actions' | 'token-chart' | 'tool-chart' | 'activity-heatmap' | 'health-check';
+export type WidgetId = 'stats' | 'logs' | 'agent' | 'telegram' | 'exec' | 'predictions' | 'quick-actions' | 'token-chart' | 'tool-chart' | 'activity-heatmap' | 'health-check';
 
 interface WidgetMeta {
   id: WidgetId;
@@ -76,43 +77,51 @@ const WIDGET_REGISTRY: WidgetMeta[] = [
     },
   },
   {
+    id: 'predictions',
+    title: 'Suggested Next Actions',
+    defaultItem: {
+      lg: { i: 'predictions', x: 0, y: 16, w: 12, h: 5, minH: 3 },
+      md: { i: 'predictions', x: 0, y: 16, w: 10, h: 5, minH: 3 },
+    },
+  },
+  {
     id: 'token-chart',
     title: 'Token Usage',
     defaultItem: {
-      lg: { i: 'token-chart', x: 0, y: 16, w: 6, h: 6, minH: 4 },
-      md: { i: 'token-chart', x: 0, y: 16, w: 5, h: 6, minH: 4 },
+      lg: { i: 'token-chart', x: 0, y: 21, w: 6, h: 6, minH: 4 },
+      md: { i: 'token-chart', x: 0, y: 21, w: 5, h: 6, minH: 4 },
     },
   },
   {
     id: 'tool-chart',
     title: 'Tool Calls',
     defaultItem: {
-      lg: { i: 'tool-chart', x: 6, y: 16, w: 6, h: 6, minH: 4 },
-      md: { i: 'tool-chart', x: 5, y: 16, w: 5, h: 6, minH: 4 },
+      lg: { i: 'tool-chart', x: 6, y: 21, w: 6, h: 6, minH: 4 },
+      md: { i: 'tool-chart', x: 5, y: 21, w: 5, h: 6, minH: 4 },
     },
   },
   {
     id: 'activity-heatmap',
     title: 'Activity Heatmap',
     defaultItem: {
-      lg: { i: 'activity-heatmap', x: 0, y: 22, w: 12, h: 6, minH: 4 },
-      md: { i: 'activity-heatmap', x: 0, y: 22, w: 10, h: 6, minH: 4 },
+      lg: { i: 'activity-heatmap', x: 0, y: 27, w: 12, h: 6, minH: 4 },
+      md: { i: 'activity-heatmap', x: 0, y: 27, w: 10, h: 6, minH: 4 },
     },
   },
   {
     id: 'health-check',
     title: 'System Health',
     defaultItem: {
-      lg: { i: 'health-check', x: 0, y: 28, w: 12, h: 5, minH: 3 },
-      md: { i: 'health-check', x: 0, y: 28, w: 10, h: 5, minH: 3 },
+      lg: { i: 'health-check', x: 0, y: 33, w: 12, h: 5, minH: 3 },
+      md: { i: 'health-check', x: 0, y: 33, w: 10, h: 5, minH: 3 },
     },
   },
   {
     id: 'logs',
     title: 'Live Logs',
     defaultItem: {
-      lg: { i: 'logs', x: 0, y: 33, w: 12, h: 8, minH: 4 },
-      md: { i: 'logs', x: 0, y: 33, w: 10, h: 8, minH: 4 },
+      lg: { i: 'logs', x: 0, y: 38, w: 12, h: 8, minH: 4 },
+      md: { i: 'logs', x: 0, y: 38, w: 10, h: 8, minH: 4 },
     },
   },
 ];
@@ -182,8 +191,8 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
   const { showExec, width } = props;
 
   const ALL_VISIBLE: WidgetId[] = showExec
-    ? ['stats', 'agent', 'telegram', 'exec', 'quick-actions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs']
-    : ['stats', 'agent', 'telegram', 'quick-actions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs'];
+    ? ['stats', 'agent', 'telegram', 'exec', 'quick-actions', 'predictions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs']
+    : ['stats', 'agent', 'telegram', 'quick-actions', 'predictions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs'];
 
   const saved = loadSaved();
   const [layouts, setLayouts] = useState<ResponsiveLayouts>(
@@ -229,8 +238,8 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
 
   const resetLayout = useCallback(() => {
     const next = showExec
-      ? (['stats', 'agent', 'telegram', 'exec', 'quick-actions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs'] as WidgetId[])
-      : (['stats', 'agent', 'telegram', 'quick-actions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs'] as WidgetId[]);
+      ? (['stats', 'agent', 'telegram', 'exec', 'quick-actions', 'predictions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs'] as WidgetId[])
+      : (['stats', 'agent', 'telegram', 'quick-actions', 'predictions', 'token-chart', 'tool-chart', 'activity-heatmap', 'health-check', 'logs'] as WidgetId[]);
     const nextLayouts = buildDefaultLayouts(next);
     setVisible(next);
     setLayouts(nextLayouts);
@@ -292,6 +301,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
             />
           )}
           {id === 'quick-actions' && <QuickActions />}
+          {id === 'predictions' && <PredictionsWidget />}
           {id === 'token-chart' && (
             <Suspense fallback={<div className="chart-loading">Loading…</div>}>
               <TokenUsageChart />

@@ -496,7 +496,8 @@ export class ToolRegistry {
     isGroup: boolean,
     toolLimit: number | null,
     chatId?: string,
-    isAdmin?: boolean
+    isAdmin?: boolean,
+    preferredToolNames: string[] = []
   ): Promise<PiAiTool[]> {
     // Get scope-filtered tools (no limit applied yet)
     const scopeFiltered = this.getForContext(isGroup, null, chatId, isAdmin);
@@ -511,6 +512,13 @@ export class ToolRegistry {
     for (const tool of scopeFiltered) {
       if (this.toolIndex.isAlwaysIncluded(tool.name)) {
         selected.set(tool.name, tool);
+      }
+    }
+
+    for (const toolName of preferredToolNames) {
+      if (scopeSet.has(toolName) && !selected.has(toolName)) {
+        const tool = scopeFiltered.find((t) => t.name === toolName);
+        if (tool) selected.set(tool.name, tool);
       }
     }
 

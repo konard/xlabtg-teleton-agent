@@ -97,6 +97,14 @@ webui:
     - "http://localhost:7777"         # Production server
   log_requests: false                 # Log HTTP requests
 
+# Prediction engine: learns repeated message/tool patterns and exposes suggestions.
+predictions:
+  enabled: true                       # Record behavior events and serve prediction APIs
+  confidence_threshold: 0.6           # Minimum confidence before suggestions appear
+  proactive_suggestions: false        # Append suggestions to agent replies (off by default)
+  max_suggestions: 5                  # Max predictions per API response
+  history_limit: 5000                 # Max behavior events retained locally
+
 # Tool RAG: semantic tool selection per message (ENABLED by default)
 # Reduces tool definitions sent to the LLM from 120+ to ~25 most relevant.
 # Uses local ONNX embeddings (zero-config) + FTS5 hybrid search.
