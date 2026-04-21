@@ -6,6 +6,9 @@ export * from "./feed/index.js";
 export * from "./search/hybrid.js";
 export * from "./search/context.js";
 export * from "./vector-store.js";
+export * from "./graph-store.js";
+export * from "./graph-query.js";
+export * from "./entity-extractor.js";
 
 import type Database from "better-sqlite3";
 import { getDatabase, type DatabaseConfig } from "./database.js";

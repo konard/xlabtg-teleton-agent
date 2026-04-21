@@ -782,6 +782,21 @@ a:hover {
   color: var(--text);
 }
 
+/* ---- Knowledge Graph ---- */
+
+.knowledge-graph-grid {
+  display: grid;
+  grid-template-columns: minmax(420px, 1fr) minmax(280px, 370px);
+  gap: 12px;
+  padding: 14px;
+}
+
+@media (max-width: 900px) {
+  .knowledge-graph-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- Button variants ---- */
 
 button.btn-ghost {

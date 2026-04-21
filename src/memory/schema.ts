@@ -149,6 +149,41 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
 
     -- ============================================
+    -- ASSOCIATIVE MEMORY GRAPH
+    -- ============================================
+
+    CREATE TABLE IF NOT EXISTS graph_nodes (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL CHECK(type IN ('conversation', 'task', 'tool', 'topic', 'entity', 'outcome')),
+      label TEXT NOT NULL,
+      normalized_label TEXT NOT NULL,
+      metadata TEXT NOT NULL DEFAULT '{}',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(type, normalized_label)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(type);
+    CREATE INDEX IF NOT EXISTS idx_graph_nodes_updated ON graph_nodes(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_graph_nodes_label ON graph_nodes(label);
+
+    CREATE TABLE IF NOT EXISTS graph_edges (
+      id TEXT PRIMARY KEY,
+      source_id TEXT NOT NULL,
+      target_id TEXT NOT NULL,
+      relation TEXT NOT NULL,
+      weight REAL NOT NULL DEFAULT 1.0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (source_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+      FOREIGN KEY (target_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+      UNIQUE(source_id, target_id, relation)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_id);
+    CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_id);
+    CREATE INDEX IF NOT EXISTS idx_graph_edges_relation ON graph_edges(relation);
+
+    -- ============================================
     -- TELEGRAM FEED
     -- ============================================
 
@@ -472,7 +507,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.20.0";
+export const CURRENT_SCHEMA_VERSION = "1.21.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -942,6 +977,48 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.20.0 complete: Autonomous Task Engine tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.20.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.21.0")) {
+    log.info("Running migration 1.21.0: Add associative memory graph tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS graph_nodes (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL CHECK(type IN ('conversation', 'task', 'tool', 'topic', 'entity', 'outcome')),
+          label TEXT NOT NULL,
+          normalized_label TEXT NOT NULL,
+          metadata TEXT NOT NULL DEFAULT '{}',
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          UNIQUE(type, normalized_label)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_graph_nodes_type ON graph_nodes(type);
+        CREATE INDEX IF NOT EXISTS idx_graph_nodes_updated ON graph_nodes(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_graph_nodes_label ON graph_nodes(label);
+
+        CREATE TABLE IF NOT EXISTS graph_edges (
+          id TEXT PRIMARY KEY,
+          source_id TEXT NOT NULL,
+          target_id TEXT NOT NULL,
+          relation TEXT NOT NULL,
+          weight REAL NOT NULL DEFAULT 1.0,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (source_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+          FOREIGN KEY (target_id) REFERENCES graph_nodes(id) ON DELETE CASCADE,
+          UNIQUE(source_id, target_id, relation)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_graph_edges_source ON graph_edges(source_id);
+        CREATE INDEX IF NOT EXISTS idx_graph_edges_target ON graph_edges(target_id);
+        CREATE INDEX IF NOT EXISTS idx_graph_edges_relation ON graph_edges(relation);
+      `);
+      log.info("Migration 1.21.0 complete: memory graph tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.21.0 failed");
       throw error;
     }
   }

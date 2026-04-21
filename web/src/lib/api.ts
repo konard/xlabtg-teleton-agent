@@ -237,6 +237,33 @@ export interface MemoryChunk {
   updatedAt: number;
 }
 
+export type MemoryGraphNodeType = "conversation" | "task" | "tool" | "topic" | "entity" | "outcome";
+
+export interface MemoryGraphNode {
+  id: string;
+  type: MemoryGraphNodeType;
+  label: string;
+  metadata: Record<string, unknown>;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface MemoryGraphEdge {
+  id: string;
+  sourceId: string;
+  targetId: string;
+  relation: string;
+  weight: number;
+  createdAt: number;
+}
+
+export interface MemoryGraphData {
+  nodes: MemoryGraphNode[];
+  edges: MemoryGraphEdge[];
+  total?: number;
+  root?: MemoryGraphNode | null;
+}
+
 export interface SemanticMemoryStatusInfo {
   mode: "online" | "standby" | "fallback";
   reason?: string;
@@ -940,6 +967,27 @@ export const api = {
     return fetchAPI<APIResponse<MemoryVectorSyncResult>>("/memory/sync-vector", {
       method: "POST",
     });
+  },
+
+  async getMemoryGraph(params?: { type?: string; q?: string; limit?: number }) {
+    const search = new URLSearchParams();
+    if (params?.type) search.set("type", params.type);
+    if (params?.q) search.set("q", params.q);
+    if (params?.limit) search.set("limit", String(params.limit));
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return fetchAPI<APIResponse<MemoryGraphData>>(`/memory/graph/nodes${suffix}`);
+  },
+
+  async getMemoryGraphRelated(id: string, depth = 2) {
+    return fetchAPI<APIResponse<MemoryGraphData>>(
+      `/memory/graph/node/${encodeURIComponent(id)}/related?depth=${depth}`
+    );
+  },
+
+  async getMemoryGraphPath(from: string, to: string) {
+    return fetchAPI<APIResponse<MemoryGraphData>>(
+      `/memory/graph/path?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+    );
   },
 
   async getSoulFile(filename: string) {

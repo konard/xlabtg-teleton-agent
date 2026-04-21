@@ -8,6 +8,8 @@ import type {
   APIResponse,
 } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { MemoryGraphStore } from "../../memory/graph-store.js";
+import { MemoryGraphQuery } from "../../memory/graph-query.js";
 
 function vectorSyncUnavailableMessage(mode: MemoryVectorSyncResult["status"]["mode"]): string {
   if (mode === "standby") {
@@ -18,6 +20,9 @@ function vectorSyncUnavailableMessage(mode: MemoryVectorSyncResult["status"]["mo
 
 export function createMemoryRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
+
+  const graphStore = () => new MemoryGraphStore(deps.memory.db);
+  const graphQuery = () => new MemoryGraphQuery(graphStore());
 
   // Search knowledge base
   app.get("/search", async (c) => {
@@ -271,6 +276,131 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
         data: chunks,
       };
 
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // List/search graph nodes and adjacent in-scope edges for visualization.
+  app.get("/graph/nodes", (c) => {
+    try {
+      const type = c.req.query("type") || undefined;
+      const q = c.req.query("q") || undefined;
+      const limit = parseInt(c.req.query("limit") || "120", 10);
+      const data = graphStore().getOverview({ type, q, limit });
+
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Traverse relationships around a node up to N hops.
+  app.get("/graph/node/:id/related", (c) => {
+    try {
+      const id = decodeURIComponent(c.req.param("id"));
+      const depth = parseInt(c.req.query("depth") || "2", 10);
+      const limit = parseInt(c.req.query("limit") || "100", 10);
+      const data = graphQuery().getRelated(id, { depth, limit });
+      if (!data.root) {
+        const response: APIResponse = {
+          success: false,
+          error: "Graph node not found",
+        };
+        return c.json(response, 404);
+      }
+
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Find the shortest relationship path between two nodes.
+  app.get("/graph/path", (c) => {
+    try {
+      const from = c.req.query("from");
+      const to = c.req.query("to");
+      const maxDepth = parseInt(c.req.query("maxDepth") || "6", 10);
+      if (!from || !to) {
+        const response: APIResponse = {
+          success: false,
+          error: "Query parameters 'from' and 'to' are required",
+        };
+        return c.json(response, 400);
+      }
+
+      const data = graphQuery().findShortestPath(from, to, { maxDepth });
+      if (!data) {
+        const response: APIResponse = {
+          success: false,
+          error: "No graph path found",
+        };
+        return c.json(response, 404);
+      }
+
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Get the full graph context around a task node or persisted task id.
+  app.get("/graph/context", (c) => {
+    try {
+      const taskId = c.req.query("task_id");
+      const depth = parseInt(c.req.query("depth") || "2", 10);
+      const limit = parseInt(c.req.query("limit") || "100", 10);
+      if (!taskId) {
+        const response: APIResponse = {
+          success: false,
+          error: "Query parameter 'task_id' is required",
+        };
+        return c.json(response, 400);
+      }
+
+      const data = graphQuery().getTaskContext(taskId, { depth, limit });
+      if (!data.root) {
+        const response: APIResponse = {
+          success: false,
+          error: "Task graph node not found",
+        };
+        return c.json(response, 404);
+      }
+
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {

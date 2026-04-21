@@ -30,7 +30,12 @@ import {
 } from "./client.js";
 import { getProviderMetadata, type SupportedProvider } from "../config/providers.js";
 import { buildSystemPrompt } from "../soul/loader.js";
-import { getDatabase } from "../memory/index.js";
+import {
+  getDatabase,
+  MemoryGraphQuery,
+  MemoryGraphStore,
+  EntityExtractor,
+} from "../memory/index.js";
 import { sanitizeForContext } from "../utils/sanitize.js";
 import { formatMessageEnvelope } from "../memory/envelope.js";
 import {
@@ -177,6 +182,7 @@ export class AgentRuntime {
   private contextBuilder: ContextBuilder | null = null;
   private toolRegistry: ToolRegistry | null = null;
   private embedder: EmbeddingProvider | null = null;
+  private entityExtractor = new EntityExtractor();
   private hookRunner?: ReturnType<typeof createHookRunner>;
   private userHookEvaluator?: UserHookEvaluator;
 
@@ -423,12 +429,18 @@ export class AgentRuntime {
         queryEmbedding,
         maxRagChars,
       });
+      const graphContext = await this.buildGraphContext({
+        effectiveMessage,
+        isOwner,
+        maxGraphChars: maxRagChars ? Math.min(2000, maxRagChars) : 2000,
+      });
+      const retrievalContext = [relevantContext, graphContext].filter(Boolean).join("\n\n");
 
       const memoryStats = this.getMemoryStats();
       const statsContext = `[Memory Status: ${memoryStats.totalMessages} messages across ${memoryStats.totalChats} chats, ${memoryStats.knowledgeChunks} knowledge chunks]`;
 
-      const additionalContext = relevantContext
-        ? `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}\n\n${relevantContext}`
+      const additionalContext = retrievalContext
+        ? `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}\n\n${retrievalContext}`
         : `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}`;
 
       // Hook: prompt:before — run concurrently with context assembly
@@ -486,7 +498,7 @@ export class AgentRuntime {
           isGroup: effectiveIsGroup,
           promptLength: systemPrompt.length,
           sectionCount: (systemPrompt.match(/^#{1,3} /gm) || []).length,
-          ragContextLength: relevantContext.length,
+          ragContextLength: retrievalContext.length,
           hookContextLength: allHookContext.length,
         };
         await this.hookRunner.runObservingHook("prompt:after", promptAfterEvent);
@@ -1112,6 +1124,16 @@ export class AgentRuntime {
         success: true,
       });
 
+      await this.indexMemoryGraphTurn({
+        chatId,
+        sessionId: session.sessionId,
+        userName,
+        userMessage: effectiveMessage,
+        assistantMessage: content,
+        toolCalls: totalToolCalls,
+        timestamp: now,
+      });
+
       return {
         content,
         toolCalls: totalToolCalls,
@@ -1217,6 +1239,75 @@ export class AgentRuntime {
       );
     }
     return trimRagContext(relevantContext, maxRagChars);
+  }
+
+  /**
+   * Fetch structured graph context related to the current message.
+   * Owner-only to avoid leaking memory from other chats into group or non-owner replies.
+   */
+  private async buildGraphContext(opts: {
+    effectiveMessage: string;
+    isOwner: boolean;
+    maxGraphChars: number;
+  }): Promise<string> {
+    const { effectiveMessage, isOwner, maxGraphChars } = opts;
+    if (!isOwner || isTrivialMessage(effectiveMessage)) return "";
+
+    try {
+      const terms = EntityExtractor.extractSearchTerms(effectiveMessage, 8);
+      if (terms.length === 0) return "";
+
+      const store = new MemoryGraphStore(getDatabase().getDb());
+      const graphQuery = new MemoryGraphQuery(store);
+      const seeds = store.findNodesByTerms(terms, { limit: 5 });
+      if (seeds.length === 0) return "";
+
+      const lines: string[] = [];
+      const seenEdges = new Set<string>();
+
+      for (const seed of seeds) {
+        const related = graphQuery.getRelated(seed.id, { depth: 1, limit: 20 });
+        const nodeById = new Map(related.nodes.map((node) => [node.id, node]));
+        for (const edge of related.edges) {
+          if (seenEdges.has(edge.id)) continue;
+          const source = nodeById.get(edge.sourceId);
+          const target = nodeById.get(edge.targetId);
+          if (!source || !target) continue;
+          seenEdges.add(edge.id);
+          lines.push(
+            `- [${source.type}] ${sanitizeForContext(source.label)} --${edge.relation}-> [${target.type}] ${sanitizeForContext(target.label)}`
+          );
+          if (lines.length >= 16) break;
+        }
+        if (lines.length >= 16) break;
+      }
+
+      if (lines.length === 0) return "";
+      const context = `[Related knowledge graph]\n${lines.join("\n")}`;
+      log.info(`Graph context: ${lines.length} relationship(s)`);
+      return trimRagContext(context, maxGraphChars);
+    } catch (error) {
+      log.warn({ err: error }, "Graph context building failed");
+      return "";
+    }
+  }
+
+  private async indexMemoryGraphTurn(turn: {
+    chatId: string;
+    sessionId: string;
+    userName?: string;
+    userMessage: string;
+    assistantMessage: string;
+    toolCalls: Array<{ name: string; input: Record<string, unknown> }>;
+    timestamp: number;
+  }): Promise<void> {
+    try {
+      const store = new MemoryGraphStore(getDatabase().getDb());
+      const graph = await this.entityExtractor.extractAndPersistTurn(store, turn);
+      log.debug(`Indexed graph turn: ${graph.nodes.length} node(s), ${graph.edges.length} edge(s)`);
+    } catch (error) {
+      log.warn({ err: error }, "Memory graph extraction failed");
+    }
   }
 
   /**
