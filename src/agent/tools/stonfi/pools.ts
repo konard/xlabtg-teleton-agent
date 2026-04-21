@@ -40,6 +40,7 @@ export const stonfiPoolsExecutor: ToolExecutor<JettonPoolsParams> = async (
     // Fetch pools from STON.fi
     const response = await fetchWithTimeout(`${STONFI_API_BASE_URL}/pools`, {
       headers: { Accept: "application/json" },
+      cacheTtlMs: 60_000,
     });
 
     if (!response.ok) {
@@ -82,7 +83,9 @@ export const stonfiPoolsExecutor: ToolExecutor<JettonPoolsParams> = async (
     // Fetch asset names for better display
     const assetMap: { [key: string]: string } = {};
     try {
-      const assetsResponse = await fetchWithTimeout(`${STONFI_API_BASE_URL}/assets`);
+      const assetsResponse = await fetchWithTimeout(`${STONFI_API_BASE_URL}/assets`, {
+        cacheTtlMs: 5 * 60_000,
+      });
       if (assetsResponse.ok) {
         const assetsData = await assetsResponse.json();
         for (const asset of assetsData.asset_list || []) {

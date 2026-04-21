@@ -5,3 +5,4 @@ export { AgentSettingsWidget } from './AgentSettingsWidget';
 export { TelegramSettingsWidget } from './TelegramSettingsWidget';
 export { ExecSettingsWidget } from './ExecSettingsWidget';
 export { PredictionsWidget } from './PredictionsWidget';
+export { CacheWidget } from './CacheWidget';

@@ -143,6 +143,16 @@ predictions:
 #     - "workspace_*"
 #     - "web_*"
 
+# Predictive cache: bounded in-memory cache for tools, prompts, embeddings, and opt-in API responses.
+cache:
+  enabled: true
+  max_entries: 512
+  ttl:
+    tools_ms: 300000
+    prompts_ms: 60000
+    embeddings_ms: 1800000
+    api_responses_ms: 300000
+
 # Deals / OTC trading module
 # deals:
 #   enabled: true

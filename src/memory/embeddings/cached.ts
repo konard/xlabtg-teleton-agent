@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import type { EmbeddingProvider } from "./provider.js";
 import { hashText, serializeEmbedding, deserializeEmbedding } from "./utils.js";
 import { createLogger } from "../../utils/logger.js";
+import { getCache } from "../../services/cache.js";
 import {
   EMBEDDING_CACHE_MAX_ENTRIES,
   EMBEDDING_CACHE_TTL_DAYS,
@@ -65,18 +66,26 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
 
   async embedQuery(text: string): Promise<number[]> {
     const hash = hashText(text);
+    const resourceCache = getCache();
+    const cached = resourceCache?.getCachedByKey<number[]>(
+      resourceCache.makeKey("embeddings", hash, this.cacheConfig())
+    );
+    if (cached) return cached;
 
     const row = this.cacheGet(hash);
     if (row) {
       this.hits++;
       this.cacheTouch(hash);
       this.tick();
-      return deserializeEmbedding(row.embedding);
+      const embedding = deserializeEmbedding(row.embedding);
+      resourceCache?.set("embeddings", hash, this.cacheConfig(), embedding);
+      return embedding;
     }
 
     this.misses++;
     const embedding = await this.inner.embedQuery(text);
     this.cachePut(hash, serializeEmbedding(embedding));
+    resourceCache?.set("embeddings", hash, this.cacheConfig(), embedding);
     this.tick();
     return embedding;
   }
@@ -91,12 +100,23 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
 
     // Check cache for each text
     for (let i = 0; i < texts.length; i++) {
+      const resourceCache = getCache();
+      const cached = resourceCache?.getCachedByKey<number[]>(
+        resourceCache.makeKey("embeddings", hashes[i], this.cacheConfig())
+      );
+      if (cached) {
+        results[i] = cached;
+        continue;
+      }
+
       const row = this.cacheGet(hashes[i]);
 
       if (row) {
         this.hits++;
         this.cacheTouch(hashes[i]);
-        results[i] = deserializeEmbedding(row.embedding);
+        const embedding = deserializeEmbedding(row.embedding);
+        results[i] = embedding;
+        resourceCache?.set("embeddings", hashes[i], this.cacheConfig(), embedding);
       } else {
         this.misses++;
         missIndices.push(i);
@@ -114,6 +134,7 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
 
         if (embedding.length > 0) {
           this.cachePut(hashes[idx], serializeEmbedding(embedding));
+          getCache()?.set("embeddings", hashes[idx], this.cacheConfig(), embedding);
         }
       }
     }
@@ -129,6 +150,10 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
     this.ops++;
     this.maybeEvict();
     this.maybeLogStats();
+  }
+
+  private cacheConfig(): Record<string, string> {
+    return { provider: this.id, model: this.model };
   }
 
   private maybeLogStats(): void {

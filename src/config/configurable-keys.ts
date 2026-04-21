@@ -16,6 +16,7 @@ export type ConfigCategory =
   | "Embedding"
   | "Vector Memory"
   | "Predictions"
+  | "Cache"
   | "WebUI"
   | "Deals"
   | "TON Proxy"
@@ -911,6 +912,80 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     defaultValue: "5000",
   },
 
+  // ─── Cache ───────────────────────────────────────────────────────────
+  "cache.enabled": {
+    type: "boolean",
+    category: "Cache",
+    label: "Cache Enabled",
+    description: "Enable predictive in-memory resource caching",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "true",
+  },
+  "cache.max_entries": {
+    type: "number",
+    category: "Cache",
+    label: "Max Cache Entries",
+    description: "Maximum number of in-memory resource cache entries",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(10, 100000),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "512",
+  },
+  "cache.ttl.tools_ms": {
+    type: "number",
+    category: "Cache",
+    label: "Tool Cache TTL",
+    description: "TTL in milliseconds for cached tool schema/context selections",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(1000, Number.MAX_SAFE_INTEGER),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "300000",
+  },
+  "cache.ttl.prompts_ms": {
+    type: "number",
+    category: "Cache",
+    label: "Prompt Cache TTL",
+    description: "TTL in milliseconds for cached prompt and soul file reads",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(1000, Number.MAX_SAFE_INTEGER),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "60000",
+  },
+  "cache.ttl.embeddings_ms": {
+    type: "number",
+    category: "Cache",
+    label: "Embedding Cache TTL",
+    description: "TTL in milliseconds for in-memory embedding vectors",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(1000, Number.MAX_SAFE_INTEGER),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "1800000",
+  },
+  "cache.ttl.api_responses_ms": {
+    type: "number",
+    category: "Cache",
+    label: "API Cache TTL",
+    description: "TTL in milliseconds for opt-in cached external API responses",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(1000, Number.MAX_SAFE_INTEGER),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "300000",
+  },
+
   // ─── Developer ─────────────────────────────────────────────────────
   "dev.hot_reload": {
     type: "boolean",
@@ -1042,6 +1117,7 @@ export const CATEGORY_ORDER: ConfigCategory[] = [
   "Embedding",
   "Vector Memory",
   "Predictions",
+  "Cache",
   "WebUI",
   "Deals",
   "TON Proxy",

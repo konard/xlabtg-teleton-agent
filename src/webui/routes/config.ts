@@ -20,6 +20,7 @@ import {
 import { setTonapiKey } from "../../constants/api-endpoints.js";
 import { setToncenterApiKey, invalidateEndpointCache } from "../../ton/endpoint.js";
 import { invalidateTonClientCache } from "../../ton/wallet-service.js";
+import { DEFAULT_CACHE_CONFIG, getCache, type ResourceCacheConfig } from "../../services/cache.js";
 /** Side-effects to run when specific config keys change at runtime. */
 const CONFIG_SIDE_EFFECTS: Record<string, (value: string | undefined) => void> = {
   tonapi_key: (v) => setTonapiKey(v),
@@ -56,6 +57,32 @@ function applyConfigSideEffects(
   if (VECTOR_MEMORY_CONFIG_KEYS.has(key)) {
     deps.memory.vectorStore?.configure?.(getVectorStoreConfig(deps));
   }
+
+  refreshResourceCache(key, deps);
+}
+
+function effectiveCacheConfig(deps: WebUIServerDeps): ResourceCacheConfig {
+  const runtime = deps.agent.getConfig().cache;
+  return {
+    enabled: runtime?.enabled ?? DEFAULT_CACHE_CONFIG.enabled,
+    max_entries: runtime?.max_entries ?? DEFAULT_CACHE_CONFIG.max_entries,
+    ttl: {
+      ...DEFAULT_CACHE_CONFIG.ttl,
+      ...(runtime?.ttl ?? {}),
+    },
+  };
+}
+
+function refreshResourceCache(key: string, deps: WebUIServerDeps): void {
+  const cache = getCache();
+  if (!cache) return;
+
+  if (key.startsWith("cache.")) {
+    cache.configure(effectiveCacheConfig(deps));
+  }
+
+  cache.invalidate({ type: "tools" });
+  cache.invalidate({ type: "api_responses" });
 }
 
 interface ConfigKeyData {
@@ -191,6 +218,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
         const runtimeConfig = deps.agent.getConfig() as Record<string, any>;
         setNestedValue(runtimeConfig, key, parsed);
+        applyConfigSideEffects(key, undefined, deps);
 
         const result: ConfigKeyData = {
           key,

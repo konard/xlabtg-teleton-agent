@@ -29,7 +29,7 @@ export async function getAssetList(): Promise<DedustAsset[]> {
   }
 
   try {
-    const response = await fetchWithTimeout(ASSET_LIST_URL);
+    const response = await fetchWithTimeout(ASSET_LIST_URL, { cacheTtlMs: CACHE_TTL_MS });
     if (!response.ok) {
       throw new Error(`Failed to fetch asset list: ${response.status}`);
     }
