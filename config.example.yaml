@@ -126,6 +126,19 @@ predictions:
   max_suggestions: 5                  # Max predictions per API response
   history_limit: 5000                 # Max behavior events retained locally
 
+# Anomaly detection: rolling baselines for volume, errors, latency, tool usage, and cost.
+anomaly_detection:
+  enabled: true                       # Enable automated anomaly detection
+  sensitivity: 2.5                    # Z-score threshold in standard deviations
+  baseline_days: 7                    # Rolling baseline window
+  min_samples: 24                     # Hourly samples required before alerting
+  cooldown_minutes: 15                # Suppress duplicate alerts for same type/metric
+  alerting:
+    in_app: true                      # Create WebUI notifications
+    telegram: false                   # Send alerts to admin IDs or telegram_chat_ids
+    telegram_chat_ids: []             # Optional explicit chat IDs; empty = admin_ids
+    webhook_url: null                 # Optional Slack/PagerDuty-compatible webhook URL
+
 # Tool RAG: semantic tool selection per message (ENABLED by default)
 # Reduces tool definitions sent to the LLM from 120+ to ~25 most relevant.
 # Uses local ONNX embeddings (zero-config) + FTS5 hybrid search.

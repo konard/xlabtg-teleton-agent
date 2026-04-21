@@ -42,6 +42,7 @@ import {
   MarketplaceConfigSchema,
   MemoryConfigSchema,
   PredictionsConfigSchema,
+  AnomalyDetectionConfigSchema,
   VectorMemoryConfigSchema,
 } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
@@ -1001,6 +1002,7 @@ async function runInteractiveOnboarding(
       log_requests: false,
     },
     predictions: PredictionsConfigSchema.parse({}),
+    anomaly_detection: AnomalyDetectionConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {
       enabled: true,
@@ -1201,6 +1203,7 @@ async function runNonInteractiveOnboarding(
       log_requests: false,
     },
     predictions: PredictionsConfigSchema.parse({}),
+    anomaly_detection: AnomalyDetectionConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {
       enabled: true,

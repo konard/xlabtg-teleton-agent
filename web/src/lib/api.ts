@@ -586,6 +586,69 @@ export interface BudgetStatus {
   projection_usd: number | null;
 }
 
+export type AnomalyType =
+  | "volume_spike"
+  | "error_burst"
+  | "latency_degradation"
+  | "cost_spike"
+  | "behavioral_anomaly";
+
+export type AnomalySeverity = "warning" | "critical";
+
+export interface AnomalyAlertingConfig {
+  in_app: boolean;
+  telegram: boolean;
+  telegram_chat_ids: string[];
+  webhook_url: string | null;
+}
+
+export interface AnomalyDetectionConfigData {
+  enabled: boolean;
+  sensitivity: number;
+  baseline_days: number;
+  min_samples: number;
+  cooldown_minutes: number;
+  alerting: AnomalyAlertingConfig;
+}
+
+export interface AnomalyEvent {
+  id: string;
+  type: AnomalyType;
+  severity: AnomalySeverity;
+  metric: string;
+  period: string;
+  currentValue: number;
+  expectedMin: number;
+  expectedMax: number;
+  baselineMean: number;
+  baselineStddev: number;
+  zScore: number | null;
+  description: string;
+  acknowledged: boolean;
+  createdAt: number;
+  acknowledgedAt: number | null;
+}
+
+export interface AnomalyBaseline {
+  metric: string;
+  period: string;
+  mean: number;
+  stddev: number;
+  sampleCount: number;
+  updatedAt: number;
+  currentValue: number | null;
+}
+
+export interface AnomalyStats {
+  total: number;
+  warning: number;
+  critical: number;
+  unacknowledged: number;
+  lastDetectedAt: number | null;
+  byType: Array<{ type: AnomalyType; count: number }>;
+  config: AnomalyDetectionConfigData;
+}
+
 // ── Prediction types ─────────────────────────────────────────────────
 
 export type PredictionEndpoint = "next" | "tools" | "topics";
@@ -1768,6 +1831,37 @@ export const api = {
     return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget", {
       method: "PUT",
       body: JSON.stringify({ monthly_limit_usd }),
+    });
+  },
+
+  // ── Anomalies ────────────────────────────────────────────────────
+
+  async getAnomalies(
+    opts: {
+      period?: MetricsPeriod;
+      severity?: AnomalySeverity;
+      acknowledged?: boolean;
+    } = {}
+  ) {
+    const params = new URLSearchParams();
+    if (opts.period) params.set("period", opts.period);
+    if (opts.severity) params.set("severity", opts.severity);
+    if (opts.acknowledged !== undefined) params.set("acknowledged", String(opts.acknowledged));
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return fetchAPI<APIResponse<AnomalyEvent[]>>(`/anomalies${suffix}`);
+  },
+
+  async getAnomalyBaselines() {
+    return fetchAPI<APIResponse<AnomalyBaseline[]>>("/anomalies/baselines");
+  },
+
+  async getAnomalyStats(period: MetricsPeriod = "24h") {
+    return fetchAPI<APIResponse<AnomalyStats>>(`/anomalies/stats?period=${period}`);
+  },
+
+  async acknowledgeAnomaly(id: string) {
+    return fetchAPI<APIResponse<AnomalyEvent>>(`/anomalies/${encodeURIComponent(id)}/acknowledge`, {
+      method: "POST",
     });
   },
 
