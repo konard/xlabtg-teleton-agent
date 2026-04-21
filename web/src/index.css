@@ -891,6 +891,12 @@ button.btn-sm {
   border: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.alert.warning {
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--text-secondary);
+  border: 1px solid rgba(245, 158, 11, 0.22);
+}
+
 /* ---- File rows (table rows in Workspace, Tasks) ---- */
 
 .file-row {

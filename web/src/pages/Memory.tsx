@@ -239,7 +239,10 @@ export function Memory() {
           )}
 
           {syncMessage && (
-            <div className="alert success" style={{ margin: "12px 14px" }}>
+            <div
+              className={`alert ${syncSynced ? "success" : "warning"}`}
+              style={{ margin: "12px 14px" }}
+            >
               {syncMessage}
               {!syncSynced && (
                 <span style={{ color: "var(--text-secondary)" }}>
