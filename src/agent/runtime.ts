@@ -191,6 +191,7 @@ export class AgentRuntime {
   private hookRunner?: ReturnType<typeof createHookRunner>;
   private userHookEvaluator?: UserHookEvaluator;
   private lastRagMemoryIds: string[] = [];
+  private onToolCompleteCallback?: (toolName: string) => void;
 
   constructor(config: Config, soul?: string, toolRegistry?: ToolRegistry) {
     this.config = config;
@@ -230,6 +231,10 @@ export class AgentRuntime {
 
   setHookRunner(runner: ReturnType<typeof createHookRunner>): void {
     this.hookRunner = runner;
+  }
+
+  setOnToolCompleteCallback(cb: ((toolName: string) => void) | undefined): void {
+    this.onToolCompleteCallback = cb;
   }
 
   setUserHookEvaluator(evaluator: UserHookEvaluator): void {
@@ -949,6 +954,15 @@ export class AgentRuntime {
                 log.warn({ err }, "tool:after hook failed");
               })
             );
+          }
+
+          // Notify workflow tool.complete observers
+          if (!plan.blocked && exec.result.success && this.onToolCompleteCallback) {
+            try {
+              this.onToolCompleteCallback(block.name);
+            } catch {
+              // ignore
+            }
           }
 
           // Record tool invocation metric (skipped for blocked tools)

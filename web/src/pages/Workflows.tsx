@@ -6,6 +6,7 @@ import type {
   WorkflowTrigger,
   WorkflowAction,
   CronTrigger,
+  WebhookTrigger,
   EventTrigger,
   SendMessageAction,
   CallApiAction,
@@ -28,7 +29,10 @@ function triggerLabel(trigger: WorkflowTrigger): string {
   if (trigger.type === "cron") {
     return (trigger as CronTrigger).label || `Cron: ${(trigger as CronTrigger).cron}`;
   }
-  if (trigger.type === "webhook") return "Webhook";
+  if (trigger.type === "webhook")
+    return (trigger as WebhookTrigger).secret
+      ? `Webhook (POST /api/workflows/webhook/${(trigger as WebhookTrigger).secret})`
+      : "Webhook";
   if (trigger.type === "event") return `Event: ${(trigger as EventTrigger).event}`;
   return "Unknown trigger";
 }
@@ -145,8 +149,9 @@ function TriggerEditor({
             fontSize: "13px",
           }}
         >
-          A unique webhook URL will be available at <code>/api/webhooks/&#123;id&#125;</code> once
-          saved.
+          A unique webhook URL will be available at{" "}
+          <code>/api/workflows/webhook/&#123;secret&#125;</code> once saved. POST to this URL to
+          trigger the workflow.
         </div>
       )}
 
