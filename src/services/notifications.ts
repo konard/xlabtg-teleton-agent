@@ -1,4 +1,5 @@
 import type { Database } from "better-sqlite3";
+import { EventEmitter } from "node:events";
 
 export type NotificationType = "error" | "warning" | "info" | "achievement";
 
@@ -12,6 +13,10 @@ export interface Notification {
 }
 
 const MAX_NOTIFICATIONS = 500;
+
+// Shared emitter for realtime notification badge updates.
+export const notificationBus = new EventEmitter();
+notificationBus.setMaxListeners(100);
 
 export function getNotificationService(db: Database) {
   // Ensure table exists

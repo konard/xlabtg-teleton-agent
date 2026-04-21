@@ -1,13 +1,8 @@
 import { Hono } from "hono";
 import { streamSSE } from "hono/streaming";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
-import { getNotificationService } from "../../services/notifications.js";
+import { getNotificationService, notificationBus } from "../../services/notifications.js";
 import { getErrorMessage } from "../../utils/errors.js";
-import { EventEmitter } from "node:events";
-
-// Module-level emitter so the service and SSE stream share the same bus
-export const notificationBus = new EventEmitter();
-notificationBus.setMaxListeners(100);
 
 export function createNotificationsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();

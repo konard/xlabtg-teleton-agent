@@ -54,6 +54,8 @@ import { initMetrics } from "./services/metrics.js";
 import { initAnalytics } from "./services/analytics.js";
 import { initBehaviorTracker } from "./services/behavior-tracker.js";
 import { initPredictions } from "./services/predictions.js";
+import { initAlerting } from "./services/alerting.js";
+import { initAnomalyDetector } from "./services/anomaly-detector.js";
 import { flushOffsets } from "./telegram/offset-store.js";
 
 const log = createLogger("App");
@@ -149,6 +151,16 @@ export class TeletonApp {
     initAnalytics(db);
     initBehaviorTracker(db, { historyLimit: this.config.predictions.history_limit });
     initPredictions(db);
+    const alerting = initAlerting(db, {
+      config: this.config.anomaly_detection,
+      telegram: {
+        chatIds: this.config.telegram.admin_ids.map(String),
+        sendMessage: async (chatId, text) => {
+          await this.bridge.sendMessage({ chatId, text });
+        },
+      },
+    });
+    initAnomalyDetector(db, this.config.anomaly_detection, alerting);
 
     this.userHookEvaluator = new UserHookEvaluator(db);
     this.agent.setUserHookEvaluator(this.userHookEvaluator);
