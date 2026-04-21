@@ -1,7 +1,4 @@
-import type {
-  AutonomousTask,
-  TaskCheckpoint,
-} from "../memory/agent/autonomous-tasks.js";
+import type { AutonomousTask, TaskCheckpoint } from "../memory/agent/autonomous-tasks.js";
 import type { AutonomousTaskStore } from "../memory/agent/autonomous-tasks.js";
 import { PolicyEngine, DEFAULT_POLICY_CONFIG } from "./policy-engine.js";
 import type { PolicyConfig } from "./policy-engine.js";
@@ -18,10 +15,7 @@ export interface LoopDependencies {
   ) => Promise<PlannedAction>;
 
   /** Execute a single tool call */
-  executeTool: (
-    toolName: string,
-    params: Record<string, unknown>
-  ) => Promise<ToolExecutionResult>;
+  executeTool: (toolName: string, params: Record<string, unknown>) => Promise<ToolExecutionResult>;
 
   /** Evaluate whether task success criteria are met */
   evaluateSuccess: (task: AutonomousTask, lastResult: ToolExecutionResult) => Promise<boolean>;
@@ -34,11 +28,7 @@ export interface LoopDependencies {
   ) => Promise<Reflection>;
 
   /** Send escalation notification to the user */
-  escalate: (
-    task: AutonomousTask,
-    reason: string,
-    details?: unknown
-  ) => Promise<void>;
+  escalate: (task: AutonomousTask, reason: string, details?: unknown) => Promise<void>;
 }
 
 export interface PlannedAction {
@@ -126,12 +116,20 @@ export class AutonomousLoop {
         current = this.store.getTask(task.id) ?? current;
 
         if (current.status === "cancelled") {
-          return { status: "cancelled", totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+          return {
+            status: "cancelled",
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
         }
 
         if (current.status === "paused") {
           log.info({ taskId: task.id }, "Task is paused, stopping loop");
-          return { status: "paused", totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+          return {
+            status: "paused",
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
         }
 
         // 1. Plan next action
@@ -150,7 +148,12 @@ export class AutonomousLoop {
             message: `Planning failed: ${error}`,
           });
           this.store.updateTaskStatus(task.id, "failed", { error });
-          return { status: "failed", error, totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+          return {
+            status: "failed",
+            error,
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
         }
 
         this.store.appendLog({
@@ -178,11 +181,17 @@ export class AutonomousLoop {
             message: `Policy violation: ${reasons}`,
           });
           this.store.updateTaskStatus(task.id, "failed", { error: `Policy violation: ${reasons}` });
-          return { status: "failed", error: reasons, totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+          return {
+            status: "failed",
+            error: reasons,
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
         }
 
         if (policyCheck.requiresEscalation) {
-          const reason = policyCheck.violations.map((v) => v.message).join("; ") || "Requires confirmation";
+          const reason =
+            policyCheck.violations.map((v) => v.message).join("; ") || "Requires confirmation";
           log.info({ taskId: task.id, reason }, "Escalating to user");
           this.store.appendLog({
             taskId: task.id,
@@ -192,7 +201,11 @@ export class AutonomousLoop {
           });
           await this.deps.escalate(current, reason, { action });
           this.store.updateTaskStatus(task.id, "paused");
-          return { status: "paused", totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+          return {
+            status: "paused",
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
         }
 
         // 3. Execute the tool
@@ -252,16 +265,27 @@ export class AutonomousLoop {
           const reason = reflection.escalationReason ?? "Agent flagged uncertainty";
           await this.deps.escalate(current, reason);
           this.store.updateTaskStatus(task.id, "paused");
-          return { status: "paused", totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+          return {
+            status: "paused",
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
         }
 
         if (reflection.isStuck) {
           const maxConsecutive = 3;
           const shouldEscalate = this.policyEngine.recordUncertain();
           if (shouldEscalate) {
-            await this.deps.escalate(current, `Agent appears stuck after ${maxConsecutive} reflections`);
+            await this.deps.escalate(
+              current,
+              `Agent appears stuck after ${maxConsecutive} reflections`
+            );
             this.store.updateTaskStatus(task.id, "paused");
-            return { status: "paused", totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+            return {
+              status: "paused",
+              totalSteps: current.currentStep,
+              durationMs: Date.now() - startTime,
+            };
           }
         } else {
           this.policyEngine.resetUncertainCount();
@@ -322,7 +346,12 @@ export class AutonomousLoop {
       const error = err instanceof Error ? err.message : String(err);
       log.error({ taskId: task.id, err }, "Autonomous loop crashed");
       this.store.updateTaskStatus(task.id, "failed", { error });
-      return { status: "failed", error, totalSteps: current.currentStep, durationMs: Date.now() - startTime };
+      return {
+        status: "failed",
+        error,
+        totalSteps: current.currentStep,
+        durationMs: Date.now() - startTime,
+      };
     }
   }
 }

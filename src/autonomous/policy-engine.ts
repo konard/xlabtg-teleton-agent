@@ -193,7 +193,10 @@ export class PolicyEngine {
     this.consecutiveUncertainCount = 0;
   }
 
-  satisfiesPolicies(task: AutonomousTask, action: Parameters<typeof this.checkAction>[1]): PolicyCheckResult {
+  satisfiesPolicies(
+    task: AutonomousTask,
+    action: Parameters<typeof this.checkAction>[1]
+  ): PolicyCheckResult {
     return this.checkAction(task, action);
   }
 }

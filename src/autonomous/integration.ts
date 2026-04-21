@@ -5,11 +5,7 @@ import type { TelegramBridge } from "../telegram/bridge.js";
 import type Database from "better-sqlite3";
 import type { SupportedProvider } from "../config/providers.js";
 import { getProviderModel, getEffectiveApiKey } from "../agent/client.js";
-import {
-  buildDefaultLoopDeps,
-  AutonomousTaskManager,
-  type AvailableToolInfo,
-} from "./manager.js";
+import { buildDefaultLoopDeps, AutonomousTaskManager, type AvailableToolInfo } from "./manager.js";
 import type { LoopDependencies } from "./loop.js";
 import type { AutonomousTask } from "../memory/agent/autonomous-tasks.js";
 import { createLogger } from "../utils/logger.js";

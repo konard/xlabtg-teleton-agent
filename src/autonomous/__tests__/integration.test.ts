@@ -123,9 +123,9 @@ describe("listToolsForTask", () => {
 
 describe("buildDefaultLoopDeps planner prompt", () => {
   it("includes the list of available tools so the LLM can pick a real tool name", async () => {
-    const callLLM = vi.fn().mockResolvedValue(
-      JSON.stringify({ toolName: "alpha", params: {}, confidence: 0.9 })
-    );
+    const callLLM = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ toolName: "alpha", params: {}, confidence: 0.9 }));
     const deps = buildDefaultLoopDeps({
       callLLM,
       callTool: vi.fn(),
@@ -151,9 +151,9 @@ describe("buildDefaultLoopDeps planner prompt", () => {
   });
 
   it("still works when listTools is not provided (backwards compatible)", async () => {
-    const callLLM = vi.fn().mockResolvedValue(
-      JSON.stringify({ toolName: "noop", params: {}, confidence: 0.5 })
-    );
+    const callLLM = vi
+      .fn()
+      .mockResolvedValue(JSON.stringify({ toolName: "noop", params: {}, confidence: 0.5 }));
     const deps = buildDefaultLoopDeps({
       callLLM,
       callTool: vi.fn(),

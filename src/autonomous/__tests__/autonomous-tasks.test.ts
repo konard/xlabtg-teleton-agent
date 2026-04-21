@@ -181,7 +181,12 @@ describe("AutonomousTaskStore", () => {
     const task = store.createTask({ goal: "Multi-checkpoint" });
     store.saveCheckpoint({ taskId: task.id, step: 1, state: {}, toolCalls: [] });
     store.saveCheckpoint({ taskId: task.id, step: 2, state: {}, toolCalls: [] });
-    const last = store.saveCheckpoint({ taskId: task.id, step: 3, state: { last: true }, toolCalls: [] });
+    const last = store.saveCheckpoint({
+      taskId: task.id,
+      step: 3,
+      state: { last: true },
+      toolCalls: [],
+    });
 
     const fetched = store.getLastCheckpoint(task.id);
     expect(fetched!.id).toBe(last.id);
