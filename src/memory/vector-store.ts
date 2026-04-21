@@ -7,7 +7,7 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("Memory");
 
 export interface SemanticMemoryStatus {
-  mode: "online" | "fallback";
+  mode: "online" | "standby" | "fallback";
   reason?: string;
   vectorCount?: number;
   pendingVectorCount?: number;
@@ -55,9 +55,11 @@ export interface UpstashVectorStoreConfig {
   url?: string;
   token?: string;
   namespace?: string;
+  requestTimeoutMs?: number;
 }
 
 const DEFAULT_NAMESPACE = "teleton-memory";
+const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 
 function numberFromMetadata(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -69,10 +71,28 @@ function resultText(result: QueryResult<SemanticMemoryMetadata>): string {
   return "";
 }
 
+function withRequestTimeout<T>(
+  promise: Promise<T>,
+  operation: string,
+  timeoutMs: number
+): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error(`${operation} timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+}
+
 export class UpstashSemanticVectorStore implements SemanticVectorStore {
   private currentNamespace = DEFAULT_NAMESPACE;
   private index: Index<SemanticMemoryMetadata> | null = null;
   private lastLoggedMode: SemanticMemoryStatus["mode"] | null = null;
+  private requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
 
   constructor(config: UpstashVectorStoreConfig = {}) {
     this.configure(config);
@@ -84,6 +104,7 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
 
   configure(config: UpstashVectorStoreConfig = {}): void {
     this.currentNamespace = config.namespace || DEFAULT_NAMESPACE;
+    this.requestTimeoutMs = config.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     if (config.url && config.token) {
       this.index = new Index<SemanticMemoryMetadata>({
         url: config.url,
@@ -103,13 +124,17 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
   async healthCheck(): Promise<SemanticMemoryStatus> {
     if (!this.index) {
       return {
-        mode: "fallback",
+        mode: "standby",
         reason: "UPSTASH_VECTOR_REST_URL and UPSTASH_VECTOR_REST_TOKEN are not configured",
       };
     }
 
     try {
-      const info: InfoResult = await this.index.info();
+      const info: InfoResult = await withRequestTimeout(
+        this.index.info(),
+        "Upstash Vector info",
+        this.requestTimeoutMs
+      );
       return {
         mode: "online",
         vectorCount: info.vectorCount,
@@ -131,6 +156,10 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
         log.info(
           `Semantic Memory: Online (Upstash Vector, namespace=${this.namespace}, vectors=${status.vectorCount ?? 0})`
         );
+      } else if (status.mode === "standby") {
+        log.info(
+          `Semantic Memory: Standby (${status.reason ?? "Upstash Vector is not configured"}; local memory remains active)`
+        );
       } else {
         log.warn(
           `Semantic Memory: Fallback Mode (${status.reason ?? "Upstash Vector unavailable"})`
@@ -143,14 +172,18 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
   async searchKnowledge(embedding: number[], limit: number): Promise<SemanticMemorySearchResult[]> {
     if (!this.index || embedding.length === 0 || limit <= 0) return [];
 
-    const results = await this.index.query(
-      {
-        vector: embedding,
-        topK: limit,
-        includeMetadata: true,
-        includeData: true,
-      },
-      { namespace: this.namespace }
+    const results = await withRequestTimeout(
+      this.index.query(
+        {
+          vector: embedding,
+          topK: limit,
+          includeMetadata: true,
+          includeData: true,
+        },
+        { namespace: this.namespace }
+      ),
+      "Upstash Vector query",
+      this.requestTimeoutMs
     );
 
     return results
@@ -192,12 +225,20 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
       }));
 
     if (payload.length === 0) return;
-    await this.index.upsert(payload, { namespace: this.namespace });
+    await withRequestTimeout(
+      this.index.upsert(payload, { namespace: this.namespace }),
+      "Upstash Vector upsert",
+      this.requestTimeoutMs
+    );
   }
 
   async delete(ids: string[]): Promise<void> {
     if (!this.index || ids.length === 0) return;
-    await this.index.delete(ids, { namespace: this.namespace });
+    await withRequestTimeout(
+      this.index.delete(ids, { namespace: this.namespace }),
+      "Upstash Vector delete",
+      this.requestTimeoutMs
+    );
   }
 }
 

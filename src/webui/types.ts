@@ -148,6 +148,21 @@ export interface MemorySearchResult {
   keywordScore?: number;
 }
 
+export interface SemanticMemoryStatusInfo {
+  mode: "online" | "standby" | "fallback";
+  reason?: string;
+  vectorCount?: number;
+  pendingVectorCount?: number;
+}
+
+export interface MemoryVectorSyncResult {
+  synced: boolean;
+  indexed: number;
+  skipped: number;
+  status: SemanticMemoryStatusInfo;
+  message: string;
+}
+
 export interface SessionInfo {
   chatId: string;
   sessionId: string;

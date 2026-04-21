@@ -237,6 +237,21 @@ export interface MemoryChunk {
   updatedAt: number;
 }
 
+export interface SemanticMemoryStatusInfo {
+  mode: "online" | "standby" | "fallback";
+  reason?: string;
+  vectorCount?: number;
+  pendingVectorCount?: number;
+}
+
+export interface MemoryVectorSyncResult {
+  synced: boolean;
+  indexed: number;
+  skipped: number;
+  status: SemanticMemoryStatusInfo;
+  message: string;
+}
+
 export interface ToolInfo {
   name: string;
   description: string;
@@ -919,6 +934,12 @@ export const api = {
 
   async getSourceChunks(sourceKey: string) {
     return fetchAPI<APIResponse<MemoryChunk[]>>(`/memory/sources/${encodeURIComponent(sourceKey)}`);
+  },
+
+  async syncVectorMemory() {
+    return fetchAPI<APIResponse<MemoryVectorSyncResult>>("/memory/sync-vector", {
+      method: "POST",
+    });
   },
 
   async getSoulFile(filename: string) {
