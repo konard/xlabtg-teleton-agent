@@ -188,6 +188,33 @@ embedding:
 
 The `"local"` provider uses ONNX Runtime with the `@huggingface/transformers` library and requires no external API calls. The `"none"` provider disables vector search entirely and uses only SQLite FTS5 for memory retrieval.
 
+### Optional Upstash Vector
+
+Teleton can use Upstash Vector as the primary semantic memory store while keeping SQLite/FTS5 as the offline fallback. Configure it in `config.yaml`, or from WebUI -> Configuration -> Vector Memory:
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `vector_memory.upstash_rest_url` | `string` | `""` | Upstash Vector REST URL. |
+| `vector_memory.upstash_rest_token` | `string` | `""` | Upstash Vector REST token. |
+| `vector_memory.namespace` | `string` | `"teleton-memory"` | Upstash Vector namespace for Teleton memory chunks. |
+
+```yaml
+vector_memory:
+  upstash_rest_url: "https://..."
+  upstash_rest_token: "..."
+  namespace: "teleton-memory"
+```
+
+Environment variables override `config.yaml` values:
+
+```bash
+export UPSTASH_VECTOR_REST_URL="https://..."
+export UPSTASH_VECTOR_REST_TOKEN="..."
+export UPSTASH_VECTOR_NAMESPACE="teleton-memory" # optional
+```
+
+When configured, `MEMORY.md` and `memory/*.md` chunks are embedded with the selected `embedding` provider, written to Upstash Vector, and still stored locally. Startup logs show `Semantic Memory: Online` when Upstash is reachable or `Semantic Memory: Fallback Mode` when Teleton is using local search only. WebUI saves update the live vector memory adapter for subsequent memory searches and writes.
+
 ---
 
 ## deals

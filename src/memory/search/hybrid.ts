@@ -8,6 +8,7 @@ import {
   SECONDS_PER_HOUR,
 } from "../../constants/limits.js";
 import { createLogger } from "../../utils/logger.js";
+import type { SemanticVectorStore } from "../vector-store.js";
 
 const log = createLogger("Memory");
 
@@ -75,7 +76,8 @@ function escapeFts5Query(query: string): string {
 export class HybridSearch {
   constructor(
     private db: Database.Database,
-    private vectorEnabled: boolean
+    private vectorEnabled: boolean,
+    private semanticVectorStore?: SemanticVectorStore
   ) {}
 
   async searchKnowledge(
@@ -91,9 +93,16 @@ export class HybridSearch {
     const vectorWeight = options.vectorWeight ?? 0.5;
     const keywordWeight = options.keywordWeight ?? 0.5;
 
-    const vectorResults = this.vectorEnabled
-      ? this.vectorSearchKnowledge(queryEmbedding, Math.ceil(limit * 3))
-      : [];
+    const semanticVectorResults = await this.semanticVectorSearchKnowledge(
+      queryEmbedding,
+      Math.ceil(limit * 3)
+    );
+    const vectorResults =
+      semanticVectorResults.length > 0
+        ? semanticVectorResults
+        : this.vectorEnabled
+          ? this.vectorSearchKnowledge(queryEmbedding, Math.ceil(limit * 3))
+          : [];
 
     const keywordResults = this.keywordSearchKnowledge(query, Math.ceil(limit * 3));
 
@@ -170,6 +179,20 @@ export class HybridSearch {
       }));
     } catch (error) {
       log.error({ err: error }, "Vector search error (knowledge)");
+      return [];
+    }
+  }
+
+  private async semanticVectorSearchKnowledge(
+    embedding: number[],
+    limit: number
+  ): Promise<HybridSearchResult[]> {
+    if (!this.semanticVectorStore?.isConfigured || embedding.length === 0) return [];
+
+    try {
+      return await this.semanticVectorStore.searchKnowledge(embedding, limit);
+    } catch (error) {
+      log.warn({ err: error }, "Semantic Memory: Fallback Mode (Upstash Vector search failed)");
       return [];
     }
   }

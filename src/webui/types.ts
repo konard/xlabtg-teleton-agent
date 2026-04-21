@@ -34,6 +34,7 @@ export interface WebUIServerDeps {
     db: Database;
     embedder: MemorySystem["embedder"];
     knowledge: MemorySystem["knowledge"];
+    vectorStore?: MemorySystem["vectorStore"];
   };
   toolRegistry: ToolRegistry;
   plugins: LoadedPlugin[];

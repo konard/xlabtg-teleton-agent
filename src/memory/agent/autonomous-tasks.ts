@@ -202,7 +202,11 @@ export class AutonomousTaskStore {
         now
       );
 
-    return this.getTask(id)!;
+    const created = this.getTask(id);
+    if (!created) {
+      throw new Error(`Failed to create autonomous task: ${id}`);
+    }
+    return created;
   }
 
   getTask(id: string): AutonomousTask | undefined {
@@ -336,7 +340,11 @@ export class AutonomousTaskStore {
       );
 
     this.updateLastCheckpoint(input.taskId, id);
-    return this.getCheckpoint(id)!;
+    const created = this.getCheckpoint(id);
+    if (!created) {
+      throw new Error(`Failed to create task checkpoint: ${id}`);
+    }
+    return created;
   }
 
   getCheckpoint(id: string): TaskCheckpoint | undefined {

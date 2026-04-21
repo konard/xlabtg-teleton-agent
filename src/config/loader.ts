@@ -191,6 +191,17 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
     config.toncenter_api_key = process.env.TELETON_TONCENTER_API_KEY;
   }
 
+  // Upstash Vector semantic memory overrides
+  if (process.env.UPSTASH_VECTOR_REST_URL) {
+    config.vector_memory.upstash_rest_url = process.env.UPSTASH_VECTOR_REST_URL;
+  }
+  if (process.env.UPSTASH_VECTOR_REST_TOKEN) {
+    config.vector_memory.upstash_rest_token = process.env.UPSTASH_VECTOR_REST_TOKEN;
+  }
+  if (process.env.UPSTASH_VECTOR_NAMESPACE) {
+    config.vector_memory.namespace = process.env.UPSTASH_VECTOR_NAMESPACE;
+  }
+
   return config;
 }
 

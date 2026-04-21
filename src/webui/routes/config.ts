@@ -9,6 +9,8 @@ import {
   writeRawConfig,
 } from "../../config/configurable-keys.js";
 import type { ConfigKeyType, ConfigCategory } from "../../config/configurable-keys.js";
+import type { VectorMemoryConfig } from "../../config/schema.js";
+import type { UpstashVectorStoreConfig } from "../../memory/vector-store.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
 import {
   getProviderMetadata,
@@ -27,6 +29,34 @@ const CONFIG_SIDE_EFFECTS: Record<string, (value: string | undefined) => void> =
     invalidateTonClientCache();
   },
 };
+
+const VECTOR_MEMORY_CONFIG_KEYS = new Set([
+  "vector_memory.upstash_rest_url",
+  "vector_memory.upstash_rest_token",
+  "vector_memory.namespace",
+]);
+
+function getVectorStoreConfig(deps: WebUIServerDeps): UpstashVectorStoreConfig {
+  const config = deps.agent.getConfig() as { vector_memory?: Partial<VectorMemoryConfig> };
+  const vectorMemory = config.vector_memory;
+  return {
+    url: vectorMemory?.upstash_rest_url,
+    token: vectorMemory?.upstash_rest_token,
+    namespace: vectorMemory?.namespace,
+  };
+}
+
+function applyConfigSideEffects(
+  key: string,
+  value: string | undefined,
+  deps: WebUIServerDeps
+): void {
+  CONFIG_SIDE_EFFECTS[key]?.(value);
+
+  if (VECTOR_MEMORY_CONFIG_KEYS.has(key)) {
+    deps.memory.vectorStore?.configure?.(getVectorStoreConfig(deps));
+  }
+}
 
 interface ConfigKeyData {
   key: string;
@@ -221,7 +251,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
       const runtimeConfig = deps.agent.getConfig() as Record<string, any>;
       setNestedValue(runtimeConfig, key, parsed);
-      CONFIG_SIDE_EFFECTS[key]?.(parsed as string);
+      applyConfigSideEffects(key, parsed as string, deps);
 
       // Sync runtime admin_ids too
       if (key === "telegram.owner_id" && typeof parsed === "number") {
@@ -293,7 +323,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
       const runtimeConfig = deps.agent.getConfig() as Record<string, any>;
       deleteNestedValue(runtimeConfig, key);
-      CONFIG_SIDE_EFFECTS[key]?.(undefined);
+      applyConfigSideEffects(key, undefined, deps);
 
       const result: ConfigKeyData = {
         key,

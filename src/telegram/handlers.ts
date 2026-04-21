@@ -8,7 +8,7 @@ import type { EmbeddingProvider } from "../memory/embeddings/provider.js";
 import { readOffset, writeOffset } from "./offset-store.js";
 import { validateDM, validateGroup, type PolicyDecision } from "./policy-validator.js";
 import { PendingHistory } from "../memory/pending-history.js";
-import type { ToolContext } from "../agent/tools/types.js";
+import type { SemanticMemoryContext, ToolContext } from "../agent/tools/types.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import { isSilentReply } from "../constants/tokens.js";
 import { telegramTranscribeAudioExecutor } from "../agent/tools/telegram/media/transcribe-audio.js";
@@ -140,7 +140,8 @@ export class MessageHandler {
     db: Database.Database,
     embedder: EmbeddingProvider,
     vectorEnabled: boolean,
-    fullConfig?: Config
+    fullConfig?: Config,
+    private semanticMemory?: SemanticMemoryContext
   ) {
     this.bridge = bridge;
     this.config = config;
@@ -404,6 +405,7 @@ export class MessageHandler {
             db: this.db,
             senderId: message.senderId,
             config: this.fullConfig,
+            semanticMemory: this.semanticMemory,
           };
 
           // 7. Get response from agent (with tools)
@@ -591,6 +593,7 @@ export class MessageHandler {
               db: this.db,
               senderId: message.senderId,
               config: this.fullConfig,
+              semanticMemory: this.semanticMemory,
             };
             const userName =
               message.senderFirstName || message.senderUsername || `user:${message.senderId}`;

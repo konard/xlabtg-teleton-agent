@@ -24,6 +24,7 @@ const TABS = [
   { id: 'heartbeat', label: 'Heartbeat' },
   { id: 'api-keys', label: 'API Keys' },
   { id: 'ton-proxy', label: 'TON Proxy' },
+  { id: 'vector-memory', label: 'Vector Memory' },
   { id: 'mrtpoto', label: 'MRTPOTO' },
   { id: 'yolo', label: 'YOLO' },
   { id: 'advanced', label: 'Advanced' },
@@ -34,9 +35,16 @@ const TABS = [
 
 const API_KEY_KEYS = ['agent.api_key', 'telegram.bot_token', 'tavily_api_key', 'tonapi_key', 'toncenter_api_key'];
 const ADVANCED_KEYS = [
-  'embedding.provider', 'embedding.model', 'webui.port', 'webui.log_requests',
+  'webui.port', 'webui.log_requests',
   'deals.enabled', 'deals.expiry_seconds', 'deals.buy_max_floor_percent', 'deals.sell_min_floor_percent',
   'agent.base_url', 'dev.hot_reload',
+];
+const VECTOR_MEMORY_KEYS = [
+  'embedding.provider',
+  'embedding.model',
+  'vector_memory.upstash_rest_url',
+  'vector_memory.upstash_rest_token',
+  'vector_memory.namespace',
 ];
 const SESSION_KEYS = [
   'agent.session_reset_policy.daily_reset_enabled',
@@ -618,6 +626,29 @@ export function Config() {
               />
 
             </div>
+          </div>
+        </>
+      )}
+
+      {/* Vector Memory Tab */}
+      {activeTab === 'vector-memory' && (
+        <>
+          <div className="card-header">
+            <div className="section-title">Vector Memory</div>
+            <p className="card-description">
+              Configure embeddings and optional Upstash Vector access for semantic memory.
+            </p>
+          </div>
+          <div className="card">
+            <ConfigSection
+              keys={VECTOR_MEMORY_KEYS}
+              configKeys={configKeys}
+              getLocal={config.getLocal}
+              getServer={config.getServer}
+              setLocal={config.setLocal}
+              saveConfig={config.saveConfig}
+              cancelLocal={config.cancelLocal}
+            />
           </div>
         </>
       )}

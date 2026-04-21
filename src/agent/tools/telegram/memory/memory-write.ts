@@ -1,10 +1,11 @@
 import { Type } from "@sinclair/typebox";
-import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
+import type { Tool, ToolContext, ToolExecutor, ToolResult } from "../../types.js";
 import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
 import { join } from "path";
-import { WORKSPACE_PATHS } from "../../../../workspace/index.js";
+import { WORKSPACE_PATHS, WORKSPACE_ROOT } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { KnowledgeIndexer } from "../../../../memory/agent/knowledge.js";
 
 const log = createLogger("Tools");
 
@@ -82,6 +83,29 @@ function getDailyLogPath(): string {
   return join(MEMORY_DIR, `${formatDate(new Date())}.md`);
 }
 
+async function refreshMemoryIndex(
+  filePath: string,
+  context: Pick<ToolContext, "db" | "semanticMemory">
+): Promise<string | undefined> {
+  const semanticMemory = context.semanticMemory;
+  if (!semanticMemory) return undefined;
+
+  try {
+    const indexer = new KnowledgeIndexer(
+      context.db,
+      WORKSPACE_ROOT,
+      semanticMemory.embedder,
+      semanticMemory.vectorEnabled,
+      semanticMemory.vectorStore
+    );
+    await indexer.indexFile(filePath, true);
+    return undefined;
+  } catch (error) {
+    log.warn({ err: error, filePath }, "Memory written but semantic index refresh failed");
+    return `Memory was written, but semantic index refresh failed: ${getErrorMessage(error)}`;
+  }
+}
+
 /**
  * Executor for memory_write tool
  */
@@ -132,6 +156,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
       appendFileSync(MEMORY_FILE, entry, "utf-8");
 
       log.info(`📝 Memory written to MEMORY.md${section ? ` (section: ${section})` : ""}`);
+      const indexWarning = await refreshMemoryIndex(MEMORY_FILE, context);
 
       // Check memory size and warn if approaching limit
       const lineCount = getMemoryLineCount();
@@ -139,6 +164,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
         lineCount > MEMORY_SOFT_LIMIT
           ? ` ⚠️ MEMORY.md is now ${lineCount} lines (recommended max: ~100). Consider consolidating old entries, removing outdated info, or archiving less relevant content to keep your memory efficient and fast to load.`
           : undefined;
+      const warning = [sizeWarning, indexWarning].filter(Boolean).join(" ");
 
       return {
         success: true,
@@ -148,7 +174,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
           section: section || null,
           timestamp: now.toISOString(),
           lineCount,
-          ...(sizeWarning && { warning: sizeWarning }),
+          ...(warning && { warning }),
         },
       };
     } else {
@@ -170,6 +196,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
       appendFileSync(logPath, entry, "utf-8");
 
       log.info(`📅 Memory written to daily log${section ? ` (${section})` : ""}`);
+      const indexWarning = await refreshMemoryIndex(logPath, context);
 
       return {
         success: true,
@@ -178,6 +205,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
           file: logPath,
           section: section || null,
           timestamp: now.toISOString(),
+          ...(indexWarning && { warning: indexWarning }),
         },
       };
     }

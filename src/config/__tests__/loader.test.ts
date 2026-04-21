@@ -207,6 +207,9 @@ describe("Config Loader", () => {
     originalEnv.TELETON_WEBUI_ENABLED = process.env.TELETON_WEBUI_ENABLED;
     originalEnv.TELETON_WEBUI_PORT = process.env.TELETON_WEBUI_PORT;
     originalEnv.TELETON_WEBUI_HOST = process.env.TELETON_WEBUI_HOST;
+    originalEnv.UPSTASH_VECTOR_REST_URL = process.env.UPSTASH_VECTOR_REST_URL;
+    originalEnv.UPSTASH_VECTOR_REST_TOKEN = process.env.UPSTASH_VECTOR_REST_TOKEN;
+    originalEnv.UPSTASH_VECTOR_NAMESPACE = process.env.UPSTASH_VECTOR_NAMESPACE;
 
     // Clear env vars before each test
     delete process.env.TELETON_API_KEY;
@@ -216,6 +219,9 @@ describe("Config Loader", () => {
     delete process.env.TELETON_WEBUI_ENABLED;
     delete process.env.TELETON_WEBUI_PORT;
     delete process.env.TELETON_WEBUI_HOST;
+    delete process.env.UPSTASH_VECTOR_REST_URL;
+    delete process.env.UPSTASH_VECTOR_REST_TOKEN;
+    delete process.env.UPSTASH_VECTOR_NAMESPACE;
   });
 
   afterEach(() => {
@@ -384,6 +390,11 @@ describe("Config Loader", () => {
 
       // Plugins defaults
       expect(config.plugins).toEqual({});
+
+      // Vector memory defaults
+      expect(config.vector_memory.upstash_rest_url).toBe("");
+      expect(config.vector_memory.upstash_rest_token).toBe("");
+      expect(config.vector_memory.namespace).toBe("teleton-memory");
     });
 
     it("should auto-set model for non-anthropic providers", () => {
@@ -508,6 +519,19 @@ telegram:
       expect(config.telegram.api_id).toBe(77777);
       expect(config.webui.enabled).toBe(true);
       expect(config.webui.port).toBe(8080);
+    });
+
+    it("should override vector memory credentials with Upstash environment variables", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      process.env.UPSTASH_VECTOR_REST_URL = "https://env-vector.upstash.io";
+      process.env.UPSTASH_VECTOR_REST_TOKEN = "env-vector-token-12345";
+      process.env.UPSTASH_VECTOR_NAMESPACE = "env-namespace";
+
+      const config = loadConfig(TEST_CONFIG_PATH);
+
+      expect(config.vector_memory.upstash_rest_url).toBe("https://env-vector.upstash.io");
+      expect(config.vector_memory.upstash_rest_token).toBe("env-vector-token-12345");
+      expect(config.vector_memory.namespace).toBe("env-namespace");
     });
   });
 
