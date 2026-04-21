@@ -23,6 +23,9 @@ import {
   type AnalyticsPerformanceData,
   type AnalyticsCostData,
   type BudgetStatus,
+  type AnomalyEvent,
+  type AnomalyBaseline,
+  type AnomalyStats,
 } from "../lib/api";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -52,6 +55,27 @@ function fmtHour(bucket: number): string {
 function fmtDate(dateStr: string): string {
   const d = new Date(dateStr + "T00:00:00");
   return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+function fmtDateTime(ts: number): string {
+  return new Date(ts * 1000).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
+function fmtMetricName(metric: string): string {
+  if (metric.startsWith("tool_share:")) return `Tool share: ${metric.slice("tool_share:".length)}`;
+  if (metric.startsWith("new_tool:")) return `New tool: ${metric.slice("new_tool:".length)}`;
+  return metric.replace(/_/g, " ");
+}
+
+function fmtNumber(value: number): string {
+  if (Math.abs(value) >= 1000) return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+  if (Math.abs(value) >= 10) return value.toFixed(1);
+  return value.toFixed(3).replace(/\.?0+$/, "");
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
@@ -127,10 +151,7 @@ function StatCard({
   color?: string;
 }) {
   return (
-    <div
-      className="card"
-      style={{ flex: 1, minWidth: 0, padding: "16px 20px" }}
-    >
+    <div className="card" style={{ flex: 1, minWidth: 0, padding: "16px 20px" }}>
       <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>
         {label}
       </div>
@@ -186,30 +207,55 @@ function UsageSection() {
 
   return (
     <section style={{ marginBottom: "32px" }}>
-      <SectionHeader
-        title="Usage Statistics"
-        period={period}
-        onPeriodChange={setPeriod}
-      />
+      <SectionHeader title="Usage Statistics" period={period} onPeriodChange={setPeriod} />
 
-      {error && <div className="alert error" style={{ marginBottom: "12px" }}>{error}</div>}
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
         <StatCard label="Total Tokens" value={totalTokens.toLocaleString()} />
         <StatCard label="Total Cost" value={fmtCost(totalCost)} />
-        <StatCard label="Requests (tool calls)" value={toolData.reduce((s, d) => s + d.count, 0).toLocaleString()} />
+        <StatCard
+          label="Requests (tool calls)"
+          value={toolData.reduce((s, d) => s + d.count, 0).toLocaleString()}
+        />
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", flexWrap: "wrap" }}>
+      <div
+        style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "20px", flexWrap: "wrap" }}
+      >
         {/* Token/Cost over time */}
         <div className="card" style={{ padding: "16px" }}>
           <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
             Token Consumption Over Time
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : chartData.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No data yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={chartData}>
@@ -229,12 +275,36 @@ function UsageSection() {
             Top Used Tools
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : toolData.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No data yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={toolData} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+              <BarChart
+                data={toolData}
+                layout="vertical"
+                margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
                 <YAxis
@@ -242,7 +312,7 @@ function UsageSection() {
                   type="category"
                   tick={{ fontSize: 10 }}
                   width={110}
-                  tickFormatter={(v: string) => v.length > 16 ? `${v.slice(0, 15)}…` : v}
+                  tickFormatter={(v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v)}
                 />
                 <Tooltip />
                 <Bar dataKey="count" fill="#2563eb" name="Calls" radius={[0, 4, 4, 0]} />
@@ -257,9 +327,29 @@ function UsageSection() {
             Tool Usage Distribution
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : toolData.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No data yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
@@ -293,9 +383,29 @@ function UsageSection() {
             Cost Over Time
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : chartData.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No data yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={chartData}>
@@ -305,6 +415,291 @@ function UsageSection() {
                 <Tooltip formatter={(v: number) => [fmtCost(v), "Cost"]} />
                 <Line type="monotone" dataKey="cost" stroke="#10b981" dot={false} name="Cost ($)" />
               </LineChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Anomaly Section ─────────────────────────────────────────────────
+
+function AnomalySection() {
+  const [period, setPeriod] = useState<MetricsPeriod>("24h");
+  const [events, setEvents] = useState<AnomalyEvent[]>([]);
+  const [baselines, setBaselines] = useState<AnomalyBaseline[]>([]);
+  const [stats, setStats] = useState<AnomalyStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [eventRes, baselineRes, statsRes] = await Promise.all([
+        api.getAnomalies({ period }),
+        api.getAnomalyBaselines(),
+        api.getAnomalyStats(period),
+      ]);
+      setEvents(eventRes.data ?? []);
+      setBaselines(baselineRes.data ?? []);
+      setStats(statsRes.data ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load anomaly data");
+    } finally {
+      setLoading(false);
+    }
+  }, [period]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const acknowledge = async (id: string) => {
+    try {
+      const res = await api.acknowledgeAnomaly(id);
+      if (res.data) {
+        setEvents((items) => items.map((item) => (item.id === id ? res.data! : item)));
+        setStats((current) =>
+          current
+            ? {
+                ...current,
+                unacknowledged: Math.max(0, current.unacknowledged - 1),
+              }
+            : current
+        );
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to acknowledge anomaly");
+    }
+  };
+
+  const sensitivity = stats?.config.sensitivity ?? 2.5;
+  const baselineChart = baselines
+    .filter((row) => !row.metric.startsWith("tool_share:"))
+    .slice(0, 6)
+    .map((row) => ({
+      metric: fmtMetricName(row.metric),
+      current: row.currentValue ?? 0,
+      expectedMax: row.mean + sensitivity * row.stddev,
+    }));
+
+  return (
+    <section style={{ marginBottom: "32px" }}>
+      <SectionHeader title="Anomaly Monitoring" period={period} onPeriodChange={setPeriod} />
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
+        <StatCard label="Detected" value={(stats?.total ?? 0).toLocaleString()} />
+        <StatCard
+          label="Critical"
+          value={(stats?.critical ?? 0).toLocaleString()}
+          color={(stats?.critical ?? 0) > 0 ? "#ef4444" : undefined}
+        />
+        <StatCard
+          label="Unacknowledged"
+          value={(stats?.unacknowledged ?? 0).toLocaleString()}
+          color={(stats?.unacknowledged ?? 0) > 0 ? "#f59e0b" : undefined}
+        />
+        <StatCard
+          label="Sensitivity"
+          value={`${stats?.config.sensitivity ?? "—"}σ`}
+          sub={`cooldown ${stats?.config.cooldown_minutes ?? "—"} min`}
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+          gap: "20px",
+        }}
+      >
+        <div className="card" style={{ padding: "16px", overflowX: "auto" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
+            Detection Timeline
+          </h3>
+          {loading ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
+          ) : events.length === 0 ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No anomalies in this period
+            </div>
+          ) : (
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+              <thead>
+                <tr style={{ color: "var(--text-secondary)", textAlign: "left" }}>
+                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                    Time
+                  </th>
+                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                    Severity
+                  </th>
+                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                    Metric
+                  </th>
+                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                    Current
+                  </th>
+                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                    Review
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((event) => (
+                  <tr key={event.id}>
+                    <td
+                      style={{
+                        padding: "8px",
+                        borderBottom: "1px solid var(--separator)",
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      {fmtDateTime(event.createdAt)}
+                    </td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      <span
+                        style={{
+                          color: event.severity === "critical" ? "#ef4444" : "#f59e0b",
+                          fontWeight: 700,
+                          textTransform: "capitalize",
+                        }}
+                      >
+                        {event.severity}
+                      </span>
+                    </td>
+                    <td
+                      style={{
+                        padding: "8px",
+                        borderBottom: "1px solid var(--separator)",
+                        minWidth: 150,
+                      }}
+                    >
+                      <div style={{ fontWeight: 600 }}>{fmtMetricName(event.metric)}</div>
+                      <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>
+                        {event.type.replace(/_/g, " ")}
+                      </div>
+                    </td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      {fmtNumber(event.currentValue)}
+                    </td>
+                    <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      {event.acknowledged ? (
+                        <span style={{ color: "var(--text-secondary)" }}>Done</span>
+                      ) : (
+                        <button
+                          className="btn-ghost"
+                          onClick={() => acknowledge(event.id)}
+                          style={{ fontSize: "12px", padding: "4px 8px" }}
+                        >
+                          Acknowledge
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: "16px" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
+            Alert Configuration
+          </h3>
+          <div style={{ display: "grid", gap: "10px", fontSize: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+              <span style={{ color: "var(--text-secondary)" }}>Enabled</span>
+              <strong>{stats?.config.enabled ? "Yes" : "No"}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+              <span style={{ color: "var(--text-secondary)" }}>Baseline</span>
+              <strong>{stats?.config.baseline_days ?? "—"} days</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+              <span style={{ color: "var(--text-secondary)" }}>In-app</span>
+              <strong>{stats?.config.alerting.in_app ? "On" : "Off"}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+              <span style={{ color: "var(--text-secondary)" }}>Telegram</span>
+              <strong>{stats?.config.alerting.telegram ? "On" : "Off"}</strong>
+            </div>
+            <div style={{ display: "flex", justifyContent: "space-between", gap: "12px" }}>
+              <span style={{ color: "var(--text-secondary)" }}>Webhook</span>
+              <strong>{stats?.config.alerting.webhook_url ? "Set" : "Off"}</strong>
+            </div>
+          </div>
+        </div>
+
+        <div className="card" style={{ padding: "16px", gridColumn: "1 / -1" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
+            Baseline vs Actual
+          </h3>
+          {loading ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
+          ) : baselineChart.length === 0 ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Waiting for baseline samples
+            </div>
+          ) : (
+            <ResponsiveContainer width="100%" height={220}>
+              <BarChart data={baselineChart} margin={{ top: 4, right: 8, left: 8, bottom: 30 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" />
+                <XAxis
+                  dataKey="metric"
+                  tick={{ fontSize: 10 }}
+                  angle={-20}
+                  textAnchor="end"
+                  height={58}
+                />
+                <YAxis tick={{ fontSize: 10 }} />
+                <Tooltip formatter={(v: number) => fmtNumber(v)} />
+                <Legend />
+                <Bar dataKey="expectedMax" fill="#94a3b8" name="Expected max" />
+                <Bar dataKey="current" fill="#2563eb" name="Current" />
+              </BarChart>
             </ResponsiveContainer>
           )}
         </div>
@@ -356,22 +751,48 @@ function HeatmapSection() {
 
   return (
     <section style={{ marginBottom: "32px" }}>
-      <SectionHeader
-        title="Peak Usage Hours"
-        period={period}
-        onPeriodChange={setPeriod}
-      />
-      {error && <div className="alert error" style={{ marginBottom: "12px" }}>{error}</div>}
+      <SectionHeader title="Peak Usage Hours" period={period} onPeriodChange={setPeriod} />
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
       <div className="card" style={{ padding: "16px", overflowX: "auto" }}>
         {loading ? (
-          <div style={{ height: 160, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+          <div
+            style={{
+              height: 160,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-secondary)",
+            }}
+          >
+            Loading…
+          </div>
         ) : (
           <table style={{ borderCollapse: "collapse", fontSize: "11px", width: "100%" }}>
             <thead>
               <tr>
-                <th style={{ width: 36, textAlign: "right", paddingRight: 8, color: "var(--text-secondary)", fontWeight: 500 }}></th>
+                <th
+                  style={{
+                    width: 36,
+                    textAlign: "right",
+                    paddingRight: 8,
+                    color: "var(--text-secondary)",
+                    fontWeight: 500,
+                  }}
+                ></th>
                 {Array.from({ length: 24 }, (_, h) => (
-                  <th key={h} style={{ width: 24, textAlign: "center", color: "var(--text-secondary)", fontWeight: 400 }}>
+                  <th
+                    key={h}
+                    style={{
+                      width: 24,
+                      textAlign: "center",
+                      color: "var(--text-secondary)",
+                      fontWeight: 400,
+                    }}
+                  >
                     {h % 3 === 0 ? `${h}h` : ""}
                   </th>
                 ))}
@@ -380,7 +801,14 @@ function HeatmapSection() {
             <tbody>
               {DAY_LABELS.map((day, d) => (
                 <tr key={d}>
-                  <td style={{ textAlign: "right", paddingRight: 8, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                  <td
+                    style={{
+                      textAlign: "right",
+                      paddingRight: 8,
+                      color: "var(--text-secondary)",
+                      whiteSpace: "nowrap",
+                    }}
+                  >
                     {day}
                   </td>
                   {Array.from({ length: 24 }, (_, h) => (
@@ -446,12 +874,12 @@ function PerformanceSection() {
 
   return (
     <section style={{ marginBottom: "32px" }}>
-      <SectionHeader
-        title="Performance Metrics"
-        period={period}
-        onPeriodChange={setPeriod}
-      />
-      {error && <div className="alert error" style={{ marginBottom: "12px" }}>{error}</div>}
+      <SectionHeader title="Performance Metrics" period={period} onPeriodChange={setPeriod} />
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
 
       {/* Stat cards */}
       <div style={{ display: "flex", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
@@ -482,9 +910,29 @@ function PerformanceSection() {
             Success / Failure Rate
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : successData.every((d) => d.value === 0) ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No data yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <PieChart>
@@ -514,9 +962,29 @@ function PerformanceSection() {
             Error Frequency
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : errFreq.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No errors in this period</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No errors in this period
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={errFreq.map((e) => ({ ...e, date: fmtDate(e.date) }))}>
@@ -595,7 +1063,11 @@ function CostSection() {
         onPeriodChange={setPeriod}
         periodOptions={["7d", "30d"]}
       />
-      {error && <div className="alert error" style={{ marginBottom: "12px" }}>{error}</div>}
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
 
       {/* Budget status */}
       {budget && (
@@ -604,10 +1076,7 @@ function CostSection() {
             Budget Status (Current Month)
           </h3>
           <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
-            <StatCard
-              label="Month-to-Date Cost"
-              value={fmtCost(budget.current_month_cost_usd)}
-            />
+            <StatCard label="Month-to-Date Cost" value={fmtCost(budget.current_month_cost_usd)} />
             {budget.projection_usd != null && (
               <StatCard
                 label="Projected Month Cost"
@@ -676,7 +1145,9 @@ function CostSection() {
 
           {/* Budget limit config */}
           <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-            <label style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+            <label
+              style={{ fontSize: "12px", color: "var(--text-secondary)", whiteSpace: "nowrap" }}
+            >
               Monthly limit ($):
             </label>
             <input
@@ -706,9 +1177,29 @@ function CostSection() {
             Daily Cost
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : chartData.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No cost records yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No cost records yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
               <BarChart data={chartData}>
@@ -728,12 +1219,36 @@ function CostSection() {
             Tool Call Counts
           </h3>
           {loading ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>Loading…</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
           ) : perTool.length === 0 ? (
-            <div style={{ height: 200, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)" }}>No data yet</div>
+            <div
+              style={{
+                height: 200,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No data yet
+            </div>
           ) : (
             <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={perTool} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
+              <BarChart
+                data={perTool}
+                layout="vertical"
+                margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" horizontal={false} />
                 <XAxis type="number" tick={{ fontSize: 10 }} />
                 <YAxis
@@ -741,7 +1256,7 @@ function CostSection() {
                   type="category"
                   tick={{ fontSize: 10 }}
                   width={110}
-                  tickFormatter={(v: string) => v.length > 16 ? `${v.slice(0, 15)}…` : v}
+                  tickFormatter={(v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v)}
                 />
                 <Tooltip formatter={(v: number) => [v.toLocaleString(), "Calls"]} />
                 <Bar dataKey="count" fill="#2563eb" name="Calls" radius={[0, 4, 4, 0]} />
@@ -765,6 +1280,7 @@ export function Analytics() {
       </div>
 
       <UsageSection />
+      <AnomalySection />
       <HeatmapSection />
       <PerformanceSection />
       <CostSection />

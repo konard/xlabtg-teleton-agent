@@ -577,6 +577,53 @@ const _PredictionsObject = z.object({
 });
 export const PredictionsConfigSchema = _PredictionsObject.default(_PredictionsObject.parse({}));
 
+const _AnomalyAlertingObject = z.object({
+  in_app: z.boolean().default(true).describe("Create in-app notifications for anomalies"),
+  telegram: z.boolean().default(false).describe("Send anomaly alerts to Telegram admin chat IDs"),
+  telegram_chat_ids: z
+    .array(z.string())
+    .default([])
+    .describe("Optional Telegram chat IDs for alerts; empty uses configured admin IDs"),
+  webhook_url: z
+    .string()
+    .url()
+    .nullable()
+    .default(null)
+    .describe("Optional webhook URL for anomaly alerts"),
+});
+
+const _AnomalyDetectionObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable rolling baseline anomaly detection"),
+  sensitivity: z
+    .number()
+    .min(0.5)
+    .default(2.5)
+    .describe("Z-score threshold in standard deviations"),
+  baseline_days: z
+    .number()
+    .int()
+    .min(1)
+    .max(30)
+    .default(7)
+    .describe("Rolling baseline window in days"),
+  min_samples: z
+    .number()
+    .int()
+    .min(1)
+    .default(24)
+    .describe("Minimum hourly samples required before alerting on a metric"),
+  cooldown_minutes: z
+    .number()
+    .int()
+    .min(1)
+    .default(15)
+    .describe("Cooldown before re-alerting on the same anomaly type and metric"),
+  alerting: _AnomalyAlertingObject.default(_AnomalyAlertingObject.parse({})),
+});
+export const AnomalyDetectionConfigSchema = _AnomalyDetectionObject.default(
+  _AnomalyDetectionObject.parse({})
+);
+
 export const ConfigSchema = z.object({
   meta: MetaConfigSchema.default(MetaConfigSchema.parse({})),
   agent: AgentConfigSchema,
@@ -597,6 +644,7 @@ export const ConfigSchema = z.object({
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
+  anomaly_detection: AnomalyDetectionConfigSchema,
   mtproto: MtprotoConfigSchema,
   mcp: McpConfigSchema,
   plugins: z
@@ -712,5 +760,7 @@ export type ExecConfig = z.infer<typeof _ExecObject>;
 export type GroqConfig = NonNullable<z.infer<typeof ConfigSchema>["groq"]>;
 export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;
 export type PredictionsConfig = z.infer<typeof _PredictionsObject>;
+export type AnomalyDetectionConfig = z.infer<typeof _AnomalyDetectionObject>;
+export type AnomalyAlertingConfig = z.infer<typeof _AnomalyAlertingObject>;
 export type MarketplaceConfig = z.infer<typeof _MarketplaceObject>;
 export type MarketplaceSourceConfig = z.infer<typeof _MarketplaceSourceObject>;

@@ -17,6 +17,7 @@ export type ConfigCategory =
   | "Vector Memory"
   | "Predictions"
   | "Cache"
+  | "Monitoring"
   | "WebUI"
   | "Deals"
   | "TON Proxy"
@@ -986,6 +987,68 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     defaultValue: "300000",
   },
 
+  // ─── Monitoring ───────────────────────────────────────────────────
+  "anomaly_detection.enabled": {
+    type: "boolean",
+    category: "Monitoring",
+    label: "Anomaly Detection",
+    description: "Enable rolling baseline anomaly detection",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "true",
+  },
+  "anomaly_detection.sensitivity": {
+    type: "number",
+    category: "Monitoring",
+    label: "Anomaly Sensitivity",
+    description: "Z-score threshold in standard deviations",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(0.5, 10),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "2.5",
+  },
+  "anomaly_detection.cooldown_minutes": {
+    type: "number",
+    category: "Monitoring",
+    label: "Alert Cooldown",
+    description: "Minutes before re-alerting on the same anomaly type and metric",
+    sensitive: false,
+    hotReload: "instant",
+    validate: positiveInteger,
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "15",
+  },
+  "anomaly_detection.alerting.telegram": {
+    type: "boolean",
+    category: "Monitoring",
+    label: "Telegram Alerts",
+    description: "Send anomaly alerts to Telegram admin chat IDs",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "false",
+  },
+  "anomaly_detection.alerting.webhook_url": {
+    type: "string",
+    category: "Monitoring",
+    label: "Alert Webhook URL",
+    description: "Optional webhook URL for anomaly alerts",
+    sensitive: true,
+    hotReload: "instant",
+    validate: validateUrl,
+    mask: (v) => (v.length > 12 ? v.slice(0, 12) + "****" : v),
+    parse: (v) => (v === "" ? null : v),
+    defaultValue: "",
+  },
+
   // ─── Developer ─────────────────────────────────────────────────────
   "dev.hot_reload": {
     type: "boolean",
@@ -1118,6 +1181,7 @@ export const CATEGORY_ORDER: ConfigCategory[] = [
   "Vector Memory",
   "Predictions",
   "Cache",
+  "Monitoring",
   "WebUI",
   "Deals",
   "TON Proxy",

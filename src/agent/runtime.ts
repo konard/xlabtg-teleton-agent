@@ -92,6 +92,7 @@ import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
 import { getMetrics } from "../services/metrics.js";
 import { getAnalytics } from "../services/analytics.js";
+import { getAnomalyDetector } from "../services/anomaly-detector.js";
 import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
 import { getPreloader } from "../services/preloader.js";
@@ -953,6 +954,12 @@ export class AgentRuntime {
           // Record tool invocation metric (skipped for blocked tools)
           if (!plan.blocked) {
             getMetrics()?.recordToolCall(block.name);
+            getAnomalyDetector()?.recordToolExecution({
+              toolName: block.name,
+              durationMs: exec.durationMs,
+              success: exec.result.success,
+              errorMessage: exec.result.error,
+            });
             this.recordBehaviorTool({
               sessionId: session.sessionId,
               chatId,
@@ -1151,6 +1158,7 @@ export class AgentRuntime {
           accumulatedUsage.cacheWrite,
         success: true,
       });
+      this.detectAnomalies();
 
       await this.indexMemoryGraphTurn({
         chatId,
@@ -1181,6 +1189,7 @@ export class AgentRuntime {
         success: false,
         errorMessage: error instanceof Error ? error.message : String(error),
       });
+      this.detectAnomalies();
       log.error({ err: error }, "Agent error");
       throw error;
     }
@@ -1360,6 +1369,16 @@ export class AgentRuntime {
     } catch (error) {
       log.warn({ err: error }, "Behavior message tracking failed");
     }
+  }
+
+  private detectAnomalies(): void {
+    if (this.config.anomaly_detection?.enabled !== true) return;
+    const detector = getAnomalyDetector();
+    if (!detector) return;
+
+    void detector.detectNow().catch((error) => {
+      log.warn({ err: error }, "Anomaly detection failed");
+    });
   }
 
   private recordBehaviorTool(opts: { sessionId: string; chatId: string; toolName: string }): void {
