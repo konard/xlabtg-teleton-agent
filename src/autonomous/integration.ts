@@ -5,13 +5,19 @@ import type { TelegramBridge } from "../telegram/bridge.js";
 import type Database from "better-sqlite3";
 import type { SupportedProvider } from "../config/providers.js";
 import { getProviderModel, getEffectiveApiKey } from "../agent/client.js";
-import { buildDefaultLoopDeps, AutonomousTaskManager } from "./manager.js";
+import {
+  buildDefaultLoopDeps,
+  AutonomousTaskManager,
+  type AvailableToolInfo,
+} from "./manager.js";
 import type { LoopDependencies } from "./loop.js";
+import type { AutonomousTask } from "../memory/agent/autonomous-tasks.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("AutonomousIntegration");
 
 const AUTONOMOUS_LLM_MAX_TOKENS = 1024;
+const AUTONOMOUS_PLANNER_TOOL_LIMIT = 64;
 
 export interface IntegrationDeps {
   agent: AgentRuntime;
@@ -80,13 +86,21 @@ export function buildIntegratedLoopDeps(deps: IntegrationDeps): LoopDependencies
         arguments: params,
       };
 
+      // Autonomous tasks run on behalf of the system/owner, not a specific
+      // Telegram user. Using admin_ids[0] as the effective sender (same
+      // pattern as the heartbeat and /heartbeat/trigger REST endpoint) lets
+      // admin-only tools pass the registry's admin check instead of always
+      // failing with senderId=0.
+      const config = deps.agent.getConfig();
+      const adminSenderId = config.telegram.admin_ids[0] ?? 0;
+
       const result = await deps.toolRegistry.execute(toolCall, {
         bridge: deps.bridge,
         db: deps.db,
         chatId: "autonomous",
-        senderId: 0,
+        senderId: adminSenderId,
         isGroup: false,
-        config: deps.agent.getConfig(),
+        config,
       });
 
       if (!result.success) {
@@ -95,6 +109,8 @@ export function buildIntegratedLoopDeps(deps: IntegrationDeps): LoopDependencies
       return result.data;
     },
 
+    listTools: (task) => listToolsForTask(deps.toolRegistry, task),
+
     notify: async (message: string, taskId: string): Promise<void> => {
       // Escalations surface through the task's execution log (see loop.ts)
       // and the standard logger. A richer push-notification channel can be
@@ -102,6 +118,47 @@ export function buildIntegratedLoopDeps(deps: IntegrationDeps): LoopDependencies
       log.warn({ taskId, message }, "Autonomous task escalation");
     },
   });
+}
+
+/**
+ * Produce the list of tools the autonomous planner may consider for this
+ * task. We:
+ *  - pull the DM-context set with admin privileges (autonomous tasks run as
+ *    the system and should see admin-only tools),
+ *  - honour `allowedTools` / `restrictedTools` from the task constraints so
+ *    the planner never proposes a tool the policy engine would reject, and
+ *  - cap the number of entries to keep the prompt tractable.
+ */
+export function listToolsForTask(
+  registry: ToolRegistry | null,
+  task: AutonomousTask
+): AvailableToolInfo[] {
+  if (!registry) return [];
+
+  const scoped = registry.getForContext(false, null, undefined, true);
+
+  const allowed = task.constraints?.allowedTools;
+  const restricted = task.constraints?.restrictedTools ?? [];
+  const restrictedSet = new Set(restricted);
+
+  const filtered = scoped.filter((t) => {
+    if (restrictedSet.has(t.name)) return false;
+    if (allowed && allowed.length > 0 && !allowed.includes(t.name)) return false;
+    return true;
+  });
+
+  const truncated =
+    filtered.length > AUTONOMOUS_PLANNER_TOOL_LIMIT
+      ? filtered.slice(0, AUTONOMOUS_PLANNER_TOOL_LIMIT)
+      : filtered;
+
+  return truncated.map((t) => ({
+    name: t.name,
+    description:
+      typeof t.description === "string" && t.description.length > 0
+        ? t.description
+        : "(no description)",
+  }));
 }
 
 /**

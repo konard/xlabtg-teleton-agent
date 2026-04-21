@@ -197,16 +197,42 @@ export class AutonomousTaskManager {
   }
 }
 
+/**
+ * Brief description of a tool surfaced to the planner LLM so it can pick a
+ * real tool name instead of hallucinating one.
+ */
+export interface AvailableToolInfo {
+  name: string;
+  description: string;
+}
+
 /** Build default LoopDependencies using the agent runtime for LLM calls */
 export function buildDefaultLoopDeps(opts: {
   callLLM: (prompt: string) => Promise<string>;
   callTool: (name: string, params: Record<string, unknown>) => Promise<unknown>;
   notify: (message: string, taskId: string) => Promise<void>;
+  /**
+   * Return the tools the planner may consider for this task. When omitted,
+   * the planner receives no tool list and must rely on the LLM's prior
+   * knowledge — which is what issue #224 reports as "does not see all
+   * available tools". Integration code should always supply this.
+   */
+  listTools?: (task: AutonomousTask) => Promise<AvailableToolInfo[]> | AvailableToolInfo[];
 }): LoopDependencies {
   return {
     async planNextAction(task, history, checkpoint): Promise<PlannedAction> {
       const historyStr = JSON.stringify((history as unknown[]).slice(-5));
       const hint = checkpoint?.nextActionHint ? `\nHint: ${checkpoint.nextActionHint}` : "";
+
+      const tools = opts.listTools ? await opts.listTools(task) : [];
+      const toolsBlock =
+        tools.length > 0
+          ? [
+              `Available tools (pick exactly one by name):`,
+              ...tools.map((t) => `- ${t.name}: ${t.description}`),
+            ].join("\n")
+          : `Available tools: (none were provided — respond with {"toolName":"noop"} if you cannot act)`;
+
       const prompt = [
         `You are an autonomous agent working on this goal: "${task.goal}"`,
         `Success criteria: ${JSON.stringify(task.successCriteria)}`,
@@ -215,8 +241,10 @@ export function buildDefaultLoopDeps(opts: {
         `Context: ${JSON.stringify(task.context)}`,
         `Strategy: ${task.strategy}`,
         ``,
+        toolsBlock,
+        ``,
         `Respond with a JSON object: {"toolName":"<tool>","params":{...},"reasoning":"<why>","confidence":0.9}`,
-        `Use only safe, available tools. Do not use restricted tools without authorization.`,
+        `toolName MUST be one of the names listed above (or "noop" if none apply).`,
       ].join("\n");
 
       const raw = await opts.callLLM(prompt);
