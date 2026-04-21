@@ -53,6 +53,7 @@ import { CompactionManager, DEFAULT_COMPACTION_CONFIG } from "../memory/compacti
 import { maskOldToolResults } from "../memory/observation-masking.js";
 import { ContextBuilder } from "../memory/search/context.js";
 import type { EmbeddingProvider } from "../memory/embeddings/provider.js";
+import type { SemanticVectorStore } from "../memory/vector-store.js";
 import type { ToolRegistry } from "./tools/registry.js";
 import type { ToolContext } from "./tools/types.js";
 import { appendToDailyLog } from "../memory/daily-logs.js";
@@ -223,10 +224,14 @@ export class AgentRuntime {
     this.userHookEvaluator = evaluator;
   }
 
-  initializeContextBuilder(embedder: EmbeddingProvider, vectorEnabled: boolean): void {
+  initializeContextBuilder(
+    embedder: EmbeddingProvider,
+    vectorEnabled: boolean,
+    semanticVectorStore?: SemanticVectorStore
+  ): void {
     this.embedder = embedder;
     const db = getDatabase().getDb();
-    this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled);
+    this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled, semanticVectorStore);
   }
 
   getToolRegistry(): ToolRegistry | null {

@@ -2,8 +2,13 @@ import type Database from "better-sqlite3";
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { KNOWLEDGE_CHUNK_SIZE } from "../../constants/limits.js";
+import { createLogger } from "../../utils/logger.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { hashText, serializeEmbedding } from "../embeddings/index.js";
+import type { SemanticMemoryVector, SemanticVectorStore } from "../vector-store.js";
+
+const log = createLogger("Memory");
+const SEMANTIC_MIGRATION_META_PREFIX = "semantic_vector_migrated:";
 
 export interface KnowledgeChunk {
   id: string;
@@ -20,7 +25,8 @@ export class KnowledgeIndexer {
     private db: Database.Database,
     private workspaceDir: string,
     private embedder: EmbeddingProvider,
-    private vectorEnabled: boolean
+    private vectorEnabled: boolean,
+    private semanticVectorStore?: SemanticVectorStore
   ) {}
 
   async indexAll(options?: { force?: boolean }): Promise<{ indexed: number; skipped: number }> {
@@ -48,13 +54,17 @@ export class KnowledgeIndexer {
     const content = readFileSync(absPath, "utf-8");
     const relPath = absPath.replace(this.workspaceDir + "/", "");
     const fileHash = hashText(content);
+    const existingIds = this.getExistingChunkIds(relPath);
+    const needsSemanticSync =
+      this.semanticVectorStore?.isConfigured === true &&
+      this.getSemanticMigrationHash(relPath) !== fileHash;
 
     if (!force) {
       const existing = this.db
         .prepare(`SELECT hash FROM knowledge WHERE path = ? AND source = 'memory' LIMIT 1`)
         .get(relPath) as { hash: string } | undefined;
 
-      if (existing?.hash === fileHash) {
+      if (existing?.hash === fileHash && !needsSemanticSync) {
         return false;
       }
     }
@@ -104,7 +114,78 @@ export class KnowledgeIndexer {
       }
     })();
 
+    await this.syncSemanticVectorStore(relPath, fileHash, existingIds, chunks, embeddings);
+
     return true;
+  }
+
+  private getExistingChunkIds(relPath: string): string[] {
+    const rows = this.db
+      .prepare(`SELECT id FROM knowledge WHERE path = ? AND source = 'memory'`)
+      .all(relPath) as Array<{ id: string }>;
+    return rows.map((row) => row.id);
+  }
+
+  private getSemanticMigrationHash(relPath: string): string | undefined {
+    const row = this.db
+      .prepare(`SELECT value FROM meta WHERE key = ?`)
+      .get(SEMANTIC_MIGRATION_META_PREFIX + relPath) as { value: string } | undefined;
+    return row?.value;
+  }
+
+  private setSemanticMigrationHash(relPath: string, fileHash: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO meta (key, value, updated_at)
+         VALUES (?, ?, unixepoch())
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at`
+      )
+      .run(SEMANTIC_MIGRATION_META_PREFIX + relPath, fileHash);
+  }
+
+  private async syncSemanticVectorStore(
+    relPath: string,
+    fileHash: string,
+    oldIds: string[],
+    chunks: KnowledgeChunk[],
+    embeddings: number[][]
+  ): Promise<void> {
+    const store = this.semanticVectorStore;
+    if (!store?.isConfigured) return;
+
+    const vectors: SemanticMemoryVector[] = chunks
+      .map((chunk, index) => ({
+        id: chunk.id,
+        text: chunk.text,
+        vector: embeddings[index] ?? [],
+        metadata: {
+          source: chunk.source,
+          path: chunk.path,
+          startLine: chunk.startLine,
+          endLine: chunk.endLine,
+          hash: fileHash,
+          chunkHash: chunk.hash,
+        },
+      }))
+      .filter((item) => item.vector.length > 0);
+
+    if (vectors.length === 0) return;
+
+    try {
+      await store.upsertKnowledge(vectors);
+      const newIds = new Set(vectors.map((vector) => vector.id));
+      const staleIds = oldIds.filter((id) => !newIds.has(id));
+      if (staleIds.length > 0) {
+        try {
+          await store.delete(staleIds);
+        } catch (error) {
+          log.warn({ err: error, path: relPath }, "Semantic memory cleanup failed; continuing");
+        }
+      }
+      this.setSemanticMigrationHash(relPath, fileHash);
+    } catch (error) {
+      log.warn({ err: error, path: relPath }, "Semantic memory sync failed; local fallback ready");
+    }
   }
 
   private listMemoryFiles(): string[] {

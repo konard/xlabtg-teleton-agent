@@ -14,7 +14,7 @@ interface MemorySearchParams {
 export const memorySearchTool: Tool = {
   name: "memory_search",
   description:
-    "Search your memory (knowledge chunks, ingested files) using keyword search. " +
+    "Search your memory (knowledge chunks, ingested files) using semantic vector and keyword search. " +
     "Returns the most relevant results with source paths. " +
     "Use this to recall facts, prior conversations, or ingested documents.",
   category: "data-bearing",
@@ -40,8 +40,24 @@ export const memorySearchExecutor: ToolExecutor<MemorySearchParams> = async (
     const { query } = params;
     const limit = Math.min(params.limit ?? 5, 20);
 
-    const search = new HybridSearch(context.db, /* vectorEnabled */ false);
-    const results = await search.searchKnowledge(query, /* queryEmbedding */ [], { limit });
+    let queryEmbedding: number[] = [];
+    const semanticMemory = context.semanticMemory;
+    const shouldEmbed =
+      semanticMemory && (semanticMemory.vectorEnabled || semanticMemory.vectorStore?.isConfigured);
+    if (shouldEmbed) {
+      try {
+        queryEmbedding = await semanticMemory.embedder.embedQuery(query);
+      } catch (error) {
+        log.warn({ err: error }, "Memory search embedding failed; using keyword fallback");
+      }
+    }
+
+    const search = new HybridSearch(
+      context.db,
+      semanticMemory?.vectorEnabled ?? false,
+      semanticMemory?.vectorStore
+    );
+    const results = await search.searchKnowledge(query, queryEmbedding, { limit });
 
     if (results.length === 0) {
       return {

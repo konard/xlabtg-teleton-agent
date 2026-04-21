@@ -11,7 +11,7 @@ import { getDatabase, closeDatabase, initializeMemory, type MemorySystem } from 
 import { getWalletAddress } from "./ton/wallet-service.js";
 import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
-import { TELETON_ROOT } from "./workspace/paths.js";
+import { TELETON_ROOT, WORKSPACE_ROOT } from "./workspace/paths.js";
 import {
   TELEGRAM_CONNECTION_RETRIES,
   TELEGRAM_FLOOD_SLEEP_THRESHOLD,
@@ -135,7 +135,7 @@ export class TeletonApp {
         model: this.config.embedding.model,
         apiKey: embeddingProvider === "anthropic" ? this.config.agent.api_key : undefined,
       },
-      workspaceDir: join(TELETON_ROOT),
+      workspaceDir: WORKSPACE_ROOT,
     });
 
     const db = getDatabase().getDb();
@@ -163,7 +163,12 @@ export class TeletonApp {
       db,
       this.memory.embedder,
       getDatabase().isVectorSearchReady(),
-      this.config
+      this.config,
+      {
+        embedder: this.memory.embedder,
+        vectorEnabled: getDatabase().isVectorSearchReady(),
+        vectorStore: this.memory.vectorStore,
+      }
     );
 
     this.adminHandler = new AdminHandler(
@@ -537,6 +542,7 @@ ${blue}  ┌──────────────────────�
     if (this.memory.embedder.warmup) {
       await this.memory.embedder.warmup();
     }
+    await this.memory.vectorStore.logStatus();
 
     // Index knowledge base (MEMORY.md, memory/*.md)
     // Force re-index if embedding dimensions changed (model switch)
@@ -572,7 +578,11 @@ ${blue}  ┌──────────────────────�
     }
 
     // Initialize context builder for RAG search in agent
-    this.agent.initializeContextBuilder(this.memory.embedder, db.isVectorSearchReady());
+    this.agent.initializeContextBuilder(
+      this.memory.embedder,
+      db.isVectorSearchReady(),
+      this.memory.vectorStore
+    );
 
     // Cocoon Network — register models from external cocoon-cli proxy
     if (this.config.agent.provider === "cocoon") {

@@ -4,6 +4,7 @@ import { HybridSearch, parseTemporalIntent } from "./hybrid.js";
 import { MessageStore } from "../feed/messages.js";
 import { createLogger } from "../../utils/logger.js";
 import { FEED_MESSAGE_MAX_CHARS } from "../../constants/limits.js";
+import type { SemanticVectorStore } from "../vector-store.js";
 
 const log = createLogger("Memory");
 
@@ -61,9 +62,10 @@ export class ContextBuilder {
   constructor(
     private db: Database.Database,
     private embedder: EmbeddingProvider,
-    vectorEnabled: boolean
+    vectorEnabled: boolean,
+    semanticVectorStore?: SemanticVectorStore
   ) {
-    this.hybridSearch = new HybridSearch(db, vectorEnabled);
+    this.hybridSearch = new HybridSearch(db, vectorEnabled, semanticVectorStore);
     this.messageStore = new MessageStore(db, embedder, vectorEnabled);
   }
 

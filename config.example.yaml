@@ -74,6 +74,12 @@ embedding:
   # local    = ONNX runtime, runs entirely on CPU, no API calls needed
   # anthropic = uses Voyage API via your agent.api_key
   # none     = FTS5 full-text search only (no vector embeddings)
+  #
+  # Optional Upstash Vector primary semantic store:
+  # export UPSTASH_VECTOR_REST_URL="https://..."
+  # export UPSTASH_VECTOR_REST_TOKEN="..."
+  # export UPSTASH_VECTOR_NAMESPACE="teleton-memory"  # optional
+  # If Upstash is unavailable, Teleton falls back to local SQLite/FTS5.
 
 # Optional: WebUI dashboard (disabled by default for security)
 webui:

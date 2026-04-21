@@ -2,6 +2,14 @@ import type { TSchema } from "@sinclair/typebox";
 import type { TelegramBridge } from "../../telegram/bridge.js";
 import type Database from "better-sqlite3";
 import type { Config } from "../../config/schema.js";
+import type { EmbeddingProvider } from "../../memory/embeddings/provider.js";
+import type { SemanticVectorStore } from "../../memory/vector-store.js";
+
+export interface SemanticMemoryContext {
+  embedder: EmbeddingProvider;
+  vectorEnabled: boolean;
+  vectorStore?: SemanticVectorStore;
+}
 
 /**
  * Context provided to tool executors
@@ -19,6 +27,8 @@ export interface ToolContext {
   isGroup: boolean;
   /** Full config for accessing API key, model, etc. (optional) */
   config?: Config;
+  /** Shared semantic memory services for memory tools (optional in tests/scheduled contexts). */
+  semanticMemory?: SemanticMemoryContext;
 }
 
 /**
