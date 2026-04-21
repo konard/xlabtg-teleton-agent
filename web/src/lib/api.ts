@@ -220,6 +220,7 @@ export interface SearchResult {
   score: number;
   vectorScore?: number;
   keywordScore?: number;
+  importanceScore?: number;
 }
 
 export interface MemorySourceFile {
@@ -235,6 +236,90 @@ export interface MemoryChunk {
   startLine: number | null;
   endLine: number | null;
   updatedAt: number;
+}
+
+export interface MemoryScoreInfo {
+  memoryId: string;
+  score: number;
+  recency: number;
+  frequency: number;
+  impact: number;
+  explicit: number;
+  centrality: number;
+  accessCount: number;
+  impactCount: number;
+  pinned: boolean;
+  lastAccessedAt: number | null;
+  updatedAt: number;
+}
+
+export interface MemoryScoreDistributionBucket {
+  min: number;
+  max: number;
+  count: number;
+}
+
+export interface MemoryScoreStats {
+  total: number;
+  averageScore: number;
+  pinned: number;
+  distribution: MemoryScoreDistributionBucket[];
+}
+
+export interface MemoryAtRiskEntry {
+  id: string;
+  text: string;
+  source: string;
+  path: string | null;
+  score: number;
+  createdAt: number;
+  updatedAt: number;
+  reasons: string[];
+  ageDays: number;
+}
+
+export interface MemoryArchiveStats {
+  archived: number;
+  pendingDeletion: number;
+  oldestArchivedAt: number | null;
+}
+
+export interface MemoryCleanupHistoryEntry {
+  id: number;
+  mode: "dry_run" | "archive" | "prune_archive";
+  candidates: number;
+  archived: number;
+  deleted: number;
+  protected: number;
+  reason: string | null;
+  createdAt: number;
+}
+
+export interface MemoryPriorityData {
+  scores: MemoryScoreStats;
+  pinned: MemoryScoreInfo[];
+  archive: MemoryArchiveStats;
+  atRisk: MemoryAtRiskEntry[];
+  cleanupHistory: MemoryCleanupHistoryEntry[];
+}
+
+export interface MemoryCleanupCandidate {
+  id: string;
+  text: string;
+  source: string;
+  path: string | null;
+  score: number;
+  createdAt: number;
+  updatedAt: number;
+  reasons: string[];
+}
+
+export interface MemoryCleanupResult {
+  dryRun: boolean;
+  candidates: MemoryCleanupCandidate[];
+  archived: number;
+  deleted: number;
+  protected: number;
 }
 
 export type MemoryGraphNodeType = "conversation" | "task" | "tool" | "topic" | "entity" | "outcome";
@@ -968,6 +1053,26 @@ export const api = {
 
   async syncVectorMemory() {
     return fetchAPI<APIResponse<MemoryVectorSyncResult>>("/memory/sync-vector", {
+      method: "POST",
+    });
+  },
+
+  async getMemoryPriority() {
+    return fetchAPI<APIResponse<MemoryPriorityData>>("/memory/scores/stats");
+  },
+
+  async pinMemory(memoryId: string, pinned: boolean) {
+    return fetchAPI<APIResponse<MemoryScoreInfo>>(
+      `/memory/scores/${encodeURIComponent(memoryId)}/pin`,
+      {
+        method: "POST",
+        body: JSON.stringify({ pinned }),
+      }
+    );
+  },
+
+  async cleanupMemory(dryRun: boolean) {
+    return fetchAPI<APIResponse<MemoryCleanupResult>>(`/memory/cleanup?dry_run=${dryRun}`, {
       method: "POST",
     });
   },

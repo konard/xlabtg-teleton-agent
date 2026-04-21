@@ -86,6 +86,27 @@ embedding:
 #   upstash_rest_token: "..."
 #   namespace: "teleton-memory"
 
+# Memory prioritization and retention.
+# Scores are recalculated periodically. Cleanup archives active memories first,
+# then deletes archived rows after archive_days.
+memory:
+  prioritization:
+    enabled: true
+    interval_minutes: 60
+    recency_half_life_days: 30
+    weights:
+      recency: 0.35
+      frequency: 0.20
+      impact: 0.20
+      explicit: 0.15
+      centrality: 0.10
+  retention:
+    min_score: 0.1
+    max_age_days: 90
+    max_entries: 10000
+    archive_days: 30
+    auto_cleanup: false # Set true to let the scheduler archive candidates automatically
+
 # Optional: WebUI dashboard (disabled by default for security)
 webui:
   enabled: false                      # Enable web dashboard

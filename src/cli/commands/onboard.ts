@@ -40,6 +40,7 @@ import {
   CommandAccessSchema,
   DealsConfigSchema,
   MarketplaceConfigSchema,
+  MemoryConfigSchema,
   VectorMemoryConfigSchema,
 } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
@@ -989,6 +990,7 @@ async function runInteractiveOnboarding(
     },
     embedding: { provider: "local" },
     vector_memory: VectorMemoryConfigSchema.parse({}),
+    memory: MemoryConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
     webui: {
       enabled: false,
@@ -1187,6 +1189,7 @@ async function runNonInteractiveOnboarding(
     },
     embedding: { provider: "local" },
     vector_memory: VectorMemoryConfigSchema.parse({}),
+    memory: MemoryConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
     webui: {
       enabled: false,

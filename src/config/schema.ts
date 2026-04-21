@@ -247,6 +247,64 @@ const _VectorMemoryObject = z.object({
 });
 export const VectorMemoryConfigSchema = _VectorMemoryObject.default(_VectorMemoryObject.parse({}));
 
+const _MemoryPrioritizationWeightsObject = z.object({
+  recency: z.number().min(0).default(0.35),
+  frequency: z.number().min(0).default(0.2),
+  impact: z.number().min(0).default(0.2),
+  explicit: z.number().min(0).default(0.15),
+  centrality: z.number().min(0).default(0.1),
+});
+
+const _MemoryPrioritizationObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable periodic memory score recalculation"),
+  interval_minutes: z
+    .number()
+    .min(1)
+    .default(60)
+    .describe("How often memory importance scores are recalculated"),
+  recency_half_life_days: z
+    .number()
+    .min(1)
+    .default(30)
+    .describe("Age, in days, where the recency score decays to 0.5"),
+  weights: _MemoryPrioritizationWeightsObject.default(_MemoryPrioritizationWeightsObject.parse({})),
+});
+
+const _MemoryRetentionObject = z.object({
+  min_score: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.1)
+    .describe("Memories below this importance score are cleanup candidates"),
+  max_age_days: z
+    .number()
+    .min(1)
+    .default(90)
+    .describe("Non-protected memories older than this are cleanup candidates"),
+  max_entries: z
+    .number()
+    .int()
+    .min(1)
+    .default(10_000)
+    .describe("Maximum number of active knowledge memory entries to retain"),
+  archive_days: z
+    .number()
+    .min(1)
+    .default(30)
+    .describe("How long archived memories are retained before permanent deletion"),
+  auto_cleanup: z
+    .boolean()
+    .default(false)
+    .describe("Automatically archive cleanup candidates during the scheduler run"),
+});
+
+const _MemoryObject = z.object({
+  prioritization: _MemoryPrioritizationObject.default(_MemoryPrioritizationObject.parse({})),
+  retention: _MemoryRetentionObject.default(_MemoryRetentionObject.parse({})),
+});
+export const MemoryConfigSchema = _MemoryObject.default(_MemoryObject.parse({}));
+
 const _LoggingObject = z.object({
   level: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
@@ -457,6 +515,7 @@ export const ConfigSchema = z.object({
   storage: StorageConfigSchema.default(StorageConfigSchema.parse({})),
   embedding: EmbeddingConfigSchema,
   vector_memory: VectorMemoryConfigSchema,
+  memory: MemoryConfigSchema,
   deals: DealsConfigSchema,
   webui: WebUIConfigSchema,
   logging: LoggingConfigSchema,
@@ -566,6 +625,9 @@ export type DealsConfig = z.infer<typeof DealsConfigSchema>;
 export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
+export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
+export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;
+export type MemoryRetentionConfig = z.infer<typeof _MemoryRetentionObject>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;
