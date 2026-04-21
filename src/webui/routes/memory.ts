@@ -10,12 +10,52 @@ import type {
 import { getErrorMessage } from "../../utils/errors.js";
 import { MemoryGraphStore } from "../../memory/graph-store.js";
 import { MemoryGraphQuery } from "../../memory/graph-query.js";
+import type { SemanticVectorIndexStats } from "../../memory/agent/knowledge.js";
 
 function vectorSyncUnavailableMessage(mode: MemoryVectorSyncResult["status"]["mode"]): string {
   if (mode === "standby") {
     return "Vector memory is not configured; local SQLite/FTS5 memory remains active.";
   }
   return "Vector memory is unavailable; local SQLite/FTS5 memory remains active.";
+}
+
+function emptySemanticStats(): SemanticVectorIndexStats {
+  return {
+    upserted: 0,
+    deleted: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
+}
+
+function vectorSyncMessage(params: {
+  synced: boolean;
+  namespace: string;
+  indexed: number;
+  skipped: number;
+  semantic: SemanticVectorIndexStats;
+  status: MemoryVectorSyncResult["status"];
+}): string {
+  const { synced, namespace, indexed, skipped, semantic, status } = params;
+  if (synced) {
+    return `Vector memory synchronized in namespace "${namespace}": ${semantic.upserted} vector(s) uploaded from ${indexed} file(s), ${skipped} skipped.`;
+  }
+  if (status.mode !== "online") {
+    return vectorSyncUnavailableMessage(status.mode);
+  }
+  if (semantic.upserted === 0) {
+    const firstError = semantic.errors[0] ? ` ${semantic.errors[0]}` : "";
+    if (indexed === 0 && skipped === 0) {
+      return "No memory files were found to upload to Upstash Vector.";
+    }
+    return `No vectors were uploaded to Upstash Vector. Check that memory files contain content and embeddings are enabled.${firstError}`;
+  }
+  if (semantic.failed > 0) {
+    const firstError = semantic.errors[0] ? ` ${semantic.errors[0]}` : "";
+    return `Vector memory sync did not complete: ${semantic.failed} file(s) failed, ${semantic.upserted} vector(s) uploaded.${firstError}`;
+  }
+  return "No vectors were uploaded to Upstash Vector.";
 }
 
 export function createMemoryRoutes(deps: WebUIServerDeps) {
@@ -187,6 +227,9 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
             synced: false,
             indexed: 0,
             skipped: 0,
+            vectorsUpserted: 0,
+            vectorsDeleted: 0,
+            vectorErrors: [],
             status: {
               mode: "standby",
               reason: "Semantic vector memory is not available in this server context",
@@ -205,6 +248,9 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
             synced: false,
             indexed: 0,
             skipped: 0,
+            vectorsUpserted: 0,
+            vectorsDeleted: 0,
+            vectorErrors: [],
             status,
             message: vectorSyncUnavailableMessage(status.mode),
           },
@@ -214,17 +260,27 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
 
       const result = await deps.memory.knowledge.indexAll({ force: true });
       const finalStatus = await vectorStore.healthCheck();
-      const synced = finalStatus.mode === "online";
+      const semantic = result.semantic ?? emptySemanticStats();
+      const synced =
+        finalStatus.mode === "online" && semantic.failed === 0 && semantic.upserted > 0;
       const response: APIResponse<MemoryVectorSyncResult> = {
         success: true,
         data: {
           synced,
           indexed: result.indexed,
           skipped: result.skipped,
+          vectorsUpserted: semantic.upserted,
+          vectorsDeleted: semantic.deleted,
+          vectorErrors: semantic.errors,
           status: finalStatus,
-          message: synced
-            ? `Vector memory synchronized: ${result.indexed} file(s) indexed, ${result.skipped} skipped.`
-            : vectorSyncUnavailableMessage(finalStatus.mode),
+          message: vectorSyncMessage({
+            synced,
+            namespace: vectorStore.namespace,
+            indexed: result.indexed,
+            skipped: result.skipped,
+            semantic,
+            status: finalStatus,
+          }),
         },
       };
 

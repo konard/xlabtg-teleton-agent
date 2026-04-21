@@ -159,6 +159,9 @@ export interface MemoryVectorSyncResult {
   synced: boolean;
   indexed: number;
   skipped: number;
+  vectorsUpserted: number;
+  vectorsDeleted: number;
+  vectorErrors: string[];
   status: SemanticMemoryStatusInfo;
   message: string;
 }

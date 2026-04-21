@@ -151,6 +151,47 @@ describe("Semantic vector memory", () => {
     rmSync(workspaceDir, { recursive: true, force: true });
   });
 
+  it("reports semantic vector sync failures when Upstash rejects an upsert", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "teleton-memory-"));
+    const memoryFile = join(workspaceDir, "MEMORY.md");
+    writeFileSync(memoryFile, "# Memory\n\nRemember the 10% rule for conservative risk.");
+
+    const embedder = makeEmbedder([0.7, 0.8, 0.9]);
+    const vectorStore = makeSemanticStore({
+      upsertKnowledge: vi.fn().mockRejectedValue(new Error("dimension mismatch")),
+    });
+    const indexer = new KnowledgeIndexer(db, workspaceDir, embedder, false, vectorStore);
+
+    const result = await indexer.indexAll();
+
+    expect(result.indexed).toBe(1);
+    expect(result.semantic.upserted).toBe(0);
+    expect(result.semantic.failed).toBe(1);
+    expect(result.semantic.errors.join("\n")).toContain("dimension mismatch");
+
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  it("reports semantic vector sync failures when embeddings are disabled", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "teleton-memory-"));
+    const memoryFile = join(workspaceDir, "MEMORY.md");
+    writeFileSync(memoryFile, "# Memory\n\nRemember the 10% rule for conservative risk.");
+
+    const embedder = makeEmbedder([]);
+    const vectorStore = makeSemanticStore();
+    const indexer = new KnowledgeIndexer(db, workspaceDir, embedder, false, vectorStore);
+
+    const result = await indexer.indexAll();
+
+    expect(result.indexed).toBe(1);
+    expect(result.semantic.upserted).toBe(0);
+    expect(result.semantic.failed).toBe(1);
+    expect(result.semantic.errors.join("\n")).toContain("Embedding provider returned no vectors");
+    expect(vectorStore.upsertKnowledge).not.toHaveBeenCalled();
+
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
   it("reconfigures the Upstash vector store at runtime", () => {
     const store = new UpstashSemanticVectorStore({
       url: "https://steady-fox-123.upstash.io",

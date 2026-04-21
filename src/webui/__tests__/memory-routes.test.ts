@@ -39,7 +39,11 @@ describe("memory routes", () => {
   });
 
   it("syncs old memory files to vector memory when Upstash is online", async () => {
-    const indexAll = vi.fn().mockResolvedValue({ indexed: 2, skipped: 1 });
+    const indexAll = vi.fn().mockResolvedValue({
+      indexed: 2,
+      skipped: 1,
+      semantic: { upserted: 5, deleted: 0, skipped: 0, failed: 0, errors: [] },
+    });
     const healthCheck = vi
       .fn()
       .mockResolvedValueOnce({ mode: "online", vectorCount: 4 })
@@ -67,7 +71,49 @@ describe("memory routes", () => {
     expect(json.data.synced).toBe(true);
     expect(json.data.indexed).toBe(2);
     expect(json.data.skipped).toBe(1);
+    expect(json.data.vectorsUpserted).toBe(5);
     expect(json.data.status.mode).toBe("online");
+  });
+
+  it("does not report manual vector sync success when no vectors were upserted", async () => {
+    const indexAll = vi.fn().mockResolvedValue({
+      indexed: 1,
+      skipped: 0,
+      semantic: {
+        upserted: 0,
+        deleted: 0,
+        skipped: 0,
+        failed: 1,
+        errors: ["MEMORY.md: Embedding provider returned no vectors"],
+      },
+    });
+    const healthCheck = vi
+      .fn()
+      .mockResolvedValueOnce({ mode: "online", vectorCount: 4 })
+      .mockResolvedValueOnce({ mode: "online", vectorCount: 4 });
+
+    const app = createTestApp({
+      memory: {
+        db: {} as WebUIServerDeps["memory"]["db"],
+        embedder: {} as WebUIServerDeps["memory"]["embedder"],
+        knowledge: { indexAll } as unknown as WebUIServerDeps["memory"]["knowledge"],
+        vectorStore: {
+          isConfigured: true,
+          namespace: "teleton-memory",
+          healthCheck,
+        } as unknown as WebUIServerDeps["memory"]["vectorStore"],
+      },
+    });
+
+    const res = await app.request("/api/memory/sync-vector", { method: "POST" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.synced).toBe(false);
+    expect(json.data.vectorsUpserted).toBe(0);
+    expect(json.data.vectorErrors).toEqual(["MEMORY.md: Embedding provider returned no vectors"]);
+    expect(json.data.message).toContain("No vectors were uploaded");
   });
 
   it("keeps local memory active and skips vector sync when Upstash is not configured", async () => {
