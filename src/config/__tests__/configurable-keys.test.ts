@@ -200,6 +200,32 @@ describe("CONFIGURABLE_KEYS — new scalar entries", () => {
       expect(meta.description).toContain("requires restart");
     });
   });
+
+  describe("prediction keys", () => {
+    it("exposes prediction engine fields as configurable keys", () => {
+      expect(CONFIGURABLE_KEYS["predictions.enabled"]).toMatchObject({
+        type: "boolean",
+        category: "Predictions",
+      });
+      expect(CONFIGURABLE_KEYS["predictions.confidence_threshold"]).toMatchObject({
+        type: "number",
+        category: "Predictions",
+      });
+      expect(CONFIGURABLE_KEYS["predictions.proactive_suggestions"]).toMatchObject({
+        type: "boolean",
+        category: "Predictions",
+      });
+    });
+
+    it("validates prediction numeric bounds", () => {
+      expect(CONFIGURABLE_KEYS["predictions.confidence_threshold"].validate("0.6")).toBeUndefined();
+      expect(CONFIGURABLE_KEYS["predictions.confidence_threshold"].validate("1.5")).toBeDefined();
+      expect(CONFIGURABLE_KEYS["predictions.max_suggestions"].validate("5")).toBeUndefined();
+      expect(CONFIGURABLE_KEYS["predictions.max_suggestions"].validate("11")).toBeDefined();
+      expect(CONFIGURABLE_KEYS["predictions.history_limit"].validate("5000")).toBeUndefined();
+      expect(CONFIGURABLE_KEYS["predictions.history_limit"].validate("50")).toBeDefined();
+    });
+  });
 });
 
 // ── Array keys ──────────────────────────────────────────────────────────

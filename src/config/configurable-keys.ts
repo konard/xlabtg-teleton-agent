@@ -15,6 +15,7 @@ export type ConfigCategory =
   | "Telegram"
   | "Embedding"
   | "Vector Memory"
+  | "Predictions"
   | "WebUI"
   | "Deals"
   | "TON Proxy"
@@ -848,6 +849,68 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     parse: (v) => v === "true",
   },
 
+  // ─── Predictions ──────────────────────────────────────────────────
+  "predictions.enabled": {
+    type: "boolean",
+    category: "Predictions",
+    label: "Predictions Enabled",
+    description: "Enable behavior tracking and prediction APIs",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "true",
+  },
+  "predictions.confidence_threshold": {
+    type: "number",
+    category: "Predictions",
+    label: "Confidence Threshold",
+    description: "Minimum confidence required before surfacing predictions",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(0, 1),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "0.6",
+  },
+  "predictions.proactive_suggestions": {
+    type: "boolean",
+    category: "Predictions",
+    label: "Proactive Suggestions",
+    description: "Append high-confidence suggestions to agent replies",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+    defaultValue: "false",
+  },
+  "predictions.max_suggestions": {
+    type: "number",
+    category: "Predictions",
+    label: "Max Suggestions",
+    description: "Maximum predictions returned by API endpoints",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(1, 10),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "5",
+  },
+  "predictions.history_limit": {
+    type: "number",
+    category: "Predictions",
+    label: "History Limit",
+    description: "Maximum behavior events retained for prediction analysis",
+    sensitive: false,
+    hotReload: "instant",
+    validate: numberInRange(100, 100000),
+    mask: identity,
+    parse: (v) => Number(v),
+    defaultValue: "5000",
+  },
+
   // ─── Developer ─────────────────────────────────────────────────────
   "dev.hot_reload": {
     type: "boolean",
@@ -978,6 +1041,7 @@ export const CATEGORY_ORDER: ConfigCategory[] = [
   "Telegram",
   "Embedding",
   "Vector Memory",
+  "Predictions",
   "WebUI",
   "Deals",
   "TON Proxy",

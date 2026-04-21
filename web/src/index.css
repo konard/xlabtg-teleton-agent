@@ -468,6 +468,130 @@ body {
   font-size: var(--font-sm);
 }
 
+/* ---- Predictions Widget ---- */
+
+.predictions-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.prediction-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.prediction-tabs {
+  display: flex;
+  gap: 4px;
+  min-width: 0;
+}
+
+.prediction-tab {
+  background: var(--surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.prediction-tab:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  opacity: 1;
+}
+
+.prediction-tab.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+  border-color: transparent;
+}
+
+.prediction-context-input {
+  width: 100%;
+  min-height: 34px;
+  padding: 7px 10px;
+}
+
+.prediction-status {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.prediction-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.prediction-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: start;
+  padding: 10px;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.prediction-main {
+  min-width: 0;
+}
+
+.prediction-action {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.prediction-reason {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.prediction-confidence {
+  height: 4px;
+  background: var(--separator);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+
+.prediction-confidence span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.prediction-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.prediction-actions button {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  line-height: 1;
+}
+
+.prediction-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
 /* ---- Activity Heatmap ---- */
 
 .heatmap-wrap {

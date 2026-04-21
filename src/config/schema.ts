@@ -508,6 +508,35 @@ const _HeartbeatObject = z.object({
 });
 export const HeartbeatConfigSchema = _HeartbeatObject.default(_HeartbeatObject.parse({}));
 
+const _PredictionsObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable behavior tracking and prediction APIs"),
+  confidence_threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.6)
+    .describe("Minimum confidence required before surfacing predictions"),
+  proactive_suggestions: z
+    .boolean()
+    .default(false)
+    .describe("Append high-confidence suggestions to agent replies"),
+  max_suggestions: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(5)
+    .describe("Maximum predictions returned by API endpoints"),
+  history_limit: z
+    .number()
+    .int()
+    .min(100)
+    .max(100000)
+    .default(5000)
+    .describe("Maximum behavior events retained for prediction analysis"),
+});
+export const PredictionsConfigSchema = _PredictionsObject.default(_PredictionsObject.parse({}));
+
 export const ConfigSchema = z.object({
   meta: MetaConfigSchema.default(MetaConfigSchema.parse({})),
   agent: AgentConfigSchema,
@@ -526,6 +555,7 @@ export const ConfigSchema = z.object({
   api: ApiConfigSchema.optional(),
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
+  predictions: PredictionsConfigSchema,
   mtproto: MtprotoConfigSchema,
   mcp: McpConfigSchema,
   plugins: z
@@ -639,5 +669,6 @@ export type ApiConfig = z.infer<typeof _ApiObject>;
 export type ExecConfig = z.infer<typeof _ExecObject>;
 export type GroqConfig = NonNullable<z.infer<typeof ConfigSchema>["groq"]>;
 export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;
+export type PredictionsConfig = z.infer<typeof _PredictionsObject>;
 export type MarketplaceConfig = z.infer<typeof _MarketplaceObject>;
 export type MarketplaceSourceConfig = z.infer<typeof _MarketplaceSourceObject>;

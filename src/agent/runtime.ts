@@ -92,6 +92,8 @@ import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
 import { getMetrics } from "../services/metrics.js";
 import { getAnalytics } from "../services/analytics.js";
+import { getBehaviorTracker } from "../services/behavior-tracker.js";
+import { getPredictions } from "../services/predictions.js";
 
 export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
@@ -357,6 +359,13 @@ export class AgentRuntime {
       } else {
         log.info(`🆕 Starting new session: ${session.sessionId}`);
       }
+
+      this.recordBehaviorMessage({
+        sessionId: session.sessionId,
+        chatId,
+        text: effectiveMessage,
+        timestamp: now,
+      });
 
       // Hook: session:start — fire concurrently, don't block message processing
       const sessionStartPromise = this.hookRunner
@@ -934,6 +943,11 @@ export class AgentRuntime {
           // Record tool invocation metric (skipped for blocked tools)
           if (!plan.blocked) {
             getMetrics()?.recordToolCall(block.name);
+            this.recordBehaviorTool({
+              sessionId: session.sessionId,
+              chatId,
+              toolName: block.name,
+            });
           }
 
           const toolHint = summarizeToolParams(block.name, plan.params);
@@ -1071,6 +1085,8 @@ export class AgentRuntime {
         content = generateToolSummary(allToolExecResults);
         log.info(`✅ Generated fallback summary from ${allToolExecResults.length} tool result(s)`);
       }
+
+      content = this.appendProactiveSuggestions(content, session.sessionId, chatId);
 
       // Hook: response:before — plugins can mutate or block the response text
       let responseMetadata: Record<string, unknown> = {};
@@ -1322,6 +1338,78 @@ export class AgentRuntime {
     }
   }
 
+  private recordBehaviorMessage(opts: {
+    sessionId: string;
+    chatId: string;
+    text: string;
+    timestamp: number;
+  }): void {
+    if (this.config.predictions?.enabled !== true) return;
+    try {
+      getBehaviorTracker()?.recordMessage(opts);
+    } catch (error) {
+      log.warn({ err: error }, "Behavior message tracking failed");
+    }
+  }
+
+  private recordBehaviorTool(opts: { sessionId: string; chatId: string; toolName: string }): void {
+    if (this.config.predictions?.enabled !== true) return;
+    try {
+      getBehaviorTracker()?.recordToolInvocation(opts);
+    } catch (error) {
+      log.warn({ err: error }, "Behavior tool tracking failed");
+    }
+  }
+
+  private getPredictedToolNames(context: string): string[] {
+    if (this.config.predictions?.enabled !== true) return [];
+    try {
+      return (
+        getPredictions()
+          ?.getLikelyTools({
+            context,
+            confidenceThreshold: this.config.predictions.confidence_threshold,
+            limit: this.config.predictions.max_suggestions,
+          })
+          .map((prediction) => prediction.action) ?? []
+      );
+    } catch (error) {
+      log.warn({ err: error }, "Tool prediction failed");
+      return [];
+    }
+  }
+
+  private appendProactiveSuggestions(content: string, sessionId: string, chatId: string): string {
+    if (
+      !content ||
+      this.config.predictions?.enabled !== true ||
+      this.config.predictions.proactive_suggestions !== true
+    ) {
+      return content;
+    }
+
+    try {
+      const suggestions =
+        getPredictions()?.getNextActions({
+          sessionId,
+          chatId,
+          confidenceThreshold: this.config.predictions.confidence_threshold,
+          limit: Math.min(this.config.predictions.max_suggestions, 3),
+        }) ?? [];
+
+      if (suggestions.length === 0) return content;
+
+      const lines = suggestions.map(
+        (suggestion) =>
+          `- ${suggestion.action} (${Math.round(suggestion.confidence * 100)}% confidence)`
+      );
+      return `${content}\n\nYou might also want to:\n${lines.join("\n")}`;
+    } catch (error) {
+      log.warn({ err: error }, "Proactive suggestion generation failed");
+      return content;
+    }
+  }
+
   /**
    * Select tools for the current request using RAG or full registry based on config.
    */
@@ -1347,6 +1435,8 @@ export class AgentRuntime {
         providerMeta.toolLimit === null && this.config.tool_rag?.skip_unlimited_providers !== false
       );
 
+    const predictedToolNames = this.getPredictedToolNames(effectiveMessage);
+
     if (useRAG && queryEmbedding) {
       const tools = await this.toolRegistry.getForContextWithRAG(
         effectiveMessage,
@@ -1354,7 +1444,8 @@ export class AgentRuntime {
         effectiveIsGroup,
         providerMeta.toolLimit,
         chatId,
-        isAdmin
+        isAdmin,
+        predictedToolNames
       );
       log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
       return tools;

@@ -95,6 +95,13 @@ webui:
   cors_origins: ["http://localhost:3000"]
   log_requests: true
 
+predictions:
+  enabled: true
+  confidence_threshold: 0.75
+  proactive_suggestions: true
+  max_suggestions: 3
+  history_limit: 1000
+
 dev:
   hot_reload: true
 
@@ -312,6 +319,12 @@ describe("Config Loader", () => {
       expect(config.webui.enabled).toBe(true);
       expect(config.webui.port).toBe(8888);
 
+      // Predictions
+      expect(config.predictions.confidence_threshold).toBe(0.75);
+      expect(config.predictions.proactive_suggestions).toBe(true);
+      expect(config.predictions.max_suggestions).toBe(3);
+      expect(config.predictions.history_limit).toBe(1000);
+
       // Dev
       expect(config.dev.hot_reload).toBe(true);
 
@@ -384,6 +397,13 @@ describe("Config Loader", () => {
       expect(config.webui.enabled).toBe(false);
       expect(config.webui.port).toBe(7777);
       expect(config.webui.host).toBe("127.0.0.1");
+
+      // Prediction defaults
+      expect(config.predictions.enabled).toBe(true);
+      expect(config.predictions.confidence_threshold).toBe(0.6);
+      expect(config.predictions.proactive_suggestions).toBe(false);
+      expect(config.predictions.max_suggestions).toBe(5);
+      expect(config.predictions.history_limit).toBe(5000);
 
       // Dev defaults
       expect(config.dev.hot_reload).toBe(false);
