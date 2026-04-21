@@ -35,6 +35,8 @@ export interface WebUIServerDeps {
     embedder: MemorySystem["embedder"];
     knowledge: MemorySystem["knowledge"];
     vectorStore?: MemorySystem["vectorStore"];
+    scorer?: MemorySystem["scorer"];
+    retention?: MemorySystem["retention"];
   };
   toolRegistry: ToolRegistry;
   plugins: LoadedPlugin[];
@@ -146,6 +148,22 @@ export interface MemorySearchResult {
   score: number;
   vectorScore?: number;
   keywordScore?: number;
+  importanceScore?: number;
+}
+
+export interface MemoryScoreInfo {
+  memoryId: string;
+  score: number;
+  recency: number;
+  frequency: number;
+  impact: number;
+  explicit: number;
+  centrality: number;
+  accessCount: number;
+  impactCount: number;
+  pinned: boolean;
+  lastAccessedAt: number | null;
+  updatedAt: number;
 }
 
 export interface SemanticMemoryStatusInfo {

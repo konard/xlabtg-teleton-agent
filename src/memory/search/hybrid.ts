@@ -9,6 +9,7 @@ import {
 } from "../../constants/limits.js";
 import { createLogger } from "../../utils/logger.js";
 import type { SemanticVectorStore } from "../vector-store.js";
+import { MemoryScorer } from "../scoring.js";
 
 const log = createLogger("Memory");
 
@@ -19,6 +20,7 @@ export interface HybridSearchResult {
   score: number;
   vectorScore?: number;
   keywordScore?: number;
+  importanceScore?: number;
   createdAt?: number;
 }
 
@@ -87,6 +89,8 @@ export class HybridSearch {
       limit?: number;
       vectorWeight?: number;
       keywordWeight?: number;
+      minScore?: number;
+      priorityWeight?: number;
     } = {}
   ): Promise<HybridSearchResult[]> {
     const limit = options.limit ?? 10;
@@ -106,7 +110,12 @@ export class HybridSearch {
 
     const keywordResults = this.keywordSearchKnowledge(query, Math.ceil(limit * 3));
 
-    return this.mergeResults(vectorResults, keywordResults, vectorWeight, keywordWeight, limit);
+    return this.mergeResults(vectorResults, keywordResults, vectorWeight, keywordWeight, limit, {
+      applyMemoryScores: true,
+      minScore: options.minScore,
+      priorityWeight: options.priorityWeight,
+      recordAccess: true,
+    });
   }
 
   async searchMessages(
@@ -152,7 +161,7 @@ export class HybridSearch {
       const rows = this.db
         .prepare(
           `
-        SELECT kv.id, k.text, k.source, kv.distance, k.created_at
+        SELECT kv.id, k.text, COALESCE(k.path, k.source) as source, kv.distance, k.created_at
         FROM (
           SELECT id, distance
           FROM knowledge_vec
@@ -205,7 +214,7 @@ export class HybridSearch {
       const rows = this.db
         .prepare(
           `
-        SELECT k.id, k.text, k.source, rank as score, k.created_at
+        SELECT k.id, k.text, COALESCE(k.path, k.source) as source, rank as score, k.created_at
         FROM knowledge_fts kf
         JOIN knowledge k ON k.rowid = kf.rowid
         WHERE knowledge_fts MATCH ?
@@ -346,7 +355,13 @@ export class HybridSearch {
     keywordResults: HybridSearchResult[],
     vectorWeight: number,
     keywordWeight: number,
-    limit: number
+    limit: number,
+    options: {
+      applyMemoryScores?: boolean;
+      minScore?: number;
+      priorityWeight?: number;
+      recordAccess?: boolean;
+    } = {}
   ): HybridSearchResult[] {
     const byId = new Map<string, HybridSearchResult>();
 
@@ -375,10 +390,48 @@ export class HybridSearch {
       }
     }
 
-    return results
+    if (options.applyMemoryScores) {
+      this.applyMemoryPriority(results, options);
+    }
+
+    const filtered = results
       .filter((r) => r.score >= HYBRID_SEARCH_MIN_SCORE)
+      .filter((r) => options.minScore === undefined || (r.importanceScore ?? 0) >= options.minScore)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
+
+    if (options.applyMemoryScores && options.recordAccess) {
+      new MemoryScorer(this.db).recordAccess(filtered.map((result) => result.id));
+    }
+
+    return filtered;
+  }
+
+  private applyMemoryPriority(
+    results: HybridSearchResult[],
+    options: { minScore?: number; priorityWeight?: number }
+  ): void {
+    if (results.length === 0) return;
+    const ids = [...new Set(results.map((result) => result.id))];
+    const placeholders = ids.map(() => "?").join(", ");
+    const rows = this.db
+      .prepare(
+        `
+        SELECT memory_id, score
+        FROM memory_scores
+        WHERE memory_id IN (${placeholders})
+      `
+      )
+      .all(...ids) as Array<{ memory_id: string; score: number }>;
+    const scoreById = new Map(rows.map((row) => [row.memory_id, row.score]));
+    const priorityWeight = Math.max(0, Math.min(1, options.priorityWeight ?? 0.25));
+
+    for (const result of results) {
+      const importanceScore = scoreById.get(result.id);
+      if (importanceScore === undefined) continue;
+      result.importanceScore = importanceScore;
+      result.score = (1 - priorityWeight) * result.score + priorityWeight * importanceScore;
+    }
   }
 
   /**

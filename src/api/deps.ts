@@ -18,6 +18,9 @@ export interface ApiServerDeps {
     db: Database;
     embedder: MemorySystem["embedder"];
     knowledge: MemorySystem["knowledge"];
+    vectorStore?: MemorySystem["vectorStore"];
+    scorer?: MemorySystem["scorer"];
+    retention?: MemorySystem["retention"];
   } | null;
   toolRegistry?: ToolRegistry | null;
   plugins?: LoadedPlugin[] | null;

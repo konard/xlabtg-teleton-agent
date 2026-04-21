@@ -60,6 +60,62 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_knowledge_hash ON knowledge(hash);
     CREATE INDEX IF NOT EXISTS idx_knowledge_updated ON knowledge(updated_at DESC);
 
+    -- Importance scores for active knowledge memories.
+    CREATE TABLE IF NOT EXISTS memory_scores (
+      memory_id TEXT PRIMARY KEY,
+      score REAL NOT NULL DEFAULT 0 CHECK(score >= 0 AND score <= 1),
+      recency REAL NOT NULL DEFAULT 0 CHECK(recency >= 0 AND recency <= 1),
+      frequency REAL NOT NULL DEFAULT 0 CHECK(frequency >= 0 AND frequency <= 1),
+      impact REAL NOT NULL DEFAULT 0 CHECK(impact >= 0 AND impact <= 1),
+      explicit REAL NOT NULL DEFAULT 0 CHECK(explicit >= 0 AND explicit <= 1),
+      centrality REAL NOT NULL DEFAULT 0 CHECK(centrality >= 0 AND centrality <= 1),
+      access_count INTEGER NOT NULL DEFAULT 0,
+      impact_count INTEGER NOT NULL DEFAULT 0,
+      pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0, 1)),
+      last_accessed_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (memory_id) REFERENCES knowledge(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_scores_score ON memory_scores(score DESC);
+    CREATE INDEX IF NOT EXISTS idx_memory_scores_updated ON memory_scores(updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_memory_scores_pinned ON memory_scores(pinned) WHERE pinned = 1;
+
+    -- Archived knowledge rows retained after cleanup removes them from active search.
+    CREATE TABLE IF NOT EXISTS memory_archive (
+      archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      memory_id TEXT NOT NULL,
+      source TEXT NOT NULL,
+      path TEXT,
+      text TEXT NOT NULL,
+      embedding TEXT,
+      start_line INTEGER,
+      end_line INTEGER,
+      hash TEXT NOT NULL,
+      original_created_at INTEGER NOT NULL,
+      original_updated_at INTEGER NOT NULL,
+      score REAL NOT NULL DEFAULT 0,
+      score_breakdown TEXT NOT NULL DEFAULT '{}',
+      archived_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      delete_after INTEGER NOT NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_archive_memory_id ON memory_archive(memory_id);
+    CREATE INDEX IF NOT EXISTS idx_memory_archive_delete_after ON memory_archive(delete_after);
+
+    CREATE TABLE IF NOT EXISTS memory_cleanup_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      mode TEXT NOT NULL CHECK(mode IN ('dry_run', 'archive', 'prune_archive')),
+      candidates INTEGER NOT NULL DEFAULT 0,
+      archived INTEGER NOT NULL DEFAULT 0,
+      deleted INTEGER NOT NULL DEFAULT 0,
+      protected INTEGER NOT NULL DEFAULT 0,
+      reason TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_memory_cleanup_history_created ON memory_cleanup_history(created_at DESC);
+
     -- Full-text search for knowledge
     CREATE VIRTUAL TABLE IF NOT EXISTS knowledge_fts USING fts5(
       text,
@@ -507,7 +563,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.21.0";
+export const CURRENT_SCHEMA_VERSION = "1.22.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1019,6 +1075,71 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.21.0 complete: memory graph tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.21.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.22.0")) {
+    log.info("Running migration 1.22.0: Add memory prioritization tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS memory_scores (
+          memory_id TEXT PRIMARY KEY,
+          score REAL NOT NULL DEFAULT 0 CHECK(score >= 0 AND score <= 1),
+          recency REAL NOT NULL DEFAULT 0 CHECK(recency >= 0 AND recency <= 1),
+          frequency REAL NOT NULL DEFAULT 0 CHECK(frequency >= 0 AND frequency <= 1),
+          impact REAL NOT NULL DEFAULT 0 CHECK(impact >= 0 AND impact <= 1),
+          explicit REAL NOT NULL DEFAULT 0 CHECK(explicit >= 0 AND explicit <= 1),
+          centrality REAL NOT NULL DEFAULT 0 CHECK(centrality >= 0 AND centrality <= 1),
+          access_count INTEGER NOT NULL DEFAULT 0,
+          impact_count INTEGER NOT NULL DEFAULT 0,
+          pinned INTEGER NOT NULL DEFAULT 0 CHECK(pinned IN (0, 1)),
+          last_accessed_at INTEGER,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (memory_id) REFERENCES knowledge(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_scores_score ON memory_scores(score DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_scores_updated ON memory_scores(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_memory_scores_pinned ON memory_scores(pinned) WHERE pinned = 1;
+
+        CREATE TABLE IF NOT EXISTS memory_archive (
+          archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
+          memory_id TEXT NOT NULL,
+          source TEXT NOT NULL,
+          path TEXT,
+          text TEXT NOT NULL,
+          embedding TEXT,
+          start_line INTEGER,
+          end_line INTEGER,
+          hash TEXT NOT NULL,
+          original_created_at INTEGER NOT NULL,
+          original_updated_at INTEGER NOT NULL,
+          score REAL NOT NULL DEFAULT 0,
+          score_breakdown TEXT NOT NULL DEFAULT '{}',
+          archived_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          delete_after INTEGER NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_archive_memory_id ON memory_archive(memory_id);
+        CREATE INDEX IF NOT EXISTS idx_memory_archive_delete_after ON memory_archive(delete_after);
+
+        CREATE TABLE IF NOT EXISTS memory_cleanup_history (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          mode TEXT NOT NULL CHECK(mode IN ('dry_run', 'archive', 'prune_archive')),
+          candidates INTEGER NOT NULL DEFAULT 0,
+          archived INTEGER NOT NULL DEFAULT 0,
+          deleted INTEGER NOT NULL DEFAULT 0,
+          protected INTEGER NOT NULL DEFAULT 0,
+          reason TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_memory_cleanup_history_created ON memory_cleanup_history(created_at DESC);
+      `);
+      log.info("Migration 1.22.0 complete: memory prioritization tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.22.0 failed");
       throw error;
     }
   }

@@ -10,6 +10,9 @@ import type {
 import { getErrorMessage } from "../../utils/errors.js";
 import { MemoryGraphStore } from "../../memory/graph-store.js";
 import { MemoryGraphQuery } from "../../memory/graph-query.js";
+import { HybridSearch } from "../../memory/search/hybrid.js";
+import { MemoryScorer } from "../../memory/scoring.js";
+import { MemoryRetentionService } from "../../memory/retention.js";
 import type { SemanticVectorIndexStats } from "../../memory/agent/knowledge.js";
 
 function vectorSyncUnavailableMessage(mode: MemoryVectorSyncResult["status"]["mode"]): string {
@@ -63,12 +66,19 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
 
   const graphStore = () => new MemoryGraphStore(deps.memory.db);
   const graphQuery = () => new MemoryGraphQuery(graphStore());
+  const scorer = () => deps.memory.scorer ?? new MemoryScorer(deps.memory.db);
+  const retention = () =>
+    deps.memory.retention ??
+    new MemoryRetentionService(deps.memory.db, undefined, scorer(), deps.memory.vectorStore);
 
   // Search knowledge base
   app.get("/search", async (c) => {
     try {
       const query = c.req.query("q") || "";
-      const limit = parseInt(c.req.query("limit") || "10", 10);
+      const limit = Math.max(1, Math.min(100, parseInt(c.req.query("limit") || "10", 10)));
+      const minScoreRaw = c.req.query("min_score");
+      const minScore =
+        minScoreRaw === undefined ? undefined : Math.max(0, Math.min(1, parseFloat(minScoreRaw)));
 
       if (!query) {
         const response: APIResponse = {
@@ -78,39 +88,21 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
         return c.json(response, 400);
       }
 
-      // Sanitize FTS5 query: wrap in double-quotes to treat as phrase literal
-      const sanitizedQuery = '"' + query.replace(/"/g, '""') + '"';
-
-      const results = deps.memory.db
-        .prepare(
-          `
-          SELECT
-            k.id,
-            k.text,
-            k.source,
-            k.path,
-            bm25(knowledge_fts) as score
-          FROM knowledge_fts
-          JOIN knowledge k ON knowledge_fts.rowid = k.rowid
-          WHERE knowledge_fts MATCH ?
-          ORDER BY score DESC
-          LIMIT ?
-        `
-        )
-        .all(sanitizedQuery, limit) as Array<{
-        id: string;
-        text: string;
-        source: string;
-        path: string | null;
-        score: number;
-      }>;
+      const search = new HybridSearch(deps.memory.db, false, deps.memory.vectorStore);
+      const results = await search.searchKnowledge(query, [], {
+        limit,
+        minScore: Number.isFinite(minScore) ? minScore : undefined,
+        priorityWeight: 0.25,
+      });
 
       const searchResults: MemorySearchResult[] = results.map((row) => ({
         id: row.id,
         text: row.text,
-        source: row.path || row.source,
-        score: Math.max(0, 1 - row.score / 10), // Normalize BM25 score to 0-1 range
-        keywordScore: Math.max(0, 1 - row.score / 10),
+        source: row.source,
+        score: row.score,
+        keywordScore: row.keywordScore,
+        vectorScore: row.vectorScore,
+        importanceScore: row.importanceScore,
       }));
 
       const response: APIResponse<MemorySearchResult[]> = {
@@ -118,6 +110,154 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
         data: searchResults,
       };
 
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Get prioritization stats for the Memory dashboard.
+  app.get("/scores/stats", (c) => {
+    try {
+      const atRiskLimit = Math.max(
+        1,
+        Math.min(100, parseInt(c.req.query("at_risk_limit") || "20", 10))
+      );
+      const data = {
+        scores: scorer().getStats(),
+        pinned: scorer().listPinned(20),
+        archive: retention().getArchiveStats(),
+        atRisk: retention().getAtRisk(atRiskLimit),
+        cleanupHistory: retention().getCleanupHistory(20),
+      };
+
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Get a single memory score breakdown.
+  app.get("/scores/:id", (c) => {
+    try {
+      const id = decodeURIComponent(c.req.param("id"));
+      const score = scorer().getScore(id);
+      if (!score) {
+        const response: APIResponse = {
+          success: false,
+          error: "Memory score not found",
+        };
+        return c.json(response, 404);
+      }
+
+      const response: APIResponse<typeof score> = {
+        success: true,
+        data: score,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Pin/unpin a memory so retention never archives it.
+  app.post("/scores/:id/pin", async (c) => {
+    try {
+      const id = decodeURIComponent(c.req.param("id"));
+      const exists = deps.memory.db.prepare("SELECT id FROM knowledge WHERE id = ?").get(id);
+      if (!exists) {
+        const response: APIResponse = {
+          success: false,
+          error: "Memory not found",
+        };
+        return c.json(response, 404);
+      }
+
+      let pinned = true;
+      try {
+        const body = await c.req.json<{ pinned?: boolean }>();
+        if (typeof body.pinned === "boolean") pinned = body.pinned;
+      } catch {
+        // Empty body defaults to pin.
+      }
+
+      const score = scorer().pinMemory(id, pinned);
+      const response: APIResponse<typeof score> = {
+        success: true,
+        data: score,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Boost memories that contributed to a successful outcome.
+  app.post("/scores/impact", async (c) => {
+    try {
+      const body = await c.req.json<{ memoryIds?: string[]; amount?: number }>();
+      const ids = Array.isArray(body.memoryIds) ? body.memoryIds : [];
+      if (ids.length === 0) {
+        const response: APIResponse = {
+          success: false,
+          error: "memoryIds must contain at least one memory id",
+        };
+        return c.json(response, 400);
+      }
+
+      const memoryScorer = scorer();
+      memoryScorer.boostImpact(ids, body.amount ?? 1);
+      const data = ids.map((id) => memoryScorer.getScore(id)).filter(Boolean);
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Trigger memory cleanup. Defaults to dry-run unless dry_run=false is supplied.
+  app.post("/cleanup", async (c) => {
+    try {
+      let dryRun = c.req.query("dry_run") !== "false";
+      try {
+        const body = await c.req.json<{ dryRun?: boolean }>();
+        if (typeof body.dryRun === "boolean") dryRun = body.dryRun;
+      } catch {
+        // Query-only calls are valid.
+      }
+
+      const data = await retention().cleanup({ dryRun });
+      const response: APIResponse<typeof data> = {
+        success: true,
+        data,
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {

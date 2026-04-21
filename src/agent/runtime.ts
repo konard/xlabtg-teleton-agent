@@ -35,6 +35,7 @@ import {
   MemoryGraphQuery,
   MemoryGraphStore,
   EntityExtractor,
+  MemoryScorer,
 } from "../memory/index.js";
 import { sanitizeForContext } from "../utils/sanitize.js";
 import { formatMessageEnvelope } from "../memory/envelope.js";
@@ -187,6 +188,7 @@ export class AgentRuntime {
   private entityExtractor = new EntityExtractor();
   private hookRunner?: ReturnType<typeof createHookRunner>;
   private userHookEvaluator?: UserHookEvaluator;
+  private lastRagMemoryIds: string[] = [];
 
   constructor(config: Config, soul?: string, toolRegistry?: ToolRegistry) {
     this.config = config;
@@ -1150,6 +1152,14 @@ export class AgentRuntime {
         timestamp: now,
       });
 
+      if (this.lastRagMemoryIds.length > 0) {
+        try {
+          new MemoryScorer(getDatabase().getDb()).boostImpact(this.lastRagMemoryIds);
+        } catch (error) {
+          log.warn({ err: error }, "Memory impact boost failed");
+        }
+      }
+
       return {
         content,
         toolCalls: totalToolCalls,
@@ -1206,6 +1216,7 @@ export class AgentRuntime {
     maxRagChars: number | undefined;
   }): Promise<string> {
     const { effectiveMessage, chatId, isGroup, isOwner, queryEmbedding, maxRagChars } = opts;
+    this.lastRagMemoryIds = [];
 
     if (!this.contextBuilder || isTrivialMessage(effectiveMessage)) return "";
 
@@ -1221,6 +1232,7 @@ export class AgentRuntime {
         maxRelevantChunks: CONTEXT_MAX_RELEVANT_CHUNKS,
         queryEmbedding,
       });
+      this.lastRagMemoryIds = dbContext.relevantKnowledgeIds;
 
       const contextParts: string[] = [];
 
