@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
-import { HybridSearch, parseTemporalIntent } from "./hybrid.js";
+import { HybridSearch, parseTemporalIntent, type HybridSearchResult } from "./hybrid.js";
 import { MessageStore } from "../feed/messages.js";
 import { createLogger } from "../../utils/logger.js";
 import { FEED_MESSAGE_MAX_CHARS } from "../../constants/limits.js";
@@ -51,7 +51,9 @@ export interface ContextOptions {
 export interface Context {
   recentMessages: Array<{ role: string; content: string }>;
   relevantKnowledge: string[];
+  relevantKnowledgeIds: string[];
   relevantFeed: string[];
+  relevantFeedIds: string[];
   estimatedTokens: number;
 }
 
@@ -99,9 +101,9 @@ export class ContextBuilder {
           .searchKnowledge(query, queryEmbedding, { limit: maxRelevantChunks })
           .catch((error) => {
             log.warn({ err: error }, "Knowledge search failed");
-            return [] as { text: string }[];
+            return [] as HybridSearchResult[];
           })
-      : Promise.resolve([] as { text: string }[]);
+      : Promise.resolve([] as HybridSearchResult[]);
 
     const { afterTimestamp } = parseTemporalIntent(query);
 
@@ -114,22 +116,26 @@ export class ContextBuilder {
           })
           .catch((error) => {
             log.warn({ err: error }, "Feed search failed");
-            return [] as { text: string; source?: string }[];
+            return [] as HybridSearchResult[];
           })
-      : Promise.resolve([] as { text: string; source?: string }[]);
+      : Promise.resolve([] as HybridSearchResult[]);
 
     const [knowledgeResults, feedResults] = await Promise.all([knowledgePromise, feedPromise]);
 
     const relevantKnowledge: string[] = [];
+    const relevantKnowledgeIds: string[] = [];
     if (knowledgeResults.length > 0) {
       relevantKnowledge.push(...reorderForEdges(knowledgeResults.map((r) => r.text)));
+      relevantKnowledgeIds.push(...knowledgeResults.map((r) => r.id));
     }
 
     const relevantFeed: string[] = [];
+    const relevantFeedIds: string[] = [];
     if (includeFeedHistory) {
       for (const r of feedResults) {
         if (!recentTextsSet.has(r.text)) {
           relevantFeed.push(truncateFeedMessage(r.text));
+          relevantFeedIds.push(r.id);
         }
       }
 
@@ -143,6 +149,7 @@ export class ContextBuilder {
             const truncated = truncateFeedMessage(r.text);
             if (!existingTexts.has(truncated)) {
               relevantFeed.push(`[From chat ${r.source}]: ${truncated}`);
+              relevantFeedIds.push(r.id);
             }
           }
         } catch (error) {
@@ -171,7 +178,9 @@ export class ContextBuilder {
     return {
       recentMessages,
       relevantKnowledge,
+      relevantKnowledgeIds,
       relevantFeed,
+      relevantFeedIds,
       estimatedTokens,
     };
   }

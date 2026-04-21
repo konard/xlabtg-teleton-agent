@@ -136,6 +136,7 @@ export class TeletonApp {
         apiKey: embeddingProvider === "anthropic" ? this.config.agent.api_key : undefined,
       },
       vectorMemory: this.config.vector_memory,
+      memory: this.config.memory,
       workspaceDir: WORKSPACE_ROOT,
     });
 
@@ -232,6 +233,7 @@ export class TeletonApp {
   /** Stop agent subsystems and close database. For bootstrap mode. */
   async stopAgentSubsystems(): Promise<void> {
     await this.lifecycle.stop();
+    this.memory.scheduler.stop();
     try {
       closeDatabase();
     } catch (e) {
@@ -1352,6 +1354,7 @@ ${blue}  ┌──────────────────────�
     }
 
     // Close database last (shared with WebUI)
+    this.memory.scheduler.stop();
     try {
       closeDatabase();
     } catch (e) {

@@ -468,3 +468,62 @@ describe("HybridSearch — weight options", () => {
     ).resolves.not.toThrow();
   });
 });
+
+// ─── HybridSearch — priority-aware retrieval ─────────────────────────────────
+
+describe("HybridSearch — priority-aware retrieval", () => {
+  let db: InstanceType<typeof Database>;
+  let search: HybridSearch;
+
+  beforeEach(() => {
+    db = createTestDb();
+    search = new HybridSearch(db, false);
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("boosts high-priority memories and records access frequency for returned knowledge", async () => {
+    insertKnowledge(db, "priority-low", "priority aware retrieval query");
+    insertKnowledge(db, "priority-high", "priority aware retrieval query");
+    db.prepare(
+      `
+      INSERT INTO memory_scores (memory_id, score, recency, frequency, impact, explicit, centrality, updated_at)
+      VALUES ('priority-high', 0.95, 0.9, 0.9, 0.9, 0, 0, unixepoch())
+    `
+    ).run();
+
+    const results = await search.searchKnowledge("priority aware retrieval query", [], {
+      priorityWeight: 0.5,
+      limit: 2,
+    });
+
+    expect(results[0].id).toBe("priority-high");
+    const scoreRow = db
+      .prepare("SELECT access_count FROM memory_scores WHERE memory_id = 'priority-high'")
+      .get() as { access_count: number };
+    expect(scoreRow.access_count).toBeGreaterThan(0);
+  });
+
+  it("filters knowledge below a minimum importance score", async () => {
+    insertKnowledge(db, "min-low", "minimum importance filter query");
+    insertKnowledge(db, "min-high", "minimum importance filter query");
+    db.prepare(
+      `
+      INSERT INTO memory_scores (memory_id, score, recency, frequency, impact, explicit, centrality, updated_at)
+      VALUES
+        ('min-low', 0.1, 0.1, 0, 0, 0, 0, unixepoch()),
+        ('min-high', 0.9, 0.9, 0, 0, 0, 0, unixepoch())
+    `
+    ).run();
+
+    const results = await search.searchKnowledge("minimum importance filter query", [], {
+      minScore: 0.5,
+      priorityWeight: 0.5,
+    });
+
+    expect(results.map((result) => result.id)).toContain("min-high");
+    expect(results.map((result) => result.id)).not.toContain("min-low");
+  });
+});
