@@ -166,4 +166,14 @@ describe("Semantic vector memory", () => {
     expect(store.isConfigured).toBe(false);
     expect(store.namespace).toBe("teleton-memory");
   });
+
+  it("reports standby when Upstash vector memory is not configured", async () => {
+    const store = new UpstashSemanticVectorStore({});
+
+    const status = await store.healthCheck();
+
+    expect(store.isConfigured).toBe(false);
+    expect(status.mode).toBe("standby");
+    expect(status.reason).toContain("not configured");
+  });
 });

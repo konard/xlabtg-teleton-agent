@@ -3,10 +3,18 @@ import type {
   WebUIServerDeps,
   MemorySearchResult,
   MemorySourceFile,
+  MemoryVectorSyncResult,
   SessionInfo,
   APIResponse,
 } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
+
+function vectorSyncUnavailableMessage(mode: MemoryVectorSyncResult["status"]["mode"]): string {
+  if (mode === "standby") {
+    return "Vector memory is not configured; local SQLite/FTS5 memory remains active.";
+  }
+  return "Vector memory is unavailable; local SQLite/FTS5 memory remains active.";
+}
 
 export function createMemoryRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -151,6 +159,68 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
       const response: APIResponse<typeof stats> = {
         success: true,
         data: stats,
+      };
+
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Synchronize existing MEMORY.md and memory/*.md chunks to the semantic vector store.
+  app.post("/sync-vector", async (c) => {
+    try {
+      const vectorStore = deps.memory.vectorStore;
+      if (!vectorStore) {
+        const response: APIResponse<MemoryVectorSyncResult> = {
+          success: true,
+          data: {
+            synced: false,
+            indexed: 0,
+            skipped: 0,
+            status: {
+              mode: "standby",
+              reason: "Semantic vector memory is not available in this server context",
+            },
+            message: "Vector memory is not available; local SQLite/FTS5 memory remains active.",
+          },
+        };
+        return c.json(response);
+      }
+
+      const status = await vectorStore.healthCheck();
+      if (status.mode !== "online") {
+        const response: APIResponse<MemoryVectorSyncResult> = {
+          success: true,
+          data: {
+            synced: false,
+            indexed: 0,
+            skipped: 0,
+            status,
+            message: vectorSyncUnavailableMessage(status.mode),
+          },
+        };
+        return c.json(response);
+      }
+
+      const result = await deps.memory.knowledge.indexAll({ force: true });
+      const finalStatus = await vectorStore.healthCheck();
+      const synced = finalStatus.mode === "online";
+      const response: APIResponse<MemoryVectorSyncResult> = {
+        success: true,
+        data: {
+          synced,
+          indexed: result.indexed,
+          skipped: result.skipped,
+          status: finalStatus,
+          message: synced
+            ? `Vector memory synchronized: ${result.indexed} file(s) indexed, ${result.skipped} skipped.`
+            : vectorSyncUnavailableMessage(finalStatus.mode),
+        },
       };
 
       return c.json(response);

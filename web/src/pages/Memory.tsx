@@ -15,6 +15,9 @@ export function Memory() {
   const [sources, setSources] = useState<MemorySourceFile[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [syncLoading, setSyncLoading] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [syncSynced, setSyncSynced] = useState(false);
 
   // Expanded source state
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
@@ -57,6 +60,23 @@ export function Memory() {
     }
   };
 
+  const syncVectorMemory = async () => {
+    setSyncLoading(true);
+    setError(null);
+    setSyncMessage(null);
+    try {
+      const res = await api.syncVectorMemory();
+      const data = res.data;
+      setSyncSynced(data?.synced ?? false);
+      setSyncMessage(data?.message ?? 'Vector memory synchronization finished.');
+      await loadSources();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
   const lowerFilter = filter.toLowerCase();
   const filtered = lowerFilter
     ? sources.filter((s) => s.source.toLowerCase().includes(lowerFilter))
@@ -71,14 +91,22 @@ export function Memory() {
 
       <div className="card" style={{ padding: 0 }}>
         {/* Search + refresh bar */}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--separator)' }}>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--separator)', flexWrap: 'wrap' }}>
           <input
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="Filter sources..."
-            style={{ flex: 1, padding: '6px 10px', fontSize: '13px' }}
+            style={{ flex: '1 1 220px', minWidth: 0, padding: '6px 10px', fontSize: '13px' }}
           />
+          <button
+            onClick={syncVectorMemory}
+            disabled={syncLoading}
+            title="Synchronize memory files with vector memory"
+            style={{ padding: '4px 12px', fontSize: '12px', opacity: syncLoading ? 0.5 : 0.7 }}
+          >
+            {syncLoading ? 'Syncing...' : 'Sync Vector'}
+          </button>
           <button
             onClick={loadSources}
             disabled={loading}
@@ -92,6 +120,14 @@ export function Memory() {
           <div className="alert error" style={{ margin: '12px 14px' }}>
             {error}
             <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
+          </div>
+        )}
+
+        {syncMessage && (
+          <div className="alert success" style={{ margin: '12px 14px' }}>
+            {syncMessage}
+            {!syncSynced && <span style={{ color: 'var(--text-secondary)' }}> Local memory is still available.</span>}
+            <button onClick={() => setSyncMessage(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
           </div>
         )}
 
