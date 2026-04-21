@@ -2,6 +2,7 @@ import type Database from "better-sqlite3";
 import { readFileSync, existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { KNOWLEDGE_CHUNK_SIZE } from "../../constants/limits.js";
+import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { hashText, serializeEmbedding } from "../embeddings/index.js";
@@ -20,6 +21,46 @@ export interface KnowledgeChunk {
   hash: string;
 }
 
+export interface SemanticVectorIndexStats {
+  upserted: number;
+  deleted: number;
+  skipped: number;
+  failed: number;
+  errors: string[];
+}
+
+export interface KnowledgeIndexResult {
+  indexed: number;
+  skipped: number;
+  semantic: SemanticVectorIndexStats;
+}
+
+export interface KnowledgeFileIndexResult {
+  indexed: boolean;
+  semantic: SemanticVectorIndexStats;
+}
+
+function emptySemanticStats(): SemanticVectorIndexStats {
+  return {
+    upserted: 0,
+    deleted: 0,
+    skipped: 0,
+    failed: 0,
+    errors: [],
+  };
+}
+
+function addSemanticStats(
+  target: SemanticVectorIndexStats,
+  source: SemanticVectorIndexStats
+): void {
+  target.upserted += source.upserted;
+  target.deleted += source.deleted;
+  target.skipped += source.skipped;
+  target.failed += source.failed;
+  target.errors.push(...source.errors);
+}
+
 export class KnowledgeIndexer {
   constructor(
     private db: Database.Database,
@@ -29,26 +70,28 @@ export class KnowledgeIndexer {
     private semanticVectorStore?: SemanticVectorStore
   ) {}
 
-  async indexAll(options?: { force?: boolean }): Promise<{ indexed: number; skipped: number }> {
+  async indexAll(options?: { force?: boolean }): Promise<KnowledgeIndexResult> {
     const files = this.listMemoryFiles();
     let indexed = 0;
     let skipped = 0;
+    const semantic = emptySemanticStats();
 
     for (const file of files) {
-      const wasIndexed = await this.indexFile(file, options?.force);
-      if (wasIndexed) {
+      const result = await this.indexFile(file, options?.force);
+      addSemanticStats(semantic, result.semantic);
+      if (result.indexed) {
         indexed++;
       } else {
         skipped++;
       }
     }
 
-    return { indexed, skipped };
+    return { indexed, skipped, semantic };
   }
 
-  async indexFile(absPath: string, force?: boolean): Promise<boolean> {
+  async indexFile(absPath: string, force?: boolean): Promise<KnowledgeFileIndexResult> {
     if (!existsSync(absPath) || !absPath.endsWith(".md")) {
-      return false;
+      return { indexed: false, semantic: emptySemanticStats() };
     }
 
     const content = readFileSync(absPath, "utf-8");
@@ -65,7 +108,7 @@ export class KnowledgeIndexer {
         .get(relPath) as { hash: string } | undefined;
 
       if (existing?.hash === fileHash && !needsSemanticSync) {
-        return false;
+        return { indexed: false, semantic: emptySemanticStats() };
       }
     }
 
@@ -114,9 +157,15 @@ export class KnowledgeIndexer {
       }
     })();
 
-    await this.syncSemanticVectorStore(relPath, fileHash, existingIds, chunks, embeddings);
+    const semantic = await this.syncSemanticVectorStore(
+      relPath,
+      fileHash,
+      existingIds,
+      chunks,
+      embeddings
+    );
 
-    return true;
+    return { indexed: true, semantic };
   }
 
   private getExistingChunkIds(relPath: string): string[] {
@@ -149,9 +198,13 @@ export class KnowledgeIndexer {
     oldIds: string[],
     chunks: KnowledgeChunk[],
     embeddings: number[][]
-  ): Promise<void> {
+  ): Promise<SemanticVectorIndexStats> {
+    const stats = emptySemanticStats();
     const store = this.semanticVectorStore;
-    if (!store?.isConfigured) return;
+    if (!store?.isConfigured) {
+      stats.skipped = chunks.length;
+      return stats;
+    }
 
     const vectors: SemanticMemoryVector[] = chunks
       .map((chunk, index) => ({
@@ -169,23 +222,42 @@ export class KnowledgeIndexer {
       }))
       .filter((item) => item.vector.length > 0);
 
-    if (vectors.length === 0) return;
+    const missingVectorCount = chunks.length - vectors.length;
+    if (missingVectorCount > 0) {
+      stats.skipped = missingVectorCount;
+      stats.failed = 1;
+      stats.errors.push(
+        `${relPath}: Embedding provider returned no vectors for ${missingVectorCount} chunk(s)`
+      );
+    }
+
+    if (vectors.length === 0) {
+      return stats;
+    }
 
     try {
       await store.upsertKnowledge(vectors);
+      stats.upserted = vectors.length;
       const newIds = new Set(vectors.map((vector) => vector.id));
       const staleIds = oldIds.filter((id) => !newIds.has(id));
       if (staleIds.length > 0) {
         try {
           await store.delete(staleIds);
+          stats.deleted = staleIds.length;
         } catch (error) {
+          stats.failed++;
+          stats.errors.push(`${relPath}: stale vector cleanup failed: ${getErrorMessage(error)}`);
           log.warn({ err: error, path: relPath }, "Semantic memory cleanup failed; continuing");
         }
       }
       this.setSemanticMigrationHash(relPath, fileHash);
     } catch (error) {
+      stats.failed++;
+      stats.errors.push(`${relPath}: ${getErrorMessage(error)}`);
       log.warn({ err: error, path: relPath }, "Semantic memory sync failed; local fallback ready");
     }
+
+    return stats;
   }
 
   private listMemoryFiles(): string[] {
