@@ -27,7 +27,7 @@ export const dedustTokenInfoTool: Tool = {
  */
 async function safeFetch<T>(url: string): Promise<T | null> {
   try {
-    const response = await fetchWithTimeout(url);
+    const response = await fetchWithTimeout(url, { cacheTtlMs: 5 * 60_000 });
     if (!response.ok) return null;
     return (await response.json()) as T;
   } catch {

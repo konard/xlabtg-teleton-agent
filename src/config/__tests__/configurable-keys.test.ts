@@ -226,6 +226,30 @@ describe("CONFIGURABLE_KEYS — new scalar entries", () => {
       expect(CONFIGURABLE_KEYS["predictions.history_limit"].validate("50")).toBeDefined();
     });
   });
+
+  describe("cache keys", () => {
+    it("exposes predictive cache fields as configurable keys", () => {
+      expect(CONFIGURABLE_KEYS["cache.enabled"]).toMatchObject({
+        type: "boolean",
+        category: "Cache",
+      });
+      expect(CONFIGURABLE_KEYS["cache.max_entries"]).toMatchObject({
+        type: "number",
+        category: "Cache",
+      });
+      expect(CONFIGURABLE_KEYS["cache.ttl.tools_ms"]).toMatchObject({
+        type: "number",
+        category: "Cache",
+      });
+    });
+
+    it("validates predictive cache bounds", () => {
+      expect(CONFIGURABLE_KEYS["cache.max_entries"].validate("512")).toBeUndefined();
+      expect(CONFIGURABLE_KEYS["cache.max_entries"].validate("1")).toBeDefined();
+      expect(CONFIGURABLE_KEYS["cache.ttl.prompts_ms"].validate("1000")).toBeUndefined();
+      expect(CONFIGURABLE_KEYS["cache.ttl.prompts_ms"].validate("999")).toBeDefined();
+    });
+  });
 });
 
 // ── Array keys ──────────────────────────────────────────────────────────

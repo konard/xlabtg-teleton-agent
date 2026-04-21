@@ -54,6 +54,8 @@ import { initMetrics } from "./services/metrics.js";
 import { initAnalytics } from "./services/analytics.js";
 import { initBehaviorTracker } from "./services/behavior-tracker.js";
 import { initPredictions } from "./services/predictions.js";
+import { initCache } from "./services/cache.js";
+import { CacheInvalidationWatcher, initPreloader } from "./services/preloader.js";
 import { initAlerting } from "./services/alerting.js";
 import { initAnomalyDetector } from "./services/anomaly-detector.js";
 import { flushOffsets } from "./telegram/offset-store.js";
@@ -77,6 +79,7 @@ export class TeletonApp {
   private webuiServer: WebUIServer | null = null;
   private apiServer: ApiServer | null = null;
   private pluginWatcher: PluginWatcher | null = null;
+  private cacheInvalidationWatcher: CacheInvalidationWatcher | null = null;
   private mcpConnections: McpConnection[] = [];
   private callbackHandlerRegistered = false;
   private messageHandlersRegistered = false;
@@ -96,6 +99,7 @@ export class TeletonApp {
 
     // Wire YAML logging config to pino (H2 fix)
     initLoggerFromConfig(this.config.logging);
+    initCache(this.config.cache);
 
     if (this.config.tonapi_key) {
       setTonapiKey(this.config.tonapi_key);
@@ -490,6 +494,11 @@ ${blue}  ┌──────────────────────�
 
     // Initialize tool config from database
     this.toolRegistry.loadConfigFromDB(getDatabase().getDb());
+    initPreloader({
+      db: getDatabase().getDb(),
+      config: this.config,
+      toolRegistry: this.toolRegistry,
+    });
 
     // Initialize Tool RAG index
     if (this.config.tool_rag.enabled) {
@@ -748,6 +757,9 @@ ${blue}  ┌──────────────────────�
       });
       this.pluginWatcher.start();
     }
+
+    this.cacheInvalidationWatcher = new CacheInvalidationWatcher(this.configPath);
+    this.cacheInvalidationWatcher.start();
 
     // Display startup summary
     log.info(`✅ SOUL.md loaded`);
@@ -1469,6 +1481,14 @@ ${blue}  ┌──────────────────────�
         await this.pluginWatcher.stop();
       } catch (e) {
         log.error({ err: e }, "⚠️ Plugin watcher stop failed");
+      }
+    }
+
+    if (this.cacheInvalidationWatcher) {
+      try {
+        await this.cacheInvalidationWatcher.stop();
+      } catch (e) {
+        log.error({ err: e }, "⚠️ Cache invalidation watcher stop failed");
       }
     }
 

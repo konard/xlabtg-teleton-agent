@@ -102,6 +102,15 @@ predictions:
   max_suggestions: 3
   history_limit: 1000
 
+cache:
+  enabled: true
+  max_entries: 128
+  ttl:
+    tools_ms: 120000
+    prompts_ms: 30000
+    embeddings_ms: 900000
+    api_responses_ms: 45000
+
 dev:
   hot_reload: true
 
@@ -324,6 +333,12 @@ describe("Config Loader", () => {
       expect(config.predictions.proactive_suggestions).toBe(true);
       expect(config.predictions.max_suggestions).toBe(3);
       expect(config.predictions.history_limit).toBe(1000);
+      expect(config.cache.enabled).toBe(true);
+      expect(config.cache.max_entries).toBe(128);
+      expect(config.cache.ttl.tools_ms).toBe(120000);
+      expect(config.cache.ttl.prompts_ms).toBe(30000);
+      expect(config.cache.ttl.embeddings_ms).toBe(900000);
+      expect(config.cache.ttl.api_responses_ms).toBe(45000);
 
       // Dev
       expect(config.dev.hot_reload).toBe(true);
@@ -404,6 +419,12 @@ describe("Config Loader", () => {
       expect(config.predictions.proactive_suggestions).toBe(false);
       expect(config.predictions.max_suggestions).toBe(5);
       expect(config.predictions.history_limit).toBe(5000);
+      expect(config.cache.enabled).toBe(true);
+      expect(config.cache.max_entries).toBe(512);
+      expect(config.cache.ttl.tools_ms).toBe(300000);
+      expect(config.cache.ttl.prompts_ms).toBe(60000);
+      expect(config.cache.ttl.embeddings_ms).toBe(1800000);
+      expect(config.cache.ttl.api_responses_ms).toBe(300000);
 
       // Dev defaults
       expect(config.dev.hot_reload).toBe(false);

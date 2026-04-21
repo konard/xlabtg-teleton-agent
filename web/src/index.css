@@ -592,6 +592,170 @@ body {
   padding: 8px 0;
 }
 
+/* ---- Cache Widget ---- */
+
+.cache-widget {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  height: 100%;
+}
+
+.cache-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.cache-state {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.cache-buttons {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.cache-status {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.cache-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.cache-metric {
+  min-width: 0;
+  padding: 9px 10px;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.cache-metric span {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+
+.cache-metric strong {
+  display: block;
+  color: var(--text);
+  font-size: 16px;
+  margin-top: 2px;
+  overflow-wrap: anywhere;
+}
+
+.cache-type-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.cache-type-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  min-height: 34px;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: 12px;
+  text-align: left;
+}
+
+.cache-type-row:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+  opacity: 1;
+}
+
+.cache-type-row span:first-child {
+  color: var(--text);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.cache-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.cache-entry-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 9px;
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.cache-entry-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.cache-entry-main span {
+  flex: 0 0 auto;
+  color: var(--text-tertiary);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.cache-entry-main strong {
+  color: var(--text);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.cache-entry-remove {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  line-height: 1;
+}
+
+.cache-empty {
+  color: var(--text-tertiary);
+  font-size: 13px;
+  padding: 8px 0;
+}
+
+@media (max-width: 640px) {
+  .cache-summary-grid,
+  .cache-type-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .cache-controls {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 /* ---- Activity Heatmap ---- */
 
 .heatmap-wrap {

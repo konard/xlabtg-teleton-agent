@@ -53,6 +53,7 @@ export const stonfiSearchExecutor: ToolExecutor<JettonSearchParams> = async (
     // Fetch all assets from STON.fi
     const response = await fetchWithTimeout(`${STONFI_API_BASE_URL}/assets`, {
       headers: { Accept: "application/json" },
+      cacheTtlMs: 5 * 60_000,
     });
 
     if (!response.ok) {

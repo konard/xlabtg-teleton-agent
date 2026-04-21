@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from "fs";
 import { readRecentMemory } from "../memory/daily-logs.js";
 import { WORKSPACE_PATHS } from "../workspace/index.js";
 import { sanitizeForPrompt, sanitizeForContext } from "../utils/sanitize.js";
+import { getCache } from "../services/cache.js";
 
 const SOUL_PATHS = [WORKSPACE_PATHS.SOUL];
 
@@ -40,21 +41,32 @@ const fileCache = new Map<string, { content: string | null; expiry: number }>();
 const FILE_CACHE_TTL = 60_000;
 
 function cachedReadFile(path: string): string | null {
+  const resourceCache = getCache();
+  if (resourceCache) {
+    return resourceCache.getOrSetSync("prompts", path, { path }, () => readFileUncached(path));
+  }
+
   const now = Date.now();
   const cached = fileCache.get(path);
   if (cached && now < cached.expiry) return cached.content;
 
-  let content: string | null = null;
-  try {
-    if (existsSync(path)) content = readFileSync(path, "utf-8");
-  } catch {}
+  const content = readFileUncached(path);
 
   fileCache.set(path, { content, expiry: now + FILE_CACHE_TTL });
   return content;
 }
 
+function readFileUncached(path: string): string | null {
+  let content: string | null = null;
+  try {
+    if (existsSync(path)) content = readFileSync(path, "utf-8");
+  } catch {}
+  return content;
+}
+
 export function clearPromptCache(): void {
   fileCache.clear();
+  getCache()?.invalidate({ type: "prompts" });
 }
 
 export function loadSoul(): string {

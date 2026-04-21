@@ -423,6 +423,46 @@ const _ToolRagObject = z.object({
 });
 export const ToolRagConfigSchema = _ToolRagObject.default(_ToolRagObject.parse({}));
 
+const _CacheTtlObject = z.object({
+  tools_ms: z
+    .number()
+    .int()
+    .min(1_000)
+    .default(5 * 60 * 1000)
+    .describe("TTL for cached tool schema/context selections"),
+  prompts_ms: z
+    .number()
+    .int()
+    .min(1_000)
+    .default(60 * 1000)
+    .describe("TTL for cached prompt and soul file reads"),
+  embeddings_ms: z
+    .number()
+    .int()
+    .min(1_000)
+    .default(30 * 60 * 1000)
+    .describe("TTL for in-memory embedding vectors"),
+  api_responses_ms: z
+    .number()
+    .int()
+    .min(1_000)
+    .default(5 * 60 * 1000)
+    .describe("TTL for opt-in cached external API responses"),
+});
+
+const _CacheObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable predictive in-memory resource caching"),
+  max_entries: z
+    .number()
+    .int()
+    .min(10)
+    .max(100_000)
+    .default(512)
+    .describe("Maximum number of in-memory resource cache entries"),
+  ttl: _CacheTtlObject.default(_CacheTtlObject.parse({})),
+});
+export const CacheConfigSchema = _CacheObject.default(_CacheObject.parse({}));
+
 const _ExecLimitsObject = z.object({
   timeout: z.number().min(1).max(3600).default(120).describe("Max seconds per command execution"),
   max_output: z
@@ -598,6 +638,7 @@ export const ConfigSchema = z.object({
   dev: DevConfigSchema,
   marketplace: MarketplaceConfigSchema,
   tool_rag: ToolRagConfigSchema,
+  cache: CacheConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
   ton_proxy: TonProxyConfigSchema,
@@ -710,6 +751,7 @@ export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;
 export type ToolRagConfig = z.infer<typeof ToolRagConfigSchema>;
+export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
 export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;

@@ -37,6 +37,7 @@ import { TelegramUserClient } from "../../telegram/client.js";
 import YAML from "yaml";
 import {
   type Config,
+  CacheConfigSchema,
   CommandAccessSchema,
   DealsConfigSchema,
   MarketplaceConfigSchema,
@@ -994,6 +995,7 @@ async function runInteractiveOnboarding(
     vector_memory: VectorMemoryConfigSchema.parse({}),
     memory: MemoryConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
+    cache: CacheConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,
@@ -1195,6 +1197,7 @@ async function runNonInteractiveOnboarding(
     vector_memory: VectorMemoryConfigSchema.parse({}),
     memory: MemoryConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
+    cache: CacheConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,

@@ -33,6 +33,7 @@ export const stonfiTrendingExecutor: ToolExecutor<JettonTrendingParams> = async 
     // Fetch assets from STON.fi (sorted by popularity)
     const response = await fetchWithTimeout(`${STONFI_API_BASE_URL}/assets`, {
       headers: { Accept: "application/json" },
+      cacheTtlMs: 5 * 60_000,
     });
 
     if (!response.ok) {

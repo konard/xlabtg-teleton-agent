@@ -21,6 +21,7 @@ import { recordToolUsage } from "../../memory/tool-usage.js";
 import type { ToolIndex } from "./tool-index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
+import { getCache } from "../../services/cache.js";
 
 const log = createLogger("Registry");
 
@@ -35,6 +36,7 @@ export class ToolRegistry {
   private pluginToolNames: Map<string, string[]> = new Map();
   private toolIndex: ToolIndex | null = null;
   private onToolsChangedCallbacks: Array<(removed: string[], added: PiAiTool[]) => void> = [];
+  private registryVersion = 0;
 
   register<TParams = unknown>(
     tool: Tool,
@@ -49,7 +51,7 @@ export class ToolRegistry {
       this.scopes.set(tool.name, scope);
     }
     this.toolModules.set(tool.name, tool.name.split("_")[0]);
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
   }
 
   setPermissions(mp: ModulePermissions): void {
@@ -203,6 +205,28 @@ export class ToolRegistry {
     chatId?: string,
     isAdmin?: boolean
   ): PiAiTool[] {
+    const cached = getCache()?.getOrSetSync(
+      "tools",
+      "registry-context",
+      {
+        version: this.registryVersion,
+        isGroup,
+        toolLimit,
+        chatId: chatId ?? null,
+        isAdmin: isAdmin ?? null,
+      },
+      () => this.buildForContext(isGroup, toolLimit, chatId, isAdmin)
+    );
+    if (cached) return cached;
+    return this.buildForContext(isGroup, toolLimit, chatId, isAdmin);
+  }
+
+  private buildForContext(
+    isGroup: boolean,
+    toolLimit: number | null,
+    chatId?: string,
+    isAdmin?: boolean
+  ): PiAiTool[] {
     const excluded = isGroup ? "dm-only" : "group-only";
     const filtered = Array.from(this.tools.values())
       .filter((rt) => {
@@ -234,6 +258,22 @@ export class ToolRegistry {
       return filtered.slice(0, toolLimit);
     }
     return filtered;
+  }
+
+  warmTools(names: string[]): string[] {
+    const available = new Set(this.getForContext(false, null).map((tool) => tool.name));
+    const warmed = names.filter((name) => available.has(name));
+    getCache()?.set(
+      "tools",
+      "predicted-tools",
+      { version: this.registryVersion, names: warmed },
+      warmed
+    );
+    return warmed;
+  }
+
+  clearCache(): void {
+    this.invalidateToolCaches();
   }
 
   isPluginModule(moduleName: string): boolean {
@@ -275,7 +315,7 @@ export class ToolRegistry {
     }
 
     // Clear cache to force regeneration with new configs
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
   }
 
   /**
@@ -310,7 +350,7 @@ export class ToolRegistry {
 
     // Update in-memory cache
     this.toolConfigs = loadAllToolConfigs(this.db);
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
 
     return true;
   }
@@ -328,7 +368,7 @@ export class ToolRegistry {
 
     // Update in-memory cache
     this.toolConfigs = loadAllToolConfigs(this.db);
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
 
     return true;
   }
@@ -381,7 +421,7 @@ export class ToolRegistry {
       }
     }
 
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
 
     // Notify Tool RAG about new tools
     if (names.length > 0) {
@@ -436,7 +476,7 @@ export class ToolRegistry {
       }
     }
 
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
 
     // Notify Tool RAG about replaced tools
     const removedNames = [...previousNames].filter((n) => !names.includes(n));
@@ -459,7 +499,7 @@ export class ToolRegistry {
       }
       this.pluginToolNames.delete(pluginName);
     }
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
   }
 
   // ─── Tool RAG ──────────────────────────────────────────────────
@@ -499,6 +539,21 @@ export class ToolRegistry {
     isAdmin?: boolean,
     preferredToolNames: string[] = []
   ): Promise<PiAiTool[]> {
+    const cache = getCache();
+    const cacheConfig = {
+      version: this.registryVersion,
+      query,
+      isGroup,
+      toolLimit,
+      chatId: chatId ?? null,
+      isAdmin: isAdmin ?? null,
+      preferredToolNames,
+    };
+    const cached = cache?.getCachedByKey<PiAiTool[]>(
+      cache.makeKey("tools", "registry-context-rag", cacheConfig)
+    );
+    if (cached) return cached;
+
     // Get scope-filtered tools (no limit applied yet)
     const scopeFiltered = this.getForContext(isGroup, null, chatId, isAdmin);
     const scopeSet = new Set(scopeFiltered.map((t) => t.name));
@@ -545,7 +600,9 @@ export class ToolRegistry {
     }
 
     const result = Array.from(selected.values());
-    return this.applyLimit(result, toolLimit);
+    const limited = this.applyLimit(result, toolLimit);
+    cache?.set("tools", "registry-context-rag", cacheConfig, limited);
+    return limited;
   }
 
   private applyLimit(tools: PiAiTool[], toolLimit: number | null): PiAiTool[] {
@@ -556,5 +613,11 @@ export class ToolRegistry {
       return tools.slice(0, toolLimit);
     }
     return tools;
+  }
+
+  private invalidateToolCaches(): void {
+    this.registryVersion++;
+    this.toolArrayCache = null;
+    getCache()?.invalidate({ type: "tools" });
   }
 }

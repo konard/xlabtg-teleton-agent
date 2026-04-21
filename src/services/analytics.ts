@@ -2,6 +2,7 @@
 // Provides aggregated analytics data for the Analytics dashboard page.
 
 import type { Database } from "better-sqlite3";
+import type { ResourceCacheStats } from "./cache.js";
 
 export interface PerformanceSummary {
   avgResponseMs: number | null;
@@ -74,6 +75,19 @@ export class AnalyticsService {
         key        TEXT NOT NULL PRIMARY KEY,
         value      TEXT NOT NULL,
         updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE IF NOT EXISTS cache_metrics (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        entries          INTEGER NOT NULL,
+        hits             INTEGER NOT NULL,
+        misses           INTEGER NOT NULL,
+        evictions        INTEGER NOT NULL,
+        expirations      INTEGER NOT NULL,
+        hit_rate         REAL    NOT NULL,
+        memory_bytes     INTEGER NOT NULL,
+        latency_saved_ms INTEGER NOT NULL,
+        created_at       INTEGER NOT NULL DEFAULT (unixepoch())
       );
     `);
   }
@@ -258,6 +272,25 @@ export class AnalyticsService {
         opts.durationMs ?? null,
         opts.success ? 1 : 0,
         opts.errorMessage ?? null
+      );
+  }
+
+  recordCacheSnapshot(stats: ResourceCacheStats): void {
+    this.db
+      .prepare(
+        `INSERT INTO cache_metrics
+           (entries, hits, misses, evictions, expirations, hit_rate, memory_bytes, latency_saved_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+      .run(
+        stats.size,
+        stats.hits,
+        stats.misses,
+        stats.evictions,
+        stats.expirations,
+        stats.hitRate,
+        stats.memoryBytes,
+        stats.latencySavedMs
       );
   }
 

@@ -75,7 +75,7 @@ export const dedustPoolsExecutor: ToolExecutor<DedustPoolsParams> = async (
     const { jetton_address, pool_type, limit = 20 } = params;
 
     // Fetch pools from DeDust API
-    const response = await fetchWithTimeout(`${DEDUST_API_URL}/pools`);
+    const response = await fetchWithTimeout(`${DEDUST_API_URL}/pools`, { cacheTtlMs: 60_000 });
 
     if (!response.ok) {
       throw new Error(`DeDust API error: ${response.status} ${response.statusText}`);

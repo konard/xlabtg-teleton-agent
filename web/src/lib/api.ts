@@ -586,6 +586,64 @@ export interface BudgetStatus {
   projection_usd: number | null;
 }
 
+// ── Cache types ─────────────────────────────────────────────────────
+
+export type CacheResourceType = "tools" | "prompts" | "embeddings" | "api_responses";
+
+export interface CacheEntryInfo {
+  key: string;
+  type: CacheResourceType;
+  resourceId: string;
+  createdAt: number;
+  expiresAt: number;
+  lastAccessedAt: number;
+  hits: number;
+  sizeBytes: number;
+  estimatedLatencyMs: number;
+}
+
+export interface CacheTypeStats {
+  size: number;
+  hits: number;
+  misses: number;
+  evictions: number;
+  expirations: number;
+  memoryBytes: number;
+}
+
+export interface CacheStats {
+  enabled: boolean;
+  size: number;
+  maxEntries: number;
+  hits: number;
+  misses: number;
+  evictions: number;
+  expirations: number;
+  hitRate: number;
+  memoryBytes: number;
+  latencySavedMs: number;
+  byType: Record<CacheResourceType, CacheTypeStats>;
+  entries: CacheEntryInfo[];
+}
+
+export interface CacheWarmInput {
+  context?: string;
+  sessionId?: string;
+  chatId?: string;
+  isGroup?: boolean;
+  isAdmin?: boolean;
+}
+
+export interface CacheWarmResult {
+  startedAt: number;
+  durationMs: number;
+  predictedTools: string[];
+  warmed: {
+    tools: string[];
+    prompts: string[];
+  };
+}
+
 export type AnomalyType =
   | "volume_spike"
   | "error_burst"
@@ -1831,6 +1889,35 @@ export const api = {
     return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget", {
       method: "PUT",
       body: JSON.stringify({ monthly_limit_usd }),
+    });
+  },
+
+  // ── Cache ────────────────────────────────────────────────────────
+
+  async getCacheStats() {
+    return fetchAPI<APIResponse<CacheStats>>("/cache/stats");
+  },
+
+  async warmCache(input: CacheWarmInput = {}) {
+    return fetchAPI<APIResponse<CacheWarmResult>>("/cache/warm", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async invalidateCache(input: { key?: string; type?: CacheResourceType }) {
+    const params = new URLSearchParams();
+    if (input.key) params.set("key", input.key);
+    if (input.type) params.set("type", input.type);
+    const suffix = params.toString() ? `?${params.toString()}` : "";
+    return fetchAPI<APIResponse<{ invalidated: number }>>(`/cache/invalidate${suffix}`, {
+      method: "POST",
+    });
+  },
+
+  async deleteCache() {
+    return fetchAPI<APIResponse<{ cleared: string[]; message: string }>>("/cache", {
+      method: "DELETE",
     });
   },
 

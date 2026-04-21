@@ -95,6 +95,7 @@ import { getAnalytics } from "../services/analytics.js";
 import { getAnomalyDetector } from "../services/anomaly-detector.js";
 import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
+import { getPreloader } from "../services/preloader.js";
 
 export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
@@ -547,6 +548,15 @@ export class AgentRuntime {
       const providerMeta = getProviderMetadata(provider);
       const isAdmin =
         toolContext?.config?.telegram.admin_ids.includes(toolContext.senderId) ?? false;
+      if (isNewSession) {
+        getPreloader()?.warmInBackground({
+          sessionId: session.sessionId,
+          chatId,
+          context: effectiveMessage,
+          isGroup: effectiveIsGroup,
+          isAdmin,
+        });
+      }
 
       const tools = await this.selectTools({
         effectiveMessage,

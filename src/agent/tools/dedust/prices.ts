@@ -42,7 +42,7 @@ export const dedustPricesExecutor: ToolExecutor<DedustPricesParams> = async (
   try {
     const { symbols } = params;
 
-    const response = await fetchWithTimeout(`${DEDUST_API_URL}/prices`);
+    const response = await fetchWithTimeout(`${DEDUST_API_URL}/prices`, { cacheTtlMs: 60_000 });
     if (!response.ok) {
       throw new Error(`DeDust API error: ${response.status} ${response.statusText}`);
     }
