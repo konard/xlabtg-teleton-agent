@@ -135,6 +135,7 @@ export class TeletonApp {
         model: this.config.embedding.model,
         apiKey: embeddingProvider === "anthropic" ? this.config.agent.api_key : undefined,
       },
+      vectorMemory: this.config.vector_memory,
       workspaceDir: WORKSPACE_ROOT,
     });
 

@@ -75,11 +75,16 @@ embedding:
   # anthropic = uses Voyage API via your agent.api_key
   # none     = FTS5 full-text search only (no vector embeddings)
   #
-  # Optional Upstash Vector primary semantic store:
-  # export UPSTASH_VECTOR_REST_URL="https://..."
-  # export UPSTASH_VECTOR_REST_TOKEN="..."
-  # export UPSTASH_VECTOR_NAMESPACE="teleton-memory"  # optional
   # If Upstash is unavailable, Teleton falls back to local SQLite/FTS5.
+
+# Optional Upstash Vector primary semantic store.
+# These settings can also be edited from WebUI -> Configuration -> Vector Memory.
+# Environment variables UPSTASH_VECTOR_REST_URL, UPSTASH_VECTOR_REST_TOKEN,
+# and UPSTASH_VECTOR_NAMESPACE override these config values.
+# vector_memory:
+#   upstash_rest_url: "https://..."
+#   upstash_rest_token: "..."
+#   namespace: "teleton-memory"
 
 # Optional: WebUI dashboard (disabled by default for security)
 webui:

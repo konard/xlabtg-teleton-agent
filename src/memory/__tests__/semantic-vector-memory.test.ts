@@ -9,7 +9,7 @@ import { KnowledgeIndexer } from "../agent/knowledge.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { ensureSchema } from "../schema.js";
 import { HybridSearch } from "../search/hybrid.js";
-import type { SemanticVectorStore } from "../vector-store.js";
+import { UpstashSemanticVectorStore, type SemanticVectorStore } from "../vector-store.js";
 
 vi.mock("../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
@@ -149,5 +149,21 @@ describe("Semantic vector memory", () => {
     );
 
     rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  it("reconfigures the Upstash vector store at runtime", () => {
+    const store = new UpstashSemanticVectorStore({
+      url: "https://steady-fox-123.upstash.io",
+      token: "upstash-token-12345",
+      namespace: "custom-memory",
+    });
+
+    expect(store.isConfigured).toBe(true);
+    expect(store.namespace).toBe("custom-memory");
+
+    store.configure({});
+
+    expect(store.isConfigured).toBe(false);
+    expect(store.namespace).toBe("teleton-memory");
   });
 });

@@ -119,6 +119,36 @@ describe("CONFIGURABLE_KEYS — new scalar entries", () => {
     });
   });
 
+  describe("vector memory Upstash keys", () => {
+    it("exposes Upstash access fields as configurable keys", () => {
+      expect(CONFIGURABLE_KEYS["vector_memory.upstash_rest_url"]).toMatchObject({
+        type: "string",
+        category: "Vector Memory",
+        sensitive: false,
+      });
+      expect(CONFIGURABLE_KEYS["vector_memory.upstash_rest_token"]).toMatchObject({
+        type: "string",
+        category: "Vector Memory",
+        sensitive: true,
+      });
+      expect(CONFIGURABLE_KEYS["vector_memory.namespace"]).toMatchObject({
+        type: "string",
+        category: "Vector Memory",
+        sensitive: false,
+      });
+    });
+
+    it("validates Upstash URL and namespace values", () => {
+      const urlMeta = CONFIGURABLE_KEYS["vector_memory.upstash_rest_url"];
+      const namespaceMeta = CONFIGURABLE_KEYS["vector_memory.namespace"];
+
+      expect(urlMeta.validate("https://steady-fox-123.upstash.io")).toBeUndefined();
+      expect(urlMeta.validate("ftp://steady-fox-123.upstash.io")).toBeDefined();
+      expect(namespaceMeta.validate("teleton-memory")).toBeUndefined();
+      expect(namespaceMeta.validate("")).toBeDefined();
+    });
+  });
+
   describe("deals.expiry_seconds", () => {
     const meta = CONFIGURABLE_KEYS["deals.expiry_seconds"];
 

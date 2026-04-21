@@ -14,6 +14,7 @@ export type ConfigCategory =
   | "Session"
   | "Telegram"
   | "Embedding"
+  | "Vector Memory"
   | "WebUI"
   | "Deals"
   | "TON Proxy"
@@ -552,6 +553,42 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     parse: identity,
   },
 
+  // ─── Vector Memory ─────────────────────────────────────────────────
+  "vector_memory.upstash_rest_url": {
+    type: "string",
+    category: "Vector Memory",
+    label: "Upstash REST URL",
+    description: "Upstash Vector REST URL for semantic memory (takes effect after saving)",
+    sensitive: false,
+    hotReload: "instant",
+    validate: validateUrl,
+    mask: identity,
+    parse: identity,
+  },
+  "vector_memory.upstash_rest_token": {
+    type: "string",
+    category: "Vector Memory",
+    label: "Upstash REST Token",
+    description: "Upstash Vector REST token for semantic memory (takes effect after saving)",
+    sensitive: true,
+    hotReload: "instant",
+    validate: (v) => (v.length >= 10 ? undefined : "Must be at least 10 characters"),
+    mask: (v) => v.slice(0, 8) + "****",
+    parse: identity,
+  },
+  "vector_memory.namespace": {
+    type: "string",
+    category: "Vector Memory",
+    label: "Namespace",
+    description: "Upstash Vector namespace for Teleton memory chunks",
+    sensitive: false,
+    hotReload: "instant",
+    validate: nonEmpty,
+    mask: identity,
+    parse: identity,
+    defaultValue: "teleton-memory",
+  },
+
   // ─── WebUI ─────────────────────────────────────────────────────────
   "webui.port": {
     type: "number",
@@ -940,6 +977,7 @@ export const CATEGORY_ORDER: ConfigCategory[] = [
   "Session",
   "Telegram",
   "Embedding",
+  "Vector Memory",
   "WebUI",
   "Deals",
   "TON Proxy",

@@ -231,6 +231,22 @@ const _EmbeddingObject = z.object({
 });
 export const EmbeddingConfigSchema = _EmbeddingObject.default(_EmbeddingObject.parse({}));
 
+const _VectorMemoryObject = z.object({
+  upstash_rest_url: z
+    .string()
+    .default("")
+    .describe("Upstash Vector REST URL for primary semantic memory storage"),
+  upstash_rest_token: z
+    .string()
+    .default("")
+    .describe("Upstash Vector REST token for primary semantic memory storage"),
+  namespace: z
+    .string()
+    .default("teleton-memory")
+    .describe("Upstash Vector namespace used for Teleton memory chunks"),
+});
+export const VectorMemoryConfigSchema = _VectorMemoryObject.default(_VectorMemoryObject.parse({}));
+
 const _LoggingObject = z.object({
   level: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
@@ -440,6 +456,7 @@ export const ConfigSchema = z.object({
   telegram: TelegramConfigSchema,
   storage: StorageConfigSchema.default(StorageConfigSchema.parse({})),
   embedding: EmbeddingConfigSchema,
+  vector_memory: VectorMemoryConfigSchema,
   deals: DealsConfigSchema,
   webui: WebUIConfigSchema,
   logging: LoggingConfigSchema,
@@ -548,6 +565,7 @@ export type SessionResetPolicy = z.infer<typeof SessionResetPolicySchema>;
 export type DealsConfig = z.infer<typeof DealsConfigSchema>;
 export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
+export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;

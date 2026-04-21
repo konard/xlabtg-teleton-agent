@@ -43,11 +43,14 @@ vi.mock("../../ton/wallet-service.js", () => ({
 import { createConfigRoutes } from "../routes/config.js";
 import type { WebUIServerDeps } from "../types.js";
 
-function createTestApp(mockConfig: Record<string, any>) {
+function createTestApp(mockConfig: Record<string, any>, vectorStore: Record<string, any> = {}) {
   const deps = {
     configPath: "/tmp/test.yaml",
     agent: {
       getConfig: () => mockConfig,
+    },
+    memory: {
+      vectorStore,
     },
   } as unknown as WebUIServerDeps;
 
@@ -117,5 +120,38 @@ describe("Config side-effects on PUT/DELETE", () => {
     expect(mockSetToncenterApiKey).not.toHaveBeenCalled();
     expect(mockInvalidateEndpointCache).not.toHaveBeenCalled();
     expect(mockInvalidateTonClientCache).not.toHaveBeenCalled();
+  });
+
+  it("PUT vector memory credentials reconfigures the live vector store", async () => {
+    const mockVectorStore = { configure: vi.fn() };
+    const mockConfig = {
+      vector_memory: {
+        upstash_rest_url: "https://old.upstash.io",
+        upstash_rest_token: "old-token-12345",
+        namespace: "teleton-memory",
+      },
+    };
+    app = createTestApp(mockConfig, mockVectorStore);
+    mockReadRawConfig.mockReturnValue({
+      vector_memory: {
+        upstash_rest_url: "https://old.upstash.io",
+        upstash_rest_token: "old-token-12345",
+        namespace: "teleton-memory",
+      },
+    });
+
+    const res = await app.request("/api/config/vector_memory.upstash_rest_token", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ value: "new-upstash-token-12345" }),
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockConfig.vector_memory.upstash_rest_token).toBe("new-upstash-token-12345");
+    expect(mockVectorStore.configure).toHaveBeenCalledWith({
+      url: "https://old.upstash.io",
+      token: "new-upstash-token-12345",
+      namespace: "teleton-memory",
+    });
   });
 });

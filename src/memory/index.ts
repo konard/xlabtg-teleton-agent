@@ -17,7 +17,8 @@ import {
 import { KnowledgeIndexer } from "./agent/knowledge.js";
 import { MessageStore } from "./feed/messages.js";
 import { ContextBuilder } from "./search/context.js";
-import { createSemanticVectorStoreFromEnv, type SemanticVectorStore } from "./vector-store.js";
+import { createSemanticVectorStoreFromConfig, type SemanticVectorStore } from "./vector-store.js";
+import type { VectorMemoryConfig } from "../config/schema.js";
 
 export interface MemorySystem {
   db: Database.Database;
@@ -31,13 +32,14 @@ export interface MemorySystem {
 export function initializeMemory(config: {
   database: DatabaseConfig;
   embeddings: EmbeddingProviderConfig;
+  vectorMemory?: VectorMemoryConfig;
   workspaceDir: string;
 }): MemorySystem {
   const db = getDatabase(config.database);
   const rawEmbedder = createEmbeddingProvider(config.embeddings);
   const vectorEnabled = db.isVectorSearchReady();
   const database: Database.Database = db.getDb();
-  const vectorStore = createSemanticVectorStoreFromEnv();
+  const vectorStore = createSemanticVectorStoreFromConfig(config.vectorMemory);
   const embedder =
     rawEmbedder.id === "noop" ? rawEmbedder : new CachedEmbeddingProvider(rawEmbedder, database);
 

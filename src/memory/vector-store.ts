@@ -1,5 +1,6 @@
 import { Index } from "@upstash/vector";
 import type { InfoResult, QueryResult } from "@upstash/vector";
+import type { VectorMemoryConfig } from "../config/schema.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { createLogger } from "../utils/logger.js";
 
@@ -42,6 +43,7 @@ export interface SemanticMemorySearchResult {
 export interface SemanticVectorStore {
   readonly isConfigured: boolean;
   readonly namespace: string;
+  configure?(config: UpstashVectorStoreConfig): void;
   healthCheck(): Promise<SemanticMemoryStatus>;
   logStatus(): Promise<SemanticMemoryStatus>;
   searchKnowledge(embedding: number[], limit: number): Promise<SemanticMemorySearchResult[]>;
@@ -49,7 +51,7 @@ export interface SemanticVectorStore {
   delete(ids: string[]): Promise<void>;
 }
 
-interface UpstashVectorStoreConfig {
+export interface UpstashVectorStoreConfig {
   url?: string;
   token?: string;
   namespace?: string;
@@ -68,12 +70,20 @@ function resultText(result: QueryResult<SemanticMemoryMetadata>): string {
 }
 
 export class UpstashSemanticVectorStore implements SemanticVectorStore {
-  readonly namespace: string;
-  private readonly index: Index<SemanticMemoryMetadata> | null;
+  private currentNamespace = DEFAULT_NAMESPACE;
+  private index: Index<SemanticMemoryMetadata> | null = null;
   private lastLoggedMode: SemanticMemoryStatus["mode"] | null = null;
 
   constructor(config: UpstashVectorStoreConfig = {}) {
-    this.namespace = config.namespace || DEFAULT_NAMESPACE;
+    this.configure(config);
+  }
+
+  get namespace(): string {
+    return this.currentNamespace;
+  }
+
+  configure(config: UpstashVectorStoreConfig = {}): void {
+    this.currentNamespace = config.namespace || DEFAULT_NAMESPACE;
     if (config.url && config.token) {
       this.index = new Index<SemanticMemoryMetadata>({
         url: config.url,
@@ -83,6 +93,7 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
     } else {
       this.index = null;
     }
+    this.lastLoggedMode = null;
   }
 
   get isConfigured(): boolean {
@@ -197,5 +208,16 @@ export function createSemanticVectorStoreFromEnv(
     url: env.UPSTASH_VECTOR_REST_URL,
     token: env.UPSTASH_VECTOR_REST_TOKEN,
     namespace: env.UPSTASH_VECTOR_NAMESPACE,
+  });
+}
+
+export function createSemanticVectorStoreFromConfig(
+  config?: VectorMemoryConfig,
+  env: NodeJS.ProcessEnv = process.env
+): SemanticVectorStore {
+  return new UpstashSemanticVectorStore({
+    url: env.UPSTASH_VECTOR_REST_URL || config?.upstash_rest_url,
+    token: env.UPSTASH_VECTOR_REST_TOKEN || config?.upstash_rest_token,
+    namespace: env.UPSTASH_VECTOR_NAMESPACE || config?.namespace,
   });
 }
