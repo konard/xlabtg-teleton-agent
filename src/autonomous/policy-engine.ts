@@ -47,6 +47,19 @@ export const DEFAULT_POLICY_CONFIG: PolicyConfig = {
   },
 };
 
+/**
+ * Snapshot of the mutable rate-limit / loop / uncertainty state that must
+ * survive pause/resume cycles. Persisted by the loop; hydrated into a new
+ * PolicyEngine on resume so the sliding-window limits are not bypassed by
+ * scripting pause/resume (see issue #256).
+ */
+export interface PolicyEngineState {
+  toolCallTimestamps: number[];
+  apiCallTimestamps: number[];
+  consecutiveUncertainCount: number;
+  recentActions: string[];
+}
+
 export type PolicyViolation =
   | { type: "budget_exceeded"; message: string; requiresConfirmation: boolean }
   | { type: "restricted_tool"; message: string; toolName: string }
@@ -65,8 +78,50 @@ export class PolicyEngine {
   private toolCallTimestamps: number[] = [];
   private apiCallTimestamps: number[] = [];
   private consecutiveUncertainCount = 0;
+  private recentActions: string[] = [];
+  private onStateChange?: (state: PolicyEngineState) => void;
 
   constructor(private config: PolicyConfig = DEFAULT_POLICY_CONFIG) {}
+
+  /**
+   * Register a callback invoked after any mutation to the engine's runtime
+   * state. The loop uses this to persist state so that pause/resume cannot
+   * bypass rate-limit and loop-detection windows (issue #256).
+   */
+  setOnStateChange(cb: ((state: PolicyEngineState) => void) | undefined): void {
+    this.onStateChange = cb;
+  }
+
+  /** Dump mutable runtime state for persistence. */
+  serialize(): PolicyEngineState {
+    return {
+      toolCallTimestamps: [...this.toolCallTimestamps],
+      apiCallTimestamps: [...this.apiCallTimestamps],
+      consecutiveUncertainCount: this.consecutiveUncertainCount,
+      recentActions: [...this.recentActions],
+    };
+  }
+
+  /**
+   * Restore state produced by a previous `serialize()` call. Unknown fields
+   * are ignored so the engine stays forward-compatible with older snapshots.
+   */
+  hydrate(state: Partial<PolicyEngineState> | undefined | null): void {
+    if (!state) return;
+    this.toolCallTimestamps = Array.isArray(state.toolCallTimestamps)
+      ? [...state.toolCallTimestamps]
+      : [];
+    this.apiCallTimestamps = Array.isArray(state.apiCallTimestamps)
+      ? [...state.apiCallTimestamps]
+      : [];
+    this.consecutiveUncertainCount =
+      typeof state.consecutiveUncertainCount === "number" ? state.consecutiveUncertainCount : 0;
+    this.recentActions = Array.isArray(state.recentActions) ? [...state.recentActions] : [];
+  }
+
+  private notifyChange(): void {
+    if (this.onStateChange) this.onStateChange(this.serialize());
+  }
 
   checkAction(
     task: AutonomousTask,
@@ -178,19 +233,38 @@ export class PolicyEngine {
 
   recordToolCall(): void {
     this.toolCallTimestamps.push(Date.now());
+    this.notifyChange();
   }
 
   recordApiCall(): void {
     this.apiCallTimestamps.push(Date.now());
+    this.notifyChange();
   }
 
   recordUncertain(): boolean {
     this.consecutiveUncertainCount++;
+    this.notifyChange();
     return this.consecutiveUncertainCount >= this.config.uncertainty.maxConsecutiveUncertain;
   }
 
   resetUncertainCount(): void {
+    if (this.consecutiveUncertainCount === 0) return;
     this.consecutiveUncertainCount = 0;
+    this.notifyChange();
+  }
+
+  /**
+   * Record a tool name the loop just executed. The engine stores a bounded
+   * window (length 20) used for loop detection.
+   */
+  recordAction(toolName: string): void {
+    this.recentActions.push(toolName);
+    if (this.recentActions.length > 20) this.recentActions.shift();
+    this.notifyChange();
+  }
+
+  getRecentActions(): readonly string[] {
+    return this.recentActions;
   }
 
   satisfiesPolicies(

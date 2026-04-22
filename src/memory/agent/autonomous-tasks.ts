@@ -398,6 +398,41 @@ export class AutonomousTaskStore {
       .all(taskId, limit) as ExecutionLogRow[];
     return rows.map(rowToLogEntry);
   }
+
+  /**
+   * Persist PolicyEngine runtime state for a task. Called on every mutation
+   * (tool call / api call / uncertain / action) so that pause+resume does
+   * not reset rate-limit windows or loop-detection history (issue #256).
+   */
+  savePolicyState(taskId: string, state: object): void {
+    const now = Math.floor(Date.now() / 1000);
+    this.db
+      .prepare(
+        `INSERT INTO policy_state (task_id, state, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(task_id) DO UPDATE SET
+           state = excluded.state,
+           updated_at = excluded.updated_at`
+      )
+      .run(taskId, JSON.stringify(state), now);
+  }
+
+  /** Load last-persisted PolicyEngine state for a task, if any. */
+  getPolicyState(taskId: string): Record<string, unknown> | undefined {
+    const row = this.db.prepare(`SELECT state FROM policy_state WHERE task_id = ?`).get(taskId) as
+      | { state: string }
+      | undefined;
+    if (!row) return undefined;
+    try {
+      return JSON.parse(row.state) as Record<string, unknown>;
+    } catch {
+      return undefined;
+    }
+  }
+
+  clearPolicyState(taskId: string): void {
+    this.db.prepare(`DELETE FROM policy_state WHERE task_id = ?`).run(taskId);
+  }
 }
 
 const instances = new WeakMap<Database.Database, AutonomousTaskStore>();

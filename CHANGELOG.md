@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Vector memory sync**: Detect Upstash Vector index/embedding dimension mismatches before upsert, surface the configured index dimension in semantic memory status and sync responses, and log an actionable warning at startup (closes xlabtg/teleton-agent#246).
+- **Autonomous policy bypass via pause/resume (AUDIT-C3)**: `AutonomousLoop` now persists and hydrates `PolicyEngine` state (rate-limit sliding windows, loop-detection recent actions, uncertainty counter) through a new `policy_state` table so that scripted `pauseTask()` + `resumeTask()` cycles can no longer reset the 100 tool-calls-per-hour limit or the 5-identical-actions loop detector. Adds migration 1.23.0 and regression tests covering 10 pause/resume cycles (closes xlabtg/teleton-agent#256).
 
 ## [0.8.1] - 2026-03-05
 
