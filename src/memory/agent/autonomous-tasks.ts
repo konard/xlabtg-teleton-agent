@@ -22,6 +22,8 @@ function safeJSONParse<T>(value: unknown, fallback: T, context?: Record<string, 
   }
 }
 
+export const DEFAULT_CHECKPOINT_KEEP_LAST_N = 20;
+
 export type AutonomousTaskStatus =
   | "pending"
   | "running"
@@ -369,16 +371,35 @@ export class AutonomousTaskStore {
     state: Record<string, unknown>;
     toolCalls?: unknown[];
     nextActionHint?: string;
+    keepLastN?: number;
   }): TaskCheckpoint {
     const id = randomUUID();
     const now = Math.floor(Date.now() / 1000);
+    const keepLastN =
+      typeof input.keepLastN === "number" && input.keepLastN > 0
+        ? Math.floor(input.keepLastN)
+        : DEFAULT_CHECKPOINT_KEEP_LAST_N;
 
-    this.db
-      .prepare(
-        `INSERT INTO task_checkpoints (id, task_id, step, state, tool_calls, next_action_hint, created_at)
+    const insert = this.db.prepare(
+      `INSERT INTO task_checkpoints (id, task_id, step, state, tool_calls, next_action_hint, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
+    );
+    const updateLastCheckpoint = this.db.prepare(
+      `UPDATE autonomous_tasks SET last_checkpoint_id = ?, updated_at = ? WHERE id = ?`
+    );
+    const trimOld = this.db.prepare(
+      `DELETE FROM task_checkpoints
+       WHERE task_id = ?
+         AND id NOT IN (
+           SELECT id FROM task_checkpoints
+           WHERE task_id = ?
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT ?
+         )`
+    );
+
+    this.db.transaction(() => {
+      insert.run(
         id,
         input.taskId,
         input.step,
@@ -387,8 +408,10 @@ export class AutonomousTaskStore {
         input.nextActionHint ?? null,
         now
       );
+      updateLastCheckpoint.run(id, now, input.taskId);
+      trimOld.run(input.taskId, input.taskId, keepLastN);
+    })();
 
-    this.updateLastCheckpoint(input.taskId, id);
     const created = this.getCheckpoint(id);
     if (!created) {
       throw new Error(`Failed to create task checkpoint: ${id}`);
