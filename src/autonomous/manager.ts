@@ -39,6 +39,7 @@ export class AutonomousTaskManager {
   private store: AutonomousTaskStore;
   private runningLoops = new Map<string, AutonomousLoop>();
   private loopCompletions = new Map<string, Promise<void>>();
+  private taskQueue: AutonomousTask[] = [];
   private config: Required<AutonomousManagerConfig>;
   private loopDeps: LoopDependencies;
 
@@ -55,15 +56,8 @@ export class AutonomousTaskManager {
     };
   }
 
-  /** Create a new autonomous task and start it immediately. */
+  /** Create a new autonomous task; queues it when the parallel limit is reached. */
   async startTask(input: CreateTaskInput): Promise<AutonomousTask> {
-    const running = this.runningLoops.size;
-    if (running >= this.config.maxParallelTasks) {
-      throw new Error(
-        `Maximum parallel tasks (${this.config.maxParallelTasks}) reached. Pause or stop existing tasks first.`
-      );
-    }
-
     const task = this.store.createTask({
       goal: input.goal,
       successCriteria: input.successCriteria,
@@ -75,10 +69,15 @@ export class AutonomousTaskManager {
       priority: input.priority,
     });
 
+    if (this.runningLoops.size >= this.config.maxParallelTasks) {
+      log.info({ taskId: task.id }, "Parallel limit reached — queueing autonomous task");
+      const queued = this.store.updateTaskStatus(task.id, "queued") ?? task;
+      this.taskQueue.push(queued);
+      return queued;
+    }
+
     log.info({ taskId: task.id }, "Starting autonomous task");
-
     this.runLoop(task);
-
     return task;
   }
 
@@ -104,12 +103,18 @@ export class AutonomousTaskManager {
           this.runningLoops.delete(task.id);
         }
         this.loopCompletions.delete(completionKey);
+        // Drain the FIFO queue: start the next waiting task if a slot opened.
+        const next = this.taskQueue.shift();
+        if (next) {
+          log.info({ taskId: next.id }, "Dequeuing autonomous task");
+          this.runLoop(next);
+        }
       });
 
     this.loopCompletions.set(completionKey, completion);
   }
 
-  /** Pause a running task. */
+  /** Pause a running or queued task. */
   pauseTask(taskId: string): AutonomousTask | undefined {
     const task = this.store.getTask(taskId);
     if (!task) return undefined;
@@ -121,6 +126,10 @@ export class AutonomousTaskManager {
       // one. The old loop's .finally() will no-op once the hung await settles.
       this.runningLoops.delete(taskId);
     }
+
+    // Remove from the waiting queue if this task hadn't started yet.
+    const qi = this.taskQueue.findIndex((t) => t.id === taskId);
+    if (qi !== -1) this.taskQueue.splice(qi, 1);
 
     return this.store.updateTaskStatus(taskId, "paused");
   }
@@ -141,16 +150,20 @@ export class AutonomousTaskManager {
       loop.stop();
       this.runningLoops.delete(taskId);
     }
+    // Also remove from the waiting queue if it was queued but not yet running.
+    const qi = this.taskQueue.findIndex((t) => t.id === taskId);
+    if (qi !== -1) this.taskQueue.splice(qi, 1);
     return this.store.updateTaskStatus(taskId, "cancelled");
   }
 
-  /** Force-stop all running tasks. */
+  /** Force-stop all running tasks and discard the waiting queue. */
   stopAll(): void {
     for (const [id, loop] of this.runningLoops) {
       log.info({ taskId: id }, "Force-stopping autonomous task");
       loop.stop();
     }
     this.runningLoops.clear();
+    this.taskQueue.length = 0;
   }
 
   /**
@@ -173,6 +186,8 @@ export class AutonomousTaskManager {
    *   - "pending" tasks were queued (e.g. from the CLI) while no agent was
    *     around to execute them → start them now. This is what unblocks the
    *     bug from issue #222 where CLI-created tasks would sit forever.
+   *   - "queued" tasks were waiting for a slot; re-enqueue them in memory so
+   *     they drain automatically once a running slot becomes available.
    */
   async restoreInterruptedTasks(): Promise<number> {
     const active = this.store.getActiveTasks();
@@ -199,6 +214,19 @@ export class AutonomousTaskManager {
         });
         this.runLoop(task);
         restored++;
+      } else if (task.status === "queued") {
+        log.info({ taskId: task.id }, "Re-enqueueing task that was waiting for a slot");
+        this.taskQueue.push(task);
+        restored++;
+      }
+    }
+
+    // Drain the queue into any available slots left after restoring running tasks.
+    while (this.taskQueue.length > 0 && this.runningLoops.size < this.config.maxParallelTasks) {
+      const next = this.taskQueue.shift();
+      if (next) {
+        log.info({ taskId: next.id }, "Starting restored queued task");
+        this.runLoop(next);
       }
     }
 
