@@ -215,7 +215,7 @@ export UPSTASH_VECTOR_NAMESPACE="teleton-memory" # optional
 
 When configured, `MEMORY.md` and `memory/*.md` chunks are embedded with the selected `embedding` provider, written to Upstash Vector, and still stored locally. Startup logs show `Semantic Memory: Online` when Upstash is reachable, `Semantic Memory: Standby` when Upstash is not configured, or `Semantic Memory: Fallback Mode` when Teleton is using local search because Upstash is unavailable. WebUI saves update the live vector memory adapter for subsequent memory searches and writes. Existing memory files can be uploaded from WebUI -> Memory -> Sync Vector.
 
-See [Semantic Memory](semantic-memory.md) for fallback behavior, setup, and manual synchronization details.
+The Upstash index must be provisioned with the same dimension the embedding provider produces (`local`/`Xenova/all-MiniLM-L6-v2` = 384, `anthropic`/Voyage = 512 or 1024 depending on model). Otherwise every upsert is rejected and the Upstash dashboard shows requests growing with zero vectors. See [Upstash Vector Setup (Step-by-Step)](upstash-vector-setup.md) for a full walk-through and [Semantic Memory](semantic-memory.md) for fallback behavior and manual synchronization details.
 
 ---
 
