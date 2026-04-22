@@ -125,6 +125,55 @@ describe("AutonomousTaskManager", () => {
     expect(manager.isTaskRunning(wip.id)).toBe(true);
   });
 
+  // ─── Regression: issue #256 ────────────────────────────────────────────────
+  // Pause + resume must not reset the PolicyEngine rate-limit / uncertainty /
+  // loop-detection state. The legacy bug (AUDIT-C3) was that runLoop() always
+  // constructed a fresh PolicyEngine, giving anyone who could trigger
+  // pause/resume a trivial bypass of the 100 tool-calls-per-hour limit.
+
+  it("pause + resume rehydrates policy_state from storage (issue #256)", async () => {
+    const store = getAutonomousTaskStore(db);
+    const task = await manager.startTask({ goal: "state must persist" });
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Pre-seed the persisted state so the rehydrated loop picks it up.
+    const seeded = {
+      toolCallTimestamps: [Date.now(), Date.now(), Date.now()],
+      apiCallTimestamps: [Date.now()],
+      consecutiveUncertainCount: 2,
+      recentActions: ["web_fetch", "web_fetch", "web_fetch"],
+    };
+    store.savePolicyState(task.id, seeded);
+
+    manager.pauseTask(task.id);
+    manager.resumeTask(task.id);
+    await new Promise((r) => setTimeout(r, 20));
+
+    // After resume the loop should have hydrated the state AND overwritten
+    // the snapshot with its own updates. The key invariant is that the
+    // pre-seeded windows are NOT wiped to empty by the resume.
+    const persisted = store.getPolicyState(task.id) as
+      | {
+          toolCallTimestamps?: number[];
+          apiCallTimestamps?: number[];
+          consecutiveUncertainCount?: number;
+          recentActions?: string[];
+        }
+      | undefined;
+
+    expect(persisted).toBeDefined();
+    // The resumed loop immediately calls recordApiCall() inside planNextAction,
+    // so apiCallTimestamps should contain at least the seeded entry plus any
+    // additions. It must never shrink below the seeded count.
+    expect((persisted?.apiCallTimestamps ?? []).length).toBeGreaterThanOrEqual(1);
+    // consecutiveUncertainCount: the resumed loop won't run selfReflect until
+    // at least one step completes, so the hydrated value of 2 must still be
+    // present (or reset via resetUncertainCount only if reflection said
+    // not-stuck). With hanging planNextAction the loop never reaches
+    // reflection, so the counter stays at 2.
+    expect(persisted?.consecutiveUncertainCount).toBe(2);
+  });
+
   // ─── AUDIT-H4: pauseTask() race with in-flight executeTool ────────────────
 
   it("pauseTask() during in-flight executeTool keeps status 'paused' when the tool resolves late (AUDIT-H4)", async () => {
