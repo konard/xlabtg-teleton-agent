@@ -89,7 +89,13 @@ export function buildIntegratedLoopDeps(deps: IntegrationDeps): LoopDependencies
       // admin-only tools pass the registry's admin check instead of always
       // failing with senderId=0.
       const config = deps.agent.getConfig();
-      const adminSenderId = config.telegram.admin_ids[0] ?? 0;
+      const adminSenderId = config.telegram.admin_ids[0];
+      if (adminSenderId === undefined) {
+        throw new Error(
+          "Cannot execute autonomous tool: config.telegram.admin_ids is empty. " +
+            "Autonomous tasks require at least one admin user for escalation and admin-only tool access."
+        );
+      }
 
       const result = await deps.toolRegistry.execute(toolCall, {
         bridge: deps.bridge,
@@ -187,10 +193,21 @@ export function listToolsForTask(
 
 /**
  * Create an {@link AutonomousTaskManager} wired to the agent runtime.
- * Returns `undefined` if the caller has no agent runtime available (e.g.
- * CLI utility contexts) — callers should handle that gracefully.
+ *
+ * Throws if `config.telegram.admin_ids` is empty — autonomous tasks must
+ * attribute actions to a real admin user, both for the admin-only tool
+ * check and for escalation routing. Starting silently with `senderId=0`
+ * would make admin-only tools fail with a generic "Tool execution failed"
+ * and attribute audit-trail entries to Telegram user id 0 (AUDIT-H6).
  */
 export function createAutonomousManager(deps: IntegrationDeps): AutonomousTaskManager {
+  const config = deps.agent.getConfig();
+  if (config.telegram.admin_ids.length === 0) {
+    throw new Error(
+      "Cannot start autonomous manager: config.telegram.admin_ids is empty. " +
+        "Autonomous tasks require at least one admin user for escalation."
+    );
+  }
   const loopDeps = buildIntegratedLoopDeps(deps);
   return new AutonomousTaskManager(deps.db, loopDeps);
 }

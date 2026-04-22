@@ -20,6 +20,9 @@ import {
   WorkspaceSecurityError,
 } from "../../workspace/validator.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("workspace-routes");
 
 interface FileEntry {
   name: string;
@@ -41,10 +44,14 @@ const MAX_SCAN_ENTRIES = 5000;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono context type
 function errorResponse(c: any, error: unknown, status: number = 500) {
+  if (error instanceof WorkspaceSecurityError) {
+    log.warn({ attemptedPath: error.attemptedPath, message: error.message }, "workspace path rejected");
+    const response: APIResponse = { success: false, error: "Workspace path is not allowed" };
+    return c.json(response, 403);
+  }
   const message = getErrorMessage(error);
-  const code = error instanceof WorkspaceSecurityError ? 403 : status;
   const response: APIResponse = { success: false, error: message };
-  return c.json(response, code);
+  return c.json(response, status);
 }
 
 const IMAGE_MIME_TYPES: Record<string, string> = {

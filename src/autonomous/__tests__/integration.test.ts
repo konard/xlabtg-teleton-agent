@@ -6,7 +6,11 @@ import { getAutonomousTaskStore } from "../../memory/agent/autonomous-tasks.js";
 import type { AutonomousTask } from "../../memory/agent/autonomous-tasks.js";
 import { ToolRegistry } from "../../agent/tools/registry.js";
 import type { Tool, ToolExecutor } from "../../agent/tools/types.js";
-import { listToolsForTask, buildIntegratedLoopDeps } from "../integration.js";
+import {
+  listToolsForTask,
+  buildIntegratedLoopDeps,
+  createAutonomousManager,
+} from "../integration.js";
 import { buildDefaultLoopDeps } from "../manager.js";
 import type { AgentRuntime } from "../../agent/runtime.js";
 import type { TelegramBridge } from "../../telegram/bridge.js";
@@ -206,7 +210,11 @@ describe("buildIntegratedLoopDeps admin check", () => {
     expect(result.success).toBe(true);
   });
 
-  it("fails admin-only tools when no admin_ids are configured", async () => {
+  it("fails tool execution fast with a clear error when admin_ids is empty (AUDIT-H6)", async () => {
+    // Regression test for issue #270: previously this would coerce the
+    // sender id to 0 and silently fail the admin-only scope check with a
+    // generic "Tool execution failed". Now it must surface a clear,
+    // actionable error instead of pretending the tool merely failed.
     const deps = buildIntegratedLoopDeps({
       agent: stubAgent(stubConfig([])),
       toolRegistry: registry,
@@ -216,7 +224,7 @@ describe("buildIntegratedLoopDeps admin check", () => {
 
     const result = await deps.executeTool("admin_reset", {});
     expect(result.success).toBe(false);
-    expect(result.error).toMatch(/admin/i);
+    expect(result.error).toMatch(/admin_ids is empty/i);
   });
 
   it("exposes the tool registry to the planner via listTools", async () => {
@@ -426,5 +434,50 @@ describe("buildIntegratedLoopDeps escalation notify", () => {
     // mock bridge — this is what guarantees the human is actually paged.
     expect(sendMessage).toHaveBeenCalledTimes(1);
     expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ chatId: "777" }));
+  });
+});
+
+/**
+ * Issue #270 / AUDIT-H6: createAutonomousManager must refuse to start with
+ * an empty admin_ids list instead of silently coercing the sender id to 0.
+ */
+describe("createAutonomousManager admin_ids guard", () => {
+  let db: InstanceType<typeof Database>;
+  let registry: ToolRegistry;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    ensureSchema(db);
+
+    registry = new ToolRegistry();
+    registry.register(makeTool("admin_reset", "Admin-only reset"), noopExecutor, "admin-only");
+  });
+
+  afterEach(() => {
+    db.close();
+  });
+
+  it("throws a clear error when admin_ids is empty", () => {
+    expect(() =>
+      createAutonomousManager({
+        agent: stubAgent(stubConfig([])),
+        toolRegistry: registry,
+        bridge: stubBridge(),
+        db,
+      })
+    ).toThrow(/admin_ids is empty/i);
+  });
+
+  it("starts successfully when admin_ids contains at least one id", () => {
+    const manager = createAutonomousManager({
+      agent: stubAgent(stubConfig([123])),
+      toolRegistry: registry,
+      bridge: stubBridge(),
+      db,
+    });
+    expect(manager).toBeDefined();
+    // Basic sanity check: the manager should expose its standard surface.
+    expect(typeof manager.restoreInterruptedTasks).toBe("function");
   });
 });

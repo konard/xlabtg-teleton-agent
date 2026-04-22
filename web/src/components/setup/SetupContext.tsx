@@ -241,7 +241,21 @@ export function SetupProvider({ children }: { children: ReactNode }) {
     setLaunching(true);
     setLaunchError('');
     try {
-      const { token } = await setup.launch();
+      // The CLI embeds a one-time bootstrap nonce in the URL fragment
+      // (#nonce=...). Fragments are not sent to the server or proxies, so
+      // only a process that could see the CLI's own stderr/browser URL can
+      // acquire it — which is exactly the trust boundary we want.
+      const hash = window.location.hash.startsWith('#')
+        ? window.location.hash.slice(1)
+        : window.location.hash;
+      const params = new URLSearchParams(hash);
+      const nonce = params.get('nonce') ?? '';
+      if (!nonce) {
+        throw new Error(
+          'Missing setup nonce. Open the URL printed by `teleton setup --ui` (it includes #nonce=…).'
+        );
+      }
+      const { token } = await setup.launch(nonce);
       // Poll until the agent WebUI is up
       await setup.pollHealth(30000);
       // Redirect to the dashboard with token-based auth
