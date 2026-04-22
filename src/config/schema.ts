@@ -212,6 +212,12 @@ const _WebUIObject = z.object({
     .string()
     .optional()
     .describe("Bearer token for API auth (auto-generated if omitted)"),
+  auth_token_hash: z
+    .string()
+    .optional()
+    .describe(
+      "Scrypt hash of the auth token (format: scrypt$<salt-hex>$<hash-hex>). When set, takes precedence over auth_token so the raw token is never persisted."
+    ),
   cors_origins: z
     .array(z.string())
     .default(["http://localhost:5173", "http://localhost:7777"])
