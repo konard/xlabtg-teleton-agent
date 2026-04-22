@@ -435,7 +435,7 @@ export class TelegramAuthManager {
    * Cancel and clean up session
    */
   async cancelSession(authSessionId: string): Promise<void> {
-    if (this.session?.id === authSessionId) {
+    if (this.getSession(authSessionId)) {
       await this.cleanup();
     }
   }
