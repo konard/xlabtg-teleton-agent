@@ -421,10 +421,18 @@ export class ApiServer {
 
     return new Promise((resolve, reject) => {
       try {
+        const bindHost = this.config.host ?? "127.0.0.1";
+        if (bindHost !== "127.0.0.1") {
+          log.warn(
+            `Management API is binding on ${bindHost} (all interfaces). ` +
+              "Set api.host = \"127.0.0.1\" in config.yaml to restrict to localhost only."
+          );
+        }
         this.server = serve(
           {
             fetch: this.app.fetch as Parameters<typeof serve>[0]["fetch"],
             port: this.config.port,
+            hostname: bindHost,
             createServer: createHttpsServer,
             serverOptions: {
               cert: tls.cert,
@@ -433,7 +441,7 @@ export class ApiServer {
           },
           (info) => {
             (this.server as HttpServer).maxConnections = 20;
-            log.info(`Management API server running on https://localhost:${info.port}`);
+            log.info(`Management API server running on https://${bindHost}:${info.port}`);
             if (this.apiKey) {
               log.info(
                 `API key: ${KEY_PREFIX}${this.apiKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 4)}...`

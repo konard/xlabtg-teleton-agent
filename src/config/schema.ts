@@ -374,6 +374,10 @@ export const MarketplaceConfigSchema = _MarketplaceObject.default(_MarketplaceOb
 const _ApiObject = z.object({
   enabled: z.boolean().default(false).describe("Enable HTTPS Management API server"),
   port: z.number().min(1).max(65535).default(7778).describe("HTTPS server port"),
+  host: z
+    .string()
+    .default("127.0.0.1")
+    .describe("Bind address — use 127.0.0.1 (localhost only) or 0.0.0.0 (all interfaces)"),
   key_hash: z
     .string()
     .default("")

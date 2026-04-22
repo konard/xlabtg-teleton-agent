@@ -599,7 +599,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         api: {
           enabled: true,
           port: 7778,
-          host: "0.0.0.0",
+          host: input.api?.expose_lan === true ? "0.0.0.0" : "127.0.0.1",
           ...(options?.keyHash ? { key_hash: options.keyHash } : {}),
         },
       };
