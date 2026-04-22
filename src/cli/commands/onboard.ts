@@ -118,7 +118,13 @@ export async function onboardCommand(options: OnboardOptions = {}): Promise<void
   if (options.ui) {
     const { SetupServer } = await import("../../webui/setup-server.js");
     const port = parseInt(options.uiPort || "7777") || 7777;
-    const url = `http://localhost:${port}/setup`;
+
+    // Create the server first so we can embed its one-time bootstrap nonce
+    // into the URL we open — no nonce means no way for another local process
+    // to claim the launch endpoint (AUDIT-H7).
+    const server = new SetupServer(port);
+    const nonce = server.getNonce();
+    const url = `http://localhost:${port}/setup#nonce=${nonce}`;
 
     const blue = "\x1b[34m";
     const reset = "\x1b[0m";
@@ -139,7 +145,12 @@ ${blue}  ┌──────────────────────�
   ${dim}Press Ctrl+C to cancel.${reset}
 `);
 
-    const server = new SetupServer(port);
+    // The nonce is sensitive — print it only to stderr so it never lands in
+    // stdout logs, pipes, or process managers that capture stdout.
+    process.stderr.write(
+      `[setup] One-time launch nonce (required for POST /api/setup/launch): ${nonce}\n`
+    );
+
     await server.start();
 
     process.on("SIGINT", () => {

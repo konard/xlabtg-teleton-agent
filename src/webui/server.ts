@@ -20,6 +20,7 @@ import {
   COOKIE_NAME,
   COOKIE_MAX_AGE,
 } from "./middleware/auth.js";
+import { isHashedToken, verifyToken } from "./middleware/token-hash.js";
 import { createCsrfMiddleware } from "./middleware/csrf.js";
 import { logInterceptor } from "./log-interceptor.js";
 import { createStatusRoutes } from "./routes/status.js";
@@ -80,17 +81,44 @@ export class WebUIServer {
   private server: ReturnType<typeof serve> | null = null;
   private deps: WebUIServerDeps;
   private authToken: string;
+  /**
+   * When the config stores a hashed token (`auth_token_hash`), we don't know
+   * the raw value — it was handed to the client by the setup wizard. We can
+   * only verify incoming tokens against the hash. In that case `authToken`
+   * is a fresh random string used to mint the session cookie after the
+   * initial /auth/exchange succeeds.
+   */
+  private readonly authTokenHash: string | null;
 
   constructor(deps: WebUIServerDeps) {
     this.deps = deps;
     this.app = new Hono();
 
-    // Generate or use configured auth token
-    this.authToken = deps.config.auth_token || generateToken();
+    const configuredHash = deps.config.auth_token_hash;
+    if (isHashedToken(configuredHash)) {
+      this.authTokenHash = configuredHash;
+      // Used to mint session cookies after a successful token exchange.
+      // Never compared against raw user input.
+      this.authToken = generateToken();
+    } else {
+      this.authTokenHash = null;
+      this.authToken = deps.config.auth_token || generateToken();
+    }
 
     this.setupMiddleware();
     this.setupRoutes();
     this.setupNotificationTriggers();
+  }
+
+  /**
+   * Compare an incoming token against the configured secret. Prefers hash
+   * verification when available; falls back to the raw-token comparison
+   * for configs that still store `auth_token` plaintext (legacy).
+   */
+  private matchToken(incoming: string | undefined | null): boolean {
+    if (!incoming) return false;
+    if (this.authTokenHash) return verifyToken(incoming, this.authTokenHash);
+    return safeCompare(incoming, this.authToken);
   }
 
   /** Set an HttpOnly session cookie */
@@ -152,24 +180,27 @@ export class WebUIServer {
     // Auth for all /api/* routes
     // Accepts: HttpOnly cookie > Bearer header > ?token= query param (fallback)
     this.app.use("/api/*", async (c, next) => {
-      // 1. Check HttpOnly session cookie (primary — browser)
+      // 1. Check HttpOnly session cookie (primary — browser).
+      // The cookie always carries the in-memory session token, so a raw
+      // comparison is correct regardless of whether the config stores a hash.
       const cookieToken = getCookie(c, COOKIE_NAME);
       if (cookieToken && safeCompare(cookieToken, this.authToken)) {
         return next();
       }
 
-      // 2. Check Authorization header (secondary — API/curl)
+      // 2. Check Authorization header (secondary — API/curl). Validated
+      // through matchToken so a hashed config entry is honored.
       const authHeader = c.req.header("Authorization");
       if (authHeader) {
         const match = authHeader.match(/^Bearer\s+(.+)$/i);
-        if (match && safeCompare(match[1], this.authToken)) {
+        if (match && this.matchToken(match[1])) {
           return next();
         }
       }
 
       // 3. Check ?token= query param (fallback — backward compat)
       const queryToken = c.req.query("token");
-      if (queryToken && safeCompare(queryToken, this.authToken)) {
+      if (queryToken && this.matchToken(queryToken)) {
         return next();
       }
 
@@ -189,7 +220,7 @@ export class WebUIServer {
     // Token exchange: browser opens with ?token=, gets HttpOnly cookie, redirects to /
     this.app.get("/auth/exchange", (c) => {
       const token = c.req.query("token");
-      if (!token || !safeCompare(token, this.authToken)) {
+      if (!this.matchToken(token ?? null)) {
         return c.json({ success: false, error: "Invalid token" }, 401);
       }
 
@@ -201,7 +232,7 @@ export class WebUIServer {
     this.app.post("/auth/login", async (c) => {
       try {
         const body = await c.req.json<{ token: string }>();
-        if (!body.token || !safeCompare(body.token, this.authToken)) {
+        if (!this.matchToken(body.token)) {
           return c.json({ success: false, error: "Invalid token" }, 401);
         }
 
