@@ -11,7 +11,8 @@ import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { bodyLimit } from "hono/body-limit";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, dirname, resolve, relative } from "node:path";
+import { join, dirname, resolve } from "node:path";
+import { isPathInside } from "./utils/path-safety.js";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
@@ -298,8 +299,7 @@ export class SetupServer {
     this.app.get("*", (c) => {
       const filePath = resolve(join(webDist, c.req.path));
       // Prevent path traversal
-      const rel = relative(webDist, filePath);
-      if (rel.startsWith("..") || resolve(filePath) !== filePath) {
+      if (!isPathInside(filePath, webDist)) {
         return c.html(indexHtml);
       }
 
