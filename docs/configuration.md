@@ -122,7 +122,7 @@ Telegram client and messaging behavior.
 | `telegram.typing_simulation` | `boolean` | `true` | Show "typing..." indicator while the agent processes a message. |
 | `telegram.rate_limit_messages_per_second` | `number` | `1.0` | Maximum outbound messages per second (flood protection). |
 | `telegram.rate_limit_groups_per_minute` | `number` | `20` | Maximum outbound messages to groups per minute. |
-| `telegram.admin_ids` | `number[]` | `[]` | Telegram user IDs with admin privileges (can use `/admin` commands). |
+| `telegram.admin_ids` | `number[]` | `[]` | Telegram user IDs with admin privileges (can use `/admin` commands). **Must be non-empty** to enable the autonomous task manager and heartbeat — both features refuse to start with an empty list and log a warning instead of silently attributing actions to user id `0`. |
 | `telegram.agent_channel` | `string \| null` | `null` | Channel username or ID for the agent's public feed. |
 | `telegram.owner_name` | `string` | *optional* | Owner's first name (used in personality prompts, e.g., `"Alex"`). |
 | `telegram.owner_username` | `string` | *optional* | Owner's Telegram username without `@` (e.g., `"zkproof"`). |
