@@ -67,10 +67,9 @@ export function createAuditMiddleware(deps: WebUIServerDeps): MiddlewareHandler 
     // Run the actual handler first, then log (so we know it was executed)
     await next();
 
-    // Only log successful (2xx/3xx) mutations to keep audit log clean
+    // Log all mutations regardless of status so failed attempts leave a trace
     const status = c.res.status;
-    if (status >= 200 && status < 400) {
-      audit.log(action, details, { ip, userAgent });
-    }
+    const fullDetails = status >= 400 ? JSON.stringify({ request: details, status }) : details;
+    audit.log(action, fullDetails, { ip, userAgent });
   };
 }
