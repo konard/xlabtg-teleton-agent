@@ -334,18 +334,29 @@ ${blue}  ┌──────────────────────�
     // Stored on the instance so stopAgent() can halt its loops — otherwise
     // autonomous tasks keep writing to SQLite after shutdown (AUDIT-C2).
     if (this.config.webui.enabled || this.config.api?.enabled) {
-      const { createAutonomousManager } = await import("./autonomous/integration.js");
-      this.autonomousManager = createAutonomousManager({
-        agent: this.agent,
-        toolRegistry: this.toolRegistry,
-        bridge: this.bridge,
-        db: this.memory.db,
-      });
-      // Resume tasks that were "running" when the agent last stopped so a
-      // server restart doesn't leave them stuck forever.
-      this.autonomousManager.restoreInterruptedTasks().catch((err: unknown) => {
-        log.warn({ err }, "Failed to restore interrupted autonomous tasks");
-      });
+      if (this.config.telegram.admin_ids.length === 0) {
+        // Explicit skip with a clear warning instead of starting an autonomous
+        // manager whose tools would silently fail the admin-only check
+        // (see AUDIT-H6 / issue #270). WebUI and API will run without an
+        // autonomous task queue until admin_ids is configured.
+        log.warn(
+          "Autonomous manager disabled: config.telegram.admin_ids is empty. " +
+            "Add at least one admin user id to enable autonomous tasks."
+        );
+      } else {
+        const { createAutonomousManager } = await import("./autonomous/integration.js");
+        this.autonomousManager = createAutonomousManager({
+          agent: this.agent,
+          toolRegistry: this.toolRegistry,
+          bridge: this.bridge,
+          db: this.memory.db,
+        });
+        // Resume tasks that were "running" when the agent last stopped so a
+        // server restart doesn't leave them stuck forever.
+        this.autonomousManager.restoreInterruptedTasks().catch((err: unknown) => {
+          log.warn({ err }, "Failed to restore interrupted autonomous tasks");
+        });
+      }
     }
 
     // Start WebUI server if enabled (before agent — survives agent stop/restart)
@@ -846,6 +857,13 @@ ${blue}  ┌──────────────────────�
         this.heartbeatTimer.unref();
         log.info(
           `Heartbeat enabled: every ${Math.round(hbInterval / 60000)}min → admin ${adminChatId}`
+        );
+      } else {
+        // Explicit warning instead of a silent skip (AUDIT-H6 / issue #270):
+        // heartbeat is enabled in the config but has nowhere to send alerts.
+        log.warn(
+          "Heartbeat enabled but config.telegram.admin_ids is empty — " +
+            "heartbeat timer will not start. Configure at least one admin id to receive alerts."
         );
       }
     }
@@ -1436,7 +1454,16 @@ ${blue}  ┌──────────────────────�
     if (!cfg?.enabled) return;
 
     const adminChatId = this.config.telegram.admin_ids[0];
-    if (!adminChatId) return;
+    if (!adminChatId) {
+      // Belt-and-braces: startAgent() already warns and avoids scheduling the
+      // timer when admin_ids is empty, but config may have been reloaded
+      // since then. Log instead of silently returning (AUDIT-H6).
+      log.warn(
+        "Heartbeat tick skipped: config.telegram.admin_ids is empty. " +
+          "Add at least one admin id so heartbeat alerts can be delivered."
+      );
+      return;
+    }
 
     this.heartbeatRunning = true;
     try {

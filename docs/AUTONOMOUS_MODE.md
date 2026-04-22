@@ -4,6 +4,19 @@ Autonomous Mode enables Teleton Agent to work on complex, long-running goals wit
 
 ---
 
+## Prerequisite: `telegram.admin_ids` must be non-empty
+
+The autonomous task manager attributes every action it takes to a real Telegram user id so that admin-only tools pass their scope check and so that escalations have a destination. If `telegram.admin_ids` is empty, the manager refuses to start with a clear error (`Cannot start autonomous manager: config.telegram.admin_ids is empty.`) and the WebUI/API will boot without the autonomous layer. Add at least one admin id in `config.yaml`:
+
+```yaml
+telegram:
+  admin_ids: [123456789]   # your Telegram user ID (from @userinfobot)
+```
+
+The same requirement applies to the heartbeat timer: it logs a warning and skips ticks when `admin_ids` is empty rather than silently delivering alerts to user id `0`.
+
+---
+
 ## Quick Start
 
 ### 1. Start a monitoring task via CLI

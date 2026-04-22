@@ -32,7 +32,7 @@ telegram:
   typing_simulation: true            # Show "typing..." while processing
   rate_limit_messages_per_second: 1.0
   rate_limit_groups_per_minute: 20
-  admin_ids: [123456789]             # Your Telegram user ID (from @userinfobot)
+  admin_ids: [123456789]             # Your Telegram user ID (from @userinfobot). Required (non-empty) to enable the autonomous task manager and heartbeat.
   # agent_channel: null              # Channel username or ID for announcements
   owner_name: "Your Name"
   owner_username: "your_username"
