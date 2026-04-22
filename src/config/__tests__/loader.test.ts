@@ -10,6 +10,7 @@ import {
   getDefaultConfigPath,
 } from "../loader.js";
 import type { Config } from "../schema.js";
+import pkg from "../../../package.json" with { type: "json" };
 
 // ─── Test Fixtures ─────────────────────────────────────────────────────────────
 
@@ -298,7 +299,7 @@ describe("Config Loader", () => {
       const config = loadConfig(TEST_CONFIG_PATH);
 
       // Meta
-      expect(config.meta.version).toBe("1.0.0");
+      expect(config.meta.version).toBe("1.0.0"); // explicit value from FULL_CONFIG fixture
       expect(config.meta.created_at).toBe("2026-01-01T00:00:00.000Z");
 
       // Agent
@@ -436,6 +437,13 @@ describe("Config Loader", () => {
       expect(config.vector_memory.upstash_rest_url).toBe("");
       expect(config.vector_memory.upstash_rest_token).toBe("");
       expect(config.vector_memory.namespace).toBe("teleton-memory");
+    });
+
+    it("should default meta.version to the package.json version", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      const config = loadConfig(TEST_CONFIG_PATH);
+
+      expect(config.meta.version).toBe(pkg.version);
     });
 
     it("should auto-set model for non-anthropic providers", () => {
