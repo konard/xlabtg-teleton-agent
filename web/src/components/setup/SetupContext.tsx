@@ -50,6 +50,7 @@ export interface WizardData {
   skipConnect: boolean;
   webuiEnabled: boolean;
   execMode: 'off' | 'yolo';
+  exposeLan: boolean;
 }
 
 export interface StepProps {
@@ -93,6 +94,7 @@ const DEFAULTS: WizardData = {
   skipConnect: false,
   webuiEnabled: false,
   execMode: 'off',
+  exposeLan: false,
 };
 
 // ── Validation ──────────────────────────────────────────────────────
@@ -226,6 +228,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
         ...(data.toncenterKey ? { toncenter_api_key: data.toncenterKey } : {}),
         ...(data.tavilyKey ? { tavily_api_key: data.tavilyKey } : {}),
         webui: { enabled: true },
+        ...(data.exposeLan ? { api: { expose_lan: true } } : {}),
       };
 
       await setup.saveConfig(config);

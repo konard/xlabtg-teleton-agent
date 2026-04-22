@@ -941,5 +941,32 @@ describe("Setup API Routes", () => {
       const writeCall = (writeFileSync as Mock).mock.calls[0];
       expect(writeCall[2]).toEqual({ encoding: "utf-8", mode: 0o600 });
     });
+
+    it("default config sets api.host to 127.0.0.1", async () => {
+      await post(app, "/config/save", validInput);
+
+      const writeCall = (writeFileSync as Mock).mock.calls[0];
+      const yaml: string = writeCall[1];
+      expect(yaml).toContain("host: 127.0.0.1");
+      expect(yaml).not.toContain("host: 0.0.0.0");
+    });
+
+    it("sets api.host to 0.0.0.0 when expose_lan is true", async () => {
+      const input = { ...validInput, api: { expose_lan: true } };
+      await post(app, "/config/save", input);
+
+      const writeCall = (writeFileSync as Mock).mock.calls[0];
+      const yaml: string = writeCall[1];
+      expect(yaml).toContain("host: 0.0.0.0");
+    });
+
+    it("keeps api.host as 127.0.0.1 when expose_lan is false", async () => {
+      const input = { ...validInput, api: { expose_lan: false } };
+      await post(app, "/config/save", input);
+
+      const writeCall = (writeFileSync as Mock).mock.calls[0];
+      const yaml: string = writeCall[1];
+      expect(yaml).toContain("host: 127.0.0.1");
+    });
   });
 });

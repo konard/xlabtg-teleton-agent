@@ -118,6 +118,16 @@ webui:
     - "http://localhost:7777"         # Production server
   log_requests: false                 # Log HTTP requests
 
+# Optional: HTTPS Management API (disabled by default)
+# api:
+#   enabled: true
+#   port: 7778                        # HTTPS server port
+#   host: "127.0.0.1"                 # SECURITY: keep as 127.0.0.1 (localhost only)
+#                                     # Change to "0.0.0.0" ONLY if you need LAN access
+#                                     # and understand the security implications.
+#   # key_hash: "..."                 # SHA-256 of API key (auto-generated if omitted)
+#   allowed_ips: []                   # IP whitelist (empty = all authenticated requests)
+
 # Prediction engine: learns repeated message/tool patterns and exposes suggestions.
 predictions:
   enabled: true                       # Record behavior events and serve prediction APIs
