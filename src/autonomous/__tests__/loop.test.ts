@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { ensureSchema } from "../../memory/schema.js";
 import { getAutonomousTaskStore } from "../../memory/agent/autonomous-tasks.js";
@@ -235,5 +235,176 @@ describe("AutonomousLoop", () => {
 
     expect(result.status).toBe("paused");
     expect(deps.escalate).toHaveBeenCalled();
+  });
+
+  // ─── AUDIT-H4: pause / cancel race with in-flight await ────────────────────
+
+  it("does not overwrite 'paused' when executeTool resolves after pause (AUDIT-H4)", async () => {
+    // executeTool hangs until we release it; while it's in-flight we
+    // simulate pauseTask() writing 'paused' and calling loop.stop().
+    let releaseExec: (v: ToolExecutionResult) => void = () => {};
+    const execPromise = new Promise<ToolExecutionResult>((resolve) => {
+      releaseExec = resolve;
+    });
+
+    const deps = makeDeps({
+      executeTool: vi.fn().mockImplementation(() => execPromise),
+      evaluateSuccess: vi.fn().mockResolvedValue(false),
+    });
+
+    const loop = new AutonomousLoop(store, deps, DEFAULT_POLICY_CONFIG);
+    const runPromise = loop.run(task);
+
+    // Let the loop reach `await executeTool(...)`.
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Simulate pauseTask(): external writer marks paused + aborts loop.
+    store.updateTaskStatus(task.id, "paused");
+    loop.stop();
+
+    // Now release the hung executeTool — its resolution must NOT cause the
+    // loop to overwrite the 'paused' status with 'failed' or 'running'.
+    releaseExec({ success: true, data: { late: true }, durationMs: 1 });
+
+    const result = await runPromise;
+
+    // The loop exited cleanly after seeing the abort — status stays paused.
+    const after = store.getTask(task.id);
+    expect(after!.status).toBe("paused");
+    expect(result.status).toBe("paused");
+  });
+
+  it("does not overwrite 'cancelled' when executeTool rejects after stop (AUDIT-H4)", async () => {
+    let rejectExec: (err: Error) => void = () => {};
+    const execPromise = new Promise<ToolExecutionResult>((_, reject) => {
+      rejectExec = reject;
+    });
+
+    const deps = makeDeps({
+      executeTool: vi.fn().mockImplementation(() => execPromise),
+      evaluateSuccess: vi.fn().mockResolvedValue(false),
+    });
+
+    const loop = new AutonomousLoop(store, deps, DEFAULT_POLICY_CONFIG);
+    const runPromise = loop.run(task);
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    // Simulate stopTask(): external writer marks cancelled + aborts loop.
+    store.updateTaskStatus(task.id, "cancelled");
+    loop.stop();
+
+    // Late rejection from the in-flight executeTool — must not clobber
+    // 'cancelled' with 'failed'.
+    rejectExec(new Error("tool crashed late"));
+
+    const result = await runPromise;
+
+    const after = store.getTask(task.id);
+    expect(after!.status).toBe("cancelled");
+    expect(result.status).toBe("cancelled");
+  });
+
+  it("stops before running another full iteration once aborted (AUDIT-H4)", async () => {
+    // Record how many times each dep is called so we can assert that no
+    // post-abort iteration ran planNextAction → executeTool → selfReflect.
+    let planCalls = 0;
+    let execCalls = 0;
+    let reflectCalls = 0;
+    let evalCalls = 0;
+
+    const deps = makeDeps({
+      planNextAction: vi.fn().mockImplementation(async () => {
+        planCalls++;
+        return { toolName: "noop", params: {} };
+      }),
+      executeTool: vi.fn().mockImplementation(async () => {
+        execCalls++;
+        // Abort *during* the first tool execution — mimics pauseTask()
+        // arriving while a step is in-flight.
+        await new Promise((r) => setTimeout(r, 10));
+        return { success: true, durationMs: 1 };
+      }),
+      selfReflect: vi.fn().mockImplementation(async () => {
+        reflectCalls++;
+        return { progressSummary: "ok", isStuck: false };
+      }),
+      evaluateSuccess: vi.fn().mockImplementation(async () => {
+        evalCalls++;
+        return false;
+      }),
+    });
+
+    const loop = new AutonomousLoop(store, deps, DEFAULT_POLICY_CONFIG);
+    const runPromise = loop.run(task);
+
+    // Let the loop enter executeTool, then pause it.
+    await new Promise((r) => setTimeout(r, 5));
+    store.updateTaskStatus(task.id, "paused");
+    loop.stop();
+
+    await runPromise;
+
+    // First iteration partially ran (plan + exec started). Post-abort we
+    // must NOT have executed another plan / tool / reflect / evaluate cycle.
+    expect(planCalls).toBe(1);
+    expect(execCalls).toBe(1);
+    // reflect and evaluate come after the in-flight exec await; with
+    // throwIfAborted() they must NOT run once we aborted mid-tool.
+    expect(reflectCalls).toBe(0);
+    expect(evalCalls).toBe(0);
+
+    const after = store.getTask(task.id);
+    expect(after!.status).toBe("paused");
+  });
+
+  it("bails without running any iteration when stop() is called before start (AUDIT-H4)", async () => {
+    // Simulate pauseTask() / stopTask() arriving while the loop is still
+    // queued (scheduled via .then() but not yet executed): the DB already
+    // holds 'paused' and abort has been requested.
+    store.updateTaskStatus(task.id, "paused");
+
+    const deps = makeDeps();
+    const loop = new AutonomousLoop(store, deps, DEFAULT_POLICY_CONFIG);
+    loop.stop();
+    const result = await loop.run(task);
+
+    expect(result.status).toBe("cancelled");
+    expect(deps.planNextAction).not.toHaveBeenCalled();
+    expect(deps.executeTool).not.toHaveBeenCalled();
+
+    // Since stop() fired before run() started, we never flipped to 'running'
+    // — the externally-written 'paused' must survive.
+    const after = store.getTask(task.id);
+    expect(after!.status).toBe("paused");
+  });
+
+  it("preserves 'paused' when planNextAction rejects after pause (AUDIT-H4)", async () => {
+    // Catches the specific regression the audit calls out: the catch block
+    // at loop.ts:150 used to unconditionally write 'failed'.
+    let rejectPlan: (err: Error) => void = () => {};
+    const planPromise = new Promise<PlannedAction>((_, reject) => {
+      rejectPlan = reject;
+    });
+
+    const deps = makeDeps({
+      planNextAction: vi.fn().mockImplementation(() => planPromise),
+    });
+
+    const loop = new AutonomousLoop(store, deps, DEFAULT_POLICY_CONFIG);
+    const runPromise = loop.run(task);
+
+    await new Promise((r) => setTimeout(r, 20));
+
+    store.updateTaskStatus(task.id, "paused");
+    loop.stop();
+
+    rejectPlan(new Error("planner died late"));
+
+    await runPromise;
+
+    const after = store.getTask(task.id);
+    expect(after!.status).toBe("paused");
+    expect(after!.error).toBeUndefined();
   });
 });

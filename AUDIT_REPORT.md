@@ -139,37 +139,29 @@ letting a stuck agent keep burning API credit.
 ---
 
 ### AUDIT-C4 — Full WebUI auth token printed to stdout at startup
-**Severity:** 🔴 Critical · **Category:** security (information disclosure) · **Effort:** small
+**Status:** ✅ Fixed (issue #258) · **Severity:** 🔴 Critical · **Category:** security (information disclosure) · **Effort:** small
 
-**Location:** `src/webui/server.ts:503`
+**Location:** `src/webui/server.ts` (see `start()`)
 
-```ts
-log.info(`URL: ${url}/auth/exchange?token=${this.authToken}`);
-log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
-```
+**Evidence (before fix):** `start()` used to print the plaintext token
+as part of the `/auth/exchange` URL via `log.info(...)` even though
+`maskToken()` was already used on the next line. Any centralized log
+drain (journalctl, Docker log driver, `tsx --log-file`, CI artefact,
+`teleton --debug > log.txt`) would permanently store a session token
+that is valid for 7 days (`COOKIE_MAX_AGE` in
+`src/webui/middleware/auth.ts`).
 
-**Evidence:** The line above prints the **plaintext** token as part of
-the `/auth/exchange` URL even though `maskToken()` is used on the next
-line. Any centralized log drain (journalctl, Docker log driver,
-`tsx --log-file`, CI artefact, `teleton --debug > log.txt`) now
-permanently stores a session token that is valid for 7 days
-(`COOKIE_MAX_AGE` in `src/webui/middleware/auth.ts`).
+**Impact (before fix):** Anyone with access to the agent's process logs
+gained full API access to the WebUI for up to 7 days, including the
+wallet and autonomous task endpoints.
 
-**Impact:** Anyone with access to the agent's process logs gains full
-API access to the WebUI for up to 7 days, including the wallet and
-autonomous task endpoints.
-
-**Remediation:** Print the exchange URL without the token and provide
-the token separately in masked form — e.g.:
-
-```ts
-log.info(`URL:   ${url}/auth/exchange`);
-log.info(`Token: ${maskToken(this.authToken)} (Bearer header / cookie)`);
-log.info(`One-shot exchange link is printed to stderr below (not logged).`);
-process.stderr.write(`\n>>> One-time link: ${url}/auth/exchange?token=${this.authToken}\n\n`);
-```
-Or, even better, stop printing the token at all and always hand it off
-via file (`teleton_session.txt`, 0600) or CLI flag.
+**Resolution:** `start()` now logs only the URL without the token and
+the masked token. The full one-time exchange link is written with a
+raw `process.stderr.write(...)`, which bypasses the pino logger and
+therefore does not flow into stdout, the WebUI SSE stream, `pino-pretty`
+output, file log redirection, or any `LogListener`. A regression test
+in `src/webui/__tests__/server-auth-token-log.test.ts` asserts the full
+token never appears in logger output.
 
 ---
 

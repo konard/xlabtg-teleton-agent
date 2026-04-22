@@ -297,6 +297,13 @@ const _MemoryRetentionObject = z.object({
     .boolean()
     .default(false)
     .describe("Automatically archive cleanup candidates during the scheduler run"),
+  checkpoint_retention_days: z
+    .number()
+    .min(1)
+    .default(7)
+    .describe(
+      "Days to retain task_checkpoints for inactive autonomous tasks (active tasks are skipped)"
+    ),
 });
 
 const _MemoryObject = z.object({

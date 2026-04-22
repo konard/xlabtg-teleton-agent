@@ -1,5 +1,28 @@
 import type Database from "better-sqlite3";
 import { randomUUID } from "crypto";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("AutonomousTaskStore");
+
+/**
+ * Parse a JSON-encoded string column, returning a fallback if the value is not
+ * a string or cannot be parsed. A single corrupt row would otherwise throw out
+ * of `rowTo*` and break the whole `/api/autonomous` listing (see AUDIT-H1).
+ */
+function safeJSONParse<T>(value: unknown, fallback: T, context?: Record<string, unknown>): T {
+  if (typeof value !== "string") return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch (err) {
+    log.warn(
+      { err, ...context, value: value.slice(0, 200) },
+      "failed to parse JSON column, using fallback"
+    );
+    return fallback;
+  }
+}
+
+export const DEFAULT_CHECKPOINT_KEEP_LAST_N = 20;
 
 export type AutonomousTaskStatus =
   | "pending"
@@ -117,15 +140,40 @@ interface ExecutionLogRow {
 }
 
 function rowToTask(row: AutonomousTaskRow): AutonomousTask {
+  const ctx = { taskId: row.id };
+  const defaultRetryPolicy: RetryPolicy = { maxRetries: 3, backoff: "exponential" };
   return {
     id: row.id,
     goal: row.goal,
-    successCriteria: JSON.parse(row.success_criteria) as string[],
-    failureConditions: JSON.parse(row.failure_conditions) as string[],
-    constraints: JSON.parse(row.constraints) as TaskConstraints,
+    successCriteria: safeJSONParse<string[]>(row.success_criteria, [], {
+      ...ctx,
+      column: "success_criteria",
+    }),
+    failureConditions: safeJSONParse<string[]>(row.failure_conditions, [], {
+      ...ctx,
+      column: "failure_conditions",
+    }),
+    constraints: safeJSONParse<TaskConstraints>(
+      row.constraints,
+      {},
+      {
+        ...ctx,
+        column: "constraints",
+      }
+    ),
     strategy: row.strategy as TaskStrategy,
-    retryPolicy: JSON.parse(row.retry_policy) as RetryPolicy,
-    context: JSON.parse(row.context) as Record<string, unknown>,
+    retryPolicy: safeJSONParse<RetryPolicy>(row.retry_policy, defaultRetryPolicy, {
+      ...ctx,
+      column: "retry_policy",
+    }),
+    context: safeJSONParse<Record<string, unknown>>(
+      row.context,
+      {},
+      {
+        ...ctx,
+        column: "context",
+      }
+    ),
     priority: row.priority as TaskPriority,
     status: row.status as AutonomousTaskStatus,
     currentStep: row.current_step,
@@ -140,12 +188,13 @@ function rowToTask(row: AutonomousTaskRow): AutonomousTask {
 }
 
 function rowToCheckpoint(row: CheckpointRow): TaskCheckpoint {
+  const ctx = { checkpointId: row.id, taskId: row.task_id };
   return {
     id: row.id,
     taskId: row.task_id,
     step: row.step,
-    state: JSON.parse(row.state) as Record<string, unknown>,
-    toolCalls: JSON.parse(row.tool_calls) as unknown[],
+    state: safeJSONParse<Record<string, unknown>>(row.state, {}, { ...ctx, column: "state" }),
+    toolCalls: safeJSONParse<unknown[]>(row.tool_calls, [], { ...ctx, column: "tool_calls" }),
     nextActionHint: row.next_action_hint ?? undefined,
     createdAt: new Date(row.created_at * 1000),
   };
@@ -158,7 +207,14 @@ function rowToLogEntry(row: ExecutionLogRow): ExecutionLogEntry {
     step: row.step,
     eventType: row.event_type as ExecutionEventType,
     message: row.message,
-    data: row.data ? (JSON.parse(row.data) as unknown) : undefined,
+    data:
+      row.data != null
+        ? safeJSONParse<unknown>(row.data, undefined, {
+            logId: row.id,
+            taskId: row.task_id,
+            column: "data",
+          })
+        : undefined,
     createdAt: new Date(row.created_at * 1000),
   };
 }
@@ -315,16 +371,35 @@ export class AutonomousTaskStore {
     state: Record<string, unknown>;
     toolCalls?: unknown[];
     nextActionHint?: string;
+    keepLastN?: number;
   }): TaskCheckpoint {
     const id = randomUUID();
     const now = Math.floor(Date.now() / 1000);
+    const keepLastN =
+      typeof input.keepLastN === "number" && input.keepLastN > 0
+        ? Math.floor(input.keepLastN)
+        : DEFAULT_CHECKPOINT_KEEP_LAST_N;
 
-    this.db
-      .prepare(
-        `INSERT INTO task_checkpoints (id, task_id, step, state, tool_calls, next_action_hint, created_at)
+    const insert = this.db.prepare(
+      `INSERT INTO task_checkpoints (id, task_id, step, state, tool_calls, next_action_hint, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
+    );
+    const updateLastCheckpoint = this.db.prepare(
+      `UPDATE autonomous_tasks SET last_checkpoint_id = ?, updated_at = ? WHERE id = ?`
+    );
+    const trimOld = this.db.prepare(
+      `DELETE FROM task_checkpoints
+       WHERE task_id = ?
+         AND id NOT IN (
+           SELECT id FROM task_checkpoints
+           WHERE task_id = ?
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT ?
+         )`
+    );
+
+    this.db.transaction(() => {
+      insert.run(
         id,
         input.taskId,
         input.step,
@@ -333,8 +408,10 @@ export class AutonomousTaskStore {
         input.nextActionHint ?? null,
         now
       );
+      updateLastCheckpoint.run(id, now, input.taskId);
+      trimOld.run(input.taskId, input.taskId, keepLastN);
+    })();
 
-    this.updateLastCheckpoint(input.taskId, id);
     const created = this.getCheckpoint(id);
     if (!created) {
       throw new Error(`Failed to create task checkpoint: ${id}`);
