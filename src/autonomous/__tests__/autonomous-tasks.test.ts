@@ -216,6 +216,100 @@ describe("AutonomousTaskStore", () => {
     expect(deleted).toBeGreaterThan(0);
   });
 
+  it("keeps only the last N checkpoints when saving (default 20)", () => {
+    const task = store.createTask({ goal: "Long-running task" });
+    store.updateTaskStatus(task.id, "running");
+
+    for (let step = 1; step <= 100; step++) {
+      store.saveCheckpoint({ taskId: task.id, step, state: { step }, toolCalls: [] });
+    }
+
+    const count = (
+      db.prepare(`SELECT COUNT(*) as c FROM task_checkpoints WHERE task_id = ?`).get(task.id) as {
+        c: number;
+      }
+    ).c;
+    // Default keepLastN is 20; active task should still be capped to 20.
+    expect(count).toBeLessThanOrEqual(20);
+    expect(count).toBe(20);
+  });
+
+  it("honors a custom keepLastN value", () => {
+    const task = store.createTask({ goal: "Custom keep" });
+    store.updateTaskStatus(task.id, "running");
+
+    for (let step = 1; step <= 25; step++) {
+      store.saveCheckpoint({
+        taskId: task.id,
+        step,
+        state: { step },
+        toolCalls: [],
+        keepLastN: 5,
+      });
+    }
+
+    const count = (
+      db.prepare(`SELECT COUNT(*) as c FROM task_checkpoints WHERE task_id = ?`).get(task.id) as {
+        c: number;
+      }
+    ).c;
+    expect(count).toBe(5);
+  });
+
+  it("getLastCheckpoint still returns the most recent checkpoint after trimming", () => {
+    const task = store.createTask({ goal: "Trim + last" });
+    store.updateTaskStatus(task.id, "running");
+
+    for (let step = 1; step <= 100; step++) {
+      store.saveCheckpoint({ taskId: task.id, step, state: { step }, toolCalls: [] });
+    }
+
+    const last = store.getLastCheckpoint(task.id);
+    expect(last).toBeDefined();
+    expect(last!.step).toBe(100);
+  });
+
+  it("does not trim below keepLastN when fewer checkpoints exist", () => {
+    const task = store.createTask({ goal: "Short task" });
+    store.updateTaskStatus(task.id, "running");
+
+    for (let step = 1; step <= 5; step++) {
+      store.saveCheckpoint({ taskId: task.id, step, state: { step }, toolCalls: [] });
+    }
+
+    const count = (
+      db.prepare(`SELECT COUNT(*) as c FROM task_checkpoints WHERE task_id = ?`).get(task.id) as {
+        c: number;
+      }
+    ).c;
+    expect(count).toBe(5);
+  });
+
+  it("trims checkpoints independently per task", () => {
+    const t1 = store.createTask({ goal: "Task 1" });
+    const t2 = store.createTask({ goal: "Task 2" });
+    store.updateTaskStatus(t1.id, "running");
+    store.updateTaskStatus(t2.id, "running");
+
+    for (let step = 1; step <= 30; step++) {
+      store.saveCheckpoint({ taskId: t1.id, step, state: { step }, toolCalls: [], keepLastN: 3 });
+      store.saveCheckpoint({ taskId: t2.id, step, state: { step }, toolCalls: [], keepLastN: 10 });
+    }
+
+    const c1 = (
+      db.prepare(`SELECT COUNT(*) as c FROM task_checkpoints WHERE task_id = ?`).get(t1.id) as {
+        c: number;
+      }
+    ).c;
+    const c2 = (
+      db.prepare(`SELECT COUNT(*) as c FROM task_checkpoints WHERE task_id = ?`).get(t2.id) as {
+        c: number;
+      }
+    ).c;
+    expect(c1).toBe(3);
+    expect(c2).toBe(10);
+  });
+
   // ─── Execution Logs ───────────────────────────────────────────────────────
 
   it("appends and retrieves execution logs", () => {
