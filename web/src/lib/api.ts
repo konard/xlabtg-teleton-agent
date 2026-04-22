@@ -192,6 +192,7 @@ export interface SetupConfig {
   toncenter_api_key?: string;
   tavily_api_key?: string;
   webui?: { enabled: boolean };
+  api?: { expose_lan?: boolean };
 }
 
 // ── Response types ──────────────────────────────────────────────────
