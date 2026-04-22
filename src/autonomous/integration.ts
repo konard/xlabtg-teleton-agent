@@ -9,6 +9,7 @@ import { buildDefaultLoopDeps, AutonomousTaskManager, type AvailableToolInfo } f
 import type { LoopDependencies } from "./loop.js";
 import type { AutonomousTask } from "../memory/agent/autonomous-tasks.js";
 import { createLogger } from "../utils/logger.js";
+import { getNotificationService, notificationBus } from "../services/notifications.js";
 
 const log = createLogger("AutonomousIntegration");
 
@@ -114,10 +115,37 @@ export function buildIntegratedLoopDeps(deps: IntegrationDeps): LoopDependencies
     listTools: (task) => listToolsForTask(deps.toolRegistry, task),
 
     notify: async (message: string, taskId: string): Promise<void> => {
-      // Escalations surface through the task's execution log (see loop.ts)
-      // and the standard logger. A richer push-notification channel can be
-      // added later without changing the loop contract.
+      // Always log first so escalations are preserved even if every side
+      // channel below fails. This is the last-resort fallback required by
+      // the issue: a paused task must never be silently invisible.
       log.warn({ taskId, message }, "Autonomous task escalation");
+
+      // 1. Push to Telegram admins via bridge so the human is actually
+      //    paged. admin_ids is authoritative — if it's empty we skip the
+      //    DM rather than guessing a recipient.
+      const adminIds = deps.agent.getConfig().telegram.admin_ids ?? [];
+      for (const adminId of adminIds) {
+        try {
+          await deps.bridge.sendMessage({
+            chatId: String(adminId),
+            text: message,
+          });
+        } catch (err) {
+          log.error({ err, taskId, adminId }, "failed to deliver escalation to Telegram admin");
+        }
+      }
+
+      // 2. Record the escalation in the in-app notifications table and
+      //    poke the notificationBus so WebUI SSE clients raise a badge in
+      //    real time.
+      try {
+        const svc = getNotificationService(deps.db);
+        svc.add("warning", "Autonomous task escalation", message);
+        notificationBus.emit("update", svc.unreadCount());
+        notificationBus.emit("escalation", { taskId, message });
+      } catch (err) {
+        log.error({ err, taskId }, "failed to record escalation notification");
+      }
     },
   });
 }

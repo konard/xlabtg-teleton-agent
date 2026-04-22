@@ -38,6 +38,7 @@ export interface CreateTaskInput {
 export class AutonomousTaskManager {
   private store: AutonomousTaskStore;
   private runningLoops = new Map<string, AutonomousLoop>();
+  private loopCompletions = new Map<string, Promise<void>>();
   private config: Required<AutonomousManagerConfig>;
   private loopDeps: LoopDependencies;
 
@@ -85,7 +86,10 @@ export class AutonomousTaskManager {
     const loop = new AutonomousLoop(this.store, this.loopDeps, this.config.policyConfig);
     this.runningLoops.set(task.id, loop);
 
-    loop
+    // Use a composite key so pause/resume (which replaces the runningLoops
+    // entry) still tracks each loop individually for stopAllAndWait().
+    const completionKey = `${task.id}:${Date.now()}:${Math.random()}`;
+    const completion = loop
       .run(task)
       .then((result: LoopResult) => {
         log.info({ taskId: task.id, result }, "Autonomous loop finished");
@@ -99,7 +103,10 @@ export class AutonomousTaskManager {
         if (this.runningLoops.get(task.id) === loop) {
           this.runningLoops.delete(task.id);
         }
+        this.loopCompletions.delete(completionKey);
       });
+
+    this.loopCompletions.set(completionKey, completion);
   }
 
   /** Pause a running task. */
@@ -144,6 +151,20 @@ export class AutonomousTaskManager {
       loop.stop();
     }
     this.runningLoops.clear();
+  }
+
+  /**
+   * Request stop on all running loops and wait for their in-flight steps to
+   * finish. Resolves once every loop's `.finally` handler has run so the
+   * caller can safely close the database without racing a pending write.
+   */
+  async stopAllAndWait(): Promise<void> {
+    const pending = Array.from(this.loopCompletions.values());
+    this.stopAll();
+    if (pending.length === 0) return;
+    // Completions are built from `.then().catch().finally()` chains and never
+    // reject, but guard against that anyway so shutdown always resolves.
+    await Promise.allSettled(pending);
   }
 
   /**

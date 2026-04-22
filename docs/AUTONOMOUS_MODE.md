@@ -99,7 +99,7 @@ Higher priority tasks are queued first when the agent restarts.
     "maxIterations": 100,
     "maxDurationHours": 4,
     "allowedTools": ["web_fetch", "exec_run", "telegram_send_message"],
-    "restrictedTools": ["wallet:send"],
+    "restrictedTools": ["ton_send", "jetton_send"],
     "budgetTON": 0.5
   },
   "strategy": "balanced",

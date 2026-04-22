@@ -500,8 +500,15 @@ export class WebUIServer {
             const url = `http://${info.address}:${info.port}`;
 
             log.info(`WebUI server running`);
-            log.info(`URL: ${url}/auth/exchange?token=${this.authToken}`);
+            log.info(`URL:   ${url}/auth/exchange`);
             log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
+            log.info(`One-time exchange link printed to stderr below (not logged).`);
+            // Full token intentionally written via raw stderr to bypass the logger
+            // so that it never ends up in journalctl, Docker log drivers, tsx
+            // --log-file, CI artifacts, or `teleton --debug > log.txt`. See AUDIT-C4.
+            process.stderr.write(
+              `\n>>> One-time link: ${url}/auth/exchange?token=${this.authToken}\n\n`
+            );
             resolve();
           }
         );

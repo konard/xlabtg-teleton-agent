@@ -1,7 +1,11 @@
-import type { AutonomousTask, TaskCheckpoint } from "../memory/agent/autonomous-tasks.js";
+import type {
+  AutonomousTask,
+  AutonomousTaskStatus,
+  TaskCheckpoint,
+} from "../memory/agent/autonomous-tasks.js";
 import type { AutonomousTaskStore } from "../memory/agent/autonomous-tasks.js";
 import { PolicyEngine, DEFAULT_POLICY_CONFIG } from "./policy-engine.js";
-import type { PolicyConfig } from "./policy-engine.js";
+import type { PolicyConfig, PolicyEngineState } from "./policy-engine.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("AutonomousLoop");
@@ -65,10 +69,33 @@ export interface LoopResult {
   durationMs: number;
 }
 
+/**
+ * Signals the loop should exit because `stop()` was called. Thrown by
+ * `throwIfAborted()` and swallowed at the top of `run()` so an abort during
+ * any `await` unwinds cleanly without tripping the generic catch block that
+ * marks the task `failed`.
+ */
+class LoopAbortedError extends Error {
+  constructor() {
+    super("Loop aborted");
+    this.name = "LoopAbortedError";
+  }
+}
+
+/**
+ * Terminal statuses set by external callers (pause / cancel / restore) — the
+ * loop must not overwrite them. See AUDIT-H4 (issue #266).
+ */
+const EXTERNAL_TERMINAL_STATUSES = new Set<AutonomousTaskStatus>([
+  "paused",
+  "cancelled",
+  "completed",
+  "failed",
+]);
+
 export class AutonomousLoop {
   private policyEngine: PolicyEngine;
   private abortController: AbortController;
-  private recentActions: string[] = [];
 
   constructor(
     private store: AutonomousTaskStore,
@@ -79,9 +106,51 @@ export class AutonomousLoop {
     this.abortController = new AbortController();
   }
 
+  /**
+   * Exposed for tests only — lets assertions observe the engine whose state
+   * survives pause/resume (see issue #256).
+   */
+  getPolicyEngine(): PolicyEngine {
+    return this.policyEngine;
+  }
+
   /** Request graceful stop of the loop */
   stop(): void {
     this.abortController.abort();
+  }
+
+  /**
+   * Throws {@link LoopAbortedError} if `stop()` has been called. Call this
+   * immediately after every `await` so an in-flight step cannot race past a
+   * pause/cancel and overwrite the status the external caller just wrote.
+   */
+  private throwIfAborted(): void {
+    if (this.abortController.signal.aborted) {
+      throw new LoopAbortedError();
+    }
+  }
+
+  /**
+   * Write a status transition only if the DB doesn't already hold an
+   * external terminal status. Prevents the loop's delayed `.finally`/catch
+   * from clobbering `paused` / `cancelled` / `completed` / `failed` that a
+   * concurrent `pauseTask()` / `stopTask()` just wrote.
+   */
+  private safeUpdateStatus(
+    taskId: string,
+    status: AutonomousTaskStatus,
+    opts?: { result?: string; error?: string }
+  ): boolean {
+    const existing = this.store.getTask(taskId);
+    if (existing && EXTERNAL_TERMINAL_STATUSES.has(existing.status) && existing.status !== status) {
+      log.debug(
+        { taskId, attempted: status, existing: existing.status },
+        "Skipping status overwrite of externally-set terminal status"
+      );
+      return false;
+    }
+    this.store.updateTaskStatus(taskId, status, opts);
+    return true;
   }
 
   async run(task: AutonomousTask): Promise<LoopResult> {
@@ -90,7 +159,34 @@ export class AutonomousLoop {
 
     log.info({ taskId: task.id, goal: task.goal }, "Starting autonomous loop");
 
-    // Mark task as running
+    if (this.abortController.signal.aborted) {
+      log.info({ taskId: task.id }, "Loop aborted before start");
+      return {
+        status: "cancelled",
+        totalSteps: current.currentStep,
+        durationMs: Date.now() - startTime,
+      };
+    }
+
+    // Hydrate PolicyEngine from persisted state (if any) before we start
+    // recording — resume must not reset rate-limit / loop-detection windows
+    // (issue #256). Wire up write-through persistence afterwards so every
+    // mutation is flushed to disk.
+    const persistedState = this.store.getPolicyState(task.id) as
+      | Partial<PolicyEngineState>
+      | undefined;
+    if (persistedState) {
+      this.policyEngine.hydrate(persistedState);
+      log.debug({ taskId: task.id }, "Hydrated PolicyEngine from persisted state");
+    }
+    this.policyEngine.setOnStateChange((state) => {
+      this.store.savePolicyState(task.id, state);
+    });
+
+    // Mark task as running. We intentionally bypass safeUpdateStatus here:
+    // resumeTask() calls run() with the task still in 'paused', and the loop
+    // must be allowed to flip it back to 'running'. Once it's 'running' the
+    // safeUpdateStatus guard kicks in for every subsequent transition.
     this.store.updateTaskStatus(task.id, "running");
     current = this.store.getTask(task.id) ?? current;
 
@@ -111,11 +207,22 @@ export class AutonomousLoop {
 
     const history: unknown[] = [];
 
+    const clearStateOnTerminal = (): void => {
+      // Completed / failed / cancelled tasks won't resume, so drop their
+      // policy snapshot. Paused tasks keep theirs for the next resume() —
+      // if the caller raced us and flipped the DB to 'paused' first, don't
+      // wipe the snapshot they're planning to reuse (issue #256).
+      const now = this.store.getTask(task.id);
+      if (now?.status === "paused") return;
+      this.store.clearPolicyState(task.id);
+    };
+
     try {
       while (!this.abortController.signal.aborted) {
         current = this.store.getTask(task.id) ?? current;
 
         if (current.status === "cancelled") {
+          clearStateOnTerminal();
           return {
             status: "cancelled",
             totalSteps: current.currentStep,
@@ -138,8 +245,10 @@ export class AutonomousLoop {
         try {
           this.policyEngine.recordApiCall();
           action = await deps_planWithTimeout(this.deps, current, history, checkpoint);
+          this.throwIfAborted();
           checkpoint = undefined; // used once
         } catch (err) {
+          if (err instanceof LoopAbortedError) throw err;
           const error = err instanceof Error ? err.message : String(err);
           this.store.appendLog({
             taskId: task.id,
@@ -147,7 +256,8 @@ export class AutonomousLoop {
             eventType: "error",
             message: `Planning failed: ${error}`,
           });
-          this.store.updateTaskStatus(task.id, "failed", { error });
+          this.safeUpdateStatus(task.id, "failed", { error });
+          clearStateOnTerminal();
           return {
             status: "failed",
             error,
@@ -168,7 +278,7 @@ export class AutonomousLoop {
         const policyCheck = this.policyEngine.satisfiesPolicies(current, {
           toolName: action.toolName,
           tonAmount: action.tonAmount,
-          recentActions: this.recentActions,
+          recentActions: [...this.policyEngine.getRecentActions()],
         });
 
         if (!policyCheck.allowed) {
@@ -180,7 +290,8 @@ export class AutonomousLoop {
             eventType: "error",
             message: `Policy violation: ${reasons}`,
           });
-          this.store.updateTaskStatus(task.id, "failed", { error: `Policy violation: ${reasons}` });
+          this.safeUpdateStatus(task.id, "failed", { error: `Policy violation: ${reasons}` });
+          clearStateOnTerminal();
           return {
             status: "failed",
             error: reasons,
@@ -200,7 +311,8 @@ export class AutonomousLoop {
             message: `Escalating: ${reason}`,
           });
           await this.deps.escalate(current, reason, { action });
-          this.store.updateTaskStatus(task.id, "paused");
+          this.throwIfAborted();
+          this.safeUpdateStatus(task.id, "paused");
           return {
             status: "paused",
             totalSteps: current.currentStep,
@@ -222,7 +334,9 @@ export class AutonomousLoop {
         let result: ToolExecutionResult;
         try {
           result = await this.deps.executeTool(action.toolName, action.params);
+          this.throwIfAborted();
         } catch (err) {
+          if (err instanceof LoopAbortedError) throw err;
           result = {
             success: false,
             error: err instanceof Error ? err.message : String(err),
@@ -238,8 +352,7 @@ export class AutonomousLoop {
         });
 
         history.push({ action, result });
-        this.recentActions.push(action.toolName);
-        if (this.recentActions.length > 20) this.recentActions.shift();
+        this.policyEngine.recordAction(action.toolName);
 
         // 4. Self-reflection
         log.debug({ taskId: task.id }, "Self-reflecting on progress");
@@ -247,7 +360,9 @@ export class AutonomousLoop {
         try {
           this.policyEngine.recordApiCall();
           reflection = await this.deps.selfReflect(current, action, result);
+          this.throwIfAborted();
         } catch (err) {
+          if (err instanceof LoopAbortedError) throw err;
           log.warn({ err }, "Self-reflection failed, continuing");
           reflection = { progressSummary: "Reflection unavailable", isStuck: false };
         }
@@ -264,7 +379,8 @@ export class AutonomousLoop {
         if (reflection.shouldEscalate) {
           const reason = reflection.escalationReason ?? "Agent flagged uncertainty";
           await this.deps.escalate(current, reason);
-          this.store.updateTaskStatus(task.id, "paused");
+          this.throwIfAborted();
+          this.safeUpdateStatus(task.id, "paused");
           return {
             status: "paused",
             totalSteps: current.currentStep,
@@ -280,7 +396,8 @@ export class AutonomousLoop {
               current,
               `Agent appears stuck after ${maxConsecutive} reflections`
             );
-            this.store.updateTaskStatus(task.id, "paused");
+            this.throwIfAborted();
+            this.safeUpdateStatus(task.id, "paused");
             return {
               status: "paused",
               totalSteps: current.currentStep,
@@ -321,11 +438,13 @@ export class AutonomousLoop {
 
         // 7. Check success criteria
         const succeeded = await this.deps.evaluateSuccess(current, result);
+        this.throwIfAborted();
         if (succeeded) {
           log.info({ taskId: task.id }, "Task completed successfully");
-          this.store.updateTaskStatus(task.id, "completed", {
+          this.safeUpdateStatus(task.id, "completed", {
             result: JSON.stringify(result.data ?? "completed"),
           });
+          clearStateOnTerminal();
           return {
             status: "completed",
             output: result.data,
@@ -335,36 +454,78 @@ export class AutonomousLoop {
         }
       }
 
-      // Aborted via stop()
-      this.store.updateTaskStatus(task.id, "cancelled");
+      // Aborted via stop() (while-loop header check). If the caller already
+      // transitioned the task (pauseTask → "paused" or stopTask → "cancelled"),
+      // safeUpdateStatus preserves that. Paused tasks MUST keep their policy
+      // snapshot so the next resume doesn't reset the rate-limit window
+      // (issue #256); cancelled tasks drop it.
+      this.safeUpdateStatus(task.id, "cancelled");
+      current = this.store.getTask(task.id) ?? current;
+      if (current.status === "cancelled") {
+        clearStateOnTerminal();
+      }
       return {
-        status: "cancelled",
+        status: current.status === "paused" ? "paused" : "cancelled",
         totalSteps: current.currentStep,
         durationMs: Date.now() - startTime,
       };
     } catch (err) {
+      if (err instanceof LoopAbortedError) {
+        log.info({ taskId: task.id }, "Loop aborted mid-step — preserving external status");
+        // Whoever aborted us (pauseTask / stopTask) already wrote the right
+        // status. Don't clobber it.
+        const final = this.store.getTask(task.id);
+        const status = (final?.status ?? "cancelled") as LoopResult["status"];
+        // Drop the policy snapshot for terminal non-paused statuses so it
+        // doesn't leak into unrelated future tasks. Paused tasks MUST keep
+        // theirs so resume() can rehydrate rate-limit windows (issue #256).
+        if (status === "cancelled" || status === "completed" || status === "failed") {
+          clearStateOnTerminal();
+        }
+        return {
+          status:
+            status === "paused" ||
+            status === "cancelled" ||
+            status === "completed" ||
+            status === "failed"
+              ? status
+              : "cancelled",
+          totalSteps: final?.currentStep ?? current.currentStep,
+          durationMs: Date.now() - startTime,
+        };
+      }
       const error = err instanceof Error ? err.message : String(err);
       log.error({ taskId: task.id, err }, "Autonomous loop crashed");
-      this.store.updateTaskStatus(task.id, "failed", { error });
+      this.safeUpdateStatus(task.id, "failed", { error });
+      clearStateOnTerminal();
       return {
         status: "failed",
         error,
         totalSteps: current.currentStep,
         durationMs: Date.now() - startTime,
       };
+    } finally {
+      // Disconnect write-through persistence so a leftover loop object
+      // can't scribble into another loop's state window.
+      this.policyEngine.setOnStateChange(undefined);
     }
   }
 }
 
-async function deps_planWithTimeout(
+export async function deps_planWithTimeout(
   deps: LoopDependencies,
   task: AutonomousTask,
   history: unknown[],
   checkpoint?: TaskCheckpoint
 ): Promise<PlannedAction> {
   const PLAN_TIMEOUT_MS = 30000;
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Planning timed out after 30s")), PLAN_TIMEOUT_MS)
-  );
-  return Promise.race([deps.planNextAction(task, history, checkpoint), timeout]);
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new Error("Planning timed out after 30s")), PLAN_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([deps.planNextAction(task, history, checkpoint), timeout]);
+  } finally {
+    if (timerId !== undefined) clearTimeout(timerId);
+  }
 }
