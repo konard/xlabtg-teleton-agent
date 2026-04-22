@@ -63,6 +63,7 @@ export interface PolicyEngineState {
 export type PolicyViolation =
   | { type: "budget_exceeded"; message: string; requiresConfirmation: boolean }
   | { type: "restricted_tool"; message: string; toolName: string }
+  | { type: "ton_confirmation"; message: string; tonAmount: number }
   | { type: "loop_detected"; message: string }
   | { type: "rate_limit"; message: string }
   | { type: "max_iterations"; message: string }
@@ -133,6 +134,7 @@ export class PolicyEngine {
   ): PolicyCheckResult {
     const violations: PolicyViolation[] = [];
     let requiresEscalation = false;
+    let blockingViolationCount = 0;
 
     const constraints = task.constraints as TaskConstraints;
 
@@ -142,6 +144,7 @@ export class PolicyEngine {
         type: "max_iterations",
         message: `Task has reached maximum iterations (${constraints.maxIterations})`,
       });
+      blockingViolationCount++;
     }
 
     // Check duration limit
@@ -152,6 +155,7 @@ export class PolicyEngine {
           type: "duration_exceeded",
           message: `Task has exceeded maximum duration of ${constraints.maxDurationHours}h`,
         });
+        blockingViolationCount++;
       }
     }
 
@@ -167,12 +171,18 @@ export class PolicyEngine {
           message: `Tool "${action.toolName}" is not in the allowed tools list`,
           toolName: action.toolName,
         });
+        blockingViolationCount++;
       }
 
       if (
         this.config.restrictedTools.includes(action.toolName) ||
         (constraints.restrictedTools && constraints.restrictedTools.includes(action.toolName))
       ) {
+        violations.push({
+          type: "restricted_tool",
+          message: `Tool "${action.toolName}" is restricted and requires user confirmation`,
+          toolName: action.toolName,
+        });
         requiresEscalation = true;
         log.warn({ tool: action.toolName }, "Restricted tool requires escalation");
       }
@@ -187,7 +197,13 @@ export class PolicyEngine {
           message: `TON amount ${action.tonAmount} exceeds budget ${budgetTON}`,
           requiresConfirmation: true,
         });
+        blockingViolationCount++;
       } else if (action.tonAmount > this.config.tonSpending.requireConfirmationAbove) {
+        violations.push({
+          type: "ton_confirmation",
+          message: `TON amount ${action.tonAmount} requires user confirmation (threshold: ${this.config.tonSpending.requireConfirmationAbove})`,
+          tonAmount: action.tonAmount,
+        });
         requiresEscalation = true;
       }
     }
@@ -200,6 +216,7 @@ export class PolicyEngine {
         type: "rate_limit",
         message: `Tool call rate limit exceeded (${this.config.rateLimit.toolCallsPerHour}/hour)`,
       });
+      blockingViolationCount++;
     }
 
     this.apiCallTimestamps = this.apiCallTimestamps.filter((t) => now - t < 60000);
@@ -208,6 +225,7 @@ export class PolicyEngine {
         type: "rate_limit",
         message: `API call rate limit exceeded (${this.config.rateLimit.apiCallsPerMinute}/min)`,
       });
+      blockingViolationCount++;
     }
 
     // Check loop detection
@@ -226,7 +244,7 @@ export class PolicyEngine {
       }
     }
 
-    const allowed = violations.length === 0;
+    const allowed = blockingViolationCount === 0;
 
     return { allowed, requiresEscalation, violations };
   }

@@ -133,6 +133,32 @@ describe("PolicyEngine", () => {
     expect(result.requiresEscalation).toBe(true);
   });
 
+  it("includes tool name in violation message when globally restricted tool escalates", () => {
+    const task = makeTask();
+    const result = engine.checkAction(task, { toolName: "ton_send" });
+
+    expect(result.requiresEscalation).toBe(true);
+    const violation = result.violations.find(
+      (v) => v.type === "restricted_tool" && v.toolName === "ton_send"
+    );
+    expect(violation).toBeDefined();
+    expect(violation?.message).toContain("ton_send");
+  });
+
+  it("includes tool name in violation message when task-level restricted tool escalates", () => {
+    const task = makeTask({
+      constraints: { restrictedTools: ["custom_tool"] },
+    });
+    const result = engine.checkAction(task, { toolName: "custom_tool" });
+
+    expect(result.requiresEscalation).toBe(true);
+    const violation = result.violations.find(
+      (v) => v.type === "restricted_tool" && v.toolName === "custom_tool"
+    );
+    expect(violation).toBeDefined();
+    expect(violation?.message).toContain("custom_tool");
+  });
+
   // ─── TON budget ────────────────────────────────────────────────────────────
 
   it("blocks when TON amount exceeds task budget", () => {
@@ -149,6 +175,16 @@ describe("PolicyEngine", () => {
     const result = engine.checkAction(task, { toolName: "ton_send", tonAmount: 0.6 });
 
     expect(result.requiresEscalation).toBe(true);
+  });
+
+  it("includes TON amount in violation message when amount exceeds confirmation threshold", () => {
+    const task = makeTask();
+    const result = engine.checkAction(task, { toolName: "ton_send", tonAmount: 0.6 });
+
+    expect(result.requiresEscalation).toBe(true);
+    const violation = result.violations.find((v) => v.type === "ton_confirmation");
+    expect(violation).toBeDefined();
+    expect(violation?.message).toContain("0.6");
   });
 
   it("allows small TON amount within budget", () => {
