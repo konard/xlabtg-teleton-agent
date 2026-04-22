@@ -27,9 +27,9 @@ export interface PolicyConfig {
 
 export const DEFAULT_POLICY_CONFIG: PolicyConfig = {
   tonSpending: {
-    perTask: 1,
-    daily: 5,
-    requireConfirmationAbove: 0.5,
+    perTask: 0.1,
+    daily: 0.5,
+    requireConfirmationAbove: 0.05,
   },
   restrictedTools: ["ton_send", "jetton_send", "exec", "exec_run"],
   requireHumanApproval: "above-threshold",

@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- **Autonomous TON spending defaults tightened (AUDIT-M3)**: `DEFAULT_POLICY_CONFIG.tonSpending` reduced by 10× (`perTask` 1 → 0.1 TON, `daily` 5 → 0.5 TON, `requireConfirmationAbove` 0.5 → 0.05 TON) to limit financial exposure for users who run the agent with a linked wallet and do not customise the policy config. Users who relied on the previous permissive defaults must explicitly raise the limits in their `config.yaml` under the `autonomous.policy.ton_spending` key (closes xlabtg/teleton-agent#286).
+
 ### Added
 - **Prediction engine**: Behavior event tracking, Markov-style next-action predictions, topic-to-tool suggestions, WebUI prediction APIs, and dashboard suggestions with feedback.
 - **`web_download_binary` tool**: Download public HTTP(S) binary files into workspace `downloads/` with MIME validation, a 10 MB size cap, redirect support, and optional request headers for authorized URLs.
