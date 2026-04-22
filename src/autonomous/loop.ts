@@ -356,15 +356,20 @@ export class AutonomousLoop {
   }
 }
 
-async function deps_planWithTimeout(
+export async function deps_planWithTimeout(
   deps: LoopDependencies,
   task: AutonomousTask,
   history: unknown[],
   checkpoint?: TaskCheckpoint
 ): Promise<PlannedAction> {
   const PLAN_TIMEOUT_MS = 30000;
-  const timeout = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Planning timed out after 30s")), PLAN_TIMEOUT_MS)
-  );
-  return Promise.race([deps.planNextAction(task, history, checkpoint), timeout]);
+  let timerId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timerId = setTimeout(() => reject(new Error("Planning timed out after 30s")), PLAN_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([deps.planNextAction(task, history, checkpoint), timeout]);
+  } finally {
+    if (timerId !== undefined) clearTimeout(timerId);
+  }
 }
