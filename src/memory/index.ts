@@ -27,7 +27,7 @@ import { createSemanticVectorStoreFromConfig, type SemanticVectorStore } from ".
 import { MemoryScorer } from "./scoring.js";
 import { MemoryRetentionService } from "./retention.js";
 import { MemoryPrioritizationScheduler } from "./scheduler.js";
-import type { MemoryConfig, VectorMemoryConfig } from "../config/schema.js";
+import type { AutonomousConfig, MemoryConfig, VectorMemoryConfig } from "../config/schema.js";
 
 export interface MemorySystem {
   db: Database.Database;
@@ -46,6 +46,7 @@ export function initializeMemory(config: {
   embeddings: EmbeddingProviderConfig;
   vectorMemory?: VectorMemoryConfig;
   memory?: MemoryConfig;
+  autonomous?: AutonomousConfig;
   workspaceDir: string;
 }): MemorySystem {
   const db = getDatabase(config.database);
@@ -75,6 +76,7 @@ export function initializeMemory(config: {
         recency_half_life_days: config.memory?.prioritization.recency_half_life_days,
       },
       retention: config.memory?.retention,
+      pause_timeout_hours: config.autonomous?.pause_timeout_hours,
     },
     vectorStore
   );

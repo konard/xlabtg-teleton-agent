@@ -8,6 +8,7 @@ import { getAutonomousTaskStore } from "./agent/autonomous-tasks.js";
 const log = createLogger("Memory");
 
 const DEFAULT_CHECKPOINT_RETENTION_DAYS = 7;
+const DEFAULT_PAUSE_TIMEOUT_HOURS = 24;
 
 export interface MemoryPrioritizationSchedulerConfig {
   enabled?: boolean;
@@ -17,6 +18,7 @@ export interface MemoryPrioritizationSchedulerConfig {
     auto_cleanup?: boolean;
     checkpoint_retention_days?: number;
   };
+  pause_timeout_hours?: number;
 }
 
 export class MemoryPrioritizationScheduler {
@@ -26,6 +28,7 @@ export class MemoryPrioritizationScheduler {
   private enabled: boolean;
   private autoCleanup: boolean;
   private checkpointRetentionDays: number;
+  private pauseTimeoutHours: number;
   private scorer: MemoryScorer;
   private retention: MemoryRetentionService;
   private db: Database.Database;
@@ -44,6 +47,10 @@ export class MemoryPrioritizationScheduler {
       config.retention.checkpoint_retention_days > 0
         ? config.retention.checkpoint_retention_days
         : DEFAULT_CHECKPOINT_RETENTION_DAYS;
+    this.pauseTimeoutHours =
+      typeof config.pause_timeout_hours === "number" && config.pause_timeout_hours > 0
+        ? config.pause_timeout_hours
+        : DEFAULT_PAUSE_TIMEOUT_HOURS;
     this.scorer = new MemoryScorer(db, config.scoring);
     this.retention = new MemoryRetentionService(db, config.retention, this.scorer, vectorStore);
   }
@@ -75,15 +82,21 @@ export class MemoryPrioritizationScheduler {
         this.retention.pruneExpiredArchive();
       }
       let checkpointsDeleted = 0;
+      let pausedTasksCancelled = 0;
       try {
-        checkpointsDeleted = getAutonomousTaskStore(this.db).cleanOldCheckpoints(
-          this.checkpointRetentionDays
-        );
+        const taskStore = getAutonomousTaskStore(this.db);
+        checkpointsDeleted = taskStore.cleanOldCheckpoints(this.checkpointRetentionDays);
+        pausedTasksCancelled = taskStore.cancelStalePausedTasks(this.pauseTimeoutHours);
       } catch (error) {
-        log.warn({ err: error }, "Autonomous task checkpoint cleanup failed");
+        log.warn({ err: error }, "Autonomous task cleanup failed");
       }
       log.debug(
-        { scored: result.scored, autoCleanup: this.autoCleanup, checkpointsDeleted },
+        {
+          scored: result.scored,
+          autoCleanup: this.autoCleanup,
+          checkpointsDeleted,
+          pausedTasksCancelled,
+        },
         "Memory scores updated"
       );
     } finally {

@@ -342,6 +342,102 @@ describe("AutonomousTaskStore", () => {
     expect(logs).toHaveLength(0);
   });
 
+  // ─── paused_at timestamp ──────────────────────────────────────────────────
+
+  it("sets paused_at when status transitions to paused", () => {
+    const before = Math.floor(Date.now() / 1000) - 1;
+    const task = store.createTask({ goal: "Pause me" });
+    store.updateTaskStatus(task.id, "running");
+    const paused = store.updateTaskStatus(task.id, "paused");
+    const after = Math.floor(Date.now() / 1000) + 1;
+
+    expect(paused!.pausedAt).toBeDefined();
+    const ts = Math.floor(paused!.pausedAt!.getTime() / 1000);
+    expect(ts).toBeGreaterThanOrEqual(before);
+    expect(ts).toBeLessThanOrEqual(after);
+  });
+
+  it("clears paused_at when task is resumed (status running)", () => {
+    const task = store.createTask({ goal: "Resume me" });
+    store.updateTaskStatus(task.id, "running");
+    store.updateTaskStatus(task.id, "paused");
+    const resumed = store.updateTaskStatus(task.id, "running");
+
+    expect(resumed!.pausedAt).toBeUndefined();
+  });
+
+  // ─── cancelStalePausedTasks (AUDIT-M5) ───────────────────────────────────
+
+  it("auto-cancels tasks paused longer than the TTL", () => {
+    const task = store.createTask({ goal: "Stale paused task" });
+    store.updateTaskStatus(task.id, "running");
+    store.updateTaskStatus(task.id, "paused");
+
+    // Backdate paused_at to 25 hours ago (beyond 24h TTL)
+    const stalePausedAt = Math.floor(Date.now() / 1000) - 25 * 3600;
+    db.prepare(`UPDATE autonomous_tasks SET paused_at = ? WHERE id = ?`).run(
+      stalePausedAt,
+      task.id
+    );
+
+    const cancelled = store.cancelStalePausedTasks(24);
+    expect(cancelled).toBe(1);
+
+    const fetched = store.getTask(task.id);
+    expect(fetched!.status).toBe("cancelled");
+    expect(fetched!.error).toBe("timeout-paused");
+    expect(fetched!.completedAt).toBeDefined();
+  });
+
+  it("does not cancel tasks paused within the TTL", () => {
+    const task = store.createTask({ goal: "Fresh paused task" });
+    store.updateTaskStatus(task.id, "running");
+    store.updateTaskStatus(task.id, "paused");
+
+    // paused_at is just now — well within the 24h TTL
+    const cancelled = store.cancelStalePausedTasks(24);
+    expect(cancelled).toBe(0);
+
+    const fetched = store.getTask(task.id);
+    expect(fetched!.status).toBe("paused");
+  });
+
+  it("does not cancel running or pending tasks regardless of paused_at", () => {
+    const t1 = store.createTask({ goal: "Running task" });
+    const t2 = store.createTask({ goal: "Pending task" });
+    store.updateTaskStatus(t1.id, "running");
+
+    // Force-set paused_at on non-paused rows (shouldn't matter)
+    const oldTs = Math.floor(Date.now() / 1000) - 48 * 3600;
+    db.prepare(`UPDATE autonomous_tasks SET paused_at = ? WHERE id = ?`).run(oldTs, t1.id);
+    db.prepare(`UPDATE autonomous_tasks SET paused_at = ? WHERE id = ?`).run(oldTs, t2.id);
+
+    const cancelled = store.cancelStalePausedTasks(24);
+    expect(cancelled).toBe(0);
+    expect(store.getTask(t1.id)!.status).toBe("running");
+    expect(store.getTask(t2.id)!.status).toBe("pending");
+  });
+
+  it("respects a custom TTL (e.g. 1 hour)", () => {
+    const task1 = store.createTask({ goal: "2-hour stale task" });
+    const task2 = store.createTask({ goal: "30-min fresh task" });
+    store.updateTaskStatus(task1.id, "running");
+    store.updateTaskStatus(task1.id, "paused");
+    store.updateTaskStatus(task2.id, "running");
+    store.updateTaskStatus(task2.id, "paused");
+
+    // Backdate task1 by 2 hours; leave task2 at now
+    db.prepare(`UPDATE autonomous_tasks SET paused_at = ? WHERE id = ?`).run(
+      Math.floor(Date.now() / 1000) - 2 * 3600,
+      task1.id
+    );
+
+    const cancelled = store.cancelStalePausedTasks(1);
+    expect(cancelled).toBe(1);
+    expect(store.getTask(task1.id)!.status).toBe("cancelled");
+    expect(store.getTask(task2.id)!.status).toBe("paused");
+  });
+
   // ─── Singleton ────────────────────────────────────────────────────────────
 
   it("getAutonomousTaskStore returns same instance for same db", () => {

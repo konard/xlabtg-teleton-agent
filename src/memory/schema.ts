@@ -471,6 +471,7 @@ export function ensureSchema(db: Database.Database): void {
       updated_at INTEGER,
       started_at INTEGER,
       completed_at INTEGER,
+      paused_at INTEGER,
       result TEXT,
       error TEXT
     );
@@ -478,6 +479,7 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_auto_tasks_status ON autonomous_tasks(status);
     CREATE INDEX IF NOT EXISTS idx_auto_tasks_priority ON autonomous_tasks(priority, created_at ASC);
     CREATE INDEX IF NOT EXISTS idx_auto_tasks_created ON autonomous_tasks(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_auto_tasks_paused_at ON autonomous_tasks(paused_at) WHERE paused_at IS NOT NULL;
 
     CREATE TABLE IF NOT EXISTS task_checkpoints (
       id TEXT PRIMARY KEY,
@@ -573,7 +575,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.24.0";
+export const CURRENT_SCHEMA_VERSION = "1.25.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1210,6 +1212,25 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.24.0 complete: 'queued' status added to autonomous_tasks");
     } catch (error) {
       log.error({ err: error }, "Migration 1.24.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.25.0")) {
+    log.info("Running migration 1.25.0: Add paused_at column to autonomous_tasks (AUDIT-M5)");
+    try {
+      const columns = db.prepare(`PRAGMA table_info(autonomous_tasks)`).all() as Array<{
+        name: string;
+      }>;
+      if (!columns.some((col) => col.name === "paused_at")) {
+        db.exec(`ALTER TABLE autonomous_tasks ADD COLUMN paused_at INTEGER`);
+      }
+      db.exec(
+        `CREATE INDEX IF NOT EXISTS idx_auto_tasks_paused_at ON autonomous_tasks(paused_at) WHERE paused_at IS NOT NULL`
+      );
+      log.info("Migration 1.25.0 complete: paused_at column added");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.25.0 failed");
       throw error;
     }
   }
