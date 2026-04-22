@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { ensureSchema } from "../../memory/schema.js";
 import { getAutonomousTaskStore } from "../../memory/agent/autonomous-tasks.js";
 import type { AutonomousTaskStore, AutonomousTask } from "../../memory/agent/autonomous-tasks.js";
-import { AutonomousLoop } from "../loop.js";
+import { AutonomousLoop, MAX_GLOBAL_ITERATIONS } from "../loop.js";
 import type { LoopDependencies, PlannedAction, ToolExecutionResult, Reflection } from "../loop.js";
 import { DEFAULT_POLICY_CONFIG } from "../policy-engine.js";
 
@@ -406,5 +406,39 @@ describe("AutonomousLoop", () => {
     const after = store.getTask(task.id);
     expect(after!.status).toBe("paused");
     expect(after!.error).toBeUndefined();
+  });
+
+  // ─── AUDIT-M1: global max-iteration safety cap ────────────────────────────
+
+  it("fails with global cap error when task has no maxIterations and loop runs forever (AUDIT-M1)", async () => {
+    // Task without constraints.maxIterations — only the global cap should stop it.
+    const uncappedTask = store.createTask({
+      goal: "Uncapped task",
+      constraints: {},
+    });
+
+    // Force the task's currentStep up to the cap boundary so the test
+    // completes quickly without actually running 500 iterations.
+    const stepsBeforeCap = MAX_GLOBAL_ITERATIONS;
+    for (let i = 0; i < stepsBeforeCap; i++) {
+      store.incrementStep(uncappedTask.id);
+    }
+
+    const deps = makeDeps({
+      evaluateSuccess: vi.fn().mockResolvedValue(false),
+    });
+
+    const loop = new AutonomousLoop(store, deps, DEFAULT_POLICY_CONFIG);
+    const result = await loop.run(uncappedTask);
+
+    expect(result.status).toBe("failed");
+    expect(result.error).toContain("Global max-iteration cap exceeded");
+
+    const updated = store.getTask(uncappedTask.id);
+    expect(updated!.status).toBe("failed");
+
+    const logs = store.getExecutionLogs(uncappedTask.id);
+    const capLog = logs.find((l) => l.message.includes("Global max-iteration cap exceeded"));
+    expect(capLog).toBeDefined();
   });
 });
