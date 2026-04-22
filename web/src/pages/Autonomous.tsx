@@ -15,6 +15,7 @@ import { NaturalLanguageParser } from "../components/NaturalLanguageParser";
 
 const STATUS_COLORS: Record<AutonomousTaskStatus, string> = {
   pending: "#f0ad4e",
+  queued: "#c87941",
   running: "#5bc0de",
   paused: "#9b9b9b",
   completed: "#5cb85c",
@@ -24,6 +25,7 @@ const STATUS_COLORS: Record<AutonomousTaskStatus, string> = {
 
 const STATUS_LABELS: Record<AutonomousTaskStatus, string> = {
   pending: "Pending",
+  queued: "Queued",
   running: "Running",
   paused: "Paused",
   completed: "Completed",
@@ -521,7 +523,7 @@ function TaskDetailPanel({
 
   useEffect(() => {
     if (!detail) return;
-    const isActive = detail.status === "running" || detail.status === "pending";
+    const isActive = detail.status === "running" || detail.status === "pending" || detail.status === "queued";
     if (!isActive) return;
     const interval = setInterval(load, 2000);
     return () => clearInterval(interval);
@@ -749,6 +751,7 @@ function TaskDetailPanel({
 
       {(detail.status === "running" ||
         detail.status === "pending" ||
+        detail.status === "queued" ||
         detail.status === "paused") && (
         <div style={{ marginBottom: "10px" }}>
           <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "4px" }}>
@@ -820,7 +823,7 @@ export function Autonomous() {
   }, [load]);
 
   useEffect(() => {
-    const hasActive = tasks.some((t) => t.status === "running" || t.status === "pending");
+    const hasActive = tasks.some((t) => t.status === "running" || t.status === "pending" || t.status === "queued");
     if (!hasActive) return;
     const interval = setInterval(load, 3000);
     return () => clearInterval(interval);
@@ -1041,7 +1044,7 @@ export function Autonomous() {
             </thead>
             <tbody>
               {filtered.map((task) => {
-                const canPause = task.status === "running" || task.status === "pending";
+                const canPause = task.status === "running" || task.status === "pending" || task.status === "queued";
                 const canResume = task.status === "paused";
                 const canStop =
                   task.status !== "completed" &&
