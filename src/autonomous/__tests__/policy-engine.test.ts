@@ -133,6 +133,14 @@ describe("PolicyEngine", () => {
     expect(result.requiresEscalation).toBe(true);
   });
 
+  // ─── Default tonSpending values (AUDIT-M3) ────────────────────────────────
+
+  it("DEFAULT_POLICY_CONFIG.tonSpending uses safe conservative defaults", () => {
+    expect(DEFAULT_POLICY_CONFIG.tonSpending.perTask).toBe(0.1);
+    expect(DEFAULT_POLICY_CONFIG.tonSpending.daily).toBe(0.5);
+    expect(DEFAULT_POLICY_CONFIG.tonSpending.requireConfirmationAbove).toBe(0.05);
+  });
+
   // ─── TON budget ────────────────────────────────────────────────────────────
 
   it("blocks when TON amount exceeds task budget", () => {
