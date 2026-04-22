@@ -166,7 +166,7 @@ export function createAutonomousRoutes(deps: WebUIServerDeps) {
       if (!task) {
         return c.json({ success: false, error: "Task not found" } as APIResponse, 404);
       }
-      if (task.status !== "running" && task.status !== "pending") {
+      if (task.status !== "running" && task.status !== "pending" && task.status !== "queued") {
         return c.json(
           {
             success: false,
