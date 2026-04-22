@@ -464,7 +464,7 @@ export function ensureSchema(db: Database.Database): void {
       priority TEXT NOT NULL DEFAULT 'medium'
         CHECK(priority IN ('low', 'medium', 'high', 'critical')),
       status TEXT NOT NULL DEFAULT 'pending'
-        CHECK(status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+        CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
       current_step INTEGER NOT NULL DEFAULT 0,
       last_checkpoint_id TEXT,
       created_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -575,7 +575,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.24.0";
+export const CURRENT_SCHEMA_VERSION = "1.25.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -999,7 +999,7 @@ export function runMigrations(db: Database.Database): void {
           priority TEXT NOT NULL DEFAULT 'medium'
             CHECK(priority IN ('low', 'medium', 'high', 'critical')),
           status TEXT NOT NULL DEFAULT 'pending'
-            CHECK(status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+            CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
           current_step INTEGER NOT NULL DEFAULT 0,
           last_checkpoint_id TEXT,
           created_at INTEGER NOT NULL DEFAULT (unixepoch()),
@@ -1175,7 +1175,49 @@ export function runMigrations(db: Database.Database): void {
   }
 
   if (!currentVersion || versionLessThan(currentVersion, "1.24.0")) {
-    log.info("Running migration 1.24.0: Add paused_at column to autonomous_tasks (AUDIT-M5)");
+    log.info("Running migration 1.24.0: Add 'queued' status to autonomous_tasks");
+    try {
+      // SQLite does not support ALTER COLUMN CHECK constraints, so we use the
+      // recommended rename-create-copy-drop approach inside a transaction.
+      db.exec(`
+        BEGIN;
+        ALTER TABLE autonomous_tasks RENAME TO autonomous_tasks_old;
+        CREATE TABLE autonomous_tasks (
+          id TEXT PRIMARY KEY,
+          goal TEXT NOT NULL,
+          success_criteria TEXT NOT NULL DEFAULT '[]',
+          failure_conditions TEXT NOT NULL DEFAULT '[]',
+          constraints TEXT NOT NULL DEFAULT '{}',
+          strategy TEXT NOT NULL DEFAULT 'balanced'
+            CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+          retry_policy TEXT NOT NULL DEFAULT '{}',
+          context TEXT NOT NULL DEFAULT '{}',
+          priority TEXT NOT NULL DEFAULT 'medium'
+            CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+          current_step INTEGER NOT NULL DEFAULT 0,
+          last_checkpoint_id TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER,
+          started_at INTEGER,
+          completed_at INTEGER,
+          result TEXT,
+          error TEXT
+        );
+        INSERT INTO autonomous_tasks SELECT * FROM autonomous_tasks_old;
+        DROP TABLE autonomous_tasks_old;
+        COMMIT;
+      `);
+      log.info("Migration 1.24.0 complete: 'queued' status added to autonomous_tasks");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.24.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.25.0")) {
+    log.info("Running migration 1.25.0: Add paused_at column to autonomous_tasks (AUDIT-M5)");
     try {
       const columns = db.prepare(`PRAGMA table_info(autonomous_tasks)`).all() as Array<{
         name: string;
@@ -1186,9 +1228,9 @@ export function runMigrations(db: Database.Database): void {
       db.exec(
         `CREATE INDEX IF NOT EXISTS idx_auto_tasks_paused_at ON autonomous_tasks(paused_at) WHERE paused_at IS NOT NULL`
       );
-      log.info("Migration 1.24.0 complete: paused_at column added");
+      log.info("Migration 1.25.0 complete: paused_at column added");
     } catch (error) {
-      log.error({ err: error }, "Migration 1.24.0 failed");
+      log.error({ err: error }, "Migration 1.25.0 failed");
       throw error;
     }
   }

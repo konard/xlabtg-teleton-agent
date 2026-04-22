@@ -255,6 +255,26 @@ cache:
 #       port: 8888
 #       secret: "abcdef1234..."
 
+# Autonomous task policy — governs spending limits and human-approval rules.
+# These defaults are conservative to protect wallets on first run.
+# Raise limits only if you understand the risk.
+#
+# Safe preset (default):
+# autonomous:
+#   policy:
+#     ton_spending:
+#       per_task: 0.1            # Max TON per autonomous task (≈ $0.50)
+#       daily: 0.5               # Max TON per calendar day (≈ $2.50)
+#       require_confirmation_above: 0.05  # Ask before spending more than this amount
+#
+# Aggressive preset (for trusted environments with explicit oversight):
+# autonomous:
+#   policy:
+#     ton_spending:
+#       per_task: 1.0            # 10× higher — verify your approval flows first
+#       daily: 5.0
+#       require_confirmation_above: 0.5
+
 # Per-plugin configuration (key = plugin name)
 # plugins:
 #   casino:

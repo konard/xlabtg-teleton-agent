@@ -26,6 +26,7 @@ export const DEFAULT_CHECKPOINT_KEEP_LAST_N = 20;
 
 export type AutonomousTaskStatus =
   | "pending"
+  | "queued"
   | "running"
   | "paused"
   | "completed"
@@ -297,7 +298,7 @@ export class AutonomousTaskStore {
   getActiveTasks(): AutonomousTask[] {
     const rows = this.db
       .prepare(
-        `SELECT * FROM autonomous_tasks WHERE status IN ('pending', 'running', 'paused') ORDER BY created_at ASC`
+        `SELECT * FROM autonomous_tasks WHERE status IN ('pending', 'queued', 'running', 'paused') ORDER BY created_at ASC`
       )
       .all() as AutonomousTaskRow[];
     return rows.map(rowToTask);
