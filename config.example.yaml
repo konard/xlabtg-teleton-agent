@@ -118,6 +118,10 @@ webui:
     - "http://localhost:7777"         # Production server
   log_requests: false                 # Log HTTP requests
 
+# Autonomous task engine settings.
+autonomous:
+  pause_timeout_hours: 24              # Hours a paused task may wait before being auto-cancelled (AUDIT-M5)
+
 # Prediction engine: learns repeated message/tool patterns and exposes suggestions.
 predictions:
   enabled: true                       # Record behavior events and serve prediction APIs

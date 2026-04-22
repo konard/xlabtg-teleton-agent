@@ -74,6 +74,7 @@ export interface AutonomousTask {
   updatedAt?: Date;
   startedAt?: Date;
   completedAt?: Date;
+  pausedAt?: Date;
   result?: string;
   error?: string;
 }
@@ -115,6 +116,7 @@ interface AutonomousTaskRow {
   updated_at: number | null;
   started_at: number | null;
   completed_at: number | null;
+  paused_at: number | null;
   result: string | null;
   error: string | null;
 }
@@ -182,6 +184,7 @@ function rowToTask(row: AutonomousTaskRow): AutonomousTask {
     updatedAt: row.updated_at ? new Date(row.updated_at * 1000) : undefined,
     startedAt: row.started_at ? new Date(row.started_at * 1000) : undefined,
     completedAt: row.completed_at ? new Date(row.completed_at * 1000) : undefined,
+    pausedAt: row.paused_at ? new Date(row.paused_at * 1000) : undefined,
     result: row.result ?? undefined,
     error: row.error ?? undefined,
   };
@@ -320,6 +323,13 @@ export class AutonomousTaskStore {
       fields.push("completed_at = ?");
       values.push(now);
     }
+    if (status === "paused") {
+      fields.push("paused_at = ?");
+      values.push(now);
+    } else if (status === "running") {
+      // Clear paused_at when resuming so stale timestamps don't linger.
+      fields.push("paused_at = NULL");
+    }
     if (opts?.result !== undefined) {
       fields.push("result = ?");
       values.push(opts.result);
@@ -361,6 +371,38 @@ export class AutonomousTaskStore {
   deleteTask(id: string): boolean {
     const result = this.db.prepare(`DELETE FROM autonomous_tasks WHERE id = ?`).run(id);
     return result.changes > 0;
+  }
+
+  /**
+   * Cancel tasks that have been paused longer than `timeoutHours` hours.
+   * Sets status to 'cancelled' and error to 'timeout-paused'.
+   * Returns the number of tasks cancelled.
+   */
+  cancelStalePausedTasks(timeoutHours = 24): number {
+    const cutoff = Math.floor(Date.now() / 1000) - timeoutHours * 3600;
+    const stale = this.db
+      .prepare(
+        `SELECT id FROM autonomous_tasks WHERE status = 'paused' AND paused_at IS NOT NULL AND paused_at < ?`
+      )
+      .all(cutoff) as { id: string }[];
+
+    if (stale.length === 0) return 0;
+
+    const now = Math.floor(Date.now() / 1000);
+    const update = this.db.prepare(
+      `UPDATE autonomous_tasks
+       SET status = 'cancelled', error = 'timeout-paused', completed_at = ?, updated_at = ?
+       WHERE id = ?`
+    );
+
+    this.db.transaction(() => {
+      for (const row of stale) {
+        update.run(now, now, row.id);
+        log.info({ taskId: row.id, timeoutHours }, "Auto-cancelled stale paused task (AUDIT-M5)");
+      }
+    })();
+
+    return stale.length;
   }
 
   // Checkpoint methods
