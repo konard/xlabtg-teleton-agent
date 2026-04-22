@@ -270,6 +270,8 @@ The agent uses a hybrid search system for context-aware responses:
 
 **Auto-Compaction:** When context approaches the provider's limit, the agent summarizes the conversation, archives the transcript, and continues with a fresh context. Nothing is lost.
 
+**Optional semantic memory:** Connect [Upstash Vector](https://upstash.com/) to add semantic search across long-term memory. Follow [Upstash Vector Setup (Step-by-Step)](docs/upstash-vector-setup.md) to create the index with the correct dimension, paste the REST credentials into the WebUI, and run the first sync.
+
 ---
 
 ## Security

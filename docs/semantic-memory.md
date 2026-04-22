@@ -19,6 +19,8 @@ Upstash failures are non-fatal. Health checks, searches, upserts, and deletes ar
 
 ## Configuration
 
+For a guided walk-through — creating the Upstash index with the correct dimension, copying the REST credentials, and recovering from a dimension mismatch — see [Upstash Vector Setup (Step-by-Step)](upstash-vector-setup.md).
+
 Configure Upstash Vector in `config.yaml`:
 
 ```yaml
@@ -50,6 +52,16 @@ embedding:
 
 The default `local` provider runs on the host after downloading the ONNX model cache. Set `embedding.provider: "none"` to disable vector embeddings and use FTS5 keyword search only.
 
+The embedding provider's output dimension must match the dimension the Upstash index was provisioned with. Defaults:
+
+| Provider | Default model | Dimensions |
+| -------- | ------------- | ---------- |
+| `local` | `Xenova/all-MiniLM-L6-v2` | 384 |
+| `anthropic` | `voyage-3-lite` | 512 |
+| `anthropic` | `voyage-3`, `voyage-code-3`, `voyage-finance-2`, `voyage-multilingual-2`, `voyage-law-2` | 1024 |
+
+On mismatch, Upstash rejects every upsert and the Upstash dashboard shows requests growing but no new vectors. Teleton reports this at startup and in the `Sync Vector` response with an actionable fix. See [Upstash Vector Setup — Fixing a dimension mismatch](upstash-vector-setup.md#fixing-a-dimension-mismatch).
+
 ## Syncing Existing Memory
 
 Existing `MEMORY.md` and `memory/*.md` files can be synchronized after Upstash credentials are added:
@@ -59,6 +71,8 @@ Existing `MEMORY.md` and `memory/*.md` files can be synchronized after Upstash c
 3. Click `Sync Vector`.
 
 The sync action reindexes local memory files and uploads their chunks to Upstash only when semantic vector memory is online. If Upstash is not configured or unavailable, the action reports that state and leaves local memory active.
+
+If the sync reports `No vectors were uploaded to Upstash Vector because of an embedding dimension mismatch`, follow [Upstash Vector Setup — Fixing a dimension mismatch](upstash-vector-setup.md#fixing-a-dimension-mismatch). Re-running the sync without fixing the dimension will keep failing.
 
 ## Operational Notes
 

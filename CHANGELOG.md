@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Prediction engine**: Behavior event tracking, Markov-style next-action predictions, topic-to-tool suggestions, WebUI prediction APIs, and dashboard suggestions with feedback.
 - **`web_download_binary` tool**: Download public HTTP(S) binary files into workspace `downloads/` with MIME validation, a 10 MB size cap, redirect support, and optional request headers for authorized URLs.
+- **Upstash Vector setup guide** (`docs/upstash-vector-setup.md`): Step-by-step walk-through for provisioning the Upstash index with the dimension the embedding provider produces, connecting Teleton through the WebUI / `config.yaml` / environment variables, verifying the health-check log, and recovering from a dimension mismatch. Referenced from the README, `GETTING_STARTED.md`, `docs/configuration.md`, and `docs/semantic-memory.md` (closes xlabtg/teleton-agent#248).
 
 ### Fixed
 - **Vector memory sync**: Detect Upstash Vector index/embedding dimension mismatches before upsert, surface the configured index dimension in semantic memory status and sync responses, and log an actionable warning at startup (closes xlabtg/teleton-agent#246).

@@ -632,6 +632,8 @@ Full documentation is available in the [`docs/`](docs/) directory:
 | [Telegram Setup](docs/telegram-setup.md) | API credentials, policies, 2FA, admin commands |
 | [TON Wallet](docs/ton-wallet.md) | Wallet setup, DEX trading, security |
 | [Management API](docs/management-api.md) | HTTPS API, bootstrap mode, authentication, endpoints |
+| [Semantic Memory](docs/semantic-memory.md) | Upstash Vector modes, fallback, prioritization, retention |
+| [Upstash Vector Setup](docs/upstash-vector-setup.md) | Step-by-step: provision index with matching dimension, connect Teleton, recover from mismatches |
 
 ---
 
