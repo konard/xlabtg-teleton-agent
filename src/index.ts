@@ -92,6 +92,7 @@ export class TeletonApp {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatRunning = false;
   private workflowScheduler: WorkflowScheduler | null = null;
+  private autonomousManager: AutonomousTaskManager | null = null;
 
   private configPath: string;
 
@@ -330,10 +331,11 @@ ${blue}  ┌──────────────────────�
     );
 
     // Shared manager so WebUI and Management API drive the same task queue.
-    let autonomousManager: AutonomousTaskManager | undefined;
+    // Stored on the instance so stopAgent() can halt its loops — otherwise
+    // autonomous tasks keep writing to SQLite after shutdown (AUDIT-C2).
     if (this.config.webui.enabled || this.config.api?.enabled) {
       const { createAutonomousManager } = await import("./autonomous/integration.js");
-      autonomousManager = createAutonomousManager({
+      this.autonomousManager = createAutonomousManager({
         agent: this.agent,
         toolRegistry: this.toolRegistry,
         bridge: this.bridge,
@@ -341,7 +343,7 @@ ${blue}  ┌──────────────────────�
       });
       // Resume tasks that were "running" when the agent last stopped so a
       // server restart doesn't leave them stuck forever.
-      autonomousManager.restoreInterruptedTasks().catch((err: unknown) => {
+      this.autonomousManager.restoreInterruptedTasks().catch((err: unknown) => {
         log.warn({ err }, "Failed to restore interrupted autonomous tasks");
       });
     }
@@ -373,7 +375,7 @@ ${blue}  ┌──────────────────────�
             rewireHooks: () => this.wirePluginEventHooks(),
           },
           userHookEvaluator: this.userHookEvaluator,
-          autonomousManager,
+          autonomousManager: this.autonomousManager ?? undefined,
           workflowScheduler: () => this.workflowScheduler,
         });
         await this.webuiServer.start();
@@ -411,7 +413,7 @@ ${blue}  ┌──────────────────────�
               rewireHooks: () => this.wirePluginEventHooks(),
             },
             userHookEvaluator: this.userHookEvaluator,
-            autonomousManager,
+            autonomousManager: this.autonomousManager,
             workflowScheduler: () => this.workflowScheduler,
           },
           this.config.api
@@ -1572,6 +1574,16 @@ ${blue}  ┌──────────────────────�
         await mod.stop?.();
       } catch (e) {
         log.error({ err: e }, `⚠️ Module "${mod.name}" stop failed`);
+      }
+    }
+
+    // Drain autonomous task loops before bridge/DB are torn down so their
+    // in-flight SQLite writes don't race a closed database (AUDIT-C2).
+    if (this.autonomousManager) {
+      try {
+        await this.autonomousManager.stopAllAndWait();
+      } catch (e) {
+        log.error({ err: e }, "⚠️ Autonomous manager stop failed");
       }
     }
 
