@@ -642,6 +642,18 @@ export const AnomalyDetectionConfigSchema = _AnomalyDetectionObject.default(
   _AnomalyDetectionObject.parse({})
 );
 
+const _AutonomousObject = z.object({
+  pause_timeout_hours: z
+    .number()
+    .min(1)
+    .default(24)
+    .describe(
+      "Hours a task may remain paused before the retention job auto-cancels it with reason 'timeout-paused'"
+    ),
+});
+export const AutonomousConfigSchema = _AutonomousObject.default(_AutonomousObject.parse({}));
+export type AutonomousConfig = z.infer<typeof _AutonomousObject>;
+
 export const ConfigSchema = z.object({
   meta: MetaConfigSchema.default(MetaConfigSchema.parse({})),
   agent: AgentConfigSchema,
@@ -650,6 +662,7 @@ export const ConfigSchema = z.object({
   embedding: EmbeddingConfigSchema,
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
+  autonomous: AutonomousConfigSchema,
   deals: DealsConfigSchema,
   webui: WebUIConfigSchema,
   logging: LoggingConfigSchema,
