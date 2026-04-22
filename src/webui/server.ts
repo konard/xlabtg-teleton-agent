@@ -6,7 +6,8 @@ import { bodyLimit } from "hono/body-limit";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 import type { Server as HttpServer } from "node:http";
 import { existsSync, readFileSync } from "node:fs";
-import { join, dirname, resolve, relative } from "node:path";
+import { join, dirname, resolve } from "node:path";
+import { isPathInside } from "./utils/path-safety.js";
 import { fileURLToPath } from "node:url";
 import type { WebUIServerDeps } from "./types.js";
 import type { StateChangeEvent } from "../agent/lifecycle.js";
@@ -445,8 +446,7 @@ export class WebUIServer {
       this.app.get("*", (c) => {
         const filePath = resolve(join(webDist, c.req.path));
         // Prevent path traversal — resolved path must stay inside webDist
-        const rel = relative(webDist, filePath);
-        if (rel.startsWith("..") || resolve(filePath) !== filePath) {
+        if (!isPathInside(filePath, webDist)) {
           return c.html(indexHtml);
         }
 
