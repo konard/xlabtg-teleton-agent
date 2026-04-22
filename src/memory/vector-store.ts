@@ -11,6 +11,8 @@ export interface SemanticMemoryStatus {
   reason?: string;
   vectorCount?: number;
   pendingVectorCount?: number;
+  /** Dimension the Upstash index was provisioned with (reported by /info). */
+  indexDimension?: number;
 }
 
 export type SemanticMemoryMetadata = Record<string, unknown> & {
@@ -139,6 +141,7 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
         mode: "online",
         vectorCount: info.vectorCount,
         pendingVectorCount: info.pendingVectorCount,
+        indexDimension: typeof info.dimension === "number" ? info.dimension : undefined,
       };
     } catch (error) {
       return {
@@ -153,8 +156,9 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
     if (status.mode !== this.lastLoggedMode) {
       this.lastLoggedMode = status.mode;
       if (status.mode === "online") {
+        const dim = status.indexDimension ? `, dimension=${status.indexDimension}` : "";
         log.info(
-          `Semantic Memory: Online (Upstash Vector, namespace=${this.namespace}, vectors=${status.vectorCount ?? 0})`
+          `Semantic Memory: Online (Upstash Vector, namespace=${this.namespace}, vectors=${status.vectorCount ?? 0}${dim})`
         );
       } else if (status.mode === "standby") {
         log.info(

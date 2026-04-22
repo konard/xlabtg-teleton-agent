@@ -76,8 +76,10 @@ export class KnowledgeIndexer {
     let skipped = 0;
     const semantic = emptySemanticStats();
 
+    const indexDimension = await this.resolveIndexDimension();
+
     for (const file of files) {
-      const result = await this.indexFile(file, options?.force);
+      const result = await this.indexFile(file, options?.force, indexDimension);
       addSemanticStats(semantic, result.semantic);
       if (result.indexed) {
         indexed++;
@@ -89,7 +91,11 @@ export class KnowledgeIndexer {
     return { indexed, skipped, semantic };
   }
 
-  async indexFile(absPath: string, force?: boolean): Promise<KnowledgeFileIndexResult> {
+  async indexFile(
+    absPath: string,
+    force?: boolean,
+    indexDimension?: number
+  ): Promise<KnowledgeFileIndexResult> {
     if (!existsSync(absPath) || !absPath.endsWith(".md")) {
       return { indexed: false, semantic: emptySemanticStats() };
     }
@@ -157,15 +163,35 @@ export class KnowledgeIndexer {
       }
     })();
 
+    const resolvedIndexDimension = indexDimension ?? (await this.resolveIndexDimension());
+
     const semantic = await this.syncSemanticVectorStore(
       relPath,
       fileHash,
       existingIds,
       chunks,
-      embeddings
+      embeddings,
+      resolvedIndexDimension
     );
 
     return { indexed: true, semantic };
+  }
+
+  /**
+   * Ask Upstash Vector for the index's configured dimension so we can
+   * short-circuit upserts that would be rejected with a 400 dimension error.
+   * Returns undefined if the store is absent, misconfigured, or unreachable
+   * (the upsert path still catches the real error in that case).
+   */
+  private async resolveIndexDimension(): Promise<number | undefined> {
+    const store = this.semanticVectorStore;
+    if (!store?.isConfigured) return undefined;
+    try {
+      const status = await store.healthCheck();
+      return status.indexDimension;
+    } catch {
+      return undefined;
+    }
   }
 
   private getExistingChunkIds(relPath: string): string[] {
@@ -197,7 +223,8 @@ export class KnowledgeIndexer {
     fileHash: string,
     oldIds: string[],
     chunks: KnowledgeChunk[],
-    embeddings: number[][]
+    embeddings: number[][],
+    indexDimension?: number
   ): Promise<SemanticVectorIndexStats> {
     const stats = emptySemanticStats();
     const store = this.semanticVectorStore;
@@ -235,6 +262,38 @@ export class KnowledgeIndexer {
       return stats;
     }
 
+    // Upstash rejects an upsert when the vector length does not match the
+    // dimension the index was provisioned with. Detect the mismatch here
+    // so the error points at the configuration instead of a cryptic 400
+    // buried inside the SDK.
+    const embeddingDimension = vectors[0]?.vector.length ?? this.embedder.dimensions;
+    if (
+      typeof indexDimension === "number" &&
+      indexDimension > 0 &&
+      embeddingDimension > 0 &&
+      embeddingDimension !== indexDimension
+    ) {
+      stats.failed = 1;
+      stats.skipped += vectors.length;
+      const message =
+        `${relPath}: Embedding dimension ${embeddingDimension} (${this.embedder.id}/${this.embedder.model}) ` +
+        `does not match Upstash Vector index dimension ${indexDimension}. ` +
+        `Reprovision the index with dimension ${embeddingDimension}, or switch the embedding ` +
+        `provider/model so it produces ${indexDimension}-dim vectors.`;
+      stats.errors.push(message);
+      log.warn(
+        {
+          path: relPath,
+          embeddingDimension,
+          indexDimension,
+          provider: this.embedder.id,
+          model: this.embedder.model,
+        },
+        "Semantic memory sync aborted: embedding/index dimension mismatch"
+      );
+      return stats;
+    }
+
     try {
       await store.upsertKnowledge(vectors);
       stats.upserted = vectors.length;
@@ -253,7 +312,11 @@ export class KnowledgeIndexer {
       this.setSemanticMigrationHash(relPath, fileHash);
     } catch (error) {
       stats.failed++;
-      stats.errors.push(`${relPath}: ${getErrorMessage(error)}`);
+      const baseMessage = getErrorMessage(error);
+      const hint = /dimension/i.test(baseMessage)
+        ? ` Embedding provider ${this.embedder.id}/${this.embedder.model} produces ${embeddingDimension}-dim vectors; reprovision the Upstash index with a matching dimension or switch providers.`
+        : "";
+      stats.errors.push(`${relPath}: ${baseMessage}${hint}`);
       log.warn({ err: error, path: relPath }, "Semantic memory sync failed; local fallback ready");
     }
 

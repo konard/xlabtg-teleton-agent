@@ -116,6 +116,51 @@ describe("memory routes", () => {
     expect(json.data.message).toContain("No vectors were uploaded");
   });
 
+  it("explains vector dimension mismatch in the sync-vector response", async () => {
+    const indexAll = vi.fn().mockResolvedValue({
+      indexed: 1,
+      skipped: 0,
+      semantic: {
+        upserted: 0,
+        deleted: 0,
+        skipped: 3,
+        failed: 1,
+        errors: [
+          "MEMORY.md: Embedding dimension 384 (local/Xenova/all-MiniLM-L6-v2) does not match Upstash Vector index dimension 768. Reprovision the index with dimension 384, or switch the embedding provider/model so it produces 768-dim vectors.",
+        ],
+      },
+    });
+    const healthCheck = vi
+      .fn()
+      .mockResolvedValueOnce({ mode: "online", vectorCount: 0, indexDimension: 768 })
+      .mockResolvedValueOnce({ mode: "online", vectorCount: 0, indexDimension: 768 });
+
+    const app = createTestApp({
+      memory: {
+        db: {} as WebUIServerDeps["memory"]["db"],
+        embedder: {} as WebUIServerDeps["memory"]["embedder"],
+        knowledge: { indexAll } as unknown as WebUIServerDeps["memory"]["knowledge"],
+        vectorStore: {
+          isConfigured: true,
+          namespace: "teleton-memory",
+          healthCheck,
+        } as unknown as WebUIServerDeps["memory"]["vectorStore"],
+      },
+    });
+
+    const res = await app.request("/api/memory/sync-vector", { method: "POST" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.synced).toBe(false);
+    expect(json.data.vectorsUpserted).toBe(0);
+    expect(json.data.status.indexDimension).toBe(768);
+    expect(json.data.message).toMatch(/dimension mismatch/i);
+    expect(json.data.vectorErrors[0]).toContain("384");
+    expect(json.data.vectorErrors[0]).toContain("768");
+  });
+
   it("keeps local memory active and skips vector sync when Upstash is not configured", async () => {
     const indexAll = vi.fn();
     const healthCheck = vi.fn().mockResolvedValue({

@@ -168,8 +168,63 @@ describe("Semantic vector memory", () => {
     expect(result.semantic.upserted).toBe(0);
     expect(result.semantic.failed).toBe(1);
     expect(result.semantic.errors.join("\n")).toContain("dimension mismatch");
+    expect(result.semantic.errors.join("\n")).toMatch(/reprovision the Upstash index/i);
 
     rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  it("detects Upstash index dimension mismatch before attempting upsert", async () => {
+    const workspaceDir = mkdtempSync(join(tmpdir(), "teleton-memory-"));
+    const memoryFile = join(workspaceDir, "MEMORY.md");
+    writeFileSync(memoryFile, "# Memory\n\nRemember the 10% rule for conservative risk.");
+
+    // Local all-MiniLM-L6-v2 produces 384-dim vectors; the user's Upstash
+    // index is configured for 768. Repro for issue #246.
+    const embedder = makeEmbedder(new Array(384).fill(0.001));
+    const upsertKnowledge = vi.fn().mockResolvedValue(undefined);
+    const vectorStore = makeSemanticStore({
+      healthCheck: vi.fn().mockResolvedValue({ mode: "online", indexDimension: 768 }),
+      upsertKnowledge,
+    });
+    const indexer = new KnowledgeIndexer(db, workspaceDir, embedder, false, vectorStore);
+
+    const result = await indexer.indexAll();
+
+    expect(result.indexed).toBe(1);
+    expect(result.semantic.upserted).toBe(0);
+    expect(result.semantic.failed).toBe(1);
+    expect(upsertKnowledge).not.toHaveBeenCalled();
+    const message = result.semantic.errors.join("\n");
+    expect(message).toContain("384");
+    expect(message).toContain("768");
+    expect(message).toMatch(/dimension/i);
+
+    rmSync(workspaceDir, { recursive: true, force: true });
+  });
+
+  it("surfaces the Upstash index dimension in the semantic memory status", async () => {
+    const upstashInfoPayload = {
+      vectorCount: 42,
+      pendingVectorCount: 0,
+      indexSize: 0,
+      dimension: 768,
+      similarityFunction: "COSINE" as const,
+      namespaces: {},
+    };
+    const store = new UpstashSemanticVectorStore({
+      url: "https://steady-fox-123.upstash.io",
+      token: "upstash-token-12345",
+    });
+
+    // Swap in a stubbed Upstash index to avoid live HTTP.
+    const fakeIndex = { info: vi.fn().mockResolvedValue(upstashInfoPayload) };
+    (store as unknown as { index: typeof fakeIndex }).index = fakeIndex;
+
+    const status = await store.healthCheck();
+
+    expect(status.mode).toBe("online");
+    expect(status.indexDimension).toBe(768);
+    expect(fakeIndex.info).toHaveBeenCalled();
   });
 
   it("reports semantic vector sync failures when embeddings are disabled", async () => {
