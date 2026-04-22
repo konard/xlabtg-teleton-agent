@@ -10,6 +10,11 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("AutonomousLoop");
 
+// Hard safety cap applied regardless of task constraints.maxIterations.
+// Prevents an unbounded loop when evaluateSuccess never returns true and no
+// other exit condition (rate-limit, escalation, manual stop) is triggered.
+export const MAX_GLOBAL_ITERATIONS = 500;
+
 export interface LoopDependencies {
   /** Call the LLM to plan the next action given the current goal/state */
   planNextAction: (
@@ -234,6 +239,28 @@ export class AutonomousLoop {
           log.info({ taskId: task.id }, "Task is paused, stopping loop");
           return {
             status: "paused",
+            totalSteps: current.currentStep,
+            durationMs: Date.now() - startTime,
+          };
+        }
+
+        if (current.currentStep >= MAX_GLOBAL_ITERATIONS) {
+          const error = "Global max-iteration cap exceeded";
+          log.error(
+            { taskId: task.id, iteration: current.currentStep, cap: MAX_GLOBAL_ITERATIONS },
+            "Hit global max-iteration safety cap — this is not a normal maxIterations stop"
+          );
+          this.store.appendLog({
+            taskId: task.id,
+            step: current.currentStep,
+            eventType: "error",
+            message: error,
+          });
+          this.safeUpdateStatus(task.id, "failed", { error });
+          clearStateOnTerminal();
+          return {
+            status: "failed",
+            error,
             totalSteps: current.currentStep,
             durationMs: Date.now() - startTime,
           };
