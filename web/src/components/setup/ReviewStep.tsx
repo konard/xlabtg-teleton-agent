@@ -123,6 +123,32 @@ export function ReviewStep({ data, onChange }: StepProps) {
           </label>
         </div>
       </div>
+
+      {/* Management API LAN Exposure */}
+      <div className="card">
+        <div className="card-toggle">
+          <div>
+            <strong>Expose Management API on LAN</strong>
+            <div className="helper-text" style={{ marginTop: '2px' }}>
+              Bind to 0.0.0.0 instead of 127.0.0.1
+            </div>
+          </div>
+          <label className="toggle">
+            <input
+              type="checkbox"
+              checked={data.exposeLan}
+              onChange={(e) => onChange({ ...data, exposeLan: e.target.checked })}
+            />
+            <div className="toggle-track" />
+            <div className="toggle-thumb" />
+          </label>
+        </div>
+        {data.exposeLan && (
+          <div className="alert" style={{ marginTop: '8px', background: 'var(--warning-bg, #fff3cd)', color: 'var(--warning-text, #856404)', border: '1px solid var(--warning-border, #ffc107)', borderRadius: '4px', padding: '8px 12px', fontSize: '13px' }}>
+            ⚠️ The Management API will be accessible to all devices on your local network. Only enable this if you need remote access and understand the security implications.
+          </div>
+        )}
+      </div>
     </div>
   );
 }
