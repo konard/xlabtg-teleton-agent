@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { ensureSchema } from "../../memory/schema.js";
 import { getAutonomousTaskStore } from "../../memory/agent/autonomous-tasks.js";
 import { AutonomousTaskManager } from "../manager.js";
-import type { LoopDependencies } from "../loop.js";
+import type { LoopDependencies, ToolExecutionResult } from "../loop.js";
 
 function hangingDeps(): LoopDependencies {
   // Keep the loop "running" so we can observe state transitions without racing
@@ -14,6 +14,36 @@ function hangingDeps(): LoopDependencies {
     evaluateSuccess: vi.fn().mockResolvedValue(false),
     selfReflect: vi.fn().mockResolvedValue({ progressSummary: "", isStuck: false }),
     escalate: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+/**
+ * Deps that let the test control when each in-flight step resolves — needed
+ * to drive the pause-during-in-flight-step race (issue #266).
+ */
+function deferredExecDeps(): {
+  deps: LoopDependencies;
+  releaseExec: (v: ToolExecutionResult) => void;
+  rejectExec: (err: Error) => void;
+} {
+  let release: (v: ToolExecutionResult) => void = () => {};
+  let reject: (err: Error) => void = () => {};
+  const p = new Promise<ToolExecutionResult>((res, rej) => {
+    release = res;
+    reject = rej;
+  });
+  return {
+    deps: {
+      planNextAction: vi
+        .fn()
+        .mockResolvedValue({ toolName: "noop", params: {}, reasoning: "test" }),
+      executeTool: vi.fn().mockImplementation(() => p),
+      evaluateSuccess: vi.fn().mockResolvedValue(false),
+      selfReflect: vi.fn().mockResolvedValue({ progressSummary: "ok", isStuck: false }),
+      escalate: vi.fn().mockResolvedValue(undefined),
+    },
+    releaseExec: (v) => release(v),
+    rejectExec: (err) => reject(err),
   };
 }
 
@@ -93,5 +123,62 @@ describe("AutonomousTaskManager", () => {
     const restored = await manager.restoreInterruptedTasks();
     expect(restored).toBe(1);
     expect(manager.isTaskRunning(wip.id)).toBe(true);
+  });
+
+  // ─── AUDIT-H4: pauseTask() race with in-flight executeTool ────────────────
+
+  it("pauseTask() during in-flight executeTool keeps status 'paused' when the tool resolves late (AUDIT-H4)", async () => {
+    const { deps, releaseExec } = deferredExecDeps();
+    const raceManager = new AutonomousTaskManager(db, deps);
+    const task = await raceManager.startTask({ goal: "Race pause vs exec" });
+
+    // Give the loop time to reach `await executeTool(...)`.
+    await new Promise((r) => setTimeout(r, 20));
+
+    const store = getAutonomousTaskStore(db);
+    expect(store.getTask(task.id)?.status).toBe("running");
+
+    raceManager.pauseTask(task.id);
+
+    // Simulate the in-flight tool finishing *after* pauseTask() wrote 'paused'.
+    releaseExec({ success: true, data: "late", durationMs: 1 });
+
+    // Give the loop's finally/post-await code a chance to run.
+    await new Promise((r) => setTimeout(r, 30));
+
+    expect(store.getTask(task.id)?.status).toBe("paused");
+    expect(raceManager.isTaskRunning(task.id)).toBe(false);
+  });
+
+  it("pauseTask() during in-flight executeTool keeps status 'paused' when the tool rejects late (AUDIT-H4)", async () => {
+    const { deps, rejectExec } = deferredExecDeps();
+    const raceManager = new AutonomousTaskManager(db, deps);
+    const task = await raceManager.startTask({ goal: "Race pause vs exec-err" });
+
+    await new Promise((r) => setTimeout(r, 20));
+    raceManager.pauseTask(task.id);
+
+    rejectExec(new Error("late tool failure"));
+    await new Promise((r) => setTimeout(r, 30));
+
+    const store = getAutonomousTaskStore(db);
+    const after = store.getTask(task.id);
+    expect(after?.status).toBe("paused");
+    expect(after?.error).toBeUndefined();
+  });
+
+  it("stopTask() during in-flight step preserves 'cancelled' even when tool resolves late (AUDIT-H4)", async () => {
+    const { deps, releaseExec } = deferredExecDeps();
+    const raceManager = new AutonomousTaskManager(db, deps);
+    const task = await raceManager.startTask({ goal: "Race stop vs exec" });
+
+    await new Promise((r) => setTimeout(r, 20));
+    raceManager.stopTask(task.id);
+
+    releaseExec({ success: true, durationMs: 1 });
+    await new Promise((r) => setTimeout(r, 30));
+
+    const store = getAutonomousTaskStore(db);
+    expect(store.getTask(task.id)?.status).toBe("cancelled");
   });
 });
