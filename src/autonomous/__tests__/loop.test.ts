@@ -97,7 +97,7 @@ describe("AutonomousLoop", () => {
   it("pauses and escalates when policy requires escalation", async () => {
     const deps = makeDeps({
       planNextAction: vi.fn().mockResolvedValue({
-        toolName: "wallet:send",
+        toolName: "ton_send",
         params: { amount: 0.6 },
         tonAmount: 0.6, // above confirmation threshold (0.5 TON) but below perTask budget (1 TON)
       }),
