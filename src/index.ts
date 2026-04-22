@@ -574,7 +574,21 @@ ${blue}  ┌──────────────────────�
     if (this.memory.embedder.warmup) {
       await this.memory.embedder.warmup();
     }
-    await this.memory.vectorStore.logStatus();
+    const vectorStatus = await this.memory.vectorStore.logStatus();
+    if (
+      vectorStatus.mode === "online" &&
+      typeof vectorStatus.indexDimension === "number" &&
+      vectorStatus.indexDimension > 0 &&
+      this.memory.embedder.dimensions > 0 &&
+      vectorStatus.indexDimension !== this.memory.embedder.dimensions
+    ) {
+      log.warn(
+        `Semantic Memory: embedding dimension ${this.memory.embedder.dimensions} ` +
+          `(${this.memory.embedder.id}/${this.memory.embedder.model}) does not match ` +
+          `Upstash Vector index dimension ${vectorStatus.indexDimension}. Upstash will reject ` +
+          `vector upserts. Reprovision the index or switch the embedding provider to align dimensions.`
+      );
+    }
 
     // Index knowledge base (MEMORY.md, memory/*.md)
     // Force re-index if embedding dimensions changed (model switch)

@@ -52,6 +52,9 @@ function vectorSyncMessage(params: {
     if (indexed === 0 && skipped === 0) {
       return "No memory files were found to upload to Upstash Vector.";
     }
+    if (semantic.errors.some((err) => /dimension/i.test(err))) {
+      return `No vectors were uploaded to Upstash Vector because of an embedding dimension mismatch. Align the embedding provider with the Upstash index dimension.${firstError}`;
+    }
     return `No vectors were uploaded to Upstash Vector. Check that memory files contain content and embeddings are enabled.${firstError}`;
   }
   if (semantic.failed > 0) {

@@ -354,6 +354,7 @@ export interface SemanticMemoryStatusInfo {
   reason?: string;
   vectorCount?: number;
   pendingVectorCount?: number;
+  indexDimension?: number;
 }
 
 export interface MemoryVectorSyncResult {

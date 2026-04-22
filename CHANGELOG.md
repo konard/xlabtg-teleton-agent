@@ -11,6 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prediction engine**: Behavior event tracking, Markov-style next-action predictions, topic-to-tool suggestions, WebUI prediction APIs, and dashboard suggestions with feedback.
 - **`web_download_binary` tool**: Download public HTTP(S) binary files into workspace `downloads/` with MIME validation, a 10 MB size cap, redirect support, and optional request headers for authorized URLs.
 
+### Fixed
+- **Vector memory sync**: Detect Upstash Vector index/embedding dimension mismatches before upsert, surface the configured index dimension in semantic memory status and sync responses, and log an actionable warning at startup (closes xlabtg/teleton-agent#246).
+
 ## [0.8.1] - 2026-03-05
 
 ### Added
