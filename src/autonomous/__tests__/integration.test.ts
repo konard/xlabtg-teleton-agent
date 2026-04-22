@@ -11,6 +11,9 @@ import { buildDefaultLoopDeps } from "../manager.js";
 import type { AgentRuntime } from "../../agent/runtime.js";
 import type { TelegramBridge } from "../../telegram/bridge.js";
 import type { Config } from "../../config/schema.js";
+import { notificationBus, getNotificationService } from "../../services/notifications.js";
+import { AutonomousLoop } from "../loop.js";
+import { DEFAULT_POLICY_CONFIG } from "../policy-engine.js";
 
 /**
  * Issue #224 regression tests: the autonomous loop could not see available
@@ -255,5 +258,173 @@ describe("buildIntegratedLoopDeps admin check", () => {
         process.env.ANTHROPIC_API_KEY = apiKeyEnv;
       }
     }
+  });
+});
+
+/**
+ * AUDIT-H2 regression tests (issue #262): the autonomous loop used to log
+ * escalations only. Now they must reach the user — Telegram admins via the
+ * bridge, and the WebUI via the notificationBus.
+ */
+describe("buildIntegratedLoopDeps escalation notify", () => {
+  let db: InstanceType<typeof Database>;
+
+  beforeEach(() => {
+    db = new Database(":memory:");
+    db.pragma("foreign_keys = ON");
+    ensureSchema(db);
+  });
+
+  afterEach(() => {
+    db.close();
+    notificationBus.removeAllListeners("escalation");
+    notificationBus.removeAllListeners("update");
+  });
+
+  function mockBridge(sendMessage = vi.fn().mockResolvedValue({ id: 1 })): TelegramBridge {
+    return { sendMessage } as unknown as TelegramBridge;
+  }
+
+  it("notify() sends a Telegram message to every configured admin via bridge", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ id: 1 });
+    const bridge = mockBridge(sendMessage);
+
+    const deps = buildIntegratedLoopDeps({
+      agent: stubAgent(stubConfig([111, 222])),
+      toolRegistry: null,
+      bridge,
+      db,
+    });
+
+    // `escalate` is the loop-facing wrapper; it calls the integration's
+    // notify() internally. Invoking it proves the full path works.
+    await deps.escalate(stubTask(), "Policy violation: TON spend exceeds budget");
+
+    expect(sendMessage).toHaveBeenCalledTimes(2);
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ chatId: "111" }));
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ chatId: "222" }));
+    const firstCall = sendMessage.mock.calls[0][0] as { text: string };
+    expect(firstCall.text).toMatch(/Policy violation/);
+  });
+
+  it("notify() skips Telegram delivery when no admin_ids are configured", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ id: 1 });
+    const bridge = mockBridge(sendMessage);
+
+    const deps = buildIntegratedLoopDeps({
+      agent: stubAgent(stubConfig([])),
+      toolRegistry: null,
+      bridge,
+      db,
+    });
+
+    await deps.escalate(stubTask(), "reason");
+    expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("notify() emits an 'escalation' event on the notificationBus for WebUI", async () => {
+    const bridge = mockBridge();
+    const deps = buildIntegratedLoopDeps({
+      agent: stubAgent(stubConfig([1])),
+      toolRegistry: null,
+      bridge,
+      db,
+    });
+
+    const received: Array<{ taskId: string; message: string }> = [];
+    notificationBus.on("escalation", (payload: { taskId: string; message: string }) => {
+      received.push(payload);
+    });
+
+    await deps.escalate(stubTask({ id: "task-abc" }), "need approval");
+
+    expect(received).toHaveLength(1);
+    expect(received[0].taskId).toBe("task-abc");
+    expect(received[0].message).toMatch(/need approval/);
+  });
+
+  it("notify() records an in-app notification so the WebUI badge updates", async () => {
+    const bridge = mockBridge();
+    const deps = buildIntegratedLoopDeps({
+      agent: stubAgent(stubConfig([1])),
+      toolRegistry: null,
+      bridge,
+      db,
+    });
+
+    const before = getNotificationService(db).unreadCount();
+    await deps.escalate(stubTask(), "please confirm");
+    const after = getNotificationService(db).unreadCount();
+
+    expect(after).toBe(before + 1);
+    const latest = getNotificationService(db).list(true)[0];
+    expect(latest.type).toBe("warning");
+    expect(latest.message).toMatch(/please confirm/);
+  });
+
+  it("notify() still logs and emits a bus event when bridge.sendMessage throws", async () => {
+    const sendMessage = vi.fn().mockRejectedValue(new Error("bridge offline"));
+    const bridge = mockBridge(sendMessage);
+    const deps = buildIntegratedLoopDeps({
+      agent: stubAgent(stubConfig([42])),
+      toolRegistry: null,
+      bridge,
+      db,
+    });
+
+    const busEvents: unknown[] = [];
+    notificationBus.on("escalation", (e) => busEvents.push(e));
+
+    // Must resolve (not reject) even though the Telegram delivery failed —
+    // escalation must be tolerant of any single channel outage.
+    await expect(deps.escalate(stubTask(), "still escalate")).resolves.toBeUndefined();
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(busEvents).toHaveLength(1);
+  });
+
+  it("policy-triggered escalation reaches bridge.sendMessage end-to-end", async () => {
+    const sendMessage = vi.fn().mockResolvedValue({ id: 1 });
+    const bridge = mockBridge(sendMessage);
+
+    // Wire the real loop through buildIntegratedLoopDeps — no overrides of
+    // planNextAction/selfReflect here would bypass the integration's
+    // notify() wiring, so we stub them by wrapping the integrated deps.
+    const integratedDeps = buildIntegratedLoopDeps({
+      agent: stubAgent(stubConfig([777])),
+      toolRegistry: null,
+      bridge,
+      db,
+    });
+
+    const loopDeps = {
+      ...integratedDeps,
+      // Plan a wallet-send that will trip the policy confirmation threshold
+      // (>= 0.5 TON triggers requiresEscalation with DEFAULT_POLICY_CONFIG).
+      planNextAction: vi.fn().mockResolvedValue({
+        toolName: "ton_send",
+        params: { amount: 0.6 },
+        tonAmount: 0.6,
+      }),
+      evaluateSuccess: vi.fn().mockResolvedValue(false),
+      selfReflect: vi.fn().mockResolvedValue({
+        progressSummary: "n/a",
+        isStuck: false,
+      }),
+    };
+
+    const store = getAutonomousTaskStore(db);
+    const task = store.createTask({
+      goal: "Send TON to recipient",
+      constraints: { maxIterations: 3 },
+    });
+
+    const loop = new AutonomousLoop(store, loopDeps, DEFAULT_POLICY_CONFIG);
+    const result = await loop.run(task);
+
+    expect(result.status).toBe("paused");
+    // The integration's notify() must have delivered to the admin via the
+    // mock bridge — this is what guarantees the human is actually paged.
+    expect(sendMessage).toHaveBeenCalledTimes(1);
+    expect(sendMessage).toHaveBeenCalledWith(expect.objectContaining({ chatId: "777" }));
   });
 });
