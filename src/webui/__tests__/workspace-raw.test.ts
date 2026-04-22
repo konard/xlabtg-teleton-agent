@@ -147,9 +147,12 @@ describe("GET /workspace/raw", () => {
     expect(data.error).toContain("path");
   });
 
-  it("returns 403 on path traversal attempt", async () => {
+  it("returns 403 on path traversal attempt with generic message", async () => {
     vi.mocked(validateReadPath).mockImplementation(() => {
-      throw new WorkspaceSecurityError("Path traversal detected", "../../etc/passwd");
+      throw new WorkspaceSecurityError(
+        "Access denied: Path '/home/user/../../etc/passwd' is outside the workspace.",
+        "../../etc/passwd"
+      );
     });
 
     const res = await app.request("/workspace/raw?path=../../etc/passwd");
@@ -157,7 +160,11 @@ describe("GET /workspace/raw", () => {
     expect(res.status).toBe(403);
     const data = await res.json();
     expect(data.success).toBe(false);
-    expect(data.error).toContain("Path traversal");
+    expect(data.error).toBe("Workspace path is not allowed");
+    // Must not leak absolute paths
+    expect(data.error).not.toMatch(/\/home\//);
+    expect(data.error).not.toMatch(/\/tmp\//);
+    expect(data.error).not.toMatch(/C:\\/);
   });
 
   it("returns 413 when file exceeds 5MB limit", async () => {
