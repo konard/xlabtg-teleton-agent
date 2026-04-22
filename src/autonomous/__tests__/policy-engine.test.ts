@@ -218,4 +218,31 @@ describe("PolicyEngine", () => {
     const result = strictEngine.checkAction(task, { toolName: "web_fetch" });
     expect(result.violations.some((v) => v.type === "rate_limit")).toBe(true);
   });
+
+  // ─── AUDIT-M2: Unbounded timestamp arrays ─────────────────────────────────
+
+  it("toolCallTimestamps stays bounded after many recordToolCall calls without checkAction", () => {
+    // The cap should be at most toolCallsPerHour (100 by default) since calls
+    // older than 1 hour are irrelevant and fresh calls within the window cannot
+    // exceed the rate-limit cap before being pruned.
+    const cap = DEFAULT_POLICY_CONFIG.rateLimit.toolCallsPerHour;
+
+    for (let i = 0; i < 10_000; i++) {
+      engine.recordToolCall();
+    }
+
+    const state = engine.serialize();
+    expect(state.toolCallTimestamps.length).toBeLessThanOrEqual(cap);
+  });
+
+  it("apiCallTimestamps stays bounded after many recordApiCall calls without checkAction", () => {
+    const cap = DEFAULT_POLICY_CONFIG.rateLimit.apiCallsPerMinute;
+
+    for (let i = 0; i < 10_000; i++) {
+      engine.recordApiCall();
+    }
+
+    const state = engine.serialize();
+    expect(state.apiCallTimestamps.length).toBeLessThanOrEqual(cap);
+  });
 });
