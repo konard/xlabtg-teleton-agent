@@ -401,7 +401,7 @@ describe("buildIntegratedLoopDeps escalation notify", () => {
       // Plan a wallet-send that will trip the policy confirmation threshold
       // (>= 0.5 TON triggers requiresEscalation with DEFAULT_POLICY_CONFIG).
       planNextAction: vi.fn().mockResolvedValue({
-        toolName: "wallet:send",
+        toolName: "ton_send",
         params: { amount: 0.6 },
         tonAmount: 0.6,
       }),

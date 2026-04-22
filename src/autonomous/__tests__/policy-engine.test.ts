@@ -98,9 +98,30 @@ describe("PolicyEngine", () => {
 
   it("requires escalation for globally restricted tools", () => {
     const task = makeTask();
-    const result = engine.checkAction(task, { toolName: "wallet:send" });
+    const result = engine.checkAction(task, { toolName: "ton_send" });
 
     expect(result.requiresEscalation).toBe(true);
+  });
+
+  it("requires escalation for every real TON wallet tool in the default config", () => {
+    const task = makeTask();
+
+    for (const toolName of ["ton_send", "jetton_send", "exec", "exec_run"]) {
+      const result = engine.checkAction(task, { toolName });
+      expect(result.requiresEscalation, `expected ${toolName} to escalate`).toBe(true);
+    }
+  });
+
+  it("uses real tool names in DEFAULT_POLICY_CONFIG.restrictedTools (no placeholder names)", () => {
+    // Regression test for AUDIT-C1: placeholder names like "wallet:send"
+    // would silently bypass the escalation gate because no registered tool
+    // uses those names.
+    expect(DEFAULT_POLICY_CONFIG.restrictedTools).toEqual(
+      expect.arrayContaining(["ton_send", "jetton_send"])
+    );
+    expect(DEFAULT_POLICY_CONFIG.restrictedTools).not.toContain("wallet:send");
+    expect(DEFAULT_POLICY_CONFIG.restrictedTools).not.toContain("contract:deploy");
+    expect(DEFAULT_POLICY_CONFIG.restrictedTools).not.toContain("system:exec");
   });
 
   it("requires escalation for task-level restricted tools", () => {
@@ -118,14 +139,14 @@ describe("PolicyEngine", () => {
     const task = makeTask({
       constraints: { budgetTON: 0.5 },
     });
-    const result = engine.checkAction(task, { toolName: "wallet:send", tonAmount: 1.0 });
+    const result = engine.checkAction(task, { toolName: "ton_send", tonAmount: 1.0 });
 
     expect(result.violations.some((v) => v.type === "budget_exceeded")).toBe(true);
   });
 
   it("requires escalation for TON above confirmation threshold", () => {
     const task = makeTask();
-    const result = engine.checkAction(task, { toolName: "wallet:send", tonAmount: 0.6 });
+    const result = engine.checkAction(task, { toolName: "ton_send", tonAmount: 0.6 });
 
     expect(result.requiresEscalation).toBe(true);
   });

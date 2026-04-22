@@ -31,7 +31,7 @@ export const DEFAULT_POLICY_CONFIG: PolicyConfig = {
     daily: 5,
     requireConfirmationAbove: 0.5,
   },
-  restrictedTools: ["wallet:send", "contract:deploy", "system:exec"],
+  restrictedTools: ["ton_send", "jetton_send", "exec", "exec_run"],
   requireHumanApproval: "above-threshold",
   uncertainty: {
     threshold: 0.7,

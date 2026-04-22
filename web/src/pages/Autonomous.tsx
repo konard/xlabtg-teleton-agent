@@ -440,7 +440,7 @@ function CreateTaskForm({ onCreated, onCancel }: { onCreated: () => void; onCanc
           <textarea
             value={form.restrictedTools}
             onChange={(e) => update("restrictedTools", e.target.value)}
-            placeholder={"wallet:send\ncontract:deploy"}
+            placeholder={"ton_send\njetton_send"}
             rows={2}
             style={{ width: "100%", resize: "vertical" }}
           />

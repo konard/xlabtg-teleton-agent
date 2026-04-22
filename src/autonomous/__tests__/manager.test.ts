@@ -94,4 +94,99 @@ describe("AutonomousTaskManager", () => {
     expect(restored).toBe(1);
     expect(manager.isTaskRunning(wip.id)).toBe(true);
   });
+
+  describe("stopAllAndWait() — AUDIT-C2 shutdown leak", () => {
+    /**
+     * Build deps whose `planNextAction` blocks on a caller-controlled promise.
+     * Lets tests hold the loop in a predictable "running, waiting on the
+     * planner" state and then release the in-flight step after stop() — the
+     * exact shape of the shutdown race described in AUDIT-C2.
+     */
+    function gatedDeps(gate: Promise<unknown>): LoopDependencies {
+      return {
+        planNextAction: vi.fn().mockImplementation(async () => {
+          await gate;
+          return { toolName: "noop", params: {}, reasoning: "drain", confidence: 1 };
+        }),
+        executeTool: vi.fn().mockResolvedValue({ success: true, durationMs: 1 }),
+        evaluateSuccess: vi.fn().mockResolvedValue(false),
+        selfReflect: vi.fn().mockResolvedValue({ progressSummary: "", isStuck: false }),
+        escalate: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    it("waits for in-flight loop promises to settle before resolving", async () => {
+      let release: ((v: unknown) => void) | undefined;
+      const gate = new Promise((r) => {
+        release = r;
+      });
+      const localManager = new AutonomousTaskManager(db, gatedDeps(gate));
+
+      const task1 = await localManager.startTask({ goal: "Task 1" });
+      const task2 = await localManager.startTask({ goal: "Task 2" });
+      await new Promise((r) => setTimeout(r, 20));
+
+      expect(localManager.isTaskRunning(task1.id)).toBe(true);
+      expect(localManager.isTaskRunning(task2.id)).toBe(true);
+
+      // Start shutdown, then release the in-flight planner so the loop
+      // wakes up, sees the abort signal, and its `.finally()` runs.
+      const stopPromise = localManager.stopAllAndWait();
+      release?.(undefined);
+      await stopPromise;
+
+      expect(localManager.isTaskRunning(task1.id)).toBe(false);
+      expect(localManager.isTaskRunning(task2.id)).toBe(false);
+      expect(localManager.getRunningTaskIds()).toHaveLength(0);
+    });
+
+    it("no SQLite writes happen after stopAllAndWait() resolves — safe to close the DB", async () => {
+      const localDb = new Database(":memory:");
+      localDb.pragma("foreign_keys = ON");
+      ensureSchema(localDb);
+
+      let release: ((v: unknown) => void) | undefined;
+      const gate = new Promise((r) => {
+        release = r;
+      });
+      const localManager = new AutonomousTaskManager(localDb, gatedDeps(gate));
+
+      await localManager.startTask({ goal: "Shutdown-race test" });
+      await new Promise((r) => setTimeout(r, 20));
+
+      const stopPromise = localManager.stopAllAndWait();
+      // Release the in-flight planner *after* stop() — the loop must not
+      // continue writing to the DB once abort has been observed.
+      release?.(undefined);
+      await stopPromise;
+
+      // Closing the DB must not throw; no async loop iteration should be
+      // trying to write after stopAllAndWait() resolved.
+      expect(() => localDb.close()).not.toThrow();
+    });
+
+    it("restart scenario: after stopAllAndWait() the old loop is gone", async () => {
+      let release1: ((v: unknown) => void) | undefined;
+      const gate1 = new Promise((r) => {
+        release1 = r;
+      });
+      const localManager = new AutonomousTaskManager(db, gatedDeps(gate1));
+
+      const first = await localManager.startTask({ goal: "Old cycle" });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(localManager.isTaskRunning(first.id)).toBe(true);
+
+      const stopPromise = localManager.stopAllAndWait();
+      release1?.(undefined);
+      await stopPromise;
+
+      // Old loop is fully drained — running map is empty.
+      expect(localManager.getRunningTaskIds()).toHaveLength(0);
+      expect(localManager.isTaskRunning(first.id)).toBe(false);
+    });
+
+    it("is a no-op when no loops are running", async () => {
+      await expect(manager.stopAllAndWait()).resolves.toBeUndefined();
+    });
+  });
 });
