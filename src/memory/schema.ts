@@ -507,6 +507,16 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_exec_logs_task ON execution_logs(task_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_exec_logs_type ON execution_logs(event_type);
 
+    -- Policy engine runtime state, keyed by task. Persists rate-limit
+    -- timestamps, loop-detection recent actions, and uncertainty counter so
+    -- that pause/resume cannot bypass policy windows (issue #256).
+    CREATE TABLE IF NOT EXISTS policy_state (
+      task_id TEXT PRIMARY KEY,
+      state TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+    );
+
     -- =====================================================
     -- JOURNAL (Trading & Business Operations)
     -- =====================================================
@@ -563,7 +573,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.22.0";
+export const CURRENT_SCHEMA_VERSION = "1.23.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1140,6 +1150,24 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.22.0 complete: memory prioritization tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.22.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.23.0")) {
+    log.info("Running migration 1.23.0: Add policy_state table for policy engine persistence");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS policy_state (
+          task_id TEXT PRIMARY KEY,
+          state TEXT NOT NULL DEFAULT '{}',
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+        );
+      `);
+      log.info("Migration 1.23.0 complete: policy_state table created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.23.0 failed");
       throw error;
     }
   }

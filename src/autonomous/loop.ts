@@ -5,7 +5,7 @@ import type {
 } from "../memory/agent/autonomous-tasks.js";
 import type { AutonomousTaskStore } from "../memory/agent/autonomous-tasks.js";
 import { PolicyEngine, DEFAULT_POLICY_CONFIG } from "./policy-engine.js";
-import type { PolicyConfig } from "./policy-engine.js";
+import type { PolicyConfig, PolicyEngineState } from "./policy-engine.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("AutonomousLoop");
@@ -96,7 +96,6 @@ const EXTERNAL_TERMINAL_STATUSES = new Set<AutonomousTaskStatus>([
 export class AutonomousLoop {
   private policyEngine: PolicyEngine;
   private abortController: AbortController;
-  private recentActions: string[] = [];
 
   constructor(
     private store: AutonomousTaskStore,
@@ -105,6 +104,14 @@ export class AutonomousLoop {
   ) {
     this.policyEngine = new PolicyEngine(policyConfig ?? DEFAULT_POLICY_CONFIG);
     this.abortController = new AbortController();
+  }
+
+  /**
+   * Exposed for tests only — lets assertions observe the engine whose state
+   * survives pause/resume (see issue #256).
+   */
+  getPolicyEngine(): PolicyEngine {
+    return this.policyEngine;
   }
 
   /** Request graceful stop of the loop */
@@ -161,6 +168,21 @@ export class AutonomousLoop {
       };
     }
 
+    // Hydrate PolicyEngine from persisted state (if any) before we start
+    // recording — resume must not reset rate-limit / loop-detection windows
+    // (issue #256). Wire up write-through persistence afterwards so every
+    // mutation is flushed to disk.
+    const persistedState = this.store.getPolicyState(task.id) as
+      | Partial<PolicyEngineState>
+      | undefined;
+    if (persistedState) {
+      this.policyEngine.hydrate(persistedState);
+      log.debug({ taskId: task.id }, "Hydrated PolicyEngine from persisted state");
+    }
+    this.policyEngine.setOnStateChange((state) => {
+      this.store.savePolicyState(task.id, state);
+    });
+
     // Mark task as running. We intentionally bypass safeUpdateStatus here:
     // resumeTask() calls run() with the task still in 'paused', and the loop
     // must be allowed to flip it back to 'running'. Once it's 'running' the
@@ -185,11 +207,22 @@ export class AutonomousLoop {
 
     const history: unknown[] = [];
 
+    const clearStateOnTerminal = (): void => {
+      // Completed / failed / cancelled tasks won't resume, so drop their
+      // policy snapshot. Paused tasks keep theirs for the next resume() —
+      // if the caller raced us and flipped the DB to 'paused' first, don't
+      // wipe the snapshot they're planning to reuse (issue #256).
+      const now = this.store.getTask(task.id);
+      if (now?.status === "paused") return;
+      this.store.clearPolicyState(task.id);
+    };
+
     try {
       while (!this.abortController.signal.aborted) {
         current = this.store.getTask(task.id) ?? current;
 
         if (current.status === "cancelled") {
+          clearStateOnTerminal();
           return {
             status: "cancelled",
             totalSteps: current.currentStep,
@@ -224,6 +257,7 @@ export class AutonomousLoop {
             message: `Planning failed: ${error}`,
           });
           this.safeUpdateStatus(task.id, "failed", { error });
+          clearStateOnTerminal();
           return {
             status: "failed",
             error,
@@ -244,7 +278,7 @@ export class AutonomousLoop {
         const policyCheck = this.policyEngine.satisfiesPolicies(current, {
           toolName: action.toolName,
           tonAmount: action.tonAmount,
-          recentActions: this.recentActions,
+          recentActions: [...this.policyEngine.getRecentActions()],
         });
 
         if (!policyCheck.allowed) {
@@ -257,6 +291,7 @@ export class AutonomousLoop {
             message: `Policy violation: ${reasons}`,
           });
           this.safeUpdateStatus(task.id, "failed", { error: `Policy violation: ${reasons}` });
+          clearStateOnTerminal();
           return {
             status: "failed",
             error: reasons,
@@ -317,8 +352,7 @@ export class AutonomousLoop {
         });
 
         history.push({ action, result });
-        this.recentActions.push(action.toolName);
-        if (this.recentActions.length > 20) this.recentActions.shift();
+        this.policyEngine.recordAction(action.toolName);
 
         // 4. Self-reflection
         log.debug({ taskId: task.id }, "Self-reflecting on progress");
@@ -410,6 +444,7 @@ export class AutonomousLoop {
           this.safeUpdateStatus(task.id, "completed", {
             result: JSON.stringify(result.data ?? "completed"),
           });
+          clearStateOnTerminal();
           return {
             status: "completed",
             output: result.data,
@@ -419,10 +454,18 @@ export class AutonomousLoop {
         }
       }
 
-      // Aborted via stop() (while-loop header check)
+      // Aborted via stop() (while-loop header check). If the caller already
+      // transitioned the task (pauseTask → "paused" or stopTask → "cancelled"),
+      // safeUpdateStatus preserves that. Paused tasks MUST keep their policy
+      // snapshot so the next resume doesn't reset the rate-limit window
+      // (issue #256); cancelled tasks drop it.
       this.safeUpdateStatus(task.id, "cancelled");
+      current = this.store.getTask(task.id) ?? current;
+      if (current.status === "cancelled") {
+        clearStateOnTerminal();
+      }
       return {
-        status: "cancelled",
+        status: current.status === "paused" ? "paused" : "cancelled",
         totalSteps: current.currentStep,
         durationMs: Date.now() - startTime,
       };
@@ -433,6 +476,12 @@ export class AutonomousLoop {
         // status. Don't clobber it.
         const final = this.store.getTask(task.id);
         const status = (final?.status ?? "cancelled") as LoopResult["status"];
+        // Drop the policy snapshot for terminal non-paused statuses so it
+        // doesn't leak into unrelated future tasks. Paused tasks MUST keep
+        // theirs so resume() can rehydrate rate-limit windows (issue #256).
+        if (status === "cancelled" || status === "completed" || status === "failed") {
+          clearStateOnTerminal();
+        }
         return {
           status:
             status === "paused" ||
@@ -448,12 +497,17 @@ export class AutonomousLoop {
       const error = err instanceof Error ? err.message : String(err);
       log.error({ taskId: task.id, err }, "Autonomous loop crashed");
       this.safeUpdateStatus(task.id, "failed", { error });
+      clearStateOnTerminal();
       return {
         status: "failed",
         error,
         totalSteps: current.currentStep,
         durationMs: Date.now() - startTime,
       };
+    } finally {
+      // Disconnect write-through persistence so a leftover loop object
+      // can't scribble into another loop's state window.
+      this.policyEngine.setOnStateChange(undefined);
     }
   }
 }
