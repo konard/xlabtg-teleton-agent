@@ -27,9 +27,9 @@ export interface PolicyConfig {
 
 export const DEFAULT_POLICY_CONFIG: PolicyConfig = {
   tonSpending: {
-    perTask: 1,
-    daily: 5,
-    requireConfirmationAbove: 0.5,
+    perTask: 0.1,
+    daily: 0.5,
+    requireConfirmationAbove: 0.05,
   },
   restrictedTools: ["ton_send", "jetton_send", "exec", "exec_run"],
   requireHumanApproval: "above-threshold",
@@ -232,12 +232,20 @@ export class PolicyEngine {
   }
 
   recordToolCall(): void {
-    this.toolCallTimestamps.push(Date.now());
+    const now = Date.now();
+    this.toolCallTimestamps.push(now);
+    this.toolCallTimestamps = this.toolCallTimestamps
+      .filter((t) => now - t < 3600000)
+      .slice(-this.config.rateLimit.toolCallsPerHour);
     this.notifyChange();
   }
 
   recordApiCall(): void {
-    this.apiCallTimestamps.push(Date.now());
+    const now = Date.now();
+    this.apiCallTimestamps.push(now);
+    this.apiCallTimestamps = this.apiCallTimestamps
+      .filter((t) => now - t < 60000)
+      .slice(-this.config.rateLimit.apiCallsPerMinute);
     this.notifyChange();
   }
 
