@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Upstash Vector setup guide** (`docs/upstash-vector-setup.md`): Step-by-step walk-through for provisioning the Upstash index with the dimension the embedding provider produces, connecting Teleton through the WebUI / `config.yaml` / environment variables, verifying the health-check log, and recovering from a dimension mismatch. Referenced from the README, `GETTING_STARTED.md`, `docs/configuration.md`, and `docs/semantic-memory.md` (closes xlabtg/teleton-agent#248).
 
 ### Fixed
+- **Autonomous task escalations reach the user** (AUDIT-H2): `notify()` in `src/autonomous/integration.ts` now pushes a Telegram DM to every admin via `deps.bridge.sendMessage`, records an in-app warning in the `notifications` table, and emits `escalation` / `update` events on `notificationBus` for real-time WebUI badges. Delivery failures are caught per channel so `log.warn` remains the last-resort fallback (closes xlabtg/teleton-agent#262).
 - **Vector memory sync**: Detect Upstash Vector index/embedding dimension mismatches before upsert, surface the configured index dimension in semantic memory status and sync responses, and log an actionable warning at startup (closes xlabtg/teleton-agent#246).
 
 ## [0.8.1] - 2026-03-05
