@@ -325,4 +325,136 @@ describe("AutonomousTaskManager", () => {
       await expect(manager.stopAllAndWait()).resolves.toBeUndefined();
     });
   });
+
+  // ─── AUDIT-L4: maxParallelTasks overflow queues instead of throwing ──────────
+
+  describe("FIFO queue when maxParallelTasks is reached (AUDIT-L4)", () => {
+    /**
+     * Deps whose loops resolve immediately — useful for draining the queue
+     * end-to-end without keeping tasks stuck.
+     */
+    function instantDeps(): LoopDependencies {
+      return {
+        planNextAction: vi
+          .fn()
+          .mockResolvedValue({ toolName: "noop", params: {}, reasoning: "ok" }),
+        executeTool: vi.fn().mockResolvedValue({ success: true, durationMs: 1 }),
+        evaluateSuccess: vi.fn().mockResolvedValue(true),
+        selfReflect: vi
+          .fn()
+          .mockResolvedValue({ progressSummary: "done", isStuck: false, goalAchieved: true }),
+        escalate: vi.fn().mockResolvedValue(undefined),
+      };
+    }
+
+    it("11th task gets status 'queued' instead of throwing", async () => {
+      const queuedManager = new AutonomousTaskManager(db, hangingDeps(), { maxParallelTasks: 10 });
+      for (let i = 0; i < 10; i++) {
+        await queuedManager.startTask({ goal: `Task ${i}` });
+      }
+      // Should not throw
+      const overflow = await queuedManager.startTask({ goal: "Overflow task" });
+      expect(overflow.status).toBe("queued");
+      queuedManager.stopAll();
+    });
+
+    it("running loops never exceed maxParallelTasks", async () => {
+      const MAX = 3;
+      const queuedManager = new AutonomousTaskManager(db, hangingDeps(), {
+        maxParallelTasks: MAX,
+      });
+
+      for (let i = 0; i < 8; i++) {
+        await queuedManager.startTask({ goal: `Task ${i}` });
+        expect(queuedManager.getRunningTaskIds().length).toBeLessThanOrEqual(MAX);
+      }
+      expect(queuedManager.getRunningTaskIds()).toHaveLength(MAX);
+      queuedManager.stopAll();
+    });
+
+    it("all 15 tasks eventually complete when loops finish quickly", async () => {
+      const localDb = new Database(":memory:");
+      localDb.pragma("foreign_keys = ON");
+      ensureSchema(localDb);
+      const store = getAutonomousTaskStore(localDb);
+
+      const MAX = 3;
+      const TOTAL = 15;
+      const completedManager = new AutonomousTaskManager(localDb, instantDeps(), {
+        maxParallelTasks: MAX,
+      });
+
+      const ids: string[] = [];
+      for (let i = 0; i < TOTAL; i++) {
+        const task = await completedManager.startTask({ goal: `Task ${i}` });
+        ids.push(task.id);
+      }
+
+      // Wait long enough for all loops to drain (each instant loop takes a
+      // couple of microtask ticks; 500 ms is generous).
+      await new Promise((r) => setTimeout(r, 500));
+
+      const allDone = ids.every((id) => {
+        const t = store.getTask(id);
+        return t?.status === "completed" || t?.status === "failed";
+      });
+      expect(allDone).toBe(true);
+      localDb.close();
+    }, 10_000);
+
+    it("stopTask() removes a queued task from the in-memory queue and cancels it", async () => {
+      const MAX = 2;
+      const queuedManager = new AutonomousTaskManager(db, hangingDeps(), {
+        maxParallelTasks: MAX,
+      });
+
+      await queuedManager.startTask({ goal: "Running 1" });
+      await queuedManager.startTask({ goal: "Running 2" });
+      const queued = await queuedManager.startTask({ goal: "Queued" });
+      expect(queued.status).toBe("queued");
+
+      queuedManager.stopTask(queued.id);
+
+      const after = getAutonomousTaskStore(db).getTask(queued.id);
+      expect(after?.status).toBe("cancelled");
+      // The queue should be empty now — stopping a running task should not
+      // accidentally start the cancelled task.
+      queuedManager.stopAll();
+    });
+
+    it("pauseTask() removes a queued task from the in-memory queue and pauses it", async () => {
+      const MAX = 2;
+      const queuedManager = new AutonomousTaskManager(db, hangingDeps(), {
+        maxParallelTasks: MAX,
+      });
+
+      await queuedManager.startTask({ goal: "Running 1" });
+      await queuedManager.startTask({ goal: "Running 2" });
+      const queued = await queuedManager.startTask({ goal: "Queued" });
+      expect(queued.status).toBe("queued");
+
+      queuedManager.pauseTask(queued.id);
+
+      const after = getAutonomousTaskStore(db).getTask(queued.id);
+      expect(after?.status).toBe("paused");
+      queuedManager.stopAll();
+    });
+
+    it("restoreInterruptedTasks() re-enqueues 'queued' tasks from DB", async () => {
+      const store = getAutonomousTaskStore(db);
+      // Simulate a task that was 'queued' before a restart
+      const qTask = store.createTask({ goal: "Was queued" });
+      store.updateTaskStatus(qTask.id, "queued");
+
+      const freshManager = new AutonomousTaskManager(db, hangingDeps(), { maxParallelTasks: 10 });
+      const restored = await freshManager.restoreInterruptedTasks();
+      expect(restored).toBe(1);
+
+      // The task should be back in the in-memory queue (not yet running since
+      // the slot is available — actually with 0 running it starts immediately).
+      await new Promise((r) => setTimeout(r, 20));
+      expect(freshManager.isTaskRunning(qTask.id)).toBe(true);
+      freshManager.stopAll();
+    });
+  });
 });

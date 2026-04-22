@@ -859,6 +859,7 @@ export interface SessionSearchResult {
 
 export type AutonomousTaskStatus =
   | "pending"
+  | "queued"
   | "running"
   | "paused"
   | "completed"
