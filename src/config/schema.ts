@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../constants/limits.js";
+import pkg from "../../package.json" with { type: "json" };
 
 export const DMPolicy = z.enum(["allowlist", "open", "admin-only", "disabled"]);
 export const GroupPolicy = z.enum(["open", "allowlist", "admin-only", "disabled"]);
@@ -186,7 +187,7 @@ export const StorageConfigSchema = z.object({
 });
 
 export const MetaConfigSchema = z.object({
-  version: z.string().default("1.0.0"),
+  version: z.string().default(pkg.version),
   created_at: z.string().optional(),
   last_modified_at: z.string().optional(),
   onboard_command: z.string().default("teleton setup"),
