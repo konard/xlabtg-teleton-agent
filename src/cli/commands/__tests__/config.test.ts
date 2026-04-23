@@ -29,8 +29,16 @@ vi.mock("../../../utils/logger.js", () => ({
 
 // Mock readRawConfig/writeRawConfig to avoid ConfigSchema validation in tests.
 const mockRawConfig: Record<string, unknown> = {
-  agent: { api_key: "sk-ant-existing-key-1234567890", provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
-  telegram: { api_id: 12345678, api_hash: "abcdef1234567890abcdef1234567890", phone: "+15550000000" },
+  agent: {
+    api_key: "sk-ant-existing-key-1234567890",
+    provider: "anthropic",
+    model: "claude-3-5-sonnet-20241022",
+  },
+  telegram: {
+    api_id: 12345678,
+    api_hash: "abcdef1234567890abcdef1234567890",
+    phone: "+15550000000",
+  },
   meta: {},
 };
 
@@ -77,15 +85,20 @@ describe("config set — sensitive key protection (issue #315)", () => {
   // Acceptance criterion: positional value for sensitive key must be rejected
   it("rejects positional value for sensitive key (agent.api_key)", async () => {
     const configPath = makeConfig();
-    process.argv = ["node", "teleton", "config", "set", "agent.api_key", "sk-ant-plaintext1234567890"];
+    process.argv = [
+      "node",
+      "teleton",
+      "config",
+      "set",
+      "agent.api_key",
+      "sk-ant-plaintext1234567890",
+    ];
 
     await expect(
       configCommand("set", "agent.api_key", "sk-ant-plaintext1234567890", { config: configPath })
     ).rejects.toThrow(/process.exit/);
 
-    expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("sensitive")
-    );
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("sensitive"));
   });
 
   // Acceptance criterion: env var TELETON_AGENT_API_KEY is accepted for sensitive key
@@ -96,7 +109,6 @@ describe("config set — sensitive key protection (issue #315)", () => {
     try {
       process.argv = ["node", "teleton", "config", "set", "agent.api_key"];
       await configCommand("set", "agent.api_key", undefined, { config: configPath });
-      // Should succeed and print updated (not echoing the value)
       const logs = consoleSpy.mock.calls.map((c) => c[0] as string);
       const updatedLine = logs.find((l) => l.includes("agent.api_key"));
       expect(updatedLine).toBeDefined();
@@ -121,15 +133,11 @@ describe("config set — sensitive key protection (issue #315)", () => {
     const logs = consoleSpy.mock.calls.map((c) => c[0] as string);
     const updatedLine = logs.find((l) => l.includes("agent.api_key"));
     expect(updatedLine).toBeDefined();
-    // Must NOT echo the secret value
     expect(updatedLine).not.toContain("sk-ant-from-file");
   });
 
   // Acceptance criterion: after parsing argv, secret slot is zeroed
   it("zeros out the argv slot after parsing sensitive value from argv (simulation)", async () => {
-    // Simulate that we passed a sensitive value on argv and checked that it gets redacted.
-    // We test this by looking at process.argv after the command rejects.
-    // The rejection should still have zeroed the argv slot.
     const configPath = makeConfig();
     const secret = "sk-ant-argv-secret-1234567890";
     process.argv = ["node", "teleton", "config", "set", "agent.api_key", secret];
@@ -140,20 +148,17 @@ describe("config set — sensitive key protection (issue #315)", () => {
       // expected to exit
     }
 
-    // After the call, the argv slot holding the secret should be redacted
     expect(process.argv).not.toContain(secret);
   });
 
   // Acceptance criterion: config set does not echo the masked value
   it("does not echo masked value on success (interactive prompt path)", async () => {
     const configPath = makeConfig();
-    // No value passed — falls through to interactive prompt mock
     await configCommand("set", "agent.api_key", undefined, { config: configPath });
 
     const logs = consoleSpy.mock.calls.map((c) => c[0] as string);
     const updatedLine = logs.find((l) => l.includes("agent.api_key"));
     expect(updatedLine).toBeDefined();
-    // Must say "updated" and must NOT print any key fragment
     expect(updatedLine).toContain("updated");
     expect(updatedLine).not.toMatch(/sk-ant/);
     expect(updatedLine).not.toMatch(/\*+/);
@@ -188,7 +193,6 @@ describe("config get — does not reveal sensitive values", () => {
     const logs = consoleSpy.mock.calls.map((c) => c[0] as string);
     const line = logs.find((l) => l.includes("agent.api_key"));
     expect(line).toBeDefined();
-    // Should show masked form, not full key
     expect(line).not.toContain("sk-ant-existing-key-1234567890");
   });
 });
