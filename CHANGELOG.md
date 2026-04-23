@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **WorkflowScheduler cron deduplication (AUDIT-M7)**: `tick()` now tracks `runningWorkflowIds` (in-memory `Set`) to skip workflows whose previous execution is still in progress, and persists `last_fired_bucket` (`floor(ms/60000)`) to the DB so the same minute bucket never fires twice — even after a process restart. DB migration 1.26.0 adds the `last_fired_bucket` column to `workflows` (closes xlabtg/teleton-agent#327).
+
 ### Changed
 - **Autonomous TON spending defaults tightened (AUDIT-M3)**: `DEFAULT_POLICY_CONFIG.tonSpending` reduced by 10× (`perTask` 1 → 0.1 TON, `daily` 5 → 0.5 TON, `requireConfirmationAbove` 0.5 → 0.05 TON) to limit financial exposure for users who run the agent with a linked wallet and do not customise the policy config. Users who relied on the previous permissive defaults must explicitly raise the limits in their `config.yaml` under the `autonomous.policy.ton_spending` key (closes xlabtg/teleton-agent#286).
 

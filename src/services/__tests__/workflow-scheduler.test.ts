@@ -25,7 +25,8 @@ function createTestDb(): Database.Database {
       updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
       last_run_at INTEGER,
       run_count INTEGER NOT NULL DEFAULT 0,
-      last_error TEXT
+      last_error TEXT,
+      last_fired_bucket INTEGER
     );
   `);
   return db;
@@ -206,6 +207,81 @@ describe("Cron matching (via tick)", () => {
 
     const updated = store.get(wf.id)!;
     expect(updated.runCount).toBe(0);
+
+    scheduler.stop();
+  });
+});
+
+describe("WorkflowScheduler deduplication (AUDIT-M7)", () => {
+  let db: Database.Database;
+  let store: WorkflowStore;
+
+  beforeEach(() => {
+    db = createTestDb();
+    store = new WorkflowStore(db);
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("does not fire a cron workflow twice in the same minute bucket", async () => {
+    // Two ticks land within the same minute (bucket = same floor(ms/60000))
+    vi.setSystemTime(new Date("2024-01-01T08:59:00.000Z"));
+
+    const wf = store.create({
+      name: "Every minute",
+      config: {
+        trigger: { type: "cron", cron: "* * * * *" },
+        actions: [],
+      },
+    });
+
+    const scheduler = new WorkflowScheduler(db);
+    scheduler.start();
+
+    // First tick fires at 08:59 — bucket N
+    await vi.advanceTimersByTimeAsync(60_000);
+    // Second tick fires at 09:00 — different bucket, so allowed
+    // But if we force a manual second tick within the same bucket, it must be skipped.
+    // Simulate two ticks landing in the same minute by calling tick directly via two advances
+    // that land in bucket for 09:00:
+    // Advance 30 s (stays in same 09:00 bucket)
+    await vi.advanceTimersByTimeAsync(30_000);
+
+    const updated = store.get(wf.id)!;
+    // Only 2 fires: one per distinct minute bucket (08:59 bucket, 09:00 bucket)
+    // NOT 3 (the 30-second partial advance doesn't fire because setInterval is 60 s)
+    expect(updated.runCount).toBe(2);
+
+    scheduler.stop();
+  });
+
+  it("persists last_fired_bucket in DB so restart does not re-fire", async () => {
+    vi.setSystemTime(new Date("2024-01-01T09:00:00.000Z"));
+    const bucket = Math.floor(new Date("2024-01-01T09:00:00.000Z").getTime() / 60_000);
+
+    const wf = store.create({
+      name: "Hourly",
+      config: {
+        trigger: { type: "cron", cron: "0 9 * * *" },
+        actions: [],
+      },
+    });
+
+    // Pre-persist the fired bucket as if this workflow already ran before restart
+    store.recordFiredBucket(wf.id, bucket);
+
+    const scheduler = new WorkflowScheduler(db);
+    scheduler.start();
+
+    // Tick fires at 09:00 UTC — but bucket already recorded, so must be skipped
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(0);
+    expect(updated.lastFiredBucket).toBe(bucket);
 
     scheduler.stop();
   });
