@@ -227,7 +227,7 @@ ton_proxy:                   # Optional: .ton domain proxy
 <tr>
 <td align="center"><br><b>Groq</b><br>Llama 4 Maverick<br><br></td>
 <td align="center"><br><b>OpenRouter</b><br>Multi-provider<br><br></td>
-<td align="center"><br><b>Moonshot</b><br>Kimi K2.5<br><br></td>
+<td align="center"><br><b>Moonshot</b><br>Kimi K2.6<br><br></td>
 <td align="center"><br><b>Mistral</b><br>Devstral<br><br></td>
 <td align="center"><br><b>Cerebras</b><br>Qwen 3 235B<br><br></td>
 </tr>

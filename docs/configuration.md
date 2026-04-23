@@ -85,16 +85,17 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 |----------|--------------|----------------------|
 | `anthropic` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5-20251001` |
 | `claude-code` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5-20251001` |
-| `openai` | `gpt-5.4` | `gpt-4o-mini` |
+| `codex` | `gpt-5.5` | `gpt-5.1-codex-mini` |
+| `openai` | `gpt-5.5` | `gpt-4o-mini` |
 | `google` | `gemini-2.5-flash` | `gemini-2.0-flash-lite` |
 | `xai` | `grok-3` | `grok-3-mini-fast` |
 | `groq` | `llama-3.3-70b-versatile` | `llama-3.1-8b-instant` |
 | `openrouter` | `anthropic/claude-opus-4.5` | `google/gemini-2.5-flash-lite` |
-| `moonshot` | `k2p5` | `k2p5` |
+| `moonshot` | `k2p6` | `k2p6` |
 | `mistral` | `devstral-small-2507` | `ministral-8b-latest` |
 | `cerebras` | `qwen-3-235b-a22b-instruct-2507` | `llama3.1-8b` |
-| `zai` | `glm-4.7` | `glm-4.7-flash` |
-| `minimax` | `MiniMax-M2.5` | `MiniMax-M2` |
+| `zai` | `glm-4.7-flash` | `glm-4.5-flash` |
+| `minimax` | `MiniMax-M2.7` | `MiniMax-M2.7` |
 | `huggingface` | `deepseek-ai/DeepSeek-V3.2` | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
 | `cocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
 | `local` | `auto` | `auto` |
@@ -596,7 +597,7 @@ Each provider has a dedicated environment variable. Only the key for the configu
 | Variable | Provider | Key Format |
 |----------|----------|------------|
 | `ANTHROPIC_API_KEY` | Anthropic (Claude) | `sk-ant-...` |
-| `OPENAI_API_KEY` | OpenAI (GPT-5.4) | `sk-proj-...` |
+| `OPENAI_API_KEY` | OpenAI (GPT-5.5) | `sk-proj-...` |
 | `GOOGLE_API_KEY` | Google (Gemini) | `AIza...` |
 | `XAI_API_KEY` | xAI (Grok) | `xai-...` |
 | `GROQ_API_KEY` | Groq | `gsk_...` |
