@@ -516,7 +516,7 @@ function AnomalySection() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+          gridTemplateColumns: "1fr 1fr",
           gap: "20px",
         }}
       >
