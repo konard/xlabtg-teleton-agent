@@ -71,7 +71,12 @@ export async function executeScheduledTask(
     return buildAgentPrompt(task, null, parentResults);
   }
 
-  const payload: TaskPayload = JSON.parse(task.payload);
+  let payload: TaskPayload;
+  try {
+    payload = JSON.parse(task.payload);
+  } catch {
+    return `[TASK:${task.id}] FAILED: invalid JSON payload — task cannot be executed.`;
+  }
 
   if (payload.type === "tool_call") {
     // Mode 1: Auto-execute tool, feed result to agent

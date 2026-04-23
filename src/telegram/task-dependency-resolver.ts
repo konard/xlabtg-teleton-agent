@@ -3,6 +3,7 @@ import type { TelegramBridge } from "./bridge.js";
 import { BATCH_TRIGGER_DELAY_MS } from "../constants/timeouts.js";
 import { MAX_DEPENDENTS_PER_TASK } from "../constants/limits.js";
 import { createLogger } from "../utils/logger.js";
+import { sanitizeTaskDescription } from "../utils/sanitize.js";
 
 const log = createLogger("Telegram");
 
@@ -180,13 +181,16 @@ export class TaskDependencyResolver {
 
       log.info(`🚀 Triggering dependent task: ${task.description}`);
 
+      // Sanitize description to prevent prompt injection via task content
+      const safeDescription = sanitizeTaskDescription(task.description ?? "");
+
       // Get "me" entity for Saved Messages
       const gramJsClient = this.bridge.getClient().getClient();
       const me = await gramJsClient.getMe();
 
       // Send task message immediately (no scheduling)
       await gramJsClient.sendMessage(me, {
-        message: `[TASK:${taskId}] ${task.description}`,
+        message: `[TASK:${taskId}] ${safeDescription}`,
       });
 
       log.info(`↳ Sent [TASK:${taskId}] to Saved Messages`);
