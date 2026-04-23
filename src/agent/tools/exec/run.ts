@@ -3,7 +3,10 @@ import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import type { ExecConfig } from "../../../config/schema.js";
 import { runCommand } from "./runner.js";
 import { insertAuditEntry, updateAuditEntry } from "./audit.js";
+import { isCommandAllowed } from "./allowlist.js";
 import type Database from "better-sqlite3";
+
+export { tokenizeCommand, isCommandAllowed } from "./allowlist.js";
 
 interface ExecRunParams {
   command: string;
@@ -12,22 +15,14 @@ interface ExecRunParams {
 export const execRunTool: Tool = {
   name: "exec_run",
   description:
-    "Execute an arbitrary bash command on the host system. Returns stdout, stderr, and exit code. Use for any system administration task: file management, process control, Docker, networking, etc.",
+    "Execute a shell command on the host system. In allowlist mode, only simple commands without pipes or redirects are supported. Returns stdout, stderr, and exit code.",
   parameters: Type.Object({
     command: Type.String({
-      description: "The bash command to execute (supports pipes, &&, redirects, etc.)",
+      description:
+        "The command to execute. In allowlist mode: simple commands only (no pipes, &&, redirects). In yolo mode: full bash syntax supported.",
     }),
   }),
 };
-
-export function isCommandAllowed(command: string, commandAllowlist: string[]): boolean {
-  const trimmed = command.trim();
-  return commandAllowlist.some((pattern) => {
-    const p = pattern.trim();
-    // Exact match or command starts with the pattern followed by whitespace
-    return trimmed === p || trimmed.startsWith(p + " ");
-  });
-}
 
 export function createExecRunExecutor(
   db: Database.Database,
@@ -41,7 +36,7 @@ export function createExecRunExecutor(
       if (!isCommandAllowed(command, execConfig.command_allowlist)) {
         return {
           success: false,
-          error: `Command not permitted. Allowed prefixes: ${execConfig.command_allowlist.length > 0 ? execConfig.command_allowlist.join(", ") : "(none configured)"}`,
+          error: `Command not permitted. Allowed commands: ${execConfig.command_allowlist.length > 0 ? execConfig.command_allowlist.join(", ") : "(none configured)"}. Note: pipes, redirects, and shell operators are not supported in allowlist mode.`,
         };
       }
     }
@@ -58,9 +53,13 @@ export function createExecRunExecutor(
       });
     }
 
+    // In allowlist mode execute without a shell to prevent injection.
+    // tokenizeCommand is guaranteed to succeed here because isCommandAllowed already checked.
+    const useShell = execConfig.mode !== "allowlist";
     const result = await runCommand(command, {
       timeout: timeout * 1000,
       maxOutput: max_output,
+      useShell,
     });
 
     const status = result.timedOut ? "timeout" : result.exitCode === 0 ? "success" : "failed";

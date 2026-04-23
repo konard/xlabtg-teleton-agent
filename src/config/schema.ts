@@ -514,8 +514,9 @@ const _ExecObject = z.object({
     .array(z.string())
     .default([])
     .describe(
-      "Allowed command prefixes when mode = allowlist (e.g. 'git status', 'ls', 'npm run'). " +
-        "A command is permitted if it starts with any entry in this list. " +
+      "Allowed program names when mode = allowlist (e.g. 'git', 'ls', 'npm'). " +
+        "A command is permitted when its first token (the program name) exactly matches an entry. " +
+        "Shell operators (pipes, &&, redirects, command substitution) are always rejected in allowlist mode. " +
         "Empty list blocks all commands."
     ),
   limits: _ExecLimitsObject.default(_ExecLimitsObject.parse({})),
