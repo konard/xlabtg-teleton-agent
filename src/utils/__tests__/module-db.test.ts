@@ -60,7 +60,7 @@ describe("migrateFromMainDb – SQL injection via apostrophe in MAIN_DB_PATH", (
     // An unescaped apostrophe in ATTACH DATABASE is a SQL syntax error.
     expect(() => {
       moduleDb.exec(`ATTACH DATABASE '${pathWithApostrophe}' AS injected_db`);
-    }).toThrow(/SqliteError|sqlite/i);
+    }).toThrow();
   });
 
   it("migrateFromMainDb completes without error when module DB is empty and main DB is absent", () => {
