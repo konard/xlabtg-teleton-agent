@@ -3,12 +3,14 @@ name: CI
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   pull_request_target:
     branches: [main]
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
   cancel-in-progress: true
 
 jobs:
@@ -16,6 +18,10 @@ jobs:
   build-runtime:
     name: CI / Build (Runtime)
     runs-on: ubuntu-latest
+    # Skip pull_request_target for same-repo PRs to avoid duplicate runs with pull_request
+    if: |
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name != github.repository
 
     strategy:
       matrix:
@@ -58,6 +64,10 @@ jobs:
   build-sdk:
     name: CI / Build (SDK with DTS)
     runs-on: ubuntu-latest
+    # Skip pull_request_target for same-repo PRs to avoid duplicate runs with pull_request
+    if: |
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name != github.repository
 
     steps:
       - uses: actions/checkout@v4
@@ -83,11 +93,14 @@ jobs:
           fi
           echo "DTS generated successfully: packages/sdk/dist/index.d.ts"
 
-  # ---- Lint (pull_request_target only) ----
+  # ---- Lint ----
   lint:
     name: CI / Lint
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_target'
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.head.repo.full_name != github.repository)
 
     steps:
       - uses: actions/checkout@v4
@@ -111,11 +124,14 @@ jobs:
       - name: Format check
         run: npm run format:check
 
-  # ---- Tests (pull_request_target only) ----
+  # ---- Tests ----
   test:
     name: CI / Test
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_target'
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.head.repo.full_name != github.repository)
 
     steps:
       - uses: actions/checkout@v4
@@ -157,11 +173,14 @@ jobs:
           " || cat coverage/coverage-summary.json
           echo '```' >> "$GITHUB_STEP_SUMMARY"
 
-  # ---- TypeScript check (pull_request_target only) ----
+  # ---- TypeScript check ----
   typecheck:
     name: CI / TypeScript
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request_target'
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.head.repo.full_name != github.repository)
 
     steps:
       - uses: actions/checkout@v4
@@ -186,6 +205,10 @@ jobs:
   security:
     name: Security audit
     runs-on: ubuntu-latest
+    # Skip pull_request_target for same-repo PRs to avoid duplicate runs with pull_request
+    if: |
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name != github.repository
 
     steps:
       - uses: actions/checkout@v4
@@ -232,12 +255,14 @@ jobs:
       - name: Test with coverage
         run: npm run test:coverage
 
-  # ---- Deploy to Vercel (pull_request_target only) ----
+  # ---- Deploy to Vercel (fork PRs via pull_request_target only, needs secrets) ----
   deploy-vercel:
     name: Deploy to Vercel
     runs-on: ubuntu-latest
     needs: [build-runtime, typecheck]
-    if: github.event_name == 'pull_request_target'
+    if: |
+      github.event_name == 'pull_request_target' &&
+      github.event.pull_request.head.repo.full_name != github.repository
     environment:
       name: pr-preview
       url: ${{ steps.deploy.outputs.preview-url }}
