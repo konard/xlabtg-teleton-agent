@@ -96,6 +96,20 @@ install_git() {
 
   if [ -d "${install_dir}" ]; then
     warn "Directory ${install_dir} already exists, updating..."
+
+    # Verify origin points to the expected repository
+    local expected_url="https://github.com/${REPO}.git"
+    local actual_url
+    actual_url=$(git -C "${install_dir}" remote get-url origin 2>/dev/null || echo "")
+    if [ "${actual_url}" != "${expected_url}" ]; then
+      error "Existing ${install_dir} has unexpected origin '${actual_url}' (expected '${expected_url}'). Remove it manually and re-run."
+    fi
+
+    # Reject dirty working tree to prevent silent overwrites of local changes
+    if [ -n "$(git -C "${install_dir}" status --porcelain)" ]; then
+      error "Existing ${install_dir} has uncommitted changes. Commit or stash them, then re-run."
+    fi
+
     git -C "${install_dir}" pull --ff-only
   else
     git clone "https://github.com/${REPO}.git" "${install_dir}"

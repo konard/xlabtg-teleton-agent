@@ -502,15 +502,21 @@ docker compose pull
 docker compose up -d
 ```
 
-### From Source
+### From Source (via install.sh)
+
+Re-run the one-liner installer to update:
 
 ```bash
-cd teleton-agent
-git pull origin main
-npm install
-cd web && npm install && cd ..
-npm run build
-# Restart the agent
+curl -fsSL https://raw.githubusercontent.com/TONresistor/teleton-agent/main/install.sh | bash
+```
+
+The installer verifies that `~/.teleton-app` still points to the official repository before pulling. If it detects an unexpected `origin` URL or uncommitted local changes it aborts with a clear error, so you can investigate before any code runs.
+
+If you see an unexpected origin error, remove the directory and re-run:
+
+```bash
+rm -rf ~/.teleton-app
+curl -fsSL https://raw.githubusercontent.com/TONresistor/teleton-agent/main/install.sh | bash
 ```
 
 ### Version Pinning
