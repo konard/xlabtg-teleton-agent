@@ -27,22 +27,29 @@ vi.mock("../../../utils/logger.js", () => ({
   })),
 }));
 
+// Mock readRawConfig/writeRawConfig to avoid ConfigSchema validation in tests.
+const mockRawConfig: Record<string, unknown> = {
+  agent: { api_key: "sk-ant-existing-key-1234567890", provider: "anthropic", model: "claude-3-5-sonnet-20241022" },
+  telegram: { api_id: 12345678, api_hash: "abcdef1234567890abcdef1234567890", phone: "+15550000000" },
+  meta: {},
+};
+
+vi.mock("../../../config/configurable-keys.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../../config/configurable-keys.js")>();
+  return {
+    ...actual,
+    readRawConfig: vi.fn(() => ({ ...mockRawConfig })),
+    writeRawConfig: vi.fn(),
+  };
+});
+
 import { configCommand } from "../config.js";
 
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function makeConfig() {
   const path = join(tmpdir(), `teleton-test-config-${Date.now()}-${Math.random()}.yaml`);
-  const yaml = [
-    "agent:",
-    "  api_key: sk-ant-existing-key-1234567890",
-    "  provider: anthropic",
-    "  model: claude-3-5-sonnet-20241022",
-    "telegram:",
-    "  bot_token: '123456:EXISTINGTOKEN'",
-    "meta: {}",
-  ].join("\n");
-  writeFileSync(path, yaml, { encoding: "utf-8", mode: 0o600 });
+  writeFileSync(path, "# placeholder", { encoding: "utf-8", mode: 0o600 });
   return path;
 }
 
