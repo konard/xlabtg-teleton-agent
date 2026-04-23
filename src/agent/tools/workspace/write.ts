@@ -1,11 +1,15 @@
 // src/agent/tools/workspace/write.ts
 
 import { Type } from "@sinclair/typebox";
-import { writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs";
+import { appendFileSync, mkdirSync, existsSync } from "fs";
 import { dirname } from "path";
 import { MAX_WRITE_SIZE } from "../../../constants/limits.js";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validateWritePath, WorkspaceSecurityError } from "../../../workspace/index.js";
+import {
+  validateWritePath,
+  safeWriteFileSync,
+  WorkspaceSecurityError,
+} from "../../../workspace/index.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 
 interface WorkspaceWriteParams {
@@ -80,11 +84,24 @@ export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> = async 
       };
     }
 
-    // Write or append
+    // Write or append.
+    // For overwrite writes, use safeWriteFileSync (O_NOFOLLOW) to prevent a
+    // symlink-swap race between validation and the actual write.
     if (append && validated.exists) {
       appendFileSync(validated.absolutePath, writeContent, { mode: 0o600 });
+    } else if (typeof writeContent === "string") {
+      safeWriteFileSync(validated.absolutePath, writeContent);
     } else {
-      writeFileSync(validated.absolutePath, writeContent, { mode: 0o600 });
+      // Binary (base64-decoded Buffer): O_NOFOLLOW via openSync + writeSync
+      const { openSync, writeSync, closeSync, constants } = await import("fs");
+      const flags =
+        constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW;
+      const fd = openSync(validated.absolutePath, flags, 0o666);
+      try {
+        writeSync(fd, writeContent);
+      } finally {
+        closeSync(fd);
+      }
     }
 
     return {

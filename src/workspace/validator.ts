@@ -1,7 +1,16 @@
 // src/workspace/validator.ts
 
-import { existsSync, lstatSync, readdirSync } from "fs";
-import { resolve, normalize, relative, extname, basename } from "path";
+import {
+  existsSync,
+  lstatSync,
+  readdirSync,
+  realpathSync,
+  openSync,
+  writeSync,
+  closeSync,
+  constants,
+} from "fs";
+import { resolve, normalize, relative, extname, basename, dirname } from "path";
 import { homedir } from "os";
 import { WORKSPACE_ROOT, ALLOWED_EXTENSIONS, MAX_FILE_SIZES } from "./paths.js";
 import { MAX_FILENAME_LENGTH } from "../constants/limits.js";
@@ -118,6 +127,49 @@ export function validatePath(inputPath: string, allowCreate: boolean = false): V
     );
   }
 
+  // SECURITY FIX: Resolve the realpath of the nearest existing ancestor so that
+  // a symlink in a parent directory (e.g. workspace/link-to-etc/ → /etc/) is
+  // detected even when lstatSync on the leaf would see a regular file.
+  // We walk up until we find a path component that exists on disk, resolve it,
+  // then reattach the remaining (not-yet-created) suffix.
+  function resolveNearestAncestor(p: string): string {
+    if (existsSync(p)) {
+      return realpathSync(p);
+    }
+    const parent = dirname(p);
+    if (parent === p) {
+      // Reached filesystem root without finding anything; return as-is.
+      return p;
+    }
+    const resolvedParent = resolveNearestAncestor(parent);
+    return resolve(resolvedParent, basename(p));
+  }
+
+  // Reject leaf symlinks before resolving: if the leaf itself is a symlink,
+  // reject it regardless of where it points (policy: no symlinks allowed).
+  if (existsSync(absolutePath)) {
+    const leafStats = lstatSync(absolutePath);
+    if (leafStats.isSymbolicLink()) {
+      throw new WorkspaceSecurityError(
+        `Access denied: Symbolic links are not allowed for security reasons.`,
+        inputPath
+      );
+    }
+  }
+
+  const resolvedPath = resolveNearestAncestor(absolutePath);
+  const resolvedRelative = relative(WORKSPACE_ROOT, resolvedPath);
+
+  if (resolvedRelative.startsWith("..") || resolvedRelative.startsWith("/")) {
+    throw new WorkspaceSecurityError(
+      `Access denied: Path '${inputPath}' resolves outside the workspace via a symbolic link.`,
+      inputPath
+    );
+  }
+
+  // Use the symlink-resolved absolute path from this point on.
+  absolutePath = resolvedPath;
+
   // Check if path exists
   const exists = existsSync(absolutePath);
 
@@ -128,22 +180,9 @@ export function validatePath(inputPath: string, allowCreate: boolean = false): V
     );
   }
 
-  // SECURITY FIX: Use lstatSync() instead of statSync() to detect symlinks
-  // (statSync follows symlinks, lstatSync does not)
-  if (exists) {
-    const stats = lstatSync(absolutePath);
-
-    if (stats.isSymbolicLink()) {
-      throw new WorkspaceSecurityError(
-        `Access denied: Symbolic links are not allowed for security reasons.`,
-        inputPath
-      );
-    }
-  }
-
   return {
     absolutePath,
-    relativePath,
+    relativePath: relative(WORKSPACE_ROOT, absolutePath),
     exists,
     isDirectory: exists ? lstatSync(absolutePath).isDirectory() : false,
     extension: extname(absolutePath).toLowerCase(),
@@ -239,6 +278,24 @@ export function sanitizeFilename(filename: string): string {
     .replace(/[<>:"|?*]/g, "_")
     .replace(/[\x00-\x1f]/g, "")
     .slice(0, MAX_FILENAME_LENGTH);
+}
+
+/**
+ * Write content to a validated workspace path using O_NOFOLLOW to prevent
+ * a symlink-swap race between validation and the actual write.
+ *
+ * Always call validateWritePath() first; this function does NOT re-validate.
+ */
+export function safeWriteFileSync(validatedAbsolutePath: string, content: string): void {
+  // O_NOFOLLOW causes open() to fail with ELOOP if the path is a symlink,
+  // closing the TOCTOU window between validateWritePath() and the write.
+  const flags = constants.O_WRONLY | constants.O_CREAT | constants.O_TRUNC | constants.O_NOFOLLOW;
+  const fd = openSync(validatedAbsolutePath, flags, 0o666);
+  try {
+    writeSync(fd, content);
+  } finally {
+    closeSync(fd);
+  }
 }
 
 /**

@@ -1,6 +1,6 @@
 // src/workspace/__tests__/validator.test.ts
 
-import { mkdtempSync, rmSync, writeFileSync, symlinkSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, symlinkSync, mkdirSync, readFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { vi } from "vitest";
@@ -13,6 +13,7 @@ import {
   sanitizeFilename,
   validateFileSize,
   listWorkspaceDirectory,
+  safeWriteFileSync,
   WorkspaceSecurityError,
 } from "../validator.js";
 
@@ -474,6 +475,73 @@ describe("Workspace Path Validator", () => {
       const files = listWorkspaceDirectory("");
       expect(files).toContain(".env");
       expect(files).toContain(".hidden");
+    });
+  });
+
+  describe("Parent-directory symlink attack (TOCTOU / FULL-M3)", () => {
+    it("should reject a path whose parent directory is a symlink pointing outside workspace", () => {
+      // Create: <workspace>/evil-dir -> /etc  (parent-dir symlink escaping workspace)
+      const linkDir = join(tempWorkspace, "evil-dir");
+      try {
+        symlinkSync("/etc", linkDir);
+        // Accessing evil-dir/passwd would resolve to /etc/passwd
+        expect(() => validatePath("evil-dir/passwd", true)).toThrow(WorkspaceSecurityError);
+        expect(() => validatePath("evil-dir/passwd", true)).toThrow(
+          /outside the workspace|symbolic link/i
+        );
+      } finally {
+        rmSync(linkDir, { force: true });
+      }
+    });
+
+    it("should reject writes when parent directory is a symlink outside workspace", () => {
+      const linkDir = join(tempWorkspace, "evil-write-dir");
+      try {
+        symlinkSync("/tmp", linkDir);
+        expect(() => validateWritePath("evil-write-dir/injected.txt")).toThrow(
+          WorkspaceSecurityError
+        );
+      } finally {
+        rmSync(linkDir, { force: true });
+      }
+    });
+
+    it("should still reject leaf symlinks (existing test coverage, FULL-M3 regression)", () => {
+      const linkPath = join(tempWorkspace, "leaf-symlink.txt");
+      const targetPath = join(tempWorkspace, "test.txt");
+      try {
+        symlinkSync(targetPath, linkPath);
+        expect(() => validatePath("leaf-symlink.txt")).toThrow(WorkspaceSecurityError);
+        expect(() => validatePath("leaf-symlink.txt")).toThrow("Symbolic links are not allowed");
+      } finally {
+        rmSync(linkPath, { force: true });
+      }
+    });
+  });
+
+  describe("safeWriteFileSync() – O_NOFOLLOW write protection", () => {
+    it("should write content to a regular file", () => {
+      const filePath = join(tempWorkspace, "safe-write-test.txt");
+      try {
+        safeWriteFileSync(filePath, "hello safe write");
+        expect(readFileSync(filePath, "utf-8")).toBe("hello safe write");
+      } finally {
+        rmSync(filePath, { force: true });
+      }
+    });
+
+    it("should refuse to write through a symlink (O_NOFOLLOW)", () => {
+      const realFile = join(tempWorkspace, "real-target.txt");
+      const symPath = join(tempWorkspace, "symlink-target.txt");
+      writeFileSync(realFile, "original");
+      try {
+        symlinkSync(realFile, symPath);
+        // O_NOFOLLOW should cause openSync to throw ELOOP when path is a symlink
+        expect(() => safeWriteFileSync(symPath, "injected")).toThrow();
+      } finally {
+        rmSync(symPath, { force: true });
+        rmSync(realFile, { force: true });
+      }
     });
   });
 

@@ -16,6 +16,7 @@ export {
   sanitizeFilename,
   validateFileSize,
   listWorkspaceDirectory,
+  safeWriteFileSync,
   type ValidatedPath,
 } from "./validator.js";
 
