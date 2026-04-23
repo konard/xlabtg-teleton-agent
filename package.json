@@ -67,7 +67,7 @@
     "@hono/node-server": "^1.19.11",
     "@huggingface/transformers": "^3.8.1",
     "@inquirer/prompts": "^8.3.2",
-    "@mariozechner/pi-ai": "^0.67.6",
+    "@mariozechner/pi-ai": "^0.70.0",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@sinclair/typebox": "^0.34.48",
     "@tavily/core": "^0.7.2",
@@ -89,6 +89,10 @@
     "telegram": "github:TONresistor/gramjs#fab33c2",
     "yaml": "^2.8.3",
     "zod": "^4.3.6"
+  },
+  "overrides": {
+    "@aws-sdk/xml-builder": "3.972.19",
+    "fast-xml-parser": "5.7.1"
   },
   "devDependencies": {
     "@ston-fi/api": "^0.31.0",
