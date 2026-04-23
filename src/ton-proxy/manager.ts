@@ -111,13 +111,8 @@ export class TonProxyManager {
 
     // Validate that redirects stayed within GitHub's CDN domain
     const finalUrl = new URL(res.url);
-    if (
-      finalUrl.hostname !== "github.com" &&
-      finalUrl.hostname !== ALLOWED_DOWNLOAD_HOST
-    ) {
-      throw new Error(
-        `Download was redirected to an unexpected host: ${finalUrl.hostname}`
-      );
+    if (finalUrl.hostname !== "github.com" && finalUrl.hostname !== ALLOWED_DOWNLOAD_HOST) {
+      throw new Error(`Download was redirected to an unexpected host: ${finalUrl.hostname}`);
     }
 
     // Validate Content-Length before streaming
@@ -125,9 +120,7 @@ export class TonProxyManager {
     if (contentLength !== null) {
       const bytes = parseInt(contentLength, 10);
       if (!Number.isFinite(bytes) || bytes > MAX_BINARY_BYTES) {
-        throw new Error(
-          `Unexpected Content-Length ${bytes} bytes (max ${MAX_BINARY_BYTES})`
-        );
+        throw new Error(`Unexpected Content-Length ${bytes} bytes (max ${MAX_BINARY_BYTES})`);
       }
     }
 
@@ -145,9 +138,7 @@ export class TonProxyManager {
           for await (const chunk of source) {
             bytesWritten += chunk.length;
             if (bytesWritten > MAX_BINARY_BYTES) {
-              throw new Error(
-                `Binary exceeds maximum allowed size of ${MAX_BINARY_BYTES} bytes`
-              );
+              throw new Error(`Binary exceeds maximum allowed size of ${MAX_BINARY_BYTES} bytes`);
             }
             hash.update(chunk);
             yield chunk;
@@ -157,14 +148,22 @@ export class TonProxyManager {
       );
     } catch (err) {
       // Remove partial file before propagating — never leave an unverified file on disk
-      try { unlinkSync(dest); } catch { /* ignore */ }
+      try {
+        unlinkSync(dest);
+      } catch {
+        /* ignore */
+      }
       throw err;
     }
 
     // Verify SHA-256 digest
     const actualDigest = hash.digest("hex");
     if (actualDigest !== expectedDigest) {
-      try { unlinkSync(dest); } catch { /* ignore */ }
+      try {
+        unlinkSync(dest);
+      } catch {
+        /* ignore */
+      }
       throw new Error(
         `Checksum mismatch for ${binaryName}!\n` +
           `  expected: ${expectedDigest}\n` +

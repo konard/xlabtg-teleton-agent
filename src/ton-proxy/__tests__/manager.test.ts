@@ -51,8 +51,7 @@ function mockResponse(opts: {
 }): Response {
   const bytes = opts.bytes ?? Buffer.from("fake-binary");
   const url =
-    opts.url ??
-    "https://objects.githubusercontent.com/releases/tonutils-proxy-cli-linux-amd64";
+    opts.url ?? "https://objects.githubusercontent.com/releases/tonutils-proxy-cli-linux-amd64";
   return {
     ok: opts.ok ?? true,
     url,
@@ -152,9 +151,7 @@ describe("TonProxyManager.install()", () => {
   it("throws when Content-Length exceeds 50 MB without calling chmodSync", async () => {
     const mgr = await makeManager(Buffer.from("any"));
 
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ contentLength: 51 * 1024 * 1024 })
-    );
+    globalThis.fetch = vi.fn().mockResolvedValue(mockResponse({ contentLength: 51 * 1024 * 1024 }));
 
     await expect(mgr.install()).rejects.toThrow(/Content-Length/);
     expect(chmodSyncMock).not.toHaveBeenCalled();
@@ -165,9 +162,9 @@ describe("TonProxyManager.install()", () => {
   it("throws when download is redirected to an unexpected domain", async () => {
     const mgr = await makeManager(Buffer.from("any"));
 
-    globalThis.fetch = vi.fn().mockResolvedValue(
-      mockResponse({ url: "https://evil.example.com/malicious-binary" })
-    );
+    globalThis.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ url: "https://evil.example.com/malicious-binary" }));
 
     await expect(mgr.install()).rejects.toThrow(/unexpected host/i);
     expect(chmodSyncMock).not.toHaveBeenCalled();
