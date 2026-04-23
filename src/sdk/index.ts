@@ -129,6 +129,8 @@ export interface CreatePluginSDKOptions {
   db: Database.Database | null;
   sanitizedConfig: Record<string, unknown>;
   pluginConfig: Record<string, unknown>;
+  /** Admin Telegram user IDs — never exposed directly, only via isAdmin() */
+  adminIds?: readonly number[];
   /** Bot manifest from plugin (if plugin declares bot capabilities) */
   botManifest?: BotManifest;
   /** Hook registry for sdk.on() support */
@@ -210,6 +212,7 @@ export function createPluginSDK(deps: SDKDependencies, opts: CreatePluginSDKOpti
   const frozenLog = Object.freeze(log);
   const frozenConfig = Object.freeze(JSON.parse(JSON.stringify(opts.sanitizedConfig ?? {})));
   const frozenPluginConfig = Object.freeze(JSON.parse(JSON.stringify(opts.pluginConfig ?? {})));
+  const adminIdSet = new Set<number>(opts.adminIds ?? []);
 
   // Lazy bot SDK — deps.inlineRouter/gramjsBot/grammyBot may not be available
   // at plugin load time (plugins load before DealBot starts). The getter
@@ -242,6 +245,10 @@ export function createPluginSDK(deps: SDKDependencies, opts: CreatePluginSDKOpti
       // Only cache non-null — retry on next access if deps aren't ready yet
       if (result) cachedBot = result;
       return result;
+    },
+    isAdmin(userId: number | string): boolean {
+      const id = typeof userId === "string" ? parseInt(userId, 10) : userId;
+      return !isNaN(id) && adminIdSet.has(id);
     },
     on<K extends HookName>(
       hookName: K,

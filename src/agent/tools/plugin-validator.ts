@@ -119,9 +119,7 @@ export function sanitizeConfigForPlugins(config: Config): Record<string, unknown
       model: config.agent.model,
       max_tokens: config.agent.max_tokens,
     },
-    telegram: {
-      admin_ids: config.telegram.admin_ids,
-    },
+    telegram: {},
     deals: { enabled: config.deals.enabled },
   };
 }

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { adaptPlugin } from "../plugin-loader.js";
 import { sanitizeConfigForPlugins } from "../plugin-validator.js";
+import { createPluginSDK } from "../../../sdk/index.js";
 import { SDK_VERSION } from "@teleton-agent/sdk";
 import type { Config } from "../../../config/schema.js";
 
@@ -299,11 +300,13 @@ describe("sanitizeConfigForPlugins — config isolation", () => {
     expect(sanitized.agent.max_tokens).toBe(4096);
   });
 
-  it("T4c: preserves telegram.admin_ids", () => {
+  it("T4c: does not expose telegram.admin_ids", () => {
     const config = makeConfig();
     const sanitized = sanitizeConfigForPlugins(config) as any;
 
-    expect(sanitized.telegram.admin_ids).toEqual([111, 222]);
+    expect(sanitized.telegram.admin_ids).toBeUndefined();
+    expect(JSON.stringify(sanitized)).not.toContain("111");
+    expect(JSON.stringify(sanitized)).not.toContain("222");
   });
 
   it("T4d: preserves deals.enabled", () => {
@@ -352,5 +355,65 @@ describe("sanitizeConfigForPlugins — config isolation", () => {
     const tools = module.tools();
     expect(tools.length).toBe(1);
     expect(tools[0].tool.name).toBe("test_tool");
+  });
+});
+
+// ─── T6: sdk.isAdmin capability ─────────────────────────────────
+
+describe("sdk.isAdmin — admin check without exposing admin list", () => {
+  const sdkBase = {
+    pluginName: "test-plugin",
+    db: null,
+    sanitizedConfig: {},
+    pluginConfig: {},
+  };
+
+  it("T6a: isAdmin returns true for a known admin (numeric id)", () => {
+    const sdk = createPluginSDK(minimalSdkDeps, {
+      ...sdkBase,
+      adminIds: [111, 222],
+    });
+    expect(sdk.isAdmin(111)).toBe(true);
+    expect(sdk.isAdmin(222)).toBe(true);
+  });
+
+  it("T6b: isAdmin returns false for a non-admin user", () => {
+    const sdk = createPluginSDK(minimalSdkDeps, {
+      ...sdkBase,
+      adminIds: [111, 222],
+    });
+    expect(sdk.isAdmin(999)).toBe(false);
+  });
+
+  it("T6c: isAdmin accepts numeric string ids", () => {
+    const sdk = createPluginSDK(minimalSdkDeps, {
+      ...sdkBase,
+      adminIds: [111],
+    });
+    expect(sdk.isAdmin("111")).toBe(true);
+    expect(sdk.isAdmin("999")).toBe(false);
+  });
+
+  it("T6d: isAdmin returns false when adminIds is empty", () => {
+    const sdk = createPluginSDK(minimalSdkDeps, {
+      ...sdkBase,
+      adminIds: [],
+    });
+    expect(sdk.isAdmin(111)).toBe(false);
+  });
+
+  it("T6e: isAdmin returns false when adminIds is not provided", () => {
+    const sdk = createPluginSDK(minimalSdkDeps, sdkBase);
+    expect(sdk.isAdmin(111)).toBe(false);
+  });
+
+  it("T6f: sdk.config does not contain admin_ids", () => {
+    const sdk = createPluginSDK(minimalSdkDeps, {
+      ...sdkBase,
+      adminIds: [111, 222],
+    });
+    expect(JSON.stringify(sdk.config)).not.toContain("111");
+    expect(JSON.stringify(sdk.config)).not.toContain("222");
+    expect((sdk.config as any).telegram?.admin_ids).toBeUndefined();
   });
 });
