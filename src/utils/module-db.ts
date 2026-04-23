@@ -104,7 +104,9 @@ export function migrateFromMainDb(moduleDb: Database.Database, tables: string[])
   if (!existsSync(MAIN_DB_PATH)) return 0;
 
   try {
-    moduleDb.exec(`ATTACH DATABASE '${MAIN_DB_PATH}' AS main_db`);
+    // Escape single quotes to prevent SQL injection via a path that contains apostrophes.
+    const escapedPath = MAIN_DB_PATH.replace(/'/g, "''");
+    moduleDb.exec(`ATTACH DATABASE '${escapedPath}' AS main_db`);
 
     for (const table of tables) {
       try {
