@@ -14,7 +14,12 @@ import { basename, relative, resolve, sep } from "path";
 import { existsSync } from "fs";
 import { pathToFileURL } from "url";
 import { WORKSPACE_PATHS } from "../../workspace/paths.js";
-import { adaptPlugin, ensurePluginDeps, isGroupOrWorldWritable, verifyPluginChecksum } from "./plugin-loader.js";
+import {
+  adaptPlugin,
+  ensurePluginDeps,
+  isGroupOrWorldWritable,
+  verifyPluginChecksum,
+} from "./plugin-loader.js";
 import type { PluginModule, PluginContext, Tool, ToolExecutor, ToolScope } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
 import type { Config } from "../../config/schema.js";
