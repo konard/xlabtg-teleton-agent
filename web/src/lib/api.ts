@@ -154,13 +154,45 @@ export interface WalletResult {
 
 export type ManagedAgentKind = "primary" | "managed";
 export type ManagedAgentMode = "personal" | "bot";
+export type ManagedAgentMemoryPolicy = "isolated" | "shared-read" | "shared-write";
 export type ManagedAgentState = "stopped" | "starting" | "running" | "stopping" | "error";
+export type ManagedAgentTransport = "mtproto" | "bot-api";
+export type ManagedAgentHealth = "stopped" | "starting" | "healthy" | "degraded" | "error";
+
+export interface AgentResourcePolicy {
+  maxMemoryMb: number;
+  maxConcurrentTasks: number;
+  rateLimitPerMinute: number;
+  llmRateLimitPerMinute: number;
+  restartOnCrash: boolean;
+  maxRestarts: number;
+  restartBackoffMs: number;
+}
+
+export interface AgentMessagingPolicy {
+  enabled: boolean;
+  allowlist: string[];
+  maxMessagesPerMinute: number;
+}
+
+export interface AgentSecurityPolicy {
+  personalAccountAccessConfirmedAt: string | null;
+}
+
+export interface AgentConnectionSettings {
+  botUsername: string | null;
+}
 
 export interface AgentOverview {
   id: string;
   name: string;
   kind: ManagedAgentKind;
   mode: ManagedAgentMode;
+  memoryPolicy: ManagedAgentMemoryPolicy;
+  resources: AgentResourcePolicy;
+  messaging: AgentMessagingPolicy;
+  security: AgentSecurityPolicy;
+  connection: AgentConnectionSettings;
   homePath: string;
   configPath: string;
   workspacePath: string;
@@ -178,15 +210,55 @@ export interface AgentOverview {
   startedAt: string | null;
   uptimeMs: number | null;
   lastError: string | null;
+  transport: ManagedAgentTransport;
+  health: ManagedAgentHealth;
+  restartCount: number;
+  lastExitAt: string | null;
+  lastExitCode: number | null;
+  lastExitSignal: string | null;
+  pendingMessages: number;
   canDelete: boolean;
   canStart: boolean;
   canStop: boolean;
   logsAvailable: boolean;
+  canStartReason: string | null;
 }
 
 export interface AgentLogs {
   lines: string[];
   path: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  fromId: string;
+  toId: string;
+  text: string;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface CreateAgentInput {
+  name: string;
+  id?: string;
+  cloneFromId?: string;
+  mode?: ManagedAgentMode;
+  botToken?: string;
+  botUsername?: string;
+  memoryPolicy?: ManagedAgentMemoryPolicy;
+  resources?: Partial<AgentResourcePolicy>;
+  messaging?: Partial<AgentMessagingPolicy>;
+  acknowledgePersonalAccountAccess?: boolean;
+}
+
+export interface UpdateAgentInput {
+  name?: string;
+  botToken?: string | null;
+  botUsername?: string | null;
+  memoryPolicy?: ManagedAgentMemoryPolicy;
+  resources?: Partial<AgentResourcePolicy>;
+  messaging?: Partial<AgentMessagingPolicy>;
+  acknowledgePersonalAccountAccess?: boolean;
 }
 
 export interface AuthCodeResult {
@@ -2283,17 +2355,29 @@ export const api = {
     return fetchAPI<APIResponse<{ agents: AgentOverview[] }>>("/agents");
   },
 
-  async createAgent(data: { name: string; id?: string; cloneFromId?: string; mode?: ManagedAgentMode }) {
+  async createAgent(data: CreateAgentInput) {
     return fetchAPI<APIResponse<AgentOverview>>("/agents", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  async cloneAgent(id: string, data?: { name?: string; newId?: string; mode?: ManagedAgentMode }) {
+  async cloneAgent(
+    id: string,
+    data?: CreateAgentInput & {
+      newId?: string;
+    }
+  ) {
     return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}/clone`, {
       method: "POST",
       body: JSON.stringify(data ?? {}),
+    });
+  },
+
+  async updateAgent(id: string, data: UpdateAgentInput) {
+    return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
     });
   },
 
@@ -2304,37 +2388,38 @@ export const api = {
   },
 
   async startManagedAgent(id: string) {
-    return fetchAPI<
-      APIResponse<{
-        state: ManagedAgentState;
-        pid: number | null;
-        startedAt: string | null;
-        uptimeMs: number | null;
-        lastError: string | null;
-      }>
-    >(`/agents/${encodeURIComponent(id)}/start`, {
-      method: "POST",
-    });
+    return fetchAPI<APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>>(
+      `/agents/${encodeURIComponent(id)}/start`,
+      {
+        method: "POST",
+      }
+    );
   },
 
   async stopManagedAgent(id: string) {
-    return fetchAPI<
-      APIResponse<{
-        state: ManagedAgentState;
-        pid: number | null;
-        startedAt: string | null;
-        uptimeMs: number | null;
-        lastError: string | null;
-      }>
-    >(`/agents/${encodeURIComponent(id)}/stop`, {
-      method: "POST",
-    });
+    return fetchAPI<APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>>(
+      `/agents/${encodeURIComponent(id)}/stop`,
+      {
+        method: "POST",
+      }
+    );
   },
 
   async getManagedAgentLogs(id: string, lines = 200) {
-    return fetchAPI<APIResponse<AgentLogs>>(
-      `/agents/${encodeURIComponent(id)}/logs?lines=${lines}`
+    return fetchAPI<APIResponse<AgentLogs>>(`/agents/${encodeURIComponent(id)}/logs?lines=${lines}`);
+  },
+
+  async getManagedAgentMessages(id: string, limit = 100) {
+    return fetchAPI<APIResponse<{ messages: AgentMessage[] }>>(
+      `/agents/${encodeURIComponent(id)}/messages?limit=${limit}`
     );
+  },
+
+  async sendManagedAgentMessage(id: string, data: { fromId?: string; text: string }) {
+    return fetchAPI<APIResponse<AgentMessage>>(`/agents/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   },
 
   // ── Autonomous Task Engine ────────────────────────────────────────

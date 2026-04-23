@@ -13,6 +13,66 @@ vi.mock("../../utils/logger.js", () => ({
   })),
 }));
 
+vi.mock("../../services/audit.js", () => ({
+  initAudit: vi.fn(() => ({
+    log: vi.fn(),
+  })),
+}));
+
+function managedSnapshot(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "support-copy",
+    name: "Support Copy",
+    mode: "personal",
+    memoryPolicy: "isolated",
+    resources: {
+      maxMemoryMb: 512,
+      maxConcurrentTasks: 10,
+      rateLimitPerMinute: 60,
+      llmRateLimitPerMinute: 30,
+      restartOnCrash: true,
+      maxRestarts: 3,
+      restartBackoffMs: 5000,
+    },
+    messaging: {
+      enabled: true,
+      allowlist: ["primary"],
+      maxMessagesPerMinute: 30,
+    },
+    security: {
+      personalAccountAccessConfirmedAt: "2026-04-23T00:00:00.000Z",
+    },
+    connection: {
+      botUsername: null,
+    },
+    homePath: "/tmp/teleton/agents/support-copy",
+    configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+    workspacePath: "/tmp/teleton/agents/support-copy/workspace",
+    logPath: "/tmp/teleton/agents/support-copy/logs/agent.log",
+    createdAt: "2026-04-23T00:10:00.000Z",
+    updatedAt: "2026-04-23T00:10:00.000Z",
+    sourceId: null,
+    provider: "anthropic",
+    model: "claude-opus-4-6",
+    ownerId: 123,
+    adminIds: [123],
+    hasBotToken: false,
+    state: "stopped",
+    pid: null,
+    startedAt: null,
+    uptimeMs: null,
+    lastError: null,
+    transport: "mtproto",
+    health: "stopped",
+    restartCount: 0,
+    lastExitAt: null,
+    lastExitCode: null,
+    lastExitSignal: null,
+    pendingMessages: 0,
+    ...overrides,
+  };
+}
+
 function buildDeps(): WebUIServerDeps {
   const lifecycle = new AgentLifecycle();
   lifecycle.registerCallbacks(
@@ -23,6 +83,11 @@ function buildDeps(): WebUIServerDeps {
   return {
     lifecycle,
     configPath: "/tmp/teleton/config.yaml",
+    memory: {
+      db: { prepare: vi.fn() } as unknown as WebUIServerDeps["memory"]["db"],
+      embedder: {} as WebUIServerDeps["memory"]["embedder"],
+      knowledge: {} as WebUIServerDeps["memory"]["knowledge"],
+    },
     agent: {
       getConfig: vi.fn(() => ({
         meta: {
@@ -30,56 +95,29 @@ function buildDeps(): WebUIServerDeps {
           last_modified_at: "2026-04-23T01:00:00.000Z",
         },
         agent: { provider: "anthropic", model: "claude-opus-4-6" },
-        telegram: { owner_id: 123, admin_ids: [123], bot_token: undefined },
+        telegram: {
+          owner_id: 123,
+          admin_ids: [123],
+          bot_token: undefined,
+          bot_username: undefined,
+        },
       })),
     },
     agentManager: {
-      listAgentSnapshots: vi.fn(() => [
-        {
-          id: "support-copy",
-          name: "Support Copy",
-          mode: "personal",
-          homePath: "/tmp/teleton/agents/support-copy",
-          configPath: "/tmp/teleton/agents/support-copy/config.yaml",
-          workspacePath: "/tmp/teleton/agents/support-copy/workspace",
-          logPath: "/tmp/teleton/agents/support-copy/logs/agent.log",
-          createdAt: "2026-04-23T00:10:00.000Z",
-          updatedAt: "2026-04-23T00:10:00.000Z",
-          sourceId: null,
-          provider: "anthropic",
-          model: "claude-opus-4-6",
-          ownerId: 123,
-          adminIds: [123],
-          hasBotToken: false,
-          state: "stopped",
-          pid: null,
-          startedAt: null,
-          uptimeMs: null,
-          lastError: null,
-        },
-      ]),
-      createAgent: vi.fn(() => ({
-        id: "lab-copy",
-        name: "Lab Copy",
-        mode: "personal",
-        homePath: "/tmp/teleton/agents/lab-copy",
-        configPath: "/tmp/teleton/agents/lab-copy/config.yaml",
-        workspacePath: "/tmp/teleton/agents/lab-copy/workspace",
-        logPath: "/tmp/teleton/agents/lab-copy/logs/agent.log",
-        createdAt: "2026-04-23T00:20:00.000Z",
-        updatedAt: "2026-04-23T00:20:00.000Z",
-        sourceId: null,
-        provider: "anthropic",
-        model: "claude-opus-4-6",
-        ownerId: 123,
-        adminIds: [123],
-        hasBotToken: false,
-        state: "stopped",
-        pid: null,
-        startedAt: null,
-        uptimeMs: null,
-        lastError: null,
-      })),
+      listAgentSnapshots: vi.fn(() => [managedSnapshot()]),
+      createAgent: vi.fn(() =>
+        managedSnapshot({
+          id: "lab-copy",
+          name: "Lab Copy",
+          mode: "bot",
+          hasBotToken: true,
+          transport: "bot-api",
+          connection: { botUsername: "lab_bot" },
+        })
+      ),
+      updateAgent: vi.fn(() =>
+        managedSnapshot({ id: "support-copy", name: "Support Copy Updated" })
+      ),
       getAgentSnapshot: vi.fn(() => ({
         id: "support-copy",
         name: "Support Copy",
@@ -91,6 +129,13 @@ function buildDeps(): WebUIServerDeps {
         startedAt: "2026-04-23T00:21:00.000Z",
         uptimeMs: 5_000,
         lastError: null,
+        transport: "mtproto",
+        health: "healthy",
+        restartCount: 0,
+        lastExitAt: null,
+        lastExitCode: null,
+        lastExitSignal: null,
+        pendingMessages: 1,
       })),
       startAgent: vi.fn(() => ({
         state: "starting",
@@ -98,6 +143,13 @@ function buildDeps(): WebUIServerDeps {
         startedAt: null,
         uptimeMs: null,
         lastError: null,
+        transport: "bot-api",
+        health: "starting",
+        restartCount: 0,
+        lastExitAt: null,
+        lastExitCode: null,
+        lastExitSignal: null,
+        pendingMessages: 0,
       })),
       stopAgent: vi.fn(() => ({
         state: "stopping",
@@ -105,10 +157,37 @@ function buildDeps(): WebUIServerDeps {
         startedAt: null,
         uptimeMs: null,
         lastError: null,
+        transport: "mtproto",
+        health: "starting",
+        restartCount: 0,
+        lastExitAt: null,
+        lastExitCode: null,
+        lastExitSignal: null,
+        pendingMessages: 0,
       })),
       readLogs: vi.fn(() => ({
         lines: ["line one", "line two"],
         path: "/tmp/teleton/agents/support-copy/logs/agent.log",
+      })),
+      readMessages: vi.fn(() => ({
+        messages: [
+          {
+            id: "msg-1",
+            fromId: "primary",
+            toId: "support-copy",
+            text: "hello",
+            createdAt: "2026-04-23T01:00:00.000Z",
+            deliveredAt: null,
+          },
+        ],
+      })),
+      sendMessage: vi.fn(() => ({
+        id: "msg-2",
+        fromId: "primary",
+        toId: "support-copy",
+        text: "ship it",
+        createdAt: "2026-04-23T01:10:00.000Z",
+        deliveredAt: null,
       })),
     },
   } as unknown as WebUIServerDeps;
@@ -139,10 +218,17 @@ describe("Agents routes", () => {
     expect(body.data.agents[1].id).toBe("support-copy");
   });
 
-  it("creates a managed agent from the request body", async () => {
+  it("creates a managed agent with mode-aware payload", async () => {
     const res = await app.request("/api/agents", {
       method: "POST",
-      body: JSON.stringify({ name: "Lab Copy", mode: "bot" }),
+      body: JSON.stringify({
+        name: "Lab Copy",
+        mode: "bot",
+        botToken: "123456:ABCDEF",
+        botUsername: "lab_bot",
+        memoryPolicy: "isolated",
+        messaging: { enabled: true, allowlist: ["primary"] },
+      }),
       headers: { "Content-Type": "application/json" },
     });
 
@@ -154,34 +240,22 @@ describe("Agents routes", () => {
       id: undefined,
       cloneFromId: undefined,
       mode: "bot",
+      botToken: "123456:ABCDEF",
+      botUsername: "lab_bot",
+      memoryPolicy: "isolated",
+      resources: undefined,
+      messaging: { enabled: true, allowlist: ["primary"] },
+      acknowledgePersonalAccountAccess: undefined,
     });
   });
 
-  it("marks bot-mode managed agents as not startable in the overview", async () => {
+  it("explains why non-isolated managed agents cannot start", async () => {
     (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).listAgentSnapshots = vi.fn(
       () => [
-        {
-          id: "faq-bot",
-          name: "FAQ Bot",
-          mode: "bot",
-          homePath: "/tmp/teleton/agents/faq-bot",
-          configPath: "/tmp/teleton/agents/faq-bot/config.yaml",
-          workspacePath: "/tmp/teleton/agents/faq-bot/workspace",
-          logPath: "/tmp/teleton/agents/faq-bot/logs/agent.log",
-          createdAt: "2026-04-23T00:10:00.000Z",
-          updatedAt: "2026-04-23T00:10:00.000Z",
-          sourceId: null,
-          provider: "anthropic",
-          model: "claude-opus-4-6",
-          ownerId: 123,
-          adminIds: [123],
-          hasBotToken: true,
-          state: "stopped",
-          pid: null,
-          startedAt: null,
-          uptimeMs: null,
-          lastError: null,
-        },
+        managedSnapshot({
+          id: "shared-memory",
+          memoryPolicy: "shared-read",
+        }),
       ]
     );
 
@@ -189,8 +263,27 @@ describe("Agents routes", () => {
     expect(res.status).toBe(200);
 
     const body = await res.json();
-    expect(body.data.agents[1].mode).toBe("bot");
     expect(body.data.agents[1].canStart).toBe(false);
+    expect(body.data.agents[1].canStartReason).toContain("shared-read");
+  });
+
+  it("updates a managed agent", async () => {
+    const res = await app.request("/api/agents/support-copy", {
+      method: "PATCH",
+      body: JSON.stringify({
+        name: "Support Copy Updated",
+        messaging: { enabled: true, allowlist: ["primary", "lab-copy"] },
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).updateAgent
+    ).toHaveBeenCalledWith("support-copy", {
+      name: "Support Copy Updated",
+      messaging: { enabled: true, allowlist: ["primary", "lab-copy"] },
+    });
   });
 
   it("starts the primary agent through the shared lifecycle", async () => {
@@ -210,5 +303,22 @@ describe("Agents routes", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.data.lines).toEqual(["line one", "line two"]);
+  });
+
+  it("returns and appends managed inbox messages", async () => {
+    const listRes = await app.request("/api/agents/support-copy/messages");
+    expect(listRes.status).toBe(200);
+    const listBody = await listRes.json();
+    expect(listBody.data.messages).toHaveLength(1);
+
+    const sendRes = await app.request("/api/agents/support-copy/messages", {
+      method: "POST",
+      body: JSON.stringify({ fromId: "primary", text: "ship it" }),
+      headers: { "Content-Type": "application/json" },
+    });
+    expect(sendRes.status).toBe(201);
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).sendMessage
+    ).toHaveBeenCalledWith("primary", "support-copy", "ship it");
   });
 });

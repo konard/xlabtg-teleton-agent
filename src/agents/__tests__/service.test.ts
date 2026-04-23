@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, afterEach } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
@@ -21,11 +21,14 @@ api:
 ton_proxy:
   enabled: true
   port: 8080
+deals:
+  enabled: true
 `;
 
 describe("ManagedAgentService", () => {
   let rootDir: string;
   let configPath: string;
+  let service: ManagedAgentService | null = null;
 
   beforeEach(() => {
     rootDir = mkdtempSync(join(tmpdir(), "teleton-managed-agents-"));
@@ -38,18 +41,33 @@ describe("ManagedAgentService", () => {
     writeFileSync(join(rootDir, "plugins", "example", "index.js"), "export default {};\n", "utf-8");
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    if (service) {
+      await service.stopAll();
+    }
     rmSync(rootDir, { recursive: true, force: true });
   });
 
-  it("creates an isolated clone with rewritten paths and copied workspace assets", () => {
-    const service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+  it("requires explicit consent for new personal-mode managed agents", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
 
-    const snapshot = service.createAgent({ name: "Support Copy" });
+    expect(() => service?.createAgent({ name: "Support Copy" })).toThrow(
+      "Personal-mode managed agents require explicit private-account access consent"
+    );
+  });
+
+  it("creates an isolated personal clone with rewritten paths and copied workspace assets", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Support Copy",
+      acknowledgePersonalAccountAccess: true,
+    });
     const clonedConfig = loadConfig(snapshot.configPath);
 
     expect(snapshot.id).toBe("support-copy");
     expect(snapshot.mode).toBe("personal");
+    expect(snapshot.memoryPolicy).toBe("isolated");
     expect(snapshot.homePath).toBe(join(rootDir, "agents", "support-copy"));
     expect(existsSync(join(snapshot.workspacePath, "SOUL.md"))).toBe(true);
     expect(readFileSync(join(snapshot.workspacePath, "SOUL.md"), "utf-8")).toBe("Primary soul");
@@ -69,10 +87,16 @@ describe("ManagedAgentService", () => {
   });
 
   it("allocates unique ids when the same name is cloned twice", () => {
-    const service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
 
-    const first = service.createAgent({ name: "Trading Desk" });
-    const second = service.createAgent({ name: "Trading Desk" });
+    const first = service.createAgent({
+      name: "Trading Desk",
+      acknowledgePersonalAccountAccess: true,
+    });
+    const second = service.createAgent({
+      name: "Trading Desk",
+      acknowledgePersonalAccountAccess: true,
+    });
 
     expect(first.id).toBe("trading-desk");
     expect(second.id).toBe("trading-desk-2");
@@ -83,21 +107,92 @@ describe("ManagedAgentService", () => {
   });
 
   it("persists the requested mode and inherits it on clone", () => {
-    const service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
 
-    const bot = service.createAgent({ name: "FAQ Bot", mode: "bot" });
+    const bot = service.createAgent({
+      name: "FAQ Bot",
+      mode: "bot",
+      botToken: "123456:ABCDEF",
+      botUsername: "faq_bot",
+    });
     const clone = service.createAgent({ name: "FAQ Bot Copy", cloneFromId: bot.id });
 
     expect(bot.mode).toBe("bot");
+    expect(bot.connection.botUsername).toBe("faq_bot");
     expect(clone.mode).toBe("bot");
   });
 
-  it("rejects starting bot-mode managed agents until runtime support lands", () => {
-    const service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
-    const snapshot = service.createAgent({ name: "FAQ Bot", mode: "bot" });
+  it("starts bot-mode managed agents with explicit bot runtime env", async () => {
+    service = new ManagedAgentService({
+      rootDir,
+      primaryConfigPath: configPath,
+      resolveCommand: () => ({
+        command: process.execPath,
+        args: [
+          "-e",
+          [
+            "console.log('managed-mode=' + process.env.TELETON_MANAGED_AGENT_MODE);",
+            "setTimeout(() => process.exit(0), 5000);",
+          ].join(" "),
+        ],
+      }),
+    });
 
-    expect(() => service.startAgent(snapshot.id)).toThrow(
-      "Bot-mode managed agents are not startable in this foundation slice yet"
+    const snapshot = service.createAgent({
+      name: "FAQ Bot",
+      mode: "bot",
+      botToken: "123456:ABCDEF",
+      botUsername: "faq_bot",
+    });
+    const savedConfig = loadConfig(snapshot.configPath);
+
+    expect(savedConfig.telegram.bot_token).toBe("123456:ABCDEF");
+    expect(savedConfig.deals.enabled).toBe(false);
+
+    service.startAgent(snapshot.id);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const logs = service.readLogs(snapshot.id, 20).lines.join("\n");
+    expect(logs).toContain("managed-mode=bot");
+    expect(service.getRuntimeStatus(snapshot.id).transport).toBe("bot-api");
+  });
+
+  it("blocks non-isolated memory policies from starting", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Research Bot",
+      mode: "bot",
+      botToken: "123456:ABCDEF",
+      memoryPolicy: "shared-read",
+    });
+
+    expect(() => service?.startAgent(snapshot.id)).toThrow('only "isolated" is startable today');
+  });
+
+  it("stores inter-agent inbox messages and enforces sender rate limits", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const sender = service.createAgent({
+      name: "Planner",
+      acknowledgePersonalAccountAccess: true,
+      messaging: { enabled: true, maxMessagesPerMinute: 1 },
+    });
+    const target = service.createAgent({
+      name: "Executor",
+      acknowledgePersonalAccountAccess: true,
+      messaging: { enabled: true, allowlist: [sender.id] },
+    });
+
+    const first = service.sendMessage(sender.id, target.id, "First task");
+    expect(first.fromId).toBe(sender.id);
+    expect(service.readMessages(target.id).messages).toHaveLength(1);
+
+    expect(() => service?.sendMessage(sender.id, target.id, "Second task")).toThrow(
+      "exceeded its inter-agent message rate limit"
+    );
+    expect(() => service?.sendMessage("primary", target.id, "Blocked")).toThrow(
+      `Managed agent "primary" is not allowed to message "${target.id}"`
     );
   });
 });

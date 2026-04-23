@@ -62,6 +62,11 @@ export interface TelegramMessage {
   hasMedia: boolean;
   mediaType?: "photo" | "document" | "video" | "audio" | "voice" | "sticker";
   replyToId?: number;
+  replyContext?: {
+    text?: string;
+    senderName?: string;
+    isAgent?: boolean;
+  };
   _rawMessage?: Api.Message;
 }
 
@@ -78,9 +83,9 @@ export interface SendMessageOptions {
 }
 
 export class TelegramBridge {
-  private client: TelegramUserClient;
-  private ownUserId?: bigint;
-  private ownUsername?: string;
+  protected client: TelegramUserClient;
+  protected ownUserId?: bigint;
+  protected ownUsername?: string;
   /**
    * Weighted LRU peer cache: chatId → peer. Eviction prefers infrequently-accessed entries,
    * so long-lived hot chats survive bursts of one-off lookups.

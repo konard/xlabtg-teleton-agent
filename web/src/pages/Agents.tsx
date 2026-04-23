@@ -1,6 +1,54 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { api, type AgentOverview, type AgentLogs } from "../lib/api";
+import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  api,
+  type AgentLogs,
+  type AgentMessage,
+  type AgentOverview,
+  type CreateAgentInput,
+  type ManagedAgentMemoryPolicy,
+  type UpdateAgentInput,
+} from "../lib/api";
 import { toast } from "../lib/toast-store";
+
+interface AgentFormState {
+  name: string;
+  cloneFromId: string;
+  mode: AgentOverview["mode"];
+  botToken: string;
+  botUsername: string;
+  memoryPolicy: ManagedAgentMemoryPolicy;
+  acknowledgePersonalAccountAccess: boolean;
+  maxMemoryMb: string;
+  maxConcurrentTasks: string;
+  rateLimitPerMinute: string;
+  llmRateLimitPerMinute: string;
+  restartOnCrash: boolean;
+  maxRestarts: string;
+  restartBackoffMs: string;
+  messagingEnabled: boolean;
+  messagingAllowlist: string;
+  maxMessagesPerMinute: string;
+}
+
+const DEFAULT_FORM: AgentFormState = {
+  name: "",
+  cloneFromId: "primary",
+  mode: "personal",
+  botToken: "",
+  botUsername: "",
+  memoryPolicy: "isolated",
+  acknowledgePersonalAccountAccess: false,
+  maxMemoryMb: "512",
+  maxConcurrentTasks: "10",
+  rateLimitPerMinute: "60",
+  llmRateLimitPerMinute: "30",
+  restartOnCrash: true,
+  maxRestarts: "3",
+  restartBackoffMs: "5000",
+  messagingEnabled: false,
+  messagingAllowlist: "",
+  maxMessagesPerMinute: "30",
+};
 
 function formatDate(value: string | null): string {
   if (!value) return "—";
@@ -18,6 +66,321 @@ function formatUptime(value: number | null): string {
   return `${seconds}s`;
 }
 
+function formFromAgent(agent: AgentOverview): AgentFormState {
+  return {
+    name: agent.name,
+    cloneFromId: agent.sourceId ?? "primary",
+    mode: agent.mode,
+    botToken: "",
+    botUsername: agent.connection.botUsername ?? "",
+    memoryPolicy: agent.memoryPolicy,
+    acknowledgePersonalAccountAccess: Boolean(agent.security.personalAccountAccessConfirmedAt),
+    maxMemoryMb: String(agent.resources.maxMemoryMb),
+    maxConcurrentTasks: String(agent.resources.maxConcurrentTasks),
+    rateLimitPerMinute: String(agent.resources.rateLimitPerMinute),
+    llmRateLimitPerMinute: String(agent.resources.llmRateLimitPerMinute),
+    restartOnCrash: agent.resources.restartOnCrash,
+    maxRestarts: String(agent.resources.maxRestarts),
+    restartBackoffMs: String(agent.resources.restartBackoffMs),
+    messagingEnabled: agent.messaging.enabled,
+    messagingAllowlist: agent.messaging.allowlist.join(", "),
+    maxMessagesPerMinute: String(agent.messaging.maxMessagesPerMinute),
+  };
+}
+
+function numberOrUndefined(value: string): number | undefined {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function toCreatePayload(form: AgentFormState): CreateAgentInput {
+  return {
+    name: form.name.trim(),
+    cloneFromId: form.cloneFromId === "primary" ? undefined : form.cloneFromId,
+    mode: form.mode,
+    botToken: form.botToken.trim() || undefined,
+    botUsername: form.botUsername.trim() || undefined,
+    memoryPolicy: form.memoryPolicy,
+    acknowledgePersonalAccountAccess: form.mode === "personal" ? form.acknowledgePersonalAccountAccess : undefined,
+    resources: {
+      maxMemoryMb: numberOrUndefined(form.maxMemoryMb),
+      maxConcurrentTasks: numberOrUndefined(form.maxConcurrentTasks),
+      rateLimitPerMinute: numberOrUndefined(form.rateLimitPerMinute),
+      llmRateLimitPerMinute: numberOrUndefined(form.llmRateLimitPerMinute),
+      restartOnCrash: form.restartOnCrash,
+      maxRestarts: numberOrUndefined(form.maxRestarts),
+      restartBackoffMs: numberOrUndefined(form.restartBackoffMs),
+    },
+    messaging: {
+      enabled: form.messagingEnabled,
+      allowlist: form.messagingAllowlist
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      maxMessagesPerMinute: numberOrUndefined(form.maxMessagesPerMinute),
+    },
+  };
+}
+
+function toUpdatePayload(form: AgentFormState): UpdateAgentInput {
+  return {
+    name: form.name.trim() || undefined,
+    botToken: form.botToken.trim() || undefined,
+    botUsername: form.botUsername.trim() || null,
+    memoryPolicy: form.memoryPolicy,
+    acknowledgePersonalAccountAccess: form.mode === "personal" ? form.acknowledgePersonalAccountAccess : undefined,
+    resources: {
+      maxMemoryMb: numberOrUndefined(form.maxMemoryMb),
+      maxConcurrentTasks: numberOrUndefined(form.maxConcurrentTasks),
+      rateLimitPerMinute: numberOrUndefined(form.rateLimitPerMinute),
+      llmRateLimitPerMinute: numberOrUndefined(form.llmRateLimitPerMinute),
+      restartOnCrash: form.restartOnCrash,
+      maxRestarts: numberOrUndefined(form.maxRestarts),
+      restartBackoffMs: numberOrUndefined(form.restartBackoffMs),
+    },
+    messaging: {
+      enabled: form.messagingEnabled,
+      allowlist: form.messagingAllowlist
+        .split(",")
+        .map((value) => value.trim())
+        .filter(Boolean),
+      maxMessagesPerMinute: numberOrUndefined(form.maxMessagesPerMinute),
+    },
+  };
+}
+
+function FormFields({
+  form,
+  setForm,
+  submitLabel,
+  submitting,
+  onSubmit,
+  showCloneSource,
+}: {
+  form: AgentFormState;
+  setForm: Dispatch<SetStateAction<AgentFormState>>;
+  submitLabel: string;
+  submitting: boolean;
+  onSubmit: () => Promise<void> | void;
+  showCloneSource: boolean;
+}) {
+  return (
+    <section
+      style={{
+        display: "grid",
+        gap: "12px",
+        padding: "16px",
+        borderRadius: "16px",
+        border: "1px solid var(--separator)",
+        background: "var(--surface)",
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Agent name"
+          value={form.name}
+          onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
+        />
+        {showCloneSource && (
+          <input
+            type="text"
+            placeholder="Clone source id"
+            value={form.cloneFromId}
+            onChange={(e) => setForm((current) => ({ ...current, cloneFromId: e.target.value }))}
+          />
+        )}
+        <select
+          value={form.mode}
+          disabled={!showCloneSource}
+          onChange={(e) =>
+            setForm((current) => ({
+              ...current,
+              mode: e.target.value as AgentOverview["mode"],
+            }))
+          }
+        >
+          <option value="personal">Personal mode</option>
+          <option value="bot">Bot mode</option>
+        </select>
+        <select
+          value={form.memoryPolicy}
+          onChange={(e) =>
+            setForm((current) => ({
+              ...current,
+              memoryPolicy: e.target.value as ManagedAgentMemoryPolicy,
+            }))
+          }
+        >
+          <option value="isolated">Isolated memory</option>
+          <option value="shared-read">Shared-read (modeled, blocked)</option>
+          <option value="shared-write">Shared-write (modeled, blocked)</option>
+        </select>
+      </div>
+
+      {form.mode === "bot" && (
+        <div
+          style={{
+            display: "grid",
+            gap: "12px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          <input
+            type="password"
+            placeholder="Bot token"
+            value={form.botToken}
+            onChange={(e) => setForm((current) => ({ ...current, botToken: e.target.value }))}
+          />
+          <input
+            type="text"
+            placeholder="Bot username"
+            value={form.botUsername}
+            onChange={(e) => setForm((current) => ({ ...current, botUsername: e.target.value }))}
+          />
+        </div>
+      )}
+
+      {form.mode === "personal" && (
+        <label style={{ display: "flex", gap: "10px", alignItems: "flex-start", fontSize: "13px" }}>
+          <input
+            type="checkbox"
+            checked={form.acknowledgePersonalAccountAccess}
+            onChange={(e) =>
+              setForm((current) => ({
+                ...current,
+                acknowledgePersonalAccountAccess: e.target.checked,
+              }))
+            }
+          />
+          <span>
+            I understand this personal-mode agent can access the cloned private-account session and chat scope.
+          </span>
+        </label>
+      )}
+
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+        }}
+      >
+        <input
+          type="number"
+          min="64"
+          placeholder="Max memory MB"
+          value={form.maxMemoryMb}
+          onChange={(e) => setForm((current) => ({ ...current, maxMemoryMb: e.target.value }))}
+        />
+        <input
+          type="number"
+          min="1"
+          placeholder="Max concurrent tasks"
+          value={form.maxConcurrentTasks}
+          onChange={(e) =>
+            setForm((current) => ({ ...current, maxConcurrentTasks: e.target.value }))
+          }
+        />
+        <input
+          type="number"
+          min="1"
+          placeholder="Rate limit / minute"
+          value={form.rateLimitPerMinute}
+          onChange={(e) =>
+            setForm((current) => ({ ...current, rateLimitPerMinute: e.target.value }))
+          }
+        />
+        <input
+          type="number"
+          min="1"
+          placeholder="LLM rate limit / minute"
+          value={form.llmRateLimitPerMinute}
+          onChange={(e) =>
+            setForm((current) => ({ ...current, llmRateLimitPerMinute: e.target.value }))
+          }
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+          alignItems: "center",
+        }}
+      >
+        <label style={{ display: "flex", gap: "10px", alignItems: "center", fontSize: "13px" }}>
+          <input
+            type="checkbox"
+            checked={form.restartOnCrash}
+            onChange={(e) => setForm((current) => ({ ...current, restartOnCrash: e.target.checked }))}
+          />
+          <span>Restart on crash</span>
+        </label>
+        <input
+          type="number"
+          min="0"
+          placeholder="Max restarts"
+          value={form.maxRestarts}
+          onChange={(e) => setForm((current) => ({ ...current, maxRestarts: e.target.value }))}
+        />
+        <input
+          type="number"
+          min="0"
+          placeholder="Restart backoff ms"
+          value={form.restartBackoffMs}
+          onChange={(e) =>
+            setForm((current) => ({ ...current, restartBackoffMs: e.target.value }))
+          }
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        }}
+      >
+        <label style={{ display: "flex", gap: "10px", alignItems: "center", fontSize: "13px" }}>
+          <input
+            type="checkbox"
+            checked={form.messagingEnabled}
+            onChange={(e) => setForm((current) => ({ ...current, messagingEnabled: e.target.checked }))}
+          />
+          <span>Enable inter-agent inbox</span>
+        </label>
+        <input
+          type="number"
+          min="1"
+          placeholder="Message rate / minute"
+          value={form.maxMessagesPerMinute}
+          onChange={(e) =>
+            setForm((current) => ({ ...current, maxMessagesPerMinute: e.target.value }))
+          }
+        />
+      </div>
+      <input
+        type="text"
+        placeholder="Messaging allowlist ids (comma separated, empty = open)"
+        value={form.messagingAllowlist}
+        onChange={(e) => setForm((current) => ({ ...current, messagingAllowlist: e.target.value }))}
+      />
+
+      <button onClick={() => void onSubmit()} disabled={submitting}>
+        {submitting ? "Working..." : submitLabel}
+      </button>
+    </section>
+  );
+}
+
 const STATE_COLORS: Record<AgentOverview["state"], string> = {
   stopped: "var(--text-tertiary)",
   starting: "#ffd60a",
@@ -32,12 +395,18 @@ export function Agents() {
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [busyAgentId, setBusyAgentId] = useState<string | null>(null);
-  const [name, setName] = useState("");
-  const [cloneFromId, setCloneFromId] = useState("primary");
-  const [mode, setMode] = useState<AgentOverview["mode"]>("personal");
-  const [selectedLogsAgent, setSelectedLogsAgent] = useState<AgentOverview | null>(null);
+  const [createForm, setCreateForm] = useState<AgentFormState>(DEFAULT_FORM);
+  const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<AgentFormState>(DEFAULT_FORM);
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [selectedLogsAgentId, setSelectedLogsAgentId] = useState<string | null>(null);
   const [logs, setLogs] = useState<AgentLogs | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
+  const [selectedMessagesAgentId, setSelectedMessagesAgentId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
+  const [messageFromId, setMessageFromId] = useState("primary");
+  const [messageText, setMessageText] = useState("");
 
   const loadAgents = useCallback(async () => {
     try {
@@ -59,43 +428,59 @@ export function Agents() {
     return () => clearInterval(interval);
   }, [loadAgents]);
 
-  const cloneOptions = useMemo(
+  const editableAgent = useMemo(
+    () => agents.find((agent) => agent.id === editingAgentId) ?? null,
+    [agents, editingAgentId]
+  );
+  const selectedLogsAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedLogsAgentId) ?? null,
+    [agents, selectedLogsAgentId]
+  );
+  const selectedMessagesAgent = useMemo(
+    () => agents.find((agent) => agent.id === selectedMessagesAgentId) ?? null,
+    [agents, selectedMessagesAgentId]
+  );
+  const messageSourceOptions = useMemo(
     () => agents.map((agent) => ({ id: agent.id, label: `${agent.name} (${agent.kind})` })),
     [agents]
   );
 
-  const refreshLogs = useCallback(
-    async (agent: AgentOverview) => {
-      if (!agent.logsAvailable) return;
-      setSelectedLogsAgent(agent);
-      setLoadingLogs(true);
-      try {
-        const response = await api.getManagedAgentLogs(agent.id, 200);
-        setLogs(response.data);
-      } catch (err) {
-        toast.error(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLoadingLogs(false);
-      }
-    },
-    []
-  );
+  const refreshLogs = useCallback(async (agentId: string) => {
+    setSelectedLogsAgentId(agentId);
+    setLoadingLogs(true);
+    try {
+      const response = await api.getManagedAgentLogs(agentId, 200);
+      setLogs(response.data);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingLogs(false);
+    }
+  }, []);
+
+  const refreshMessages = useCallback(async (agentId: string) => {
+    setSelectedMessagesAgentId(agentId);
+    setLoadingMessages(true);
+    try {
+      const response = await api.getManagedAgentMessages(agentId, 100);
+      setMessages(response.data.messages);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLoadingMessages(false);
+    }
+  }, []);
 
   const handleCreate = useCallback(async () => {
-    const trimmed = name.trim();
-    if (!trimmed) {
+    if (!createForm.name.trim()) {
       toast.error("Enter an agent name first");
       return;
     }
 
     setCreating(true);
     try {
-      await api.createAgent({
-        name: trimmed,
-        cloneFromId: cloneFromId === "primary" ? undefined : cloneFromId,
-        mode,
-      });
-      setName("");
+      await api.createAgent(toCreatePayload(createForm));
+      setCreateForm(DEFAULT_FORM);
       toast.success("Managed agent created");
       await loadAgents();
     } catch (err) {
@@ -103,7 +488,7 @@ export function Agents() {
     } finally {
       setCreating(false);
     }
-  }, [cloneFromId, loadAgents, mode, name]);
+  }, [createForm, loadAgents]);
 
   const handleStartStop = useCallback(
     async (agent: AgentOverview, action: "start" | "stop") => {
@@ -133,7 +518,12 @@ export function Agents() {
 
       setBusyAgentId(agent.id);
       try {
-        await api.cloneAgent(agent.id, { name: cloneName });
+        await api.cloneAgent(agent.id, {
+          name: cloneName,
+          mode: agent.mode,
+          memoryPolicy: agent.memoryPolicy,
+          acknowledgePersonalAccountAccess: agent.mode === "personal" ? true : undefined,
+        });
         toast.success(`Cloned ${agent.name}`);
         await loadAgents();
       } catch (err) {
@@ -152,9 +542,16 @@ export function Agents() {
       setBusyAgentId(agent.id);
       try {
         await api.deleteAgent(agent.id);
-        if (selectedLogsAgent?.id === agent.id) {
-          setSelectedLogsAgent(null);
+        if (selectedLogsAgentId === agent.id) {
+          setSelectedLogsAgentId(null);
           setLogs(null);
+        }
+        if (selectedMessagesAgentId === agent.id) {
+          setSelectedMessagesAgentId(null);
+          setMessages([]);
+        }
+        if (editingAgentId === agent.id) {
+          setEditingAgentId(null);
         }
         toast.success(`Deleted ${agent.name}`);
         await loadAgents();
@@ -164,8 +561,47 @@ export function Agents() {
         setBusyAgentId(null);
       }
     },
-    [loadAgents, selectedLogsAgent]
+    [editingAgentId, loadAgents, selectedLogsAgentId, selectedMessagesAgentId]
   );
+
+  const handleEdit = useCallback((agent: AgentOverview) => {
+    setEditingAgentId(agent.id);
+    setEditForm(formFromAgent(agent));
+  }, []);
+
+  const handleSaveEdit = useCallback(async () => {
+    if (!editingAgentId) return;
+    setSavingEdit(true);
+    try {
+      await api.updateAgent(editingAgentId, toUpdatePayload(editForm));
+      toast.success("Managed agent updated");
+      await loadAgents();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSavingEdit(false);
+    }
+  }, [editForm, editingAgentId, loadAgents]);
+
+  const handleSendMessage = useCallback(async () => {
+    if (!selectedMessagesAgentId) return;
+    if (!messageText.trim()) {
+      toast.error("Enter a message first");
+      return;
+    }
+    try {
+      await api.sendManagedAgentMessage(selectedMessagesAgentId, {
+        fromId: messageFromId,
+        text: messageText.trim(),
+      });
+      setMessageText("");
+      toast.success("Inbox message queued");
+      await refreshMessages(selectedMessagesAgentId);
+      await loadAgents();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : String(err));
+    }
+  }, [loadAgents, messageFromId, messageText, refreshMessages, selectedMessagesAgentId]);
 
   if (loading) {
     return <div className="loading">Loading managed agents...</div>;
@@ -175,7 +611,7 @@ export function Agents() {
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
       <div className="header" style={{ marginBottom: 0 }}>
         <h1>Agents</h1>
-        <p>Run isolated Telegram agents side by side from one control surface.</p>
+        <p>Run isolated Telegram runtimes with explicit mode, policy, restart, and inbox controls.</p>
       </div>
 
       {error && (
@@ -184,58 +620,47 @@ export function Agents() {
         </div>
       )}
 
-      <section
-        style={{
-          display: "grid",
-          gap: "12px",
-          padding: "16px",
-          borderRadius: "16px",
-          border: "1px solid var(--separator)",
-          background: "var(--surface)",
-        }}
-      >
-        <div>
-          <div style={{ fontSize: "15px", fontWeight: 600 }}>Create managed agent</div>
-          <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
-            New agents clone an existing home directory, then run with their own `TELETON_HOME`.
-            Bot-mode definitions are stored now, but bot-mode child runtimes still land in a
-            follow-up slice.
-          </div>
+      <section style={{ display: "grid", gap: "8px" }}>
+        <div style={{ fontSize: "15px", fontWeight: 600 }}>Create managed agent</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+          Personal-mode agents require explicit consent for cloned private-account access. Bot-mode agents require a bot token and start with polling transport.
         </div>
-        <div
-          style={{
-            display: "grid",
-            gap: "12px",
-            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-          }}
-        >
-          <input
-            type="text"
-            placeholder="Agent name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <select value={cloneFromId} onChange={(e) => setCloneFromId(e.target.value)}>
-            {cloneOptions.map((option) => (
-              <option key={option.id} value={option.id}>
-                Clone from {option.label}
-              </option>
-            ))}
-          </select>
-          <select value={mode} onChange={(e) => setMode(e.target.value as AgentOverview["mode"])}>
-            <option value="personal">Personal mode</option>
-            <option value="bot">Bot mode</option>
-          </select>
-          <button onClick={handleCreate} disabled={creating}>
-            {creating ? "Creating..." : "Create"}
-          </button>
-        </div>
+        <FormFields
+          form={createForm}
+          setForm={setCreateForm}
+          submitLabel="Create managed agent"
+          submitting={creating}
+          onSubmit={handleCreate}
+          showCloneSource
+        />
       </section>
+
+      {editableAgent && (
+        <section style={{ display: "grid", gap: "8px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div>
+              <div style={{ fontSize: "15px", fontWeight: 600 }}>Edit {editableAgent.name}</div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                Stop the agent before changing runtime, messaging, or credential settings.
+              </div>
+            </div>
+            <button onClick={() => setEditingAgentId(null)}>Close</button>
+          </div>
+          <FormFields
+            form={editForm}
+            setForm={setEditForm}
+            submitLabel="Save agent settings"
+            submitting={savingEdit}
+            onSubmit={handleSaveEdit}
+            showCloneSource={false}
+          />
+        </section>
+      )}
 
       <section
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))",
+          gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))",
           gap: "14px",
         }}
       >
@@ -272,6 +697,9 @@ export function Agents() {
                     <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
                       {agent.mode}
                     </span>
+                    <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                      {agent.transport}
+                    </span>
                   </div>
                   <div style={{ fontSize: "17px", fontWeight: 600 }}>{agent.name}</div>
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
@@ -294,28 +722,40 @@ export function Agents() {
                   <div>{agent.state}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-secondary)" }}>Mode</div>
-                  <div>{agent.mode}</div>
+                  <div style={{ color: "var(--text-secondary)" }}>Health</div>
+                  <div>{agent.health}</div>
                 </div>
                 <div>
                   <div style={{ color: "var(--text-secondary)" }}>PID</div>
                   <div>{agent.pid ?? "—"}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-secondary)" }}>Started</div>
-                  <div>{formatDate(agent.startedAt)}</div>
-                </div>
-                <div>
                   <div style={{ color: "var(--text-secondary)" }}>Uptime</div>
                   <div>{formatUptime(agent.uptimeMs)}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-secondary)" }}>Owner</div>
-                  <div>{agent.ownerId ?? "—"}</div>
+                  <div style={{ color: "var(--text-secondary)" }}>Started</div>
+                  <div>{formatDate(agent.startedAt)}</div>
                 </div>
                 <div>
-                  <div style={{ color: "var(--text-secondary)" }}>Admins</div>
-                  <div>{agent.adminIds.length > 0 ? agent.adminIds.join(", ") : "—"}</div>
+                  <div style={{ color: "var(--text-secondary)" }}>Last exit</div>
+                  <div>{formatDate(agent.lastExitAt)}</div>
+                </div>
+                <div>
+                  <div style={{ color: "var(--text-secondary)" }}>Restarts</div>
+                  <div>{agent.restartCount}</div>
+                </div>
+                <div>
+                  <div style={{ color: "var(--text-secondary)" }}>Inbox</div>
+                  <div>{agent.pendingMessages}</div>
+                </div>
+                <div>
+                  <div style={{ color: "var(--text-secondary)" }}>Memory policy</div>
+                  <div>{agent.memoryPolicy}</div>
+                </div>
+                <div>
+                  <div style={{ color: "var(--text-secondary)" }}>Bot username</div>
+                  <div>{agent.connection.botUsername ?? "—"}</div>
                 </div>
               </div>
 
@@ -329,12 +769,24 @@ export function Agents() {
               >
                 <div>Home: {agent.homePath}</div>
                 <div>Config: {agent.configPath}</div>
-                {agent.mode === "bot" && (
+                <div>
+                  Runtime: {agent.resources.maxConcurrentTasks} tasks, {agent.resources.rateLimitPerMinute} req/min,{" "}
+                  {agent.resources.llmRateLimitPerMinute} LLM/min, {agent.resources.maxMemoryMb} MB
+                </div>
+                <div>
+                  Restart: {agent.resources.restartOnCrash ? "on" : "off"} / {agent.resources.maxRestarts} max /{" "}
+                  {agent.resources.restartBackoffMs} ms backoff
+                </div>
+                <div>
+                  Inbox: {agent.messaging.enabled ? "enabled" : "disabled"}
+                  {agent.messaging.allowlist.length > 0 ? ` · allowlist ${agent.messaging.allowlist.join(", ")}` : " · open"}
+                </div>
+                {agent.mode === "personal" && (
                   <div>
-                    Bot-mode agent definitions are stored, but starting managed bot runtimes is not
-                    implemented in this slice yet.
+                    Personal consent: {agent.security.personalAccountAccessConfirmedAt ? formatDate(agent.security.personalAccountAccessConfirmedAt) : "missing"}
                   </div>
                 )}
+                {agent.canStartReason && <div style={{ color: "var(--red)" }}>Start blocked: {agent.canStartReason}</div>}
                 {agent.lastError && <div style={{ color: "var(--red)" }}>Last error: {agent.lastError}</div>}
               </div>
 
@@ -353,6 +805,11 @@ export function Agents() {
                     {busy ? "Working..." : "Stop"}
                   </button>
                 )}
+                {agent.kind === "managed" && (
+                  <button onClick={() => handleEdit(agent)} disabled={busy}>
+                    Edit
+                  </button>
+                )}
                 <button onClick={() => void handleClone(agent)} disabled={busy}>
                   Clone
                 </button>
@@ -362,8 +819,13 @@ export function Agents() {
                   </button>
                 )}
                 {agent.logsAvailable && (
-                  <button onClick={() => void refreshLogs(agent)} disabled={busy}>
+                  <button onClick={() => void refreshLogs(agent.id)} disabled={busy}>
                     Logs
+                  </button>
+                )}
+                {agent.kind === "managed" && (
+                  <button onClick={() => void refreshMessages(agent.id)} disabled={busy}>
+                    Inbox
                   </button>
                 )}
               </div>
@@ -390,7 +852,7 @@ export function Agents() {
                 {logs?.path ?? selectedLogsAgent.logPath}
               </div>
             </div>
-            <button onClick={() => void refreshLogs(selectedLogsAgent)} disabled={loadingLogs}>
+            <button onClick={() => void refreshLogs(selectedLogsAgent.id)} disabled={loadingLogs}>
               {loadingLogs ? "Refreshing..." : "Refresh"}
             </button>
           </div>
@@ -409,6 +871,83 @@ export function Agents() {
           >
             {logs?.lines.length ? logs.lines.join("\n") : "No logs yet."}
           </pre>
+        </section>
+      )}
+
+      {selectedMessagesAgent && (
+        <section
+          style={{
+            display: "grid",
+            gap: "12px",
+            padding: "16px",
+            borderRadius: "16px",
+            border: "1px solid var(--separator)",
+            background: "var(--surface)",
+          }}
+        >
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <div style={{ fontSize: "15px", fontWeight: 600 }}>{selectedMessagesAgent.name} inbox</div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                File-backed backend primitive with allowlist and rate-limit enforcement.
+              </div>
+            </div>
+            <button onClick={() => void refreshMessages(selectedMessagesAgent.id)} disabled={loadingMessages}>
+              {loadingMessages ? "Refreshing..." : "Refresh"}
+            </button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "12px",
+              gridTemplateColumns: "180px 1fr auto",
+            }}
+          >
+            <select value={messageFromId} onChange={(e) => setMessageFromId(e.target.value)}>
+              {messageSourceOptions.map((option) => (
+                <option key={option.id} value={option.id}>
+                  From {option.label}
+                </option>
+              ))}
+            </select>
+            <input
+              type="text"
+              placeholder="Queue a message into this agent's inbox"
+              value={messageText}
+              onChange={(e) => setMessageText(e.target.value)}
+            />
+            <button onClick={() => void handleSendMessage()}>Send</button>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gap: "10px",
+              maxHeight: "420px",
+              overflowY: "auto",
+            }}
+          >
+            {messages.length === 0 && (
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>No inbox messages yet.</div>
+            )}
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                style={{
+                  padding: "12px",
+                  borderRadius: "14px",
+                  border: "1px solid var(--separator)",
+                  background: "var(--surface-hover)",
+                }}
+              >
+                <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                  {message.fromId} → {message.toId} · {formatDate(message.createdAt)}
+                </div>
+                <div style={{ whiteSpace: "pre-wrap", fontSize: "13px" }}>{message.text}</div>
+              </div>
+            ))}
+          </div>
         </section>
       )}
     </div>

@@ -327,8 +327,20 @@ export class MessageHandler {
           }
 
           // 5b. Resolve reply context (only for messages we're responding to)
-          let replyContext: { text: string; senderName?: string; isAgent?: boolean } | undefined;
-          if (message.replyToId && message._rawMessage) {
+          let replyContext:
+            | {
+                text: string;
+                senderName?: string;
+                isAgent?: boolean;
+              }
+            | undefined = message.replyContext?.text
+            ? {
+                text: message.replyContext.text,
+                senderName: message.replyContext.senderName,
+                isAgent: message.replyContext.isAgent,
+              }
+            : undefined;
+          if (!replyContext && message.replyToId && message._rawMessage) {
             const raw = await this.bridge.fetchReplyContext(message._rawMessage);
             if (raw?.text) {
               replyContext = { text: raw.text, senderName: raw.senderName, isAgent: raw.isAgent };

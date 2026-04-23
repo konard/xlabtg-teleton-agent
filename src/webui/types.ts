@@ -110,6 +110,15 @@ export interface APIResponse<T = unknown> {
   error?: string;
 }
 
+export interface ManagedAgentMessageInfo {
+  id: string;
+  fromId: string;
+  toId: string;
+  text: string;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
 export interface StatusResponse {
   uptime: number;
   model: string;
