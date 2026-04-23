@@ -78,6 +78,12 @@ function validateUrl(v: string) {
   return "Must be empty or start with http:// or https://";
 }
 
+function validateWebhookUrl(v: string) {
+  if (v === "") return undefined; // empty to reset / clear
+  if (!v.startsWith("https://")) return "Webhook URL must use https://";
+  return undefined;
+}
+
 // ── Whitelist ──────────────────────────────────────────────────────────
 
 export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
@@ -1040,10 +1046,10 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     type: "string",
     category: "Monitoring",
     label: "Alert Webhook URL",
-    description: "Optional webhook URL for anomaly alerts",
+    description: "Optional HTTPS webhook URL for anomaly alerts (must use https://)",
     sensitive: true,
     hotReload: "instant",
-    validate: validateUrl,
+    validate: validateWebhookUrl,
     mask: (v) => (v.length > 12 ? v.slice(0, 12) + "****" : v),
     parse: (v) => (v === "" ? null : v),
     defaultValue: "",
