@@ -486,7 +486,9 @@ describe("Workspace Path Validator", () => {
         symlinkSync("/etc", linkDir);
         // Accessing evil-dir/passwd would resolve to /etc/passwd
         expect(() => validatePath("evil-dir/passwd", true)).toThrow(WorkspaceSecurityError);
-        expect(() => validatePath("evil-dir/passwd", true)).toThrow(/outside the workspace|symbolic link/i);
+        expect(() => validatePath("evil-dir/passwd", true)).toThrow(
+          /outside the workspace|symbolic link/i
+        );
       } finally {
         rmSync(linkDir, { force: true });
       }
@@ -496,7 +498,9 @@ describe("Workspace Path Validator", () => {
       const linkDir = join(tempWorkspace, "evil-write-dir");
       try {
         symlinkSync("/tmp", linkDir);
-        expect(() => validateWritePath("evil-write-dir/injected.txt")).toThrow(WorkspaceSecurityError);
+        expect(() => validateWritePath("evil-write-dir/injected.txt")).toThrow(
+          WorkspaceSecurityError
+        );
       } finally {
         rmSync(linkDir, { force: true });
       }

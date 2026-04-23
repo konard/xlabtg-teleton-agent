@@ -5,7 +5,11 @@ import { appendFileSync, mkdirSync, existsSync } from "fs";
 import { dirname } from "path";
 import { MAX_WRITE_SIZE } from "../../../constants/limits.js";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validateWritePath, safeWriteFileSync, WorkspaceSecurityError } from "../../../workspace/index.js";
+import {
+  validateWritePath,
+  safeWriteFileSync,
+  WorkspaceSecurityError,
+} from "../../../workspace/index.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 
 interface WorkspaceWriteParams {
