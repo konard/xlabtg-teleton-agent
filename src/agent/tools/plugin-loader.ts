@@ -12,10 +12,11 @@
  * Each plugin is adapted into a PluginModule for unified lifecycle management.
  */
 
-import { readdirSync, readFileSync, existsSync, statSync } from "fs";
+import { readdirSync, readFileSync, existsSync, statSync, createReadStream } from "fs";
 import { join } from "path";
 import { pathToFileURL } from "url";
 import { execFile } from "child_process";
+import { createHash } from "crypto";
 import { getPluginPriorities } from "./plugin-config-store.js";
 import { promisify } from "util";
 
@@ -51,6 +52,79 @@ import { createLogger } from "../../utils/logger.js";
 const log = createLogger("PluginLoader");
 
 const PLUGIN_DATA_DIR = join(TELETON_ROOT, "plugins", "data");
+
+// ─── Security Helpers ────────────────────────────────────────────────
+
+/**
+ * Returns true if the path (file or directory) is writable by group or others.
+ * Plugins in world/group-writable directories could be replaced by any process
+ * sharing the same host, so we refuse to load them.
+ */
+export function isGroupOrWorldWritable(fsPath: string): boolean {
+  try {
+    const st = statSync(fsPath);
+    // 0o022 = group-write (0o020) | world-write (0o002)
+    return (st.mode & 0o022) !== 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Compute the SHA-256 hex digest of a file's contents.
+ */
+async function sha256File(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const hash = createHash("sha256");
+    const stream = createReadStream(filePath);
+    stream.on("data", (chunk) => hash.update(chunk));
+    stream.on("end", () => resolve(hash.digest("hex")));
+    stream.on("error", reject);
+  });
+}
+
+/**
+ * Verify the SHA-256 checksum of a plugin's entry file against a `.checksum` sidecar.
+ *
+ * Sidecar location:
+ *   - single-file plugin:   pluginsDir/pluginName.checksum
+ *   - directory plugin:     pluginsDir/pluginName/.checksum
+ *
+ * If no sidecar exists the plugin is allowed but a warning is emitted.
+ * If a sidecar exists and the digest does not match, an error is thrown.
+ */
+export async function verifyPluginChecksum(
+  modulePath: string,
+  pluginsDir: string,
+  entryName: string
+): Promise<void> {
+  const isDir = modulePath.endsWith(`index.js`);
+  const checksumPath = isDir
+    ? join(pluginsDir, entryName, ".checksum")
+    : join(pluginsDir, `${entryName.replace(/\.js$/, "")}.checksum`);
+
+  if (!existsSync(checksumPath)) {
+    log.warn(
+      `[${entryName}] No .checksum sidecar found — loading without integrity verification. ` +
+        `Add a SHA-256 checksum file to suppress this warning.`
+    );
+    return;
+  }
+
+  const expected = readFileSync(checksumPath, "utf-8").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(expected)) {
+    throw new Error(
+      `[${entryName}] Malformed .checksum file — expected a 64-char hex SHA-256 digest`
+    );
+  }
+
+  const actual = await sha256File(modulePath);
+  if (actual !== expected) {
+    throw new Error(
+      `[${entryName}] Checksum mismatch: expected ${expected.slice(0, 16)}… got ${actual.slice(0, 16)}… — refusing to load`
+    );
+  }
+}
 
 interface RawPluginExports {
   tools?: SimpleToolDef[] | ((sdk: PluginSDK) => SimpleToolDef[]);
@@ -418,6 +492,17 @@ export async function loadEnhancedPlugins(
     }
 
     if (modulePath) {
+      // Security: reject plugins in group/world-writable directories or files.
+      // For directory plugins we check the directory; for single-file plugins we
+      // check the file itself. Either way entryPath is the right target.
+      if (isGroupOrWorldWritable(entryPath)) {
+        log.error(
+          `[${entry}] Refusing to load: plugin path "${entryPath}" is group/world-writable ` +
+            `(mode & 0o022 != 0). Fix with: chmod go-w "${entryPath}"`
+        );
+        continue;
+      }
+
       pluginPaths.push({ entry, path: modulePath });
     }
   }
@@ -429,9 +514,10 @@ export async function loadEnhancedPlugins(
       .map(({ entry }) => ensurePluginDeps(join(pluginsDir, entry), entry))
   );
 
-  // Phase 2: Load plugins in parallel
+  // Phase 2: Load plugins in parallel (with checksum verification before import)
   const loadResults = await Promise.allSettled(
     pluginPaths.map(async ({ entry, path }) => {
+      await verifyPluginChecksum(path, pluginsDir, entry);
       const moduleUrl = pathToFileURL(path).href;
       const mod = (await import(moduleUrl)) as RawPluginExports;
       return { entry, mod };
