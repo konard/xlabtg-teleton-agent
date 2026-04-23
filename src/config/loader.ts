@@ -11,6 +11,19 @@ const log = createLogger("Config");
 
 const DEFAULT_CONFIG_PATH = join(TELETON_ROOT, "config.yaml");
 
+export function parseEnvPort(name: string, value: string): number {
+  const port = parseInt(value, 10);
+  if (isNaN(port) || String(port) !== value.trim()) {
+    throw new Error(`Invalid ${name} environment variable: "${value}" is not a valid integer`);
+  }
+  if (port < 1 || port > 65535) {
+    throw new Error(
+      `Invalid ${name} environment variable: ${port} is out of valid port range (1–65535)`
+    );
+  }
+  return port;
+}
+
 export function expandPath(path: string): string {
   if (path.startsWith("~")) {
     return join(homedir(), path.slice(1));
@@ -140,10 +153,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
     config.webui.enabled = process.env.TELETON_WEBUI_ENABLED === "true";
   }
   if (process.env.TELETON_WEBUI_PORT) {
-    const port = parseInt(process.env.TELETON_WEBUI_PORT, 10);
-    if (!isNaN(port) && port >= 1024 && port <= 65535) {
-      config.webui.port = port;
-    }
+    config.webui.port = parseEnvPort("TELETON_WEBUI_PORT", process.env.TELETON_WEBUI_PORT);
   }
   if (process.env.TELETON_WEBUI_HOST) {
     config.webui.host = process.env.TELETON_WEBUI_HOST;
@@ -168,18 +178,16 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
     config.api.enabled = process.env.TELETON_API_ENABLED === "true";
   }
   if (process.env.TELETON_API_PORT) {
-    const port = parseInt(process.env.TELETON_API_PORT, 10);
-    if (!isNaN(port) && port >= 1024 && port <= 65535) {
-      if (!config.api)
-        config.api = {
-          enabled: false,
-          port: 7778,
-          host: "127.0.0.1",
-          key_hash: "",
-          allowed_ips: [],
-        };
-      config.api.port = port;
-    }
+    const port = parseEnvPort("TELETON_API_PORT", process.env.TELETON_API_PORT);
+    if (!config.api)
+      config.api = {
+        enabled: false,
+        port: 7778,
+        host: "127.0.0.1",
+        key_hash: "",
+        allowed_ips: [],
+      };
+    config.api.port = port;
   }
 
   // Local LLM base URL override

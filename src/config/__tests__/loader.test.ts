@@ -224,6 +224,7 @@ describe("Config Loader", () => {
     originalEnv.TELETON_WEBUI_ENABLED = process.env.TELETON_WEBUI_ENABLED;
     originalEnv.TELETON_WEBUI_PORT = process.env.TELETON_WEBUI_PORT;
     originalEnv.TELETON_WEBUI_HOST = process.env.TELETON_WEBUI_HOST;
+    originalEnv.TELETON_API_PORT = process.env.TELETON_API_PORT;
     originalEnv.UPSTASH_VECTOR_REST_URL = process.env.UPSTASH_VECTOR_REST_URL;
     originalEnv.UPSTASH_VECTOR_REST_TOKEN = process.env.UPSTASH_VECTOR_REST_TOKEN;
     originalEnv.UPSTASH_VECTOR_NAMESPACE = process.env.UPSTASH_VECTOR_NAMESPACE;
@@ -236,6 +237,7 @@ describe("Config Loader", () => {
     delete process.env.TELETON_WEBUI_ENABLED;
     delete process.env.TELETON_WEBUI_PORT;
     delete process.env.TELETON_WEBUI_HOST;
+    delete process.env.TELETON_API_PORT;
     delete process.env.UPSTASH_VECTOR_REST_URL;
     delete process.env.UPSTASH_VECTOR_REST_TOKEN;
     delete process.env.UPSTASH_VECTOR_NAMESPACE;
@@ -540,12 +542,56 @@ telegram:
       expect(config.webui.port).toBe(9999);
     });
 
-    it("should ignore invalid TELETON_WEBUI_PORT", () => {
+    it("should throw on non-numeric TELETON_WEBUI_PORT", () => {
       writeTestConfig(MINIMAL_CONFIG);
-      process.env.TELETON_WEBUI_PORT = "not_a_number";
+      process.env.TELETON_WEBUI_PORT = "abc";
+
+      expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow(
+        /Invalid TELETON_WEBUI_PORT.*not a valid integer/
+      );
+    });
+
+    it("should throw on out-of-range TELETON_WEBUI_PORT", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      process.env.TELETON_WEBUI_PORT = "99999";
+
+      expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow(
+        /Invalid TELETON_WEBUI_PORT.*out of valid port range/
+      );
+    });
+
+    it("should accept valid TELETON_WEBUI_PORT", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      process.env.TELETON_WEBUI_PORT = "8080";
 
       const config = loadConfig(TEST_CONFIG_PATH);
-      expect(config.webui.port).toBe(7777); // Default
+      expect(config.webui.port).toBe(8080);
+    });
+
+    it("should throw on non-numeric TELETON_API_PORT", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      process.env.TELETON_API_PORT = "abc";
+
+      expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow(
+        /Invalid TELETON_API_PORT.*not a valid integer/
+      );
+    });
+
+    it("should throw on out-of-range TELETON_API_PORT", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      process.env.TELETON_API_PORT = "99999";
+
+      expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow(
+        /Invalid TELETON_API_PORT.*out of valid port range/
+      );
+    });
+
+    it("should accept valid TELETON_API_PORT", () => {
+      writeTestConfig(MINIMAL_CONFIG);
+      process.env.TELETON_API_PORT = "7778";
+
+      const config = loadConfig(TEST_CONFIG_PATH);
+      expect(config.api?.port).toBe(7778);
     });
 
     it("should override webui host with TELETON_WEBUI_HOST", () => {
