@@ -376,8 +376,25 @@ export class WebUIServer {
       return streamSSE(c, async (stream) => {
         let aborted = false;
 
+        // Listen for state changes
+        const onStateChange = (event: StateChangeEvent) => {
+          if (aborted) return;
+          void stream.writeSSE({
+            event: "status",
+            id: String(event.timestamp),
+            data: JSON.stringify({
+              state: event.state,
+              error: event.error ?? null,
+              timestamp: event.timestamp,
+            }),
+          });
+        };
+
+        const detach = () => lifecycle.off("stateChange", onStateChange);
+
         stream.onAbort(() => {
           aborted = true;
+          detach();
         });
 
         // Push current state immediately on connection
@@ -393,20 +410,6 @@ export class WebUIServer {
           retry: 3000,
         });
 
-        // Listen for state changes
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
         lifecycle.on("stateChange", onStateChange);
 
         // Heartbeat loop + keep connection alive
@@ -419,7 +422,7 @@ export class WebUIServer {
           });
         }
 
-        lifecycle.off("stateChange", onStateChange);
+        detach();
       });
     });
 
