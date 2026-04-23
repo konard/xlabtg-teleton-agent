@@ -516,11 +516,11 @@ function AnomalySection() {
       <div
         style={{
           display: "grid",
-          gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 280px), 1fr))",
+          gridTemplateColumns: "1fr 1fr",
           gap: "20px",
         }}
       >
-        <div className="card" style={{ padding: "16px", overflowX: "auto" }}>
+        <div className="card" style={{ padding: "16px" }}>
           <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
             Detection Timeline
           </h3>
@@ -549,8 +549,9 @@ function AnomalySection() {
               No anomalies in this period
             </div>
           ) : (
+            <div style={{ maxHeight: "370px", overflowY: "auto", overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-              <thead>
+              <thead style={{ position: "sticky", top: 0, background: "var(--bg)", zIndex: 1 }}>
                 <tr style={{ color: "var(--text-secondary)", textAlign: "left" }}>
                   <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
                     Time
@@ -624,6 +625,7 @@ function AnomalySection() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
 

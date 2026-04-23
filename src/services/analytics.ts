@@ -184,9 +184,10 @@ export class AnalyticsService {
         `SELECT
            tool_name AS tool,
            COUNT(*) AS count,
-           AVG(CASE WHEN duration_ms IS NOT NULL THEN duration_ms END) AS avg_duration_ms
+           AVG(duration_ms) AS avg_duration_ms
          FROM request_metrics
-         WHERE created_at >= ? AND tool_name IS NOT NULL
+         WHERE created_at >= ?
+           AND tool_name IS NOT NULL
          GROUP BY tool_name
          ORDER BY count DESC
          LIMIT 20`
