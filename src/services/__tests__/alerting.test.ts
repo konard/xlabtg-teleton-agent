@@ -72,7 +72,9 @@ describe("validateWebhookUrl", () => {
   });
 
   it("rejects .localhost subdomains", () => {
-    expect(() => validateWebhookUrl("https://internal.localhost/hook")).toThrow(/loopback hostname/);
+    expect(() => validateWebhookUrl("https://internal.localhost/hook")).toThrow(
+      /loopback hostname/
+    );
   });
 });
 
@@ -155,6 +157,7 @@ describe("AlertingService webhook dispatch", () => {
 
   beforeEach(() => {
     db = createTestDb();
+    fetchSpy.mockClear();
     vi.stubGlobal("fetch", fetchSpy);
     fetchSpy.mockResolvedValue({ ok: true } as Response);
   });

@@ -8,7 +8,14 @@ const log = createLogger("Alerting");
 
 const WEBHOOK_TIMEOUT_MS = 5_000;
 
-const SECRET_FIELDS = new Set(["apikey", "authorization", "token", "mnemonic", "secret", "password"]);
+const SECRET_FIELDS = new Set([
+  "apikey",
+  "authorization",
+  "token",
+  "mnemonic",
+  "secret",
+  "password",
+]);
 
 // RFC-1918, loopback, and link-local IPv4 ranges — forbidden as SSRF targets.
 const PRIVATE_IPV4_RANGES: Array<{ prefix: number[]; bits: number }> = [
@@ -24,8 +31,7 @@ const PRIVATE_IPV4_RANGES: Array<{ prefix: number[]; bits: number }> = [
 function isPrivateIpv4(address: string): boolean {
   const parts = address.split(".").map(Number);
   if (parts.length !== 4 || parts.some((p) => isNaN(p) || p < 0 || p > 255)) return false;
-  const ip32 =
-    ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
+  const ip32 = ((parts[0] << 24) | (parts[1] << 16) | (parts[2] << 8) | parts[3]) >>> 0;
   for (const range of PRIVATE_IPV4_RANGES) {
     if (range.prefix.length === 1) {
       const mask = ~((1 << (32 - range.bits)) - 1) >>> 0;
@@ -33,8 +39,7 @@ function isPrivateIpv4(address: string): boolean {
       if ((ip32 & mask) === (network & mask)) return true;
     } else if (range.prefix.length === 2) {
       const mask = ~((1 << (32 - range.bits)) - 1) >>> 0;
-      const network =
-        ((range.prefix[0] << 24) | (range.prefix[1] << 16)) >>> 0;
+      const network = ((range.prefix[0] << 24) | (range.prefix[1] << 16)) >>> 0;
       if ((ip32 & mask) === (network & mask)) return true;
     }
   }
@@ -96,7 +101,11 @@ export function redactSecrets<T extends Record<string, unknown>>(obj: T): T {
   for (const key of Object.keys(result)) {
     if (SECRET_FIELDS.has(key.toLowerCase())) {
       result[key] = "[redacted]";
-    } else if (result[key] !== null && typeof result[key] === "object" && !Array.isArray(result[key])) {
+    } else if (
+      result[key] !== null &&
+      typeof result[key] === "object" &&
+      !Array.isArray(result[key])
+    ) {
       result[key] = redactSecrets(result[key] as Record<string, unknown>);
     }
   }
