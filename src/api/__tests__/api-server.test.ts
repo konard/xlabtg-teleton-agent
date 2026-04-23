@@ -1151,7 +1151,10 @@ describe("Management API", () => {
       let resolveStop!: () => void;
       lifecycle.registerCallbacks(
         async () => {},
-        async () => new Promise<void>((resolve) => { resolveStop = resolve; })
+        async () =>
+          new Promise<void>((resolve) => {
+            resolveStop = resolve;
+          })
       );
       await lifecycle.start();
 
