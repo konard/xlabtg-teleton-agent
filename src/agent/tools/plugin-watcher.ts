@@ -18,6 +18,7 @@ import {
   adaptPlugin,
   ensurePluginDeps,
   isGroupOrWorldWritable,
+  pluginPermissionFixHint,
   verifyPluginChecksum,
 } from "./plugin-loader.js";
 import type { PluginModule, PluginContext, Tool, ToolExecutor, ToolScope } from "./types.js";
@@ -226,7 +227,7 @@ export class PluginWatcher {
       if (isGroupOrWorldWritable(pluginEntryPath)) {
         throw new Error(
           `Plugin path "${pluginEntryPath}" is group/world-writable — refusing to reload. ` +
-            `Fix with: chmod go-w "${pluginEntryPath}"`
+            pluginPermissionFixHint(pluginEntryPath)
         );
       }
 
