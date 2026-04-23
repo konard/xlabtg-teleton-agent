@@ -91,4 +91,29 @@ describe("markdownToTelegramHtml", () => {
     expect(result).toContain("&amp;");
     expect(result).toContain("&gt;");
   });
+
+  // Regression tests for AUDIT-FULL-M8: link text with < / > / & must be escaped
+  it("should escape < and > in link text", () => {
+    const result = markdownToTelegramHtml("[<x>](https://a.test)");
+    expect(result).toBe('<a href="https://a.test">&lt;x&gt;</a>');
+  });
+
+  it("should escape & in link text", () => {
+    const result = markdownToTelegramHtml("[a & b](https://a.test)");
+    expect(result).toBe('<a href="https://a.test">a &amp; b</a>');
+  });
+
+  it("should escape < in link text inside a blockquote", () => {
+    const result = markdownToTelegramHtml("> [<gift>](https://t.me/gift)");
+    expect(result).toContain("&lt;gift&gt;");
+    expect(result).not.toContain("<gift>");
+  });
+
+  it("should escape < in link text inside a list blockquote", () => {
+    const result = markdownToTelegramHtml(
+      "- [<item>](https://t.me/a)\n- [<item2>](https://t.me/b)\n- normal item"
+    );
+    expect(result).toContain("&lt;item&gt;");
+    expect(result).not.toContain("<item>");
+  });
 });

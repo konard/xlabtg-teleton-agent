@@ -45,6 +45,7 @@ export function markdownToTelegramHtml(markdown: string): string {
       .replace(/~~([^~]+)~~/g, "<s>$1</s>")
       .replace(
         /\[([^\]]+)\]\(([^)]+)\)/g,
+        // text is already HTML-escaped by the preceding escapeHtml call
         (_, text, url) => `<a href="${sanitizeUrl(url)}">${text}</a>`
       );
 
@@ -70,6 +71,7 @@ export function markdownToTelegramHtml(markdown: string): string {
       .replace(/~~([^~]+)~~/g, "<s>$1</s>")
       .replace(
         /\[([^\]]+)\]\(([^)]+)\)/g,
+        // text is already HTML-escaped by the preceding escapeHtml call
         (_, text, url) => `<a href="${sanitizeUrl(url)}">${text}</a>`
       );
 
@@ -85,6 +87,7 @@ export function markdownToTelegramHtml(markdown: string): string {
   html = html.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>");
   html = html.replace(/~~([^~]+)~~/g, "<s>$1</s>");
 
+  // text is already HTML-escaped by the preceding escapeHtml call
   html = html.replace(
     /\[([^\]]+)\]\(([^)]+)\)/g,
     (_, text, url) => `<a href="${sanitizeUrl(url)}">${text}</a>`
