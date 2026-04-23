@@ -61,6 +61,10 @@ const PLUGIN_DATA_DIR = join(TELETON_ROOT, "plugins", "data");
  * sharing the same host, so we refuse to load them.
  */
 export function isGroupOrWorldWritable(fsPath: string): boolean {
+  // Windows does not implement POSIX owner/group/others write semantics for
+  // stat.mode, so this bitmask produces false positives on normal NTFS paths.
+  if (process.platform === "win32") return false;
+
   try {
     const st = statSync(fsPath);
     // 0o022 = group-write (0o020) | world-write (0o002)
@@ -68,6 +72,14 @@ export function isGroupOrWorldWritable(fsPath: string): boolean {
   } catch {
     return false;
   }
+}
+
+export function pluginPermissionFixHint(fsPath: string): string {
+  if (process.platform === "win32") {
+    return `Review Windows ACL permissions for "${fsPath}" with icacls or File Explorer.`;
+  }
+
+  return `Fix with: chmod go-w "${fsPath}"`;
 }
 
 /**
@@ -499,7 +511,7 @@ export async function loadEnhancedPlugins(
       if (isGroupOrWorldWritable(entryPath)) {
         log.error(
           `[${entry}] Refusing to load: plugin path "${entryPath}" is group/world-writable ` +
-            `(mode & 0o022 != 0). Fix with: chmod go-w "${entryPath}"`
+            `(mode & 0o022 != 0). ${pluginPermissionFixHint(entryPath)}`
         );
         continue;
       }
