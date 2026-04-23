@@ -188,7 +188,9 @@ export function saveWallet(wallet: WalletData): void {
     log.debug("Saving wallet with AES-256-GCM encrypted mnemonic");
   } else {
     fileContent = JSON.stringify(wallet, null, 2);
-    log.debug("Saving wallet with plaintext mnemonic (no encryption key configured)");
+    log.warn(
+      "Saving wallet with plaintext mnemonic — set TELETON_WALLET_KEY or wallet_encryption_key to enable AES-256-GCM encryption"
+    );
   }
 
   writeFileSync(WALLET_FILE, fileContent, { encoding: "utf-8", mode: 0o600 });
@@ -305,6 +307,19 @@ export function loadWallet(): WalletData | null {
  */
 export function walletExists(): boolean {
   return existsSync(WALLET_FILE);
+}
+
+/**
+ * Zeroize and evict the cached key pair.
+ * Call on /pause, SIGTERM, or any known-compromise event so the derived
+ * secretKey does not linger in memory until process exit.
+ */
+export function clearKeyPair(): void {
+  if (_keyPairCache) {
+    _keyPairCache.secretKey.fill(0);
+    _keyPairCache = null;
+    log.warn("Key pair cleared from memory; re-derivation required for next operation");
+  }
 }
 
 /**

@@ -82,9 +82,13 @@ import {
   resolveEncryptionKey,
   saveWallet,
   loadWallet,
+  getKeyPair,
+  clearKeyPair,
   _resetWalletCacheForTesting,
   type WalletData,
 } from "../wallet-service.js";
+
+import { mnemonicToPrivateKey } from "@ton/crypto";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -297,5 +301,61 @@ describe("saveWallet / loadWallet (encryption integration)", () => {
 
     const loaded = loadWallet();
     expect(loaded).toBeNull();
+  });
+});
+
+// ─── Issue #319 regression: clearKeyPair() zeroizes and evicts the cache ─────
+
+describe("clearKeyPair (AUDIT-FULL-L3)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    _resetWalletCacheForTesting();
+    delete process.env.TELETON_WALLET_KEY;
+  });
+
+  it("clearKeyPair() zeroizes secretKey and removes the cache entry", async () => {
+    // Arrange: load a plaintext wallet so the cache can be populated
+    const plaintext = JSON.stringify(TEST_WALLET);
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(plaintext);
+
+    const kp = await getKeyPair();
+    expect(kp).not.toBeNull();
+    const secretKeyRef = kp!.secretKey;
+
+    // Act
+    clearKeyPair();
+
+    // Assert: Buffer has been zeroed in place
+    expect(secretKeyRef.every((b) => b === 0)).toBe(true);
+
+    // Assert: cache is evicted — next getKeyPair() triggers re-derivation
+    const deriveSpy = vi.mocked(mnemonicToPrivateKey);
+    const callsBefore = deriveSpy.mock.calls.length;
+    await getKeyPair();
+    expect(deriveSpy.mock.calls.length).toBeGreaterThan(callsBefore);
+  });
+
+  it("clearKeyPair() is idempotent when cache is already empty", () => {
+    // Should not throw even when called with no cached key pair
+    expect(() => clearKeyPair()).not.toThrow();
+  });
+
+  it("after clearKeyPair() (simulating /pause), subsequent getKeyPair() re-derives the key", async () => {
+    const plaintext = JSON.stringify(TEST_WALLET);
+    mockFs.existsSync.mockReturnValue(true);
+    mockFs.readFileSync.mockReturnValue(plaintext);
+
+    await getKeyPair();
+
+    const deriveSpy = vi.mocked(mnemonicToPrivateKey);
+    const countAfterFirstCall = deriveSpy.mock.calls.length;
+
+    // Simulate /pause
+    clearKeyPair();
+
+    // Next transfer would call getKeyPair() again — it must re-derive
+    await getKeyPair();
+    expect(deriveSpy.mock.calls.length).toBe(countAfterFirstCall + 1);
   });
 });
