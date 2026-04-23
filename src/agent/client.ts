@@ -133,7 +133,7 @@ export async function registerLocalModels(baseUrl: string): Promise<string[]> {
 
 /** Moonshot backward-compat: old model IDs → kimi-coding IDs */
 const MOONSHOT_MODEL_ALIASES: Record<string, string> = {
-  "kimi-k2.5": "k2p5",
+  "kimi-k2.5": "k2p6",
 };
 
 export function getProviderModel(provider: SupportedProvider, modelId: string): Model<Api> {

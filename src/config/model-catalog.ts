@@ -39,6 +39,11 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     },
   ],
   openai: [
+    {
+      value: "gpt-5.5",
+      name: "GPT-5.5",
+      description: "Latest frontier, reasoning, openai-responses API",
+    },
     { value: "gpt-5", name: "GPT-5", description: "Most capable, 400K ctx, $1.25/M" },
     { value: "gpt-5-pro", name: "GPT-5 Pro", description: "Extended thinking, 400K ctx" },
     { value: "gpt-5-mini", name: "GPT-5 Mini", description: "Fast & cheap, 400K ctx" },
@@ -52,15 +57,15 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       name: "GPT-5.4 Pro",
       description: "Extended thinking, openai-responses API",
     },
-    { value: "gpt-5.1", name: "GPT-5.1", description: "Latest gen, 400K ctx" },
+    { value: "gpt-5.1", name: "GPT-5.1", description: "Older gen, 400K ctx" },
     { value: "gpt-4o", name: "GPT-4o", description: "Balanced, 128K ctx, $2.50/M" },
     { value: "gpt-4.1", name: "GPT-4.1", description: "1M ctx, $2/M" },
     { value: "gpt-4.1-mini", name: "GPT-4.1 Mini", description: "1M ctx, cheap, $0.40/M" },
     { value: "o4-mini", name: "o4 Mini", description: "Reasoning, fast, 200K ctx" },
     { value: "o3", name: "o3", description: "Reasoning, 200K ctx, $2/M" },
-    { value: "codex-mini-latest", name: "Codex Mini", description: "Coding specialist" },
   ],
   "openai-codex": [
+    { value: "gpt-5.5", name: "GPT-5.5", description: "Latest frontier, reasoning" },
     { value: "gpt-5.4", name: "GPT-5.4", description: "Latest frontier, reasoning" },
     { value: "gpt-5.4-mini", name: "GPT-5.4 Mini", description: "Fast & cheap" },
     { value: "gpt-5.3-codex", name: "GPT-5.3 Codex", description: "Coding specialist" },
@@ -119,7 +124,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     },
     { value: "anthropic/claude-opus-4.5", name: "Claude Opus 4.5", description: "200K ctx, $5/M" },
     {
-      value: "anthropic/claude-sonnet-4-6",
+      value: "anthropic/claude-sonnet-4.6",
       name: "Claude Sonnet 4.6",
       description: "200K ctx, $3/M",
     },
@@ -140,9 +145,13 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       name: "DeepSeek V3.2",
       description: "Latest, general, 64K ctx",
     },
-    { value: "deepseek/deepseek-v3.1", name: "DeepSeek V3.1", description: "General, 64K ctx" },
     {
-      value: "deepseek/deepseek-v3-0324",
+      value: "deepseek/deepseek-chat-v3.1",
+      name: "DeepSeek V3.1",
+      description: "General, 64K ctx",
+    },
+    {
+      value: "deepseek/deepseek-chat-v3-0324",
       name: "DeepSeek V3",
       description: "General, 64K ctx, $0.30/M",
     },
@@ -154,16 +163,11 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       name: "Nemotron Nano 9B",
       description: "Small & fast, Nvidia",
     },
-    {
-      value: "perplexity/sonar-pro",
-      name: "Perplexity Sonar Pro",
-      description: "Web search integrated",
-    },
     { value: "minimax/minimax-m2.5", name: "MiniMax M2.5", description: "Latest MiniMax" },
     { value: "x-ai/grok-4", name: "Grok 4", description: "256K ctx, $3/M" },
   ],
   moonshot: [
-    { value: "k2p5", name: "Kimi K2.5", description: "Free, 262K ctx, multimodal" },
+    { value: "k2p6", name: "Kimi K2.6", description: "Free, 262K ctx, multimodal" },
     {
       value: "kimi-k2-thinking",
       name: "Kimi K2 Thinking",
@@ -211,14 +215,12 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: "glm-4.5v", name: "GLM-4.5V", description: "Vision, 64K ctx, $0.60/$1.80" },
   ],
   minimax: [
-    { value: "MiniMax-M2.5", name: "MiniMax M2.5", description: "204K ctx, $0.30/$1.20" },
+    { value: "MiniMax-M2.7", name: "MiniMax M2.7", description: "204K ctx, $0.30/$1.20" },
     {
-      value: "MiniMax-M2.5-highspeed",
-      name: "MiniMax M2.5 Fast",
+      value: "MiniMax-M2.7-highspeed",
+      name: "MiniMax M2.7 Fast",
       description: "204K ctx, $0.60/$2.40",
     },
-    { value: "MiniMax-M2.1", name: "MiniMax M2.1", description: "204K ctx, $0.30/$1.20" },
-    { value: "MiniMax-M2", name: "MiniMax M2", description: "196K ctx, $0.30/$1.20" },
   ],
   huggingface: [
     {
