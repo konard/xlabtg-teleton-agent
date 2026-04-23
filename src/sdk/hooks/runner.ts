@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import type { HookRegistry } from "./registry.js";
 import type { HookHandlerMap, HookName, HookRunnerOptions } from "./types.js";
 import { getErrorMessage } from "../../utils/errors.js";
@@ -31,24 +32,31 @@ const BLOCKABLE_HOOKS: ReadonlySet<HookName> = new Set([
 ]);
 
 export function createHookRunner(registry: HookRegistry, opts: HookRunnerOptions) {
-  let hookDepth = 0;
+  // Per-async-context depth: concurrent unrelated events each start at 0, while
+  // true synchronous reentrancy (a hook re-entering the runner in the same call
+  // stack) is still detected because AsyncLocalStorage propagates to child contexts.
+  const depthStorage = new AsyncLocalStorage<number>();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const catchErrors = opts.catchErrors ?? true;
+
+  function currentDepth(): number {
+    return depthStorage.getStore() ?? 0;
+  }
 
   async function runModifyingHook<K extends HookName>(
     name: K,
     event: Parameters<HookHandlerMap[K]>[0]
   ): Promise<void> {
-    if (!registry.hasHooks(name) || hookDepth > 0) {
-      if (hookDepth > 0) {
-        opts.logger.debug(`Skipping ${name} hooks (reentrancy depth=${hookDepth})`);
+    const depth = currentDepth();
+    if (!registry.hasHooks(name) || depth > 0) {
+      if (depth > 0) {
+        opts.logger.debug(`Skipping ${name} hooks (reentrancy depth=${depth})`);
       }
       return;
     }
 
     const hooks = registry.getHooks(name); // pre-sorted by effectivePriority in registry
-    hookDepth++;
-    try {
+    return depthStorage.run(depth + 1, async () => {
       for (const hook of hooks) {
         const label = `${hook.pluginId}:${name}`;
         const t0 = Date.now();
@@ -74,25 +82,23 @@ export function createHookRunner(registry: HookRegistry, opts: HookRunnerOptions
           break;
         }
       }
-    } finally {
-      hookDepth--;
-    }
+    });
   }
 
   async function runObservingHook<K extends HookName>(
     name: K,
     event: Parameters<HookHandlerMap[K]>[0]
   ): Promise<void> {
-    if (!registry.hasHooks(name) || hookDepth > 0) {
-      if (hookDepth > 0) {
-        opts.logger.debug(`Skipping ${name} hooks (reentrancy depth=${hookDepth})`);
+    const depth = currentDepth();
+    if (!registry.hasHooks(name) || depth > 0) {
+      if (depth > 0) {
+        opts.logger.debug(`Skipping ${name} hooks (reentrancy depth=${depth})`);
       }
       return;
     }
 
     const hooks = registry.getHooks(name); // order irrelevant — parallel execution
-    hookDepth++;
-    try {
+    return depthStorage.run(depth + 1, async () => {
       // Observing hooks run in parallel (no order guarantees)
       const results = await Promise.allSettled(
         hooks.map(async (hook) => {
@@ -124,16 +130,14 @@ export function createHookRunner(registry: HookRegistry, opts: HookRunnerOptions
           | undefined;
         if (firstRejected) throw firstRejected.reason;
       }
-    } finally {
-      hookDepth--;
-    }
+    });
   }
 
   return {
     runModifyingHook,
     runObservingHook,
     get depth() {
-      return hookDepth;
+      return currentDepth();
     },
   };
 }

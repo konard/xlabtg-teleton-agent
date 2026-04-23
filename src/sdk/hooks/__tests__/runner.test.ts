@@ -454,4 +454,42 @@ describe("Hook Runner", () => {
       "observing-propagated"
     );
   });
+
+  it("3.16 Concurrent events: both execute security hook (priority -100) independently", async () => {
+    // Regression for global hookDepth bug: while event-A's async hook is awaited,
+    // event-B must NOT see hookDepth > 0 and must not be skipped.
+    const executed: string[] = [];
+
+    registry.register({
+      pluginId: "security",
+      hookName: "tool:before",
+      handler: async () => {
+        // Simulate an async security check (e.g., rate-limit DB lookup)
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        executed.push("security");
+      },
+      priority: -100,
+    });
+
+    const runner = createHookRunner(registry, { logger: mockLogger });
+
+    const makeEvent = (): BeforeToolCallEvent => ({
+      toolName: "test",
+      params: {},
+      chatId: "123",
+      isGroup: false,
+      block: false,
+      blockReason: "",
+    });
+
+    // Fire two concurrent events without awaiting the first one before starting the second
+    await Promise.all([
+      runner.runModifyingHook("tool:before", makeEvent()),
+      runner.runModifyingHook("tool:before", makeEvent()),
+    ]);
+
+    // Both events must have triggered the security hook independently
+    expect(executed).toHaveLength(2);
+    expect(executed).toEqual(["security", "security"]);
+  });
 });
