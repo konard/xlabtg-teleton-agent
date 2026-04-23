@@ -14,9 +14,7 @@ const DEFAULT_CONFIG_PATH = join(TELETON_ROOT, "config.yaml");
 export function parseEnvPort(name: string, value: string): number {
   const port = parseInt(value, 10);
   if (isNaN(port) || String(port) !== value.trim()) {
-    throw new Error(
-      `Invalid ${name} environment variable: "${value}" is not a valid integer`
-    );
+    throw new Error(`Invalid ${name} environment variable: "${value}" is not a valid integer`);
   }
   if (port < 1 || port > 65535) {
     throw new Error(
