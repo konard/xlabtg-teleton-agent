@@ -142,9 +142,19 @@ The agent can send TON to any valid address using the `ton_send` tool.
 5. A transfer message is constructed with the specified amount and optional comment
 6. The transaction is broadcast using `SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS`
 
-### Transaction Reference
+### Transaction Confirmation
 
-After sending, the tool returns a pseudo-hash in the format `seqno_timestamp_amount` (e.g., `42_1708123456789_1.50`). This is not the actual blockchain hash but serves as a reference until the transaction is confirmed on-chain.
+After broadcasting, `sendTon` polls `getTransactions` on the wallet address (every 2 s, up to 60 s) waiting for the on-chain outbound transaction to appear.
+
+| Result | `txHash` | `status` | Meaning |
+|--------|----------|----------|---------|
+| Confirmed | 64-char hex string | `confirmed` | Real on-chain hash; verifiable on any explorer |
+| Broadcast timeout | `null` | `pending` | Broadcast ok but tx not seen in 60 s; check the chain manually |
+| Send error | — | function throws | Transfer was not broadcast |
+
+The previous pseudo-hash format (`seqno_timestamp_amount`) is no longer returned. All recorded `agent_sent_tx_hash` values are real, explorable transaction hashes.
+
+The deals DB column `agent_sent_tx_status` tracks the confirmation state (`pending` / `confirmed` / `failed`) independently from the overall deal `status`.
 
 ### Parameters
 

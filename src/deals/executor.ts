@@ -88,29 +88,57 @@ export async function executeDeal(
       );
 
       // Send TON to user's wallet
-      const txHash = await sendTon({
+      const sendResult = await sendTon({
         toAddress: deal.user_payment_wallet,
         amount: deal.agent_gives_ton_amount,
         comment: `Deal #${dealId} - ${formatAsset(deal.agent_gives_type, deal.agent_gives_ton_amount, deal.agent_gives_gift_slug)}`,
       });
 
-      if (!txHash) {
+      if (!sendResult) {
         throw new Error("TON transfer failed (wallet not initialized or invalid parameters)");
       }
 
-      // Update deal: mark as completed (agent_sent_at already set by lock)
+      const { txHash, status: txStatus } = sendResult;
+
+      if (txStatus === "pending") {
+        // Broadcast succeeded but on-chain confirmation timed out.
+        // Record pending state so an operator can reconcile later.
+        db.prepare(
+          `UPDATE deals SET
+            status = 'completed',
+            agent_sent_tx_status = 'pending',
+            completed_at = unixepoch()
+          WHERE id = ?`
+        ).run(dealId);
+
+        log.warn(`Deal #${dealId} TON broadcast ok but confirmation pending`);
+
+        await bridge.sendMessage({
+          chatId: deal.chat_id,
+          text: `✅ **Deal #${dealId} — payment sent!**
+
+I've broadcast **${deal.agent_gives_ton_amount} TON** to your wallet. The transaction is pending on-chain confirmation — you should see it shortly.
+
+Thank you for trading! 🎉`,
+        });
+
+        return { success: true };
+      }
+
+      // txStatus === "confirmed" — store real on-chain hash
       db.prepare(
         `UPDATE deals SET
           status = 'completed',
           agent_sent_tx_hash = ?,
+          agent_sent_tx_status = 'confirmed',
           completed_at = unixepoch()
         WHERE id = ?`
       ).run(txHash, dealId);
 
-      log.info(`Deal #${dealId} completed - TON sent - TX: ${txHash.slice(0, 8)}...`);
+      log.info(`Deal #${dealId} completed - TON sent - TX: ${txHash?.slice(0, 8) ?? "unknown"}...`);
 
       // Log to business journal
-      logDealToJournal(deal, db, txHash);
+      logDealToJournal(deal, db, txHash ?? undefined);
 
       // Notify user in chat
       await bridge.sendMessage({
@@ -126,7 +154,7 @@ Thank you for trading! 🎉`,
 
       return {
         success: true,
-        txHash,
+        txHash: txHash ?? undefined,
       };
     }
 

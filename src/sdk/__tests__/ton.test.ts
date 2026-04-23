@@ -263,17 +263,24 @@ describe("createTonSDK", () => {
         });
       });
 
-      it("returns txRef on success", async () => {
-        (sendTon as Mock).mockResolvedValue("42_1700000000_1.5");
+      it("returns txRef on success (confirmed)", async () => {
+        (sendTon as Mock).mockResolvedValue({ txHash: "abc123hash", status: "confirmed" });
 
         const result = await sdk.sendTON(VALID_ADDRESS, 1.5, "hello");
-        expect(result).toEqual({ txRef: "42_1700000000_1.5", amount: 1.5 });
+        expect(result).toEqual({ txRef: "abc123hash", txStatus: "confirmed", amount: 1.5 });
         expect(sendTon).toHaveBeenCalledWith({
           toAddress: VALID_ADDRESS,
           amount: 1.5,
           comment: "hello",
           bounce: false,
         });
+      });
+
+      it("returns txRef=null and txStatus=pending when confirmation timed out", async () => {
+        (sendTon as Mock).mockResolvedValue({ txHash: null, status: "pending" });
+
+        const result = await sdk.sendTON(VALID_ADDRESS, 1.5, "hello");
+        expect(result).toEqual({ txRef: null, txStatus: "pending", amount: 1.5 });
       });
 
       it("throws OPERATION_FAILED when sendTon returns null", async () => {

@@ -47,8 +47,10 @@ export interface TonPrice {
 
 /** Result of a TON send operation */
 export interface TonSendResult {
-  /** Transaction reference (format: seqno_timestamp_amount) */
-  txRef: string;
+  /** Real on-chain tx hash when confirmed; null when pending */
+  txRef: string | null;
+  /** Confirmation status */
+  txStatus: "confirmed" | "pending" | "failed";
   /** Amount sent in TON */
   amount: number;
 }
