@@ -1,7 +1,7 @@
 // src/utils/__tests__/module-db.test.ts
 
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdirSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import Database from "better-sqlite3";
@@ -15,12 +15,10 @@ vi.mock("../../workspace/paths.js", () => ({
 
 describe("migrateFromMainDb – SQL injection via apostrophe in MAIN_DB_PATH", () => {
   let tempDir: string;
-  let mainDbPath: string;
   let moduleDb: Database.Database;
 
   beforeEach(() => {
     tempDir = mkdtempSync(join(tmpdir(), "teleton-sql-test-"));
-    mainDbPath = join(tempDir, "memory.db");
   });
 
   afterEach(() => {
@@ -31,16 +29,18 @@ describe("migrateFromMainDb – SQL injection via apostrophe in MAIN_DB_PATH", (
   });
 
   it("should escape single quotes in MAIN_DB_PATH to prevent SQL injection", () => {
-    // Create a module DB with the journal schema
+    // Create a real directory whose name contains an apostrophe (valid POSIX path).
+    const dirWithApostrophe = join(tempDir, "o'brien");
+    mkdirSync(dirWithApostrophe, { recursive: true });
+    const pathWithApostrophe = join(dirWithApostrophe, "memory.db");
+
     const moduleDbPath = join(tempDir, "module.db");
     moduleDb = openModuleDb(moduleDbPath);
     moduleDb.exec(JOURNAL_SCHEMA);
 
-    // Simulate a path with a single quote by manually calling exec with the escaped form.
-    // We verify that the escaping logic produces valid SQL (no syntax error).
-    const pathWithApostrophe = "/tmp/o'brien/.teleton/memory.db";
+    // SQL-escape the single quote: ' → ''
     const escapedPath = pathWithApostrophe.replace(/'/g, "''");
-    // The resulting SQL should be syntactically valid even though the file does not exist.
+    // ATTACH with a properly escaped path should succeed (SQLite creates the DB file).
     expect(() => {
       moduleDb.exec(`ATTACH DATABASE '${escapedPath}' AS safe_db`);
       moduleDb.exec(`DETACH DATABASE safe_db`);
@@ -48,15 +48,19 @@ describe("migrateFromMainDb – SQL injection via apostrophe in MAIN_DB_PATH", (
   });
 
   it("should not allow a raw apostrophe in ATTACH DATABASE path to break SQL", () => {
+    // Create the same real directory so SQLite would otherwise succeed.
+    const dirWithApostrophe = join(tempDir, "o'brien");
+    mkdirSync(dirWithApostrophe, { recursive: true });
+    const pathWithApostrophe = join(dirWithApostrophe, "memory.db");
+
     const moduleDbPath = join(tempDir, "module.db");
     moduleDb = openModuleDb(moduleDbPath);
     moduleDb.exec(JOURNAL_SCHEMA);
 
-    // An unescaped apostrophe in ATTACH DATABASE causes a syntax error.
-    const pathWithApostrophe = "/tmp/o'brien/.teleton/memory.db";
+    // An unescaped apostrophe in ATTACH DATABASE is a SQL syntax error.
     expect(() => {
       moduleDb.exec(`ATTACH DATABASE '${pathWithApostrophe}' AS injected_db`);
-    }).toThrow();
+    }).toThrow(/SqliteError|sqlite/i);
   });
 
   it("migrateFromMainDb completes without error when module DB is empty and main DB is absent", () => {
