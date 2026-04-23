@@ -1,4 +1,4 @@
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawn, type ChildProcessByStdio } from "node:child_process";
 import {
   cpSync,
   createWriteStream,
@@ -11,6 +11,7 @@ import {
 } from "node:fs";
 import type { WriteStream } from "node:fs";
 import { join } from "node:path";
+import type { Readable } from "node:stream";
 import { loadConfig, saveConfig } from "../config/loader.js";
 import type { Config } from "../config/schema.js";
 import { TELETON_ROOT } from "../workspace/paths.js";
@@ -39,8 +40,10 @@ const TEMPLATE_FILES = [
   "HEARTBEAT.md",
 ] as const;
 
+type ManagedAgentChildProcess = ChildProcessByStdio<null, Readable, Readable>;
+
 interface ManagedAgentProcessRecord {
-  child: ChildProcessWithoutNullStreams | null;
+  child: ManagedAgentChildProcess | null;
   logStream: WriteStream | null;
   state: ManagedAgentState;
   stopRequested: boolean;
@@ -152,7 +155,10 @@ export class ManagedAgentService {
 
   deleteAgent(id: string): void {
     const record = this.processes.get(id);
-    if (record && (record.state === "starting" || record.state === "running" || record.state === "stopping")) {
+    if (
+      record &&
+      (record.state === "starting" || record.state === "running" || record.state === "stopping")
+    ) {
       throw new Error("Stop the agent before deleting it");
     }
 

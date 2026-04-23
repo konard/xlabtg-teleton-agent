@@ -25,7 +25,10 @@ function buildDeps(): WebUIServerDeps {
     configPath: "/tmp/teleton/config.yaml",
     agent: {
       getConfig: vi.fn(() => ({
-        meta: { created_at: "2026-04-23T00:00:00.000Z", last_modified_at: "2026-04-23T01:00:00.000Z" },
+        meta: {
+          created_at: "2026-04-23T00:00:00.000Z",
+          last_modified_at: "2026-04-23T01:00:00.000Z",
+        },
         agent: { provider: "anthropic", model: "claude-opus-4-6" },
         telegram: { owner_id: 123, admin_ids: [123], bot_token: undefined },
       })),
@@ -144,7 +147,9 @@ describe("Agents routes", () => {
     });
 
     expect(res.status).toBe(201);
-    expect((deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).createAgent).toHaveBeenCalledWith({
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).createAgent
+    ).toHaveBeenCalledWith({
       name: "Lab Copy",
       id: undefined,
       cloneFromId: undefined,

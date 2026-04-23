@@ -49,7 +49,7 @@ function makePrimaryOverview(deps: WebUIServerDeps): AgentOverview {
     uptimeMs,
     lastError: lifecycle.getError() ?? null,
     canDelete: false,
-    canStart: state === "stopped" || state === "error",
+    canStart: state === "stopped",
     canStop: state === "running",
     logsAvailable: false,
   };
@@ -97,7 +97,8 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       const snapshot = service.createAgent({
         name: body.name?.trim() || "",
         id: body.id?.trim() || undefined,
-        cloneFromId: body.cloneFromId && body.cloneFromId !== "primary" ? body.cloneFromId : undefined,
+        cloneFromId:
+          body.cloneFromId && body.cloneFromId !== "primary" ? body.cloneFromId : undefined,
       });
       const response: APIResponse<AgentOverview> = {
         success: true,
@@ -112,9 +113,13 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
   app.post("/:id/clone", async (c) => {
     try {
       const { id } = c.req.param();
-      const body = await c.req.json<{ name?: string; newId?: string }>().catch(() => ({}));
+      const body = await c.req
+        .json<{ name?: string; newId?: string }>()
+        .catch((): { name?: string; newId?: string } => ({}));
       const sourceName =
-        id === "primary" ? makePrimaryOverview(deps).name : withManagedService(deps).getAgentSnapshot(id).name;
+        id === "primary"
+          ? makePrimaryOverview(deps).name
+          : withManagedService(deps).getAgentSnapshot(id).name;
       const service = withManagedService(deps);
       const snapshot = service.createAgent({
         name: body.name?.trim() || `${sourceName} Copy`,
@@ -178,14 +183,20 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       if (id === "primary") {
         const lifecycle = deps.lifecycle;
         if (!lifecycle) {
-          return c.json({ success: false, error: "Agent lifecycle not available" } as APIResponse, 503);
+          return c.json(
+            { success: false, error: "Agent lifecycle not available" } as APIResponse,
+            503
+          );
         }
         const state = lifecycle.getState();
         if (state === "running") {
           return c.json({ success: false, error: "Agent is already running" } as APIResponse, 409);
         }
         if (state === "stopping") {
-          return c.json({ success: false, error: "Agent is currently stopping" } as APIResponse, 409);
+          return c.json(
+            { success: false, error: "Agent is currently stopping" } as APIResponse,
+            409
+          );
         }
         lifecycle.start().catch((error: Error) => {
           log.error({ err: error }, "Primary agent start failed");
@@ -214,14 +225,20 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       if (id === "primary") {
         const lifecycle = deps.lifecycle;
         if (!lifecycle) {
-          return c.json({ success: false, error: "Agent lifecycle not available" } as APIResponse, 503);
+          return c.json(
+            { success: false, error: "Agent lifecycle not available" } as APIResponse,
+            503
+          );
         }
         const state = lifecycle.getState();
         if (state === "stopped") {
           return c.json({ success: false, error: "Agent is already stopped" } as APIResponse, 409);
         }
         if (state === "starting") {
-          return c.json({ success: false, error: "Agent is currently starting" } as APIResponse, 409);
+          return c.json(
+            { success: false, error: "Agent is currently starting" } as APIResponse,
+            409
+          );
         }
         lifecycle.stop().catch((error: Error) => {
           log.error({ err: error }, "Primary agent stop failed");
@@ -248,7 +265,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       const { id } = c.req.param();
       if (id === "primary") {
         return c.json(
-          { success: false, error: "Primary agent logs are available through the main Logs page" } as APIResponse,
+          {
+            success: false,
+            error: "Primary agent logs are available through the main Logs page",
+          } as APIResponse,
           400
         );
       }
