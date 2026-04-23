@@ -15,7 +15,7 @@
 
 ---
 
-<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account (not a bot). It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 135+ built-in tools, supports 15 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
+<p align="center">Teleton is an autonomous AI agent platform that operates as a real Telegram user account or a Telegram Bot. It thinks through an agentic loop with tool calling, remembers conversations across sessions with hybrid RAG, and natively integrates the TON blockchain: send crypto, swap on DEXs, bid on domains, verify payments - all from a chat message. It can schedule tasks to run autonomously at any time. It ships with 135+ built-in tools, supports 16 LLM providers, and exposes a Plugin SDK so you can build your own tools on top of the platform.</p>
 
 ### Key Highlights
 
@@ -23,7 +23,7 @@
 <tr>
 <td align="center" width="33%"><br><b><ins>Full Telegram Access</ins></b><br>Real user via MTProto,<br>not a bot<br><br></td>
 <td align="center" width="33%"><br><b><ins>Agentic Loop</ins></b><br>Think, act, observe, repeat<br>until shit gets done<br><br></td>
-<td align="center" width="33%"><br><b><ins>15 LLM Providers</ins></b><br>Anthropic, OpenAI, Google, xAI, Groq, and more<br><br></td>
+<td align="center" width="33%"><br><b><ins>16 LLM Providers</ins></b><br>Anthropic, OpenAI, Google, xAI, Groq, and more<br><br></td>
 </tr>
 <tr>
 <td align="center"><br><b><ins>TON Blockchain</ins></b><br>Wallet, jettons, DEX swaps, DNS, NFTs<br><br></td>
@@ -52,7 +52,7 @@
 | TON DNS       | 8     | Auctions, bidding, linking, TON Sites, resolution              |
 | Deals         | 5     | P2P escrow, on-chain verification, anti double-spend           |
 | Journal       | 3     | Trade logging, P&L tracking, natural language queries          |
-| Web           | 2     | Search and page extraction via Tavily                          |
+| Web           | 3     | Search, page extraction (Tavily), binary file download         |
 | Workspace     | 6     | Sandboxed file operations, path traversal protection           |
 | Exec          | 4     | Shell, files, processes (off by default, admin-only)           |
 | Bot           | 1     | Inline bot message sending for plugin interactions             |
@@ -61,7 +61,7 @@
 
 | Capability              | Description                                                              |
 | ----------------------- | ------------------------------------------------------------------------ |
-| **Multi-Provider LLM**  | 15 providers, hot-swap from dashboard or CLI                             |
+| **Multi-Provider LLM**  | 16 providers, hot-swap from dashboard or CLI                             |
 | **RAG + Hybrid Search** | Vector (sqlite-vec) + keyword (FTS5) fused search                        |
 | **Auto-Compaction**     | AI summarizes old context, saves to `memory/*.md`                        |
 | **Observation Masking** | Compresses old tool results, saves ~90% context                          |
@@ -85,7 +85,7 @@
 ## Prerequisites
 
 - **Node.js 20.0.0+** - [Download](https://nodejs.org/)
-- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
+- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens), [NVIDIA NIM](https://build.nvidia.com/) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
 - **Telegram Account** - Dedicated account recommended for security
 - **Telegram API Credentials** - From [my.telegram.org/apps](https://my.telegram.org/apps)
 - **Your Telegram User ID** - Message [@userinfobot](https://t.me/userinfobot)
@@ -146,17 +146,41 @@ Agent: [Displays uptime, model, tool count, wallet balance]
 
 ---
 
+## User Mode vs Bot Mode
+
+Teleton can run as a **user account** (MTProto) or a **Telegram bot** (Bot API). Set `telegram.mode` in your config:
+
+| | User Mode (default) | Bot Mode |
+|---|---|---|
+| **Auth** | Phone + api_id + api_hash | Bot token from @BotFather |
+| **Protocol** | MTProto (GramJS) | Bot API (Grammy) |
+| **Tools** | 135+ | 67 (11 Telegram + 56 non-Telegram) |
+| **Risk** | Account ban possible | No ban risk |
+| **Dialogs/History** | Full access | Not available |
+| **Media sending** | All types | Photos only (v1) |
+| **Inline keyboards** | Via bot_token | Native |
+| **Stars/Gifts** | Full access | Not available |
+| **Profile editing** | Yes | No |
+| **Scheduled tasks** | Yes | Not available |
+| **Setup** | `telegram.mode: "user"` | `telegram.mode: "bot"` |
+
+---
+
 ## Configuration
 
 The `teleton setup` wizard generates a fully configured `~/.teleton/config.yaml` file. Manual editing is only necessary if you want to adjust settings after the initial setup.
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
+  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | nvidia | cocoon | local
   api_key: "sk-ant-api03-..."
-  model: "claude-opus-4-6"
+  model: "claude-haiku-4-5-20251001"
   utility_model: "claude-haiku-4-5-20251001"  # for summarization, compaction, vision
   max_agentic_iterations: 5
+  session_reset_policy:
+    daily_reset_enabled: true
+    daily_reset_hour: 4
+    idle_expiry_minutes: 1440  # 24h idle → new session
 
 telegram:
   dm_policy: "admin-only"   # open | allowlist | admin-only | disabled
@@ -170,11 +194,6 @@ telegram:
   # Optional: inline bot for interactive features (deals)
   bot_token: "123456:ABC-DEF..."
   bot_username: "your_bot"
-
-  session_reset_policy:
-    daily_reset_enabled: true
-    daily_reset_hour: 4
-    idle_expiry_minutes: 1440  # 24h idle → new session
 
 webui:                       # Optional: Web dashboard
   enabled: false             # Enable WebUI server
@@ -195,7 +214,7 @@ ton_proxy:                   # Optional: .ton domain proxy
 
 ### Supported Models
 
-70+ models across 15 providers. Defined in `src/config/model-catalog.ts`, shared across CLI, WebUI, and Dashboard.
+70+ models across 16 providers. Defined in `src/config/model-catalog.ts`, shared across CLI, WebUI, and Dashboard.
 
 <table>
 <tr>
@@ -216,7 +235,10 @@ ton_proxy:                   # Optional: .ton domain proxy
 <td align="center"><br><b>ZAI</b><br>GLM-5<br><br></td>
 <td align="center"><br><b>MiniMax</b><br>M2.5<br><br></td>
 <td align="center"><br><b>Hugging Face</b><br>DeepSeek V3.2<br><br></td>
+<td align="center"><br><b>NVIDIA NIM</b><br>Llama, Qwen, free tier<br><br></td>
 <td align="center"><br><b>Cocoon</b><br>Decentralized (TON)<br><br></td>
+</tr>
+<tr>
 <td align="center"><br><b>Local</b><br>Ollama, vLLM, LM Studio<br><br></td>
 </tr>
 </table>
@@ -456,7 +478,7 @@ The SDK provides namespaced access to core services:
 
 | Layer | Technology |
 |-------|------------|
-| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
+| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (16 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, NVIDIA NIM, Cocoon, Local) |
 | Telegram Userbot | [GramJS](https://gram.js.org/) Layer 223 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |
@@ -537,7 +559,7 @@ src/
 │   └── loader.ts           # 10 sections: soul + security + strategy + memory + context + ...
 ├── config/                 # Configuration
 │   ├── schema.ts           # Zod schemas + validation
-│   ├── providers.ts        # Multi-provider LLM registry (15 providers)
+│   ├── providers.ts        # Multi-provider LLM registry (16 providers)
 │   └── model-catalog.ts    # Shared model catalog (70+ models across all providers)
 ├── webui/                  # Optional web dashboard
 │   ├── server.ts           # Hono server, auth middleware, static serving
