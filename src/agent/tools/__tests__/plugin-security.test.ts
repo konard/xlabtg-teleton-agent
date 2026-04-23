@@ -21,15 +21,17 @@ import { writeFileSync, mkdirSync, rmSync, chmodSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
+import { isGroupOrWorldWritable, verifyPluginChecksum } from "../plugin-loader.js";
 
-// ─── Hoisted values (evaluated before vi.mock factories) ─────────
+// ─── Hoisted values ──────────────────────────────────────────────
 //
-// vi.hoisted() runs before the vi.mock() factory calls, so any value
-// computed here is safe to reference inside a vi.mock() factory.
+// vi.hoisted() runs before vi.mock() factory calls, so values computed here
+// are safe to reference inside vi.mock() factories.
 
 const { SECURITY_PLUGINS_DIR, mockWatchFn } = vi.hoisted(() => {
   return {
-    SECURITY_PLUGINS_DIR: join(tmpdir(), `teleton-security-test-${process.pid}`),
+    // Use a fixed path under /tmp so no runtime imports are needed here
+    SECURITY_PLUGINS_DIR: `/tmp/teleton-security-test-${process.pid}`,
     mockWatchFn: vi.fn(() => ({ on: vi.fn() })),
   };
 });
@@ -61,9 +63,6 @@ vi.mock("../../../sdk/secrets.js", () => ({
 }));
 
 vi.mock("chokidar", () => ({ default: { watch: mockWatchFn } }));
-
-// ─── Direct imports ───────────────────────────────────────────────
-import { isGroupOrWorldWritable, verifyPluginChecksum } from "../plugin-loader.js";
 
 // ─── Helpers ────────────────────────────────────────────────────
 
