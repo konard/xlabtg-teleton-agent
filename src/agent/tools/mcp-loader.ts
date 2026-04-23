@@ -9,6 +9,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { SSEClientTransport } from "@modelcontextprotocol/sdk/client/sse.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { Ajv, type ErrorObject } from "ajv";
+import { TOOL_EXECUTION_TIMEOUT_MS } from "../../constants/timeouts.js";
 import { sanitizeForContext } from "../../utils/sanitize.js";
 import type { Tool, ToolExecutor, ToolResult, ToolScope } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
@@ -16,15 +18,39 @@ import type { McpConfig, McpServerConfig } from "../../config/schema.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
 
+/**
+ * Built-in tool name prefixes that MCP tools must not shadow.
+ * An MCP tool whose original name starts with any of these is rejected.
+ */
+const RESERVED_TOOL_PREFIXES = [
+  "ton_",
+  "jetton_",
+  "wallet_",
+  "exec",
+  "exec_",
+  "telegram_",
+  "dns_",
+  "stonfi_",
+  "dedust_",
+  "dex_",
+  "nft_",
+  "journal_",
+  "workspace_",
+  "web_",
+  "bot_",
+  "mcp_",
+  "mcp.",
+] as const;
+
 const log = createLogger("MCP");
+
+const ajv = new Ajv({ allErrors: true, strict: false });
 
 export interface McpConnection {
   serverName: string;
   client: Client;
   scope: ToolScope;
 }
-
-import { TOOL_EXECUTION_TIMEOUT_MS } from "../../constants/timeouts.js";
 
 const MCP_CONNECT_TIMEOUT_MS = 30_000;
 
@@ -170,7 +196,11 @@ export async function loadMcpServers(config: McpConfig): Promise<McpConnection[]
 
 /**
  * Discover tools from connected MCP servers and register them in the ToolRegistry.
- * Tool names are prefixed: mcp_<server>_<tool_name>
+ * Tool names are namespaced as mcp.<server>.<tool_name>.
+ *
+ * Registration is rejected when:
+ *   - inputSchema.properties is absent or empty (no-op validation would be unsafe)
+ *   - the tool's original name starts with a reserved built-in prefix
  */
 export async function registerMcpTools(
   connections: McpConnection[],
@@ -188,9 +218,46 @@ export async function registerMcpTools(
       const registryTools: Array<{ tool: Tool; executor: ToolExecutor; scope?: ToolScope }> = [];
 
       for (const mcpTool of mcpTools) {
-        const prefixedName = `mcp_${conn.serverName}_${mcpTool.name}`;
+        // Reject tools with no parameter schema — passing raw LLM args without validation is unsafe.
+        const schema = mcpTool.inputSchema ?? { type: "object", properties: {} };
+        if (
+          !schema.properties ||
+          Object.keys(schema.properties as Record<string, unknown>).length === 0
+        ) {
+          log.error(
+            { tool: mcpTool.name, server: conn.serverName },
+            "MCP tool rejected: missing or empty inputSchema.properties — registration skipped to prevent unvalidated input"
+          );
+          continue;
+        }
+
+        // Reject tools whose name could shadow built-in tools.
+        const hasReservedPrefix = RESERVED_TOOL_PREFIXES.some((prefix) =>
+          mcpTool.name.startsWith(prefix)
+        );
+        if (hasReservedPrefix) {
+          log.error(
+            { tool: mcpTool.name, server: conn.serverName },
+            "MCP tool rejected: name starts with a reserved built-in prefix — registration skipped to prevent name collision"
+          );
+          continue;
+        }
+
+        const namespacedName = `mcp.${conn.serverName}.${mcpTool.name}`;
+        const validate = ajv.compile(schema);
 
         const executor: ToolExecutor = async (params): Promise<ToolResult> => {
+          // Validate params against the advertised JSON Schema before calling the MCP server.
+          if (!validate(params)) {
+            const detail = (validate.errors ?? [])
+              .map((e: ErrorObject) => `${e.instancePath || "/"}: ${e.message}`)
+              .join("; ");
+            return {
+              success: false,
+              error: `MCP tool "${mcpTool.name}" received invalid arguments: ${detail}`,
+            };
+          }
+
           try {
             let timeoutHandle: ReturnType<typeof setTimeout>;
             const result = await Promise.race([
@@ -231,20 +298,9 @@ export async function registerMcpTools(
           }
         };
 
-        const schema = mcpTool.inputSchema ?? { type: "object", properties: {} };
-        if (
-          !schema.properties ||
-          Object.keys(schema.properties as Record<string, unknown>).length === 0
-        ) {
-          log.warn(
-            { tool: mcpTool.name, server: conn.serverName },
-            "MCP tool has no parameter schema — inputs will not be validated"
-          );
-        }
-
         registryTools.push({
           tool: {
-            name: prefixedName,
+            name: namespacedName,
             description: mcpTool.description || `MCP tool from ${conn.serverName}`,
             parameters: schema as unknown as Tool["parameters"],
           },
@@ -253,7 +309,8 @@ export async function registerMcpTools(
         });
       }
 
-      const count = registry.registerPluginTools(`mcp_${conn.serverName}`, registryTools);
+      const pluginKey = `mcp.${conn.serverName}`;
+      const count = registry.registerPluginTools(pluginKey, registryTools);
       if (count > 0) {
         totalCount += count;
         serverNames.push(conn.serverName);
