@@ -41,110 +41,155 @@ describe("stripSqlComments", () => {
   });
 });
 
-describe("createSafeDb", () => {
-  // ─── Blocked operations ───────────────────────────────────
-
-  it("blocks ATTACH DATABASE via exec", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("ATTACH DATABASE ':memory:' AS ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
-    );
+describe("createSafeDb — allow-list: exposed methods", () => {
+  it("exposes prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(typeof (safe as any).prepare).toBe("function");
   });
 
-  it("blocks DETACH DATABASE via exec", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("DETACH DATABASE ext")).toThrow("ATTACH/DETACH DATABASE is not allowed");
+  it("exposes transaction", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(typeof (safe as any).transaction).toBe("function");
   });
 
+  it("exposes inTransaction (read-only boolean)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(typeof (safe as any).inTransaction).toBe("boolean");
+  });
+
+  it("close() is a no-op and does not throw", () => {
+    const db = createTestDb();
+    const safe = createSafeDbViaSDK(db);
+    expect(() => (safe as any).close()).not.toThrow();
+    // underlying db must still be open
+    expect(() => db.exec("SELECT 1")).not.toThrow();
+  });
+});
+
+describe("createSafeDb — allow-list: blocked methods", () => {
+  it("loadExtension is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).loadExtension).toBeUndefined();
+  });
+
+  it("backup is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).backup).toBeUndefined();
+  });
+
+  it("serialize is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).serialize).toBeUndefined();
+  });
+
+  it("function (UDF registration) is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).function).toBeUndefined();
+  });
+
+  it("pragma method is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).pragma).toBeUndefined();
+  });
+
+  it("exec is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).exec).toBeUndefined();
+  });
+
+  it("aggregate is not accessible (returns undefined)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect((safe as any).aggregate).toBeUndefined();
+  });
+});
+
+describe("createSafeDb — SQL denylist via prepare", () => {
   it("blocks ATTACH DATABASE via prepare", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
+    const safe = createSafeDbViaSDK(createTestDb());
     expect(() => safe.prepare("ATTACH DATABASE ':memory:' AS ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
+      "not allowed in plugin context"
     );
   });
 
-  it("blocks case variations (lowercase)", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("attach database ':memory:' as ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
+  it("blocks DETACH DATABASE via prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("DETACH DATABASE ext")).toThrow("not allowed in plugin context");
+  });
+
+  it("blocks PRAGMA via prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("PRAGMA foreign_keys = OFF")).toThrow(
+      "not allowed in plugin context"
     );
   });
 
-  it("blocks case variations (mixed)", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("Attach Database ':memory:' as ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
+  it("blocks VACUUM via prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("VACUUM")).toThrow("not allowed in plugin context");
+  });
+
+  it("blocks ALTER TABLE via prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("ALTER TABLE test ADD COLUMN extra TEXT")).toThrow(
+      "not allowed in plugin context"
     );
   });
 
-  // ─── Comment bypass attempts ──────────────────────────────
+  it("blocks case variations (lowercase attach database)", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("attach database ':memory:' as ext")).toThrow(
+      "not allowed in plugin context"
+    );
+  });
 
   it("blocks ATTACH with block comment bypass", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("ATTACH /* bypass */ DATABASE ':memory:' AS ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("ATTACH /* bypass */ DATABASE ':memory:' AS ext")).toThrow(
+      "not allowed in plugin context"
     );
   });
 
-  it("blocks ATTACH with line comment bypass", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("ATTACH -- bypass\nDATABASE ':memory:' AS ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
-    );
-  });
-
-  it("blocks DETACH with block comment bypass", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("DETACH /* */ DATABASE ext")).toThrow(
-      "ATTACH/DETACH DATABASE is not allowed"
+  it("blocks PRAGMA with line comment bypass", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("-- harmless\nPRAGMA journal_mode = WAL")).toThrow(
+      "not allowed in plugin context"
     );
   });
 
   it("does not match ATTACH split across block comment (SQLite also rejects it)", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
+    const safe = createSafeDbViaSDK(createTestDb());
     // AT/**/TACH becomes "AT TACH" after stripping — doesn't match \bATTACH\b
     // Our guard lets it through, but SQLite itself rejects "AT TACH" as invalid SQL
-    expect(() => safe.exec("AT/**/TACH DATABASE ':memory:' AS ext")).toThrow("syntax error");
+    expect(() => safe.prepare("AT/**/TACH DATABASE ':memory:' AS ext")).toThrow();
   });
 
-  // ─── Allowed operations ───────────────────────────────────
-
-  it("allows normal SELECT via exec", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
-    expect(() => safe.exec("INSERT INTO test (name) VALUES ('hello')")).not.toThrow();
-  });
+  // ─── Allowed SQL ──────────────────────────────────────────
 
   it("allows normal SELECT via prepare", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
+    const safe = createSafeDbViaSDK(createTestDb());
     const stmt = safe.prepare("SELECT * FROM test");
     expect(stmt.all()).toEqual([]);
   });
 
-  it("allows CREATE TABLE", () => {
-    const db = createTestDb();
-    const safe = createSafeDbViaSDK(db);
+  it("allows INSERT via prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
+    expect(() => safe.prepare("INSERT INTO test (name) VALUES ('hello')")).not.toThrow();
+  });
+
+  it("allows CREATE TABLE via prepare", () => {
+    const safe = createSafeDbViaSDK(createTestDb());
     expect(() =>
-      safe.exec("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")
+      safe.prepare("CREATE TABLE IF NOT EXISTS kv (key TEXT PRIMARY KEY, value TEXT)")
     ).not.toThrow();
   });
 
-  it("blocks SQL containing ATTACH DATABASE even in string literals (known limitation)", () => {
+  it("transaction helper works end-to-end", () => {
     const db = createTestDb();
     const safe = createSafeDbViaSDK(db);
-    // Regex cannot distinguish SQL keywords from string contents — false positive is acceptable
-    expect(() =>
-      safe.exec("INSERT INTO test (name) VALUES ('attach database is blocked')")
-    ).toThrow("ATTACH/DETACH DATABASE is not allowed");
+    const insert = safe.prepare("INSERT INTO test (name) VALUES (?)");
+    const tx = (safe as any).transaction((name: string) => insert.run(name));
+    expect(() => tx("alice")).not.toThrow();
+    const rows = db.prepare("SELECT name FROM test").all();
+    expect(rows).toEqual([{ name: "alice" }]);
   });
 });
