@@ -17,6 +17,7 @@ import {
   validateReadPath,
   validateWritePath,
   validateDirectory,
+  safeWriteFileSync,
   WorkspaceSecurityError,
 } from "../../workspace/validator.js";
 import { getErrorMessage } from "../../utils/errors.js";
@@ -290,7 +291,9 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
       const parentDir = join(validated.absolutePath, "..");
       mkdirSync(parentDir, { recursive: true });
 
-      writeFileSync(validated.absolutePath, body.content, "utf-8");
+      // Use safeWriteFileSync (O_NOFOLLOW) to prevent symlink-swap race between
+      // validation and the actual write.
+      safeWriteFileSync(validated.absolutePath, body.content);
 
       const response: APIResponse<{ message: string }> = {
         success: true,
