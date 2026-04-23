@@ -135,7 +135,7 @@ Thank you for trading! 🎉`,
         WHERE id = ?`
       ).run(txHash, dealId);
 
-      log.info(`Deal #${dealId} completed - TON sent - TX: ${txHash!.slice(0, 8)}...`);
+      log.info(`Deal #${dealId} completed - TON sent - TX: ${txHash?.slice(0, 8) ?? "unknown"}...`);
 
       // Log to business journal
       logDealToJournal(deal, db, txHash ?? undefined);
