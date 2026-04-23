@@ -1495,11 +1495,15 @@ ${blue}  ┌──────────────────────�
         !isHeartbeatOk(response.content) &&
         !isSilentReply(response.content)
       ) {
-        await this.bridge.sendMessage({
-          chatId: telegramChatId,
-          text: response.content,
-        });
-        log.info("Heartbeat: alert sent to owner");
+        if (this.bridge.isAvailable()) {
+          await this.bridge.sendMessage({
+            chatId: telegramChatId,
+            text: response.content,
+          });
+          log.info("Heartbeat: alert sent to owner");
+        } else {
+          log.warn("Heartbeat: bridge not available, alert not delivered to Telegram");
+        }
       } else {
         log.debug("Heartbeat: NO_ACTION (suppressed)");
       }
