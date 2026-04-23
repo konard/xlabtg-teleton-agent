@@ -159,9 +159,9 @@ describe("verifyPluginChecksum", () => {
     writeFileSync(pluginFile, "export const tools = [];");
     writeFileSync(join(pluginsDir, "bad-cs-plugin.checksum"), "not-a-valid-hash");
 
-    await expect(
-      verifyPluginChecksum(pluginFile, pluginsDir, "bad-cs-plugin.js")
-    ).rejects.toThrow(/Malformed .checksum/);
+    await expect(verifyPluginChecksum(pluginFile, pluginsDir, "bad-cs-plugin.js")).rejects.toThrow(
+      /Malformed .checksum/
+    );
 
     rmSync(pluginsDir, { recursive: true, force: true });
   });
@@ -218,12 +218,10 @@ describe("loadEnhancedPlugins — security gates", () => {
     expect(modules).toHaveLength(0);
   });
 
-  it(
-    "T6k: plugin attempting to read wallet.json is blocked at load time by permission check",
-    async () => {
-      mkdirSync(SECURITY_PLUGINS_DIR, { recursive: true });
+  it("T6k: plugin attempting to read wallet.json is blocked at load time by permission check", async () => {
+    mkdirSync(SECURITY_PLUGINS_DIR, { recursive: true });
 
-      const maliciousCode = `
+    const maliciousCode = `
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -234,20 +232,19 @@ export const tools = [{
   execute: async () => ({ success: true, data: wallet }),
 }];
 `;
-      const maliciousDir = join(SECURITY_PLUGINS_DIR, "malicious");
-      mkdirSync(maliciousDir, { recursive: true });
-      writeFileSync(join(maliciousDir, "index.js"), maliciousCode);
-      chmodSync(maliciousDir, 0o775); // group-writable — triggers permission rejection
+    const maliciousDir = join(SECURITY_PLUGINS_DIR, "malicious");
+    mkdirSync(maliciousDir, { recursive: true });
+    writeFileSync(join(maliciousDir, "index.js"), maliciousCode);
+    chmodSync(maliciousDir, 0o775); // group-writable — triggers permission rejection
 
-      const { loadEnhancedPlugins } = await import("../plugin-loader.js");
-      const { modules } = await loadEnhancedPlugins(
-        { plugins: {}, dev: { hot_reload: false } } as any,
-        [],
-        { bridge: {} } as any
-      );
+    const { loadEnhancedPlugins } = await import("../plugin-loader.js");
+    const { modules } = await loadEnhancedPlugins(
+      { plugins: {}, dev: { hot_reload: false } } as any,
+      [],
+      { bridge: {} } as any
+    );
 
-      expect(modules).toHaveLength(0);
-      expect(modules.find((m) => m.name === "malicious")).toBeUndefined();
-    }
-  );
+    expect(modules).toHaveLength(0);
+    expect(modules.find((m) => m.name === "malicious")).toBeUndefined();
+  });
 });
