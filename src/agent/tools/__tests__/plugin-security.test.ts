@@ -14,9 +14,12 @@
  *   T6j: loadEnhancedPlugins skips plugins in group-writable directories
  *   T6k: A plugin attempting to read wallet.json is blocked at load time
  *         (permission check prevents the import() from ever executing)
+ *   T6l: Windows skips the POSIX mode-bit heuristic
+ *   T6m: Windows plugin directories load without the POSIX mode-bit heuristic
+ *   T6n: Windows plugins still require matching checksum sidecars
  */
 
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
 import { writeFileSync, mkdirSync, rmSync, chmodSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -76,9 +79,33 @@ function tmpDir(suffix: string): string {
   return d;
 }
 
+const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+
+function setPlatform(platform: NodeJS.Platform): void {
+  Object.defineProperty(process, "platform", { value: platform });
+}
+
+function restorePlatform(): void {
+  if (originalPlatform) {
+    Object.defineProperty(process, "platform", originalPlatform);
+  }
+}
+
+const securityConfig = {
+  agent: { provider: "test", model: "test", max_tokens: 1000 },
+  telegram: { admin_ids: [] },
+  deals: { enabled: false },
+  plugins: {},
+  dev: { hot_reload: false },
+};
+
 // ─── T6a-T6d: isGroupOrWorldWritable ───────────────────────────
 
 describe("isGroupOrWorldWritable", () => {
+  afterEach(() => {
+    restorePlatform();
+  });
+
   it("T6a: returns true for group-writable file (mode 0o664)", () => {
     const dir = tmpDir("t6a");
     const file = join(dir, "test.js");
@@ -108,6 +135,16 @@ describe("isGroupOrWorldWritable", () => {
 
   it("T6d: returns false for a non-existent path (stat throws)", () => {
     expect(isGroupOrWorldWritable("/tmp/definitely-does-not-exist-xyz123abc.js")).toBe(false);
+  });
+
+  it("T6l: returns false on Windows even when POSIX write bits appear set", () => {
+    setPlatform("win32");
+    const dir = tmpDir("t6l");
+    const file = join(dir, "test.js");
+    writeFileSync(file, "export const tools = [];");
+    chmodSync(file, 0o666);
+    expect(isGroupOrWorldWritable(file)).toBe(false);
+    rmSync(dir, { recursive: true, force: true });
   });
 });
 
@@ -197,7 +234,12 @@ describe("PluginWatcher.start() — production guard", () => {
 // ─── T6j-T6k: loadEnhancedPlugins security gates ────────────────
 
 describe("loadEnhancedPlugins — security gates", () => {
+  beforeEach(() => {
+    restorePlatform();
+  });
+
   afterEach(() => {
+    restorePlatform();
     rmSync(SECURITY_PLUGINS_DIR, { recursive: true, force: true });
   });
 
@@ -246,5 +288,51 @@ export const tools = [{
 
     expect(modules).toHaveLength(0);
     expect(modules.find((m) => m.name === "malicious")).toBeUndefined();
+  });
+
+  it("T6m: loads a normal Windows plugin directory without applying POSIX mode bits", async () => {
+    setPlatform("win32");
+    mkdirSync(SECURITY_PLUGINS_DIR, { recursive: true });
+
+    const pluginCode = `
+export const tools = [{
+  name: "windows_ok",
+  description: "Windows plugin",
+  execute: async () => ({ success: true }),
+}];
+`;
+    const pluginDir = join(SECURITY_PLUGINS_DIR, "windows-safe");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "index.js"), pluginCode);
+    writeFileSync(join(pluginDir, ".checksum"), sha256(pluginCode));
+    chmodSync(pluginDir, 0o777);
+
+    const { loadEnhancedPlugins } = await import("../plugin-loader.js");
+    const { modules } = await loadEnhancedPlugins(securityConfig as any, [], { bridge: {} } as any);
+
+    expect(modules.map((m) => m.name)).toContain("windows-safe");
+  });
+
+  it("T6n: still rejects Windows plugins when checksum verification fails", async () => {
+    setPlatform("win32");
+    mkdirSync(SECURITY_PLUGINS_DIR, { recursive: true });
+
+    const pluginCode = `
+export const tools = [{
+  name: "windows_tampered",
+  description: "Windows plugin",
+  execute: async () => ({ success: true }),
+}];
+`;
+    const pluginDir = join(SECURITY_PLUGINS_DIR, "windows-tampered");
+    mkdirSync(pluginDir, { recursive: true });
+    writeFileSync(join(pluginDir, "index.js"), pluginCode);
+    writeFileSync(join(pluginDir, ".checksum"), sha256("different contents"));
+    chmodSync(pluginDir, 0o777);
+
+    const { loadEnhancedPlugins } = await import("../plugin-loader.js");
+    const { modules } = await loadEnhancedPlugins(securityConfig as any, [], { bridge: {} } as any);
+
+    expect(modules.find((m) => m.name === "windows-tampered")).toBeUndefined();
   });
 });
