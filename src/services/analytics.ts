@@ -182,12 +182,13 @@ export class AnalyticsService {
     return this.db
       .prepare(
         `SELECT
-           tool,
-           SUM(count) AS count,
-           NULL AS avg_duration_ms
-         FROM metric_tool_calls
-         WHERE bucket >= ?
-         GROUP BY tool
+           tool_name AS tool,
+           COUNT(*) AS count,
+           AVG(duration_ms) AS avg_duration_ms
+         FROM request_metrics
+         WHERE created_at >= ?
+           AND tool_name IS NOT NULL
+         GROUP BY tool_name
          ORDER BY count DESC
          LIMIT 20`
       )
