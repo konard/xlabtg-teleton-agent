@@ -14,11 +14,20 @@ import {
   writeFileSync,
   unlinkSync,
 } from "fs";
-import { mkdir } from "fs/promises";
-import { join } from "path";
+import { mkdir, unlink as unlinkAsync } from "fs/promises";
+import { createHash } from "crypto";
+import { join, dirname } from "path";
 import { pipeline } from "stream/promises";
+import { fileURLToPath } from "url";
 import { createLogger } from "../utils/logger.js";
 import { TELETON_ROOT } from "../workspace/paths.js";
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+
+/** Maximum allowed binary size (50 MB) */
+const MAX_BINARY_BYTES = 50 * 1024 * 1024;
+/** Only allow downloads from the official GitHub domain */
+const ALLOWED_DOWNLOAD_HOST = "objects.githubusercontent.com";
 
 const log = createLogger("TonProxy");
 
@@ -63,44 +72,110 @@ export class TonProxyManager {
   }
 
   /**
-   * Download the latest CLI binary from GitHub releases.
-   * Fetches the latest release tag, then downloads the platform-appropriate binary.
+   * Download the pinned CLI binary from GitHub releases and verify its SHA-256 checksum.
+   * The release tag and expected digests are loaded from checksums.json next to this file.
+   * On any failure the partially-written file is deleted and no auto-retry is performed.
    */
   async install(): Promise<void> {
     const binaryName = getBinaryName();
     log.info(`Downloading TON Proxy binary (${binaryName})...`);
 
+    // Load pinned release metadata — fail fast if the file is missing or malformed
+    const checksumPath = join(__dirname, "checksums.json");
+    let checksumData: { tag: string; binaries: Record<string, string> };
+    try {
+      checksumData = JSON.parse(readFileSync(checksumPath, "utf-8")) as typeof checksumData;
+    } catch {
+      throw new Error(`Cannot read checksum manifest: ${checksumPath}`);
+    }
+
+    const expectedDigest = checksumData.binaries[binaryName];
+    if (!expectedDigest) {
+      throw new Error(
+        `No checksum for binary "${binaryName}" in checksums.json. ` +
+          `Supported binaries: ${Object.keys(checksumData.binaries).join(", ")}`
+      );
+    }
+
+    const tag = checksumData.tag;
     await mkdir(BINARY_DIR, { recursive: true });
 
-    // Fetch latest release tag
-    const releaseUrl = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
-    const releaseRes = await fetch(releaseUrl, {
-      headers: { Accept: "application/vnd.github.v3+json" },
-    });
-    if (!releaseRes.ok) {
-      throw new Error(`Failed to fetch latest release: ${releaseRes.status}`);
-    }
-    const release = (await releaseRes.json()) as { tag_name: string };
-    const tag = release.tag_name;
-
-    // Download binary
+    // Build the download URL for the pinned tag
     const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${binaryName}`;
-    log.info(`Downloading ${downloadUrl}`);
+    log.info(`Downloading ${downloadUrl} (${tag})`);
 
     const res = await fetch(downloadUrl);
     if (!res.ok || !res.body) {
       throw new Error(`Download failed: ${res.status} ${res.statusText}`);
     }
 
-    const dest = this.getBinaryPath();
-    const fileStream = createWriteStream(dest);
-    // Node fetch body is a ReadableStream; pipe through to file
-    await pipeline(res.body as unknown as NodeJS.ReadableStream, fileStream);
+    // Validate that redirects stayed within GitHub's CDN domain
+    const finalUrl = new URL(res.url);
+    if (finalUrl.hostname !== "github.com" && finalUrl.hostname !== ALLOWED_DOWNLOAD_HOST) {
+      throw new Error(`Download was redirected to an unexpected host: ${finalUrl.hostname}`);
+    }
 
-    // Make executable
+    // Validate Content-Length before streaming
+    const contentLength = res.headers.get("content-length");
+    if (contentLength !== null) {
+      const bytes = parseInt(contentLength, 10);
+      if (!Number.isFinite(bytes) || bytes > MAX_BINARY_BYTES) {
+        throw new Error(`Unexpected Content-Length ${bytes} bytes (max ${MAX_BINARY_BYTES})`);
+      }
+    }
+
+    const dest = this.getBinaryPath();
+    let bytesWritten = 0;
+    const hash = createHash("sha256");
+    const fileStream = createWriteStream(dest);
+
+    try {
+      // Stream the body through a byte-counter + hash accumulator into the file
+      const body = res.body as unknown as AsyncIterable<Uint8Array>;
+      await pipeline(
+        body,
+        async function* (source) {
+          for await (const chunk of source) {
+            bytesWritten += chunk.length;
+            if (bytesWritten > MAX_BINARY_BYTES) {
+              throw new Error(`Binary exceeds maximum allowed size of ${MAX_BINARY_BYTES} bytes`);
+            }
+            hash.update(chunk);
+            yield chunk;
+          }
+        },
+        fileStream
+      );
+    } catch (err) {
+      // Remove partial file before propagating — never leave an unverified file on disk
+      try {
+        unlinkSync(dest);
+      } catch {
+        /* ignore */
+      }
+      throw err;
+    }
+
+    // Verify SHA-256 digest
+    const actualDigest = hash.digest("hex");
+    if (actualDigest !== expectedDigest) {
+      try {
+        unlinkSync(dest);
+      } catch {
+        /* ignore */
+      }
+      throw new Error(
+        `Checksum mismatch for ${binaryName}!\n` +
+          `  expected: ${expectedDigest}\n` +
+          `  actual:   ${actualDigest}\n` +
+          `The downloaded file has been deleted. Do NOT retry automatically.`
+      );
+    }
+
+    // Only make executable after successful checksum verification
     chmodSync(dest, 0o755);
 
-    log.info(`TON Proxy installed: ${dest} (${tag})`);
+    log.info(`TON Proxy installed: ${dest} (${tag}) — checksum OK`);
   }
 
   /** Kill any orphan proxy process from a previous session */
@@ -288,8 +363,7 @@ export class TonProxyManager {
     }
     const binaryPath = this.getBinaryPath();
     if (existsSync(binaryPath)) {
-      const { unlink } = await import("fs/promises");
-      await unlink(binaryPath);
+      await unlinkAsync(binaryPath);
       log.info(`TON Proxy binary removed: ${binaryPath}`);
     }
   }
