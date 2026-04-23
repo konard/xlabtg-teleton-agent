@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { ensureSchema } from "../../../../memory/schema.js";
 import type { ExecConfig } from "../../../../config/schema.js";
 import type { ToolContext } from "../../types.js";
-import { createExecRunExecutor, isCommandAllowed } from "../run.js";
+import { createExecRunExecutor, isCommandAllowed, tokenizeCommand } from "../run.js";
 import { createExecInstallExecutor } from "../install.js";
 import { createExecServiceExecutor } from "../service.js";
 import { createExecStatusExecutor } from "../status.js";
@@ -77,6 +77,7 @@ describe("exec_run", () => {
     expect(mockRunCommand).toHaveBeenCalledWith("echo hello", {
       timeout: 120000,
       maxOutput: 50000,
+      useShell: true,
     });
   });
 
@@ -282,12 +283,63 @@ describe("exec_service", () => {
   });
 });
 
-describe("isCommandAllowed", () => {
-  it("allows exact match", () => {
-    expect(isCommandAllowed("git status", ["git status"])).toBe(true);
+describe("tokenizeCommand", () => {
+  it("splits simple command into tokens", () => {
+    expect(tokenizeCommand("git status")).toEqual(["git", "status"]);
   });
 
-  it("allows command with extra args when prefix matches", () => {
+  it("handles single-quoted arguments", () => {
+    expect(tokenizeCommand("echo 'hello world'")).toEqual(["echo", "hello world"]);
+  });
+
+  it("handles double-quoted arguments", () => {
+    expect(tokenizeCommand('echo "hello world"')).toEqual(["echo", "hello world"]);
+  });
+
+  it("returns null for commands with semicolon", () => {
+    expect(tokenizeCommand("git status; id")).toBeNull();
+  });
+
+  it("returns null for commands with pipe", () => {
+    expect(tokenizeCommand("git status | cat")).toBeNull();
+  });
+
+  it("returns null for commands with &&", () => {
+    expect(tokenizeCommand("git status && id")).toBeNull();
+  });
+
+  it("returns null for commands with command substitution $()", () => {
+    expect(tokenizeCommand("echo $(id)")).toBeNull();
+  });
+
+  it("returns null for commands with backtick substitution", () => {
+    expect(tokenizeCommand("echo `id`")).toBeNull();
+  });
+
+  it("returns null for commands with output redirect", () => {
+    expect(tokenizeCommand("ls > /tmp/out")).toBeNull();
+  });
+
+  it("returns null for commands with input redirect", () => {
+    expect(tokenizeCommand("cat < /etc/passwd")).toBeNull();
+  });
+
+  it("returns null for commands with newline", () => {
+    expect(tokenizeCommand("git status\nid")).toBeNull();
+  });
+});
+
+describe("isCommandAllowed", () => {
+  it("allows command when first token matches allowlist entry", () => {
+    expect(isCommandAllowed("git status", ["git"])).toBe(true);
+  });
+
+  it("allows command when allowlist entry contains the same program name with args", () => {
+    // "git status" allowlist entry: first token is "git", matches "git diff"'s first token
+    expect(isCommandAllowed("git diff HEAD~1", ["git status"])).toBe(true);
+  });
+
+  it("allows command with extra args when first token matches", () => {
     expect(isCommandAllowed("git diff HEAD~1", ["git"])).toBe(true);
   });
 
@@ -300,12 +352,29 @@ describe("isCommandAllowed", () => {
   });
 
   it("does not allow prefix substring without whitespace boundary", () => {
-    // 'git' should not match 'gitconfig' without a space after it
+    // 'git' allowlist entry must not match 'gitconfig' (different binary)
     expect(isCommandAllowed("gitconfig --list", ["git"])).toBe(false);
   });
 
   it("trims whitespace before matching", () => {
     expect(isCommandAllowed("  ls  /tmp", ["ls"])).toBe(true);
+  });
+
+  // Security regression: FULL-C2
+  it("SECURITY: rejects 'git status && id' when allowlist is ['git']", () => {
+    expect(isCommandAllowed("git status && id", ["git"])).toBe(false);
+  });
+
+  it("SECURITY: rejects 'git status; curl evil.com' when allowlist is ['git']", () => {
+    expect(isCommandAllowed("git status; curl evil.com", ["git"])).toBe(false);
+  });
+
+  it("SECURITY: rejects 'git status | cat /etc/passwd' when allowlist is ['git']", () => {
+    expect(isCommandAllowed("git status | cat /etc/passwd", ["git"])).toBe(false);
+  });
+
+  it("SECURITY: rejects 'git $(id)' when allowlist is ['git']", () => {
+    expect(isCommandAllowed("git $(id)", ["git"])).toBe(false);
   });
 });
 
@@ -330,7 +399,7 @@ describe("exec_run allowlist mode", () => {
     expect(mockRunCommand).not.toHaveBeenCalled();
   });
 
-  it("allows commands matching an allowlist prefix", async () => {
+  it("allows commands matching an allowlist entry (first token match)", async () => {
     mockRunCommand.mockResolvedValue({
       stdout: "main\n",
       stderr: "",
@@ -349,7 +418,11 @@ describe("exec_run allowlist mode", () => {
     const result = await executor({ command: "git status" }, makeContext());
 
     expect(result.success).toBe(true);
-    expect(mockRunCommand).toHaveBeenCalledWith("git status", expect.any(Object));
+    // In allowlist mode, runner is called with useShell: false
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "git status",
+      expect.objectContaining({ useShell: false })
+    );
   });
 
   it("error message lists configured prefixes", async () => {

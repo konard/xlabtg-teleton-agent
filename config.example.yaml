@@ -198,13 +198,12 @@ cache:
 #     mode: "off"          # off (default, safe) | allowlist (recommended) | yolo (dangerous — full shell access)
 #     scope: "admin-only"  # admin-only | allowlist | all
 #     allowlist: []        # Telegram user IDs (when scope = allowlist)
-#     command_allowlist:   # Allowed command prefixes (required when mode = allowlist)
-#       - "git status"
-#       - "git diff"
-#       - "git log"
-#       - "npm run"
+#     command_allowlist:   # Allowed program names when mode = allowlist (first token of command must match exactly)
+#       - "git"            # allows: git status, git diff, git log, etc.
+#       - "npm"            # allows: npm run, npm install, etc.
 #       - "ls"
 #       - "cat"
+#     # NOTE: pipes, &&, ||, redirects, and command substitution are always rejected in allowlist mode.
 
 # Storage paths (defaults are fine for most users)
 # storage:

@@ -1,13 +1,14 @@
 import { spawn, type SpawnOptions } from "child_process";
 import type { ExecResult, RunOptions } from "./types.js";
 import { createLogger } from "../../../utils/logger.js";
+import { tokenizeCommand } from "./allowlist.js";
 
 const log = createLogger("Exec");
 
 const KILL_GRACE_MS = 5000;
 
 export function runCommand(command: string, options: RunOptions): Promise<ExecResult> {
-  const { timeout, maxOutput } = options;
+  const { timeout, maxOutput, useShell = true } = options;
   const startTime = Date.now();
 
   return new Promise((resolve) => {
@@ -17,7 +18,15 @@ export function runCommand(command: string, options: RunOptions): Promise<ExecRe
     let timedOut = false;
     let resolved = false;
 
-    const child = spawn("bash", ["-c", command], {
+    // In no-shell mode, tokenize and exec directly so the OS never sees a shell.
+    const [spawnCmd, spawnArgs] = useShell
+      ? (["bash", ["-c", command]] as [string, string[]])
+      : (() => {
+          const tokens = tokenizeCommand(command) ?? [];
+          return [tokens[0] ?? command, tokens.slice(1)] as [string, string[]];
+        })();
+
+    const child = spawn(spawnCmd, spawnArgs, {
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf8",

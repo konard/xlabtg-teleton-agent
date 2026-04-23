@@ -59,6 +59,28 @@ Teleton Agent implements multiple layers of defense:
 - Key derivation (PBKDF2) results are cached to avoid repeated computation
 - Financial tools (`ton_send`, `jetton_send`, `stonfi_swap`) are restricted to DM-only scope
 
+### Exec Allowlist Mode
+
+When `exec.mode` is set to `allowlist`, the agent only runs commands whose **program name** (first token) matches an entry in `exec.command_allowlist`.
+
+Key restrictions in this mode:
+
+- **No shell metacharacters**: commands containing `;`, `&`, `|`, `` ` ``, `$`, `<`, `>`, `\`, or newlines are rejected outright, preventing shell injection via chaining or substitution.
+- **No shell interpreter**: allowed commands are executed via `spawn(program, args)` directly — no `bash -c` — so the OS never interprets shell syntax.
+- **First-token matching**: `allowlist: ["git"]` permits `git status`, `git diff`, etc., but rejects `gitconfig` (different binary) and `git status && id` (contains `&`).
+- **No pipes or redirects**: pipeline-based operations are not supported in allowlist mode; use `yolo` mode if you need them and understand the risks.
+
+Example safe configuration:
+
+```yaml
+exec:
+  mode: allowlist
+  command_allowlist:
+    - git
+    - ls
+    - df
+```
+
 ### Workspace Sandboxing
 
 - `validateReadPath()` and `validateWritePath()` prevent path traversal attacks

@@ -25,4 +25,6 @@ export interface ExecAuditEntry {
 export interface RunOptions {
   timeout: number; // ms
   maxOutput: number; // chars
+  /** When false, execute via spawn(argv[0], argv.slice(1)) without a shell. Default: true. */
+  useShell?: boolean;
 }
