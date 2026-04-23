@@ -808,6 +808,95 @@ When enabled, the platform watches `~/.teleton/plugins/` for file changes using 
 
 This allows rapid iteration: edit your plugin file, save, and the changes take effect immediately.
 
+> **Warning:** Hot-reload is a development-only feature. It is automatically disabled when
+> `NODE_ENV=production` regardless of config. Do not set `dev.hot_reload: true` in production
+> configs.
+
+---
+
+## Plugin Security
+
+### Directory permissions
+
+The plugin loader checks the permissions of every plugin file and directory before importing it.
+Plugins in **group-writable or world-writable** locations are refused with an error:
+
+```
+[my-plugin] Refusing to load: plugin path "~/.teleton/plugins/my-plugin"
+is group/world-writable (mode & 0o022 != 0). Fix with: chmod go-w "~/.teleton/plugins/my-plugin"
+```
+
+Set correct permissions after installing a plugin:
+
+```bash
+chmod 755 ~/.teleton/plugins/my-plugin        # directory plugin
+chmod 644 ~/.teleton/plugins/my-plugin.js     # single-file plugin
+```
+
+### Checksum verification
+
+Teleton supports an optional **SHA-256 checksum sidecar** for each plugin. When a sidecar is
+present, the loader verifies the entry file's digest before importing it. A mismatch causes the
+plugin to be rejected:
+
+```
+[my-plugin] Checksum mismatch: expected a1b2c3d4... got e5f6a7b8... — refusing to load
+```
+
+**Sidecar file locations:**
+
+| Plugin type | Entry file | Checksum sidecar |
+|---|---|---|
+| Directory plugin | `~/.teleton/plugins/my-plugin/index.js` | `~/.teleton/plugins/my-plugin/.checksum` |
+| Single-file plugin | `~/.teleton/plugins/my-plugin.js` | `~/.teleton/plugins/my-plugin.checksum` |
+
+**Generating a checksum (after installing a plugin):**
+
+```bash
+# Directory plugin
+sha256sum ~/.teleton/plugins/my-plugin/index.js \
+  | awk '{print $1}' > ~/.teleton/plugins/my-plugin/.checksum
+
+# Single-file plugin
+sha256sum ~/.teleton/plugins/my-plugin.js \
+  | awk '{print $1}' > ~/.teleton/plugins/my-plugin.checksum
+```
+
+Or using Node.js:
+
+```bash
+node -e "
+const {createHash} = require('crypto');
+const {readFileSync} = require('fs');
+const file = process.argv[1];
+console.log(createHash('sha256').update(readFileSync(file)).digest('hex'));
+" ~/.teleton/plugins/my-plugin/index.js > ~/.teleton/plugins/my-plugin/.checksum
+```
+
+Plugins without a checksum file are still allowed to load, but a warning is logged:
+
+```
+[my-plugin] No .checksum sidecar found — loading without integrity verification.
+Add a SHA-256 checksum file to suppress this warning.
+```
+
+### What plugins cannot access
+
+Regardless of what a plugin's code attempts, the platform enforces these restrictions at the
+loader level:
+
+- **Config secrets are stripped**: `api_key`, `api_hash`, `phone`, `session_name`,
+  `session_path`, `tonapi_key`, `toncenter_api_key`, `tavily_api_key`, and all similar
+  fields are removed before passing config to plugins. Plugins only receive
+  `agent.{provider,model,max_tokens}`, `telegram.admin_ids`, and `deals.enabled`.
+- **Isolated database**: Each plugin gets its own SQLite DB in
+  `~/.teleton/plugins/data/<plugin-name>.db`. Plugins cannot access other plugins' data
+  or the main agent database.
+- **Permission check before import**: Group/world-writable paths are rejected _before_
+  `import()` executes — so a tampered plugin file never runs.
+- **Checksum enforcement**: If a `.checksum` sidecar is present and the file has been
+  modified, the plugin is rejected before import.
+
 ---
 
 ## Official Example Plugins

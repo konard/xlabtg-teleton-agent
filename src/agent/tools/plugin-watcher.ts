@@ -14,7 +14,7 @@ import { basename, relative, resolve, sep } from "path";
 import { existsSync } from "fs";
 import { pathToFileURL } from "url";
 import { WORKSPACE_PATHS } from "../../workspace/paths.js";
-import { adaptPlugin, ensurePluginDeps } from "./plugin-loader.js";
+import { adaptPlugin, ensurePluginDeps, isGroupOrWorldWritable, verifyPluginChecksum } from "./plugin-loader.js";
 import type { PluginModule, PluginContext, Tool, ToolExecutor, ToolScope } from "./types.js";
 import type { ToolRegistry } from "./registry.js";
 import type { Config } from "../../config/schema.js";
@@ -51,8 +51,17 @@ export class PluginWatcher {
 
   /**
    * Start watching the plugins directory for changes.
+   * Hot-reload is a development feature and must NOT run in production.
    */
   start(): void {
+    if (process.env.NODE_ENV === "production") {
+      log.warn(
+        "Plugin hot-reload is disabled in NODE_ENV=production. " +
+          "Set dev.hot_reload: false or remove it from your config."
+      );
+      return;
+    }
+
     this.watcher = chokidar.watch(this.pluginsDir, {
       ignoreInitial: true,
       awaitWriteFinish: {
@@ -206,6 +215,23 @@ export class PluginWatcher {
         await ensurePluginDeps(pluginDir, pluginName);
       }
 
+      // 1.6. Security: reject group/world-writable plugin paths
+      const pluginEntryPath =
+        basename(modulePath) === "index.js"
+          ? resolve(this.pluginsDir, pluginName)
+          : modulePath;
+      if (isGroupOrWorldWritable(pluginEntryPath)) {
+        throw new Error(
+          `Plugin path "${pluginEntryPath}" is group/world-writable — refusing to reload. ` +
+            `Fix with: chmod go-w "${pluginEntryPath}"`
+        );
+      }
+
+      // 1.7. Verify checksum before importing
+      const entryName =
+        basename(modulePath) === "index.js" ? pluginName : `${pluginName}.js`;
+      await verifyPluginChecksum(modulePath, this.pluginsDir, entryName);
+
       // 2. Import with cache bust
       const moduleUrl = pathToFileURL(modulePath).href + `?t=${Date.now()}`;
       const freshMod = await import(moduleUrl);
@@ -219,7 +245,6 @@ export class PluginWatcher {
       }
 
       // 4. Adapt and validate (old plugin still running)
-      const entryName = basename(modulePath) === "index.js" ? pluginName : `${pluginName}.js`;
       const adapted = adaptPlugin(freshMod, entryName, config, loadedModuleNames, sdkDeps);
       const newTools = adapted.tools(config);
       if (newTools.length === 0) {
