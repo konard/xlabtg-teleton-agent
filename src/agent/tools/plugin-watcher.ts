@@ -222,9 +222,7 @@ export class PluginWatcher {
 
       // 1.6. Security: reject group/world-writable plugin paths
       const pluginEntryPath =
-        basename(modulePath) === "index.js"
-          ? resolve(this.pluginsDir, pluginName)
-          : modulePath;
+        basename(modulePath) === "index.js" ? resolve(this.pluginsDir, pluginName) : modulePath;
       if (isGroupOrWorldWritable(pluginEntryPath)) {
         throw new Error(
           `Plugin path "${pluginEntryPath}" is group/world-writable — refusing to reload. ` +
@@ -233,8 +231,7 @@ export class PluginWatcher {
       }
 
       // 1.7. Verify checksum before importing
-      const entryName =
-        basename(modulePath) === "index.js" ? pluginName : `${pluginName}.js`;
+      const entryName = basename(modulePath) === "index.js" ? pluginName : `${pluginName}.js`;
       await verifyPluginChecksum(modulePath, this.pluginsDir, entryName);
 
       // 2. Import with cache bust
