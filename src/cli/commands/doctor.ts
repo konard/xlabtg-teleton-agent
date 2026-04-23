@@ -8,6 +8,7 @@ import {
   validateApiKeyFormat,
   type SupportedProvider,
 } from "../../config/providers.js";
+import { loadWallet } from "../../ton/wallet-service.js";
 
 interface CheckResult {
   name: string;
@@ -196,26 +197,10 @@ async function checkWallet(workspaceDir: string): Promise<CheckResult> {
     };
   }
 
+  let isEncrypted = false;
   try {
-    const content = readFileSync(walletPath, "utf-8");
-    const wallet = JSON.parse(content);
-
-    if (!wallet.address) {
-      return {
-        name: "TON wallet",
-        status: "error",
-        message: "Invalid wallet file (no address)",
-      };
-    }
-
-    const shortAddr =
-      wallet.address.substring(0, 8) + "..." + wallet.address.substring(wallet.address.length - 6);
-
-    return {
-      name: "TON wallet",
-      status: "ok",
-      message: shortAddr,
-    };
+    const raw = JSON.parse(readFileSync(walletPath, "utf-8"));
+    isEncrypted = raw.encrypted === true;
   } catch {
     return {
       name: "TON wallet",
@@ -223,6 +208,40 @@ async function checkWallet(workspaceDir: string): Promise<CheckResult> {
       message: "Could not read wallet file",
     };
   }
+
+  const wallet = loadWallet();
+
+  if (!wallet) {
+    if (isEncrypted) {
+      return {
+        name: "TON wallet",
+        status: "error",
+        message: "Decryption failed — wrong key or corrupted file",
+      };
+    }
+    return {
+      name: "TON wallet",
+      status: "error",
+      message: "Invalid wallet file",
+    };
+  }
+
+  const shortAddr =
+    wallet.address.substring(0, 8) + "..." + wallet.address.substring(wallet.address.length - 6);
+
+  if (!isEncrypted) {
+    return {
+      name: "TON wallet",
+      status: "warn",
+      message: `${shortAddr} (plaintext mnemonic — consider enabling wallet_encryption_key)`,
+    };
+  }
+
+  return {
+    name: "TON wallet",
+    status: "ok",
+    message: shortAddr,
+  };
 }
 
 async function checkSoul(workspaceDir: string): Promise<CheckResult> {
