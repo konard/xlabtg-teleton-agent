@@ -12,15 +12,24 @@ import { join } from "path";
 import type { Message, AssistantMessage } from "@mariozechner/pi-ai";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import { createLogger } from "../utils/logger.js";
+import { WeightedLRUCache } from "../utils/weighted-lru-cache.js";
 
 const log = createLogger("Session");
 
 const SESSIONS_DIR = join(TELETON_ROOT, "sessions");
 
-// ── In-memory transcript cache ──────────────────────────────────
+/** Maximum messages kept per live transcript before auto-archive is triggered. */
+export const MAX_TRANSCRIPT_MESSAGES = 5_000;
+
+// ── In-memory transcript cache (LRU, capped by session count) ──────────────
 // Avoids re-reading + re-parsing JSONL from disk on every message.
+// Evicts least-recently-used sessions so multi-chat deployments don't OOM.
 // Invalidated on delete/archive; updated on append.
-const transcriptCache = new Map<string, (Message | AssistantMessage)[]>();
+const transcriptCache = new WeightedLRUCache<string, (Message | AssistantMessage)[]>({
+  adaptiveSize: { low: 20, normal: 50, high: 100 },
+  ttlMs: 2 * 60 * 60 * 1000, // 2 h TTL per session
+  frequencyWeightMs: 60_000, // bias eviction away from frequently-accessed sessions
+});
 
 export function getTranscriptPath(sessionId: string): string {
   return join(SESSIONS_DIR, `${sessionId}.jsonl`);
@@ -44,10 +53,18 @@ export function appendToTranscript(sessionId: string, message: Message | Assista
     log.error({ err: error }, `Failed to append to transcript ${sessionId}`);
   }
 
-  // Update in-memory cache (append without re-sanitizing the whole array)
+  // Update in-memory cache (append without re-reading disk)
   const cached = transcriptCache.get(sessionId);
   if (cached) {
     cached.push(message);
+
+    // Auto-archive when the in-memory cap is exceeded
+    if (cached.length > MAX_TRANSCRIPT_MESSAGES) {
+      log.info(
+        `Transcript ${sessionId} exceeded ${MAX_TRANSCRIPT_MESSAGES} messages – auto-archiving`
+      );
+      archiveTranscript(sessionId);
+    }
   }
 }
 
@@ -137,7 +154,18 @@ export function readTranscript(sessionId: string): (Message | AssistantMessage)[
 
   try {
     const content = readFileSync(transcriptPath, "utf-8");
-    const lines = content.trim().split("\n").filter(Boolean);
+    const allLines = content.split("\n").filter((l) => l.trim());
+
+    // Cap the number of lines parsed to avoid unbounded memory growth.
+    // For oversized files, only the most-recent MAX_TRANSCRIPT_MESSAGES are returned.
+    const oversized = allLines.length > MAX_TRANSCRIPT_MESSAGES;
+    const lines = oversized ? allLines.slice(-MAX_TRANSCRIPT_MESSAGES) : allLines;
+
+    if (oversized) {
+      log.info(
+        `Transcript ${sessionId} has ${allLines.length} lines on disk; serving last ${MAX_TRANSCRIPT_MESSAGES}`
+      );
+    }
 
     let corruptCount = 0;
     const messages = lines
@@ -158,7 +186,7 @@ export function readTranscript(sessionId: string): (Message | AssistantMessage)[
 
     const sanitized = sanitizeMessages(messages);
     transcriptCache.set(sessionId, sanitized);
-    return sanitized;
+    return [...sanitized];
   } catch (error) {
     log.error({ err: error }, `Failed to read transcript ${sessionId}`);
     return [];

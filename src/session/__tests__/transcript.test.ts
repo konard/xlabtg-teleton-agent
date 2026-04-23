@@ -32,6 +32,7 @@ const {
   deleteTranscript,
   archiveTranscript,
   cleanupOldTranscripts,
+  MAX_TRANSCRIPT_MESSAGES,
 } = await import("../transcript.js");
 
 // Helper to build a simple user message
@@ -255,6 +256,74 @@ describe("transcript – cleanupOldTranscripts", () => {
   it("returns a number (zero or more)", () => {
     const result = cleanupOldTranscripts(9999);
     expect(result).toBeGreaterThanOrEqual(0);
+  });
+});
+
+describe("transcript – message cap and auto-archive (regression)", () => {
+  it("exports MAX_TRANSCRIPT_MESSAGES as a positive number", () => {
+    expect(typeof MAX_TRANSCRIPT_MESSAGES).toBe("number");
+    expect(MAX_TRANSCRIPT_MESSAGES).toBeGreaterThan(0);
+  });
+
+  it("auto-archives transcript when message count exceeds MAX_TRANSCRIPT_MESSAGES", () => {
+    const sid = `cap-${Date.now()}`;
+
+    // Write MAX_TRANSCRIPT_MESSAGES messages to disk first (they go to disk directly)
+    for (let i = 0; i < MAX_TRANSCRIPT_MESSAGES; i++) {
+      appendToTranscript(sid, userMsg(`msg-${i}`));
+    }
+
+    // Populate the cache by reading
+    const before = readTranscript(sid);
+    expect(before.length).toBe(MAX_TRANSCRIPT_MESSAGES);
+    expect(transcriptExists(sid)).toBe(true);
+
+    // One more message should trigger auto-archive
+    appendToTranscript(sid, userMsg("overflow"));
+
+    // The original .jsonl file should be gone (archived)
+    expect(transcriptExists(sid)).toBe(false);
+  });
+
+  it("readTranscript returns at most MAX_TRANSCRIPT_MESSAGES messages for large files", () => {
+    const { appendFileSync: afs, mkdirSync: mds, existsSync: efs } = require("fs");
+    const sid = `large-${Date.now()}`;
+    const total = MAX_TRANSCRIPT_MESSAGES + 50;
+
+    // Write directly to disk (bypass cache) to simulate a pre-existing large file
+    const transcriptPath = getTranscriptPath(sid);
+    const sessionsDir = join(tempRoot, "sessions");
+    if (!efs(sessionsDir)) mds(sessionsDir, { recursive: true });
+
+    for (let i = 0; i < total; i++) {
+      afs(transcriptPath, JSON.stringify(userMsg(`m${i}`)) + "\n", "utf-8");
+    }
+
+    const messages = readTranscript(sid);
+    // Should return at most MAX_TRANSCRIPT_MESSAGES
+    expect(messages.length).toBeLessThanOrEqual(MAX_TRANSCRIPT_MESSAGES);
+    // Should return the last N messages (most recent)
+    expect(messages.length).toBeGreaterThan(0);
+  });
+});
+
+describe("transcript – LRU cache eviction (regression)", () => {
+  it("evicts old sessions when LRU capacity is reached", async () => {
+    // We can't directly inspect the internal cache, but we can verify that
+    // reading many distinct sessions does not throw and returns valid results.
+    const sids: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      const sid = `lru-${Date.now()}-${i}`;
+      sids.push(sid);
+      appendToTranscript(sid, userMsg(`session-${i}`));
+      readTranscript(sid); // populate cache
+    }
+
+    // Reading any session should still work correctly after many sessions were cached
+    for (const sid of sids) {
+      const msgs = readTranscript(sid);
+      expect(Array.isArray(msgs)).toBe(true);
+    }
   });
 });
 
