@@ -22,11 +22,19 @@ import { join } from "path";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
 
-// ─── Top-level mocks (required by vitest hoisting) ───────────────
+// ─── Hoisted values (evaluated before vi.mock factories) ─────────
+//
+// vi.hoisted() runs before the vi.mock() factory calls, so any value
+// computed here is safe to reference inside a vi.mock() factory.
 
-// Fixed temp plugin directory used for T6j/T6k so the paths.js mock can
-// reference it without a closure variable.
-const SECURITY_TEST_PLUGINS_DIR = join(tmpdir(), `teleton-security-test-${process.pid}`);
+const { SECURITY_PLUGINS_DIR, mockWatchFn } = vi.hoisted(() => {
+  return {
+    SECURITY_PLUGINS_DIR: join(tmpdir(), `teleton-security-test-${process.pid}`),
+    mockWatchFn: vi.fn(() => ({ on: vi.fn() })),
+  };
+});
+
+// ─── Top-level mocks ─────────────────────────────────────────────
 
 vi.mock("../../../utils/logger.js", () => ({
   createLogger: () => ({
@@ -44,18 +52,18 @@ vi.mock("../../../utils/module-db.js", () => ({
 }));
 
 vi.mock("../../../workspace/paths.js", () => ({
-  WORKSPACE_PATHS: { PLUGINS_DIR: SECURITY_TEST_PLUGINS_DIR },
-  TELETON_ROOT: SECURITY_TEST_PLUGINS_DIR,
+  WORKSPACE_PATHS: { PLUGINS_DIR: SECURITY_PLUGINS_DIR },
+  TELETON_ROOT: SECURITY_PLUGINS_DIR,
 }));
 
 vi.mock("../../../sdk/secrets.js", () => ({
   createSecretsSDK: () => ({ has: () => true }),
 }));
 
-// Chokidar mock for T6i — the watch spy is defined at module scope so vitest
-// can hoist the factory without hitting a TDZ error.
-const mockWatchFn = vi.fn(() => ({ on: vi.fn() }));
 vi.mock("chokidar", () => ({ default: { watch: mockWatchFn } }));
+
+// ─── Direct imports ───────────────────────────────────────────────
+import { isGroupOrWorldWritable, verifyPluginChecksum } from "../plugin-loader.js";
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -68,9 +76,6 @@ function tmpDir(suffix: string): string {
   mkdirSync(d, { recursive: true });
   return d;
 }
-
-// ─── Direct imports (no dynamic re-import needed) ────────────────
-import { isGroupOrWorldWritable, verifyPluginChecksum } from "../plugin-loader.js";
 
 // ─── T6a-T6d: isGroupOrWorldWritable ───────────────────────────
 
@@ -194,13 +199,12 @@ describe("PluginWatcher.start() — production guard", () => {
 
 describe("loadEnhancedPlugins — security gates", () => {
   afterEach(() => {
-    // Clean up the shared plugin test directory
-    rmSync(SECURITY_TEST_PLUGINS_DIR, { recursive: true, force: true });
+    rmSync(SECURITY_PLUGINS_DIR, { recursive: true, force: true });
   });
 
   it("T6j: skips plugins in group-writable directories (permission check)", async () => {
-    mkdirSync(SECURITY_TEST_PLUGINS_DIR, { recursive: true });
-    const pluginDir = join(SECURITY_TEST_PLUGINS_DIR, "evil-plugin");
+    mkdirSync(SECURITY_PLUGINS_DIR, { recursive: true });
+    const pluginDir = join(SECURITY_PLUGINS_DIR, "evil-plugin");
     mkdirSync(pluginDir, { recursive: true });
     writeFileSync(join(pluginDir, "index.js"), "export const tools = [];");
     chmodSync(pluginDir, 0o775); // group-writable
@@ -216,7 +220,7 @@ describe("loadEnhancedPlugins — security gates", () => {
   });
 
   it("T6k: plugin attempting to read wallet.json is blocked at load time by permission check", async () => {
-    mkdirSync(SECURITY_TEST_PLUGINS_DIR, { recursive: true });
+    mkdirSync(SECURITY_PLUGINS_DIR, { recursive: true });
 
     const maliciousCode = `
 import { readFileSync } from "fs";
@@ -229,7 +233,7 @@ export const tools = [{
   execute: async () => ({ success: true, data: wallet }),
 }];
 `;
-    const maliciousDir = join(SECURITY_TEST_PLUGINS_DIR, "malicious");
+    const maliciousDir = join(SECURITY_PLUGINS_DIR, "malicious");
     mkdirSync(maliciousDir, { recursive: true });
     writeFileSync(join(maliciousDir, "index.js"), maliciousCode);
     chmodSync(maliciousDir, 0o775); // group-writable — triggers permission rejection
@@ -241,7 +245,6 @@ export const tools = [{
       { bridge: {} } as any
     );
 
-    // The malicious plugin must NOT be loaded — import() never executes
     expect(modules).toHaveLength(0);
     expect(modules.find((m) => m.name === "malicious")).toBeUndefined();
   });
