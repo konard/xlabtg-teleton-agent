@@ -139,8 +139,8 @@ export interface CreatePluginSDKOptions {
   globalPriority?: number;
 }
 
-/** Block ATTACH/DETACH to prevent cross-plugin DB access */
-const BLOCKED_SQL_RE = /\b(ATTACH|DETACH)\s+DATABASE\b/i;
+/** Block dangerous SQL keywords — defense-in-depth on top of the allow-list Proxy */
+const BLOCKED_SQL_RE = /\b(ATTACH|DETACH)\s+DATABASE\b|\bPRAGMA\b|\bVACUUM\b|\bALTER\s+TABLE\b/i;
 
 /** Strip SQL comments so they can't be used to bypass keyword detection */
 export function stripSqlComments(sql: string): string {
@@ -153,26 +153,46 @@ function isSqlBlocked(sql: string): boolean {
   return BLOCKED_SQL_RE.test(stripSqlComments(sql));
 }
 
+/**
+ * Allow-list set of better-sqlite3 Database methods exposed to plugins.
+ * Everything not in this set is hidden (returns undefined).
+ * `close` is intentionally a no-op: plugins must not be able to close the
+ * shared database handle.
+ */
+const ALLOWED_DB_PROPS = new Set<string | symbol>(["prepare", "transaction", "inTransaction"]);
+
 function createSafeDb(db: Database.Database): Database.Database {
   return new Proxy(db, {
-    get(target, prop, receiver) {
-      const value = Reflect.get(target, prop, receiver);
-      if (prop === "exec") {
-        return (sql: string) => {
-          if (isSqlBlocked(sql)) {
-            throw new Error("ATTACH/DETACH DATABASE is not allowed in plugin context");
-          }
-          return target.exec(sql);
-        };
+    get(target, prop) {
+      // Allow reading the inTransaction boolean property directly
+      if (prop === "inTransaction") {
+        return target.inTransaction;
       }
+
+      // Silently swallow close() — plugins must not close the shared handle
+      if (prop === "close") {
+        return () => undefined;
+      }
+
+      if (!ALLOWED_DB_PROPS.has(prop)) {
+        return undefined;
+      }
+
       if (prop === "prepare") {
         return (sql: string) => {
           if (isSqlBlocked(sql)) {
-            throw new Error("ATTACH/DETACH DATABASE is not allowed in plugin context");
+            throw new Error("SQL statement not allowed in plugin context");
           }
           return target.prepare(sql);
         };
       }
+
+      if (prop === "transaction") {
+        const value = Reflect.get(target, prop, target);
+        return typeof value === "function" ? value.bind(target) : value;
+      }
+
+      const value = Reflect.get(target, prop, target);
       return typeof value === "function" ? value.bind(target) : value;
     },
   });
@@ -185,7 +205,8 @@ export function createPluginSDK(deps: SDKDependencies, opts: CreatePluginSDKOpti
   const ton = Object.freeze(createTonSDK(log, safeDb));
   const telegram = Object.freeze(createTelegramSDK(deps.bridge, log));
   const secrets = Object.freeze(createSecretsSDK(opts.pluginName, opts.pluginConfig, log));
-  const storage = safeDb ? Object.freeze(createStorageSDK(safeDb)) : null;
+  // Pass raw db to internal storage setup — safeDb blocks exec which is needed for table init
+  const storage = opts.db ? Object.freeze(createStorageSDK(opts.db)) : null;
   const frozenLog = Object.freeze(log);
   const frozenConfig = Object.freeze(JSON.parse(JSON.stringify(opts.sanitizedConfig ?? {})));
   const frozenPluginConfig = Object.freeze(JSON.parse(JSON.stringify(opts.pluginConfig ?? {})));
