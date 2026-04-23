@@ -305,12 +305,13 @@ export async function chatWithContext(
   let response = await complete(model, context, completeOptions as ProviderStreamOptions);
 
   // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials
+  // Use precise patterns to avoid false positives from upstream bodies that happen to contain "401"
   if (
     provider === "claude-code" &&
     response.stopReason === "error" &&
     response.errorMessage &&
-    (response.errorMessage.includes("401") ||
-      response.errorMessage.toLowerCase().includes("unauthorized"))
+    (/\b401\b/.test(response.errorMessage) ||
+      /\bunauthorized\b/i.test(response.errorMessage))
   ) {
     log.warn("Claude Code token rejected (401), refreshing credentials and retrying...");
     const refreshedKey = await refreshClaudeCodeApiKey();
