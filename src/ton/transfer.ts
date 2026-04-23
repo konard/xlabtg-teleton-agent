@@ -126,7 +126,9 @@ export async function sendTon(params: SendTonParams): Promise<SendTonResult | nu
       const txHash = await awaitConfirmation(wallet.address, broadcastedAt);
 
       if (txHash) {
-        log.info(`Confirmed ${amount} TON to ${toAddress.slice(0, 8)}... tx: ${txHash.slice(0, 8)}...`);
+        log.info(
+          `Confirmed ${amount} TON to ${toAddress.slice(0, 8)}... tx: ${txHash.slice(0, 8)}...`
+        );
 
         _logFinancial({
           operation: "ton_transfer",
@@ -142,9 +144,7 @@ export async function sendTon(params: SendTonParams): Promise<SendTonResult | nu
       }
 
       // Broadcast succeeded but confirmation timed out — caller must handle pending state
-      log.warn(
-        `sendTon seqno=${seqno}: broadcast ok but confirmation timed out — status: pending`
-      );
+      log.warn(`sendTon seqno=${seqno}: broadcast ok but confirmation timed out — status: pending`);
 
       _logFinancial({
         operation: "ton_transfer",
