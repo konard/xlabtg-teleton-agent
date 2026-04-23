@@ -63,7 +63,10 @@ vi.mock("../../../config/schema.js", () => ({
 }));
 
 vi.mock("../../../config/providers.js", () => ({
-  getProviderMetadata: vi.fn(() => ({ displayName: "Anthropic", defaultModel: "claude-3-5-sonnet" })),
+  getProviderMetadata: vi.fn(() => ({
+    displayName: "Anthropic",
+    defaultModel: "claude-3-5-sonnet",
+  })),
   validateApiKeyFormat: vi.fn(() => null),
 }));
 
@@ -139,9 +142,7 @@ describe("doctorCommand checkWallet integration", () => {
     delete process.env.TELETON_WALLET_KEY;
 
     // wallet.json exists and is plaintext
-    mockFs.existsSync.mockImplementation((p: string) =>
-      p.endsWith("wallet.json") ? true : false
-    );
+    mockFs.existsSync.mockImplementation((p: string) => (p.endsWith("wallet.json") ? true : false));
     mockFs.readFileSync.mockReturnValue(makePlaintextWalletJson());
 
     // Import doctorCommand after mocks are set up
@@ -167,9 +168,7 @@ describe("doctorCommand checkWallet integration", () => {
     const key = randomBytes(32);
     process.env.TELETON_WALLET_KEY = key.toString("hex");
 
-    mockFs.existsSync.mockImplementation((p: string) =>
-      p.endsWith("wallet.json") ? true : false
-    );
+    mockFs.existsSync.mockImplementation((p: string) => (p.endsWith("wallet.json") ? true : false));
     mockFs.readFileSync.mockReturnValue(makeEncryptedWalletJson(key));
 
     const { doctorCommand } = await import("../doctor.js");
@@ -196,9 +195,7 @@ describe("doctorCommand checkWallet integration", () => {
     const wrongKey = randomBytes(32);
     process.env.TELETON_WALLET_KEY = wrongKey.toString("hex");
 
-    mockFs.existsSync.mockImplementation((p: string) =>
-      p.endsWith("wallet.json") ? true : false
-    );
+    mockFs.existsSync.mockImplementation((p: string) => (p.endsWith("wallet.json") ? true : false));
     mockFs.readFileSync.mockReturnValue(makeEncryptedWalletJson(encryptKey));
 
     const { doctorCommand } = await import("../doctor.js");
