@@ -198,7 +198,12 @@ export class PolicyEngine {
           requiresConfirmation: true,
         });
         blockingViolationCount++;
-      } else if (action.tonAmount > this.config.tonSpending.requireConfirmationAbove) {
+      }
+      // ton_confirmation is independent of the budget check: any amount
+      // above the confirmation threshold should surface a dedicated
+      // violation so the escalation message names TON explicitly, even
+      // when the action is also blocked by the budget.
+      if (action.tonAmount > this.config.tonSpending.requireConfirmationAbove) {
         violations.push({
           type: "ton_confirmation",
           message: `TON amount ${action.tonAmount} requires user confirmation (threshold: ${this.config.tonSpending.requireConfirmationAbove})`,

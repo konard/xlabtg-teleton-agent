@@ -98,8 +98,9 @@ describe("AutonomousLoop", () => {
     const deps = makeDeps({
       planNextAction: vi.fn().mockResolvedValue({
         toolName: "ton_send",
-        params: { amount: 0.6 },
-        tonAmount: 0.6, // above confirmation threshold (0.5 TON) but below perTask budget (1 TON)
+        params: { amount: 0.08 },
+        // above requireConfirmationAbove (0.05 TON) but below perTask budget (0.1 TON)
+        tonAmount: 0.08,
       }),
       evaluateSuccess: vi.fn().mockResolvedValue(false),
     });

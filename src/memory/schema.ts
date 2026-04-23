@@ -1177,39 +1177,68 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.24.0")) {
     log.info("Running migration 1.24.0: Add 'queued' status to autonomous_tasks");
     try {
-      // SQLite does not support ALTER COLUMN CHECK constraints, so we use the
-      // recommended rename-create-copy-drop approach inside a transaction.
-      db.exec(`
-        BEGIN;
-        ALTER TABLE autonomous_tasks RENAME TO autonomous_tasks_old;
-        CREATE TABLE autonomous_tasks (
-          id TEXT PRIMARY KEY,
-          goal TEXT NOT NULL,
-          success_criteria TEXT NOT NULL DEFAULT '[]',
-          failure_conditions TEXT NOT NULL DEFAULT '[]',
-          constraints TEXT NOT NULL DEFAULT '{}',
-          strategy TEXT NOT NULL DEFAULT 'balanced'
-            CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
-          retry_policy TEXT NOT NULL DEFAULT '{}',
-          context TEXT NOT NULL DEFAULT '{}',
-          priority TEXT NOT NULL DEFAULT 'medium'
-            CHECK(priority IN ('low', 'medium', 'high', 'critical')),
-          status TEXT NOT NULL DEFAULT 'pending'
-            CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
-          current_step INTEGER NOT NULL DEFAULT 0,
-          last_checkpoint_id TEXT,
-          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-          updated_at INTEGER,
-          started_at INTEGER,
-          completed_at INTEGER,
-          result TEXT,
-          error TEXT
-        );
-        INSERT INTO autonomous_tasks SELECT * FROM autonomous_tasks_old;
-        DROP TABLE autonomous_tasks_old;
-        COMMIT;
-      `);
-      log.info("Migration 1.24.0 complete: 'queued' status added to autonomous_tasks");
+      // When ensureSchema() has already created the latest-schema table in the
+      // same session, the CHECK constraint already permits 'queued' and we
+      // would otherwise INSERT SELECT * across tables whose column counts no
+      // longer match (e.g. paused_at added in 1.25.0). Skip the rebuild in
+      // that case — the table already matches the post-1.24.0 shape.
+      const statusSupportsQueued = (() => {
+        const row = db
+          .prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name='autonomous_tasks'`)
+          .get() as { sql?: string } | undefined;
+        return Boolean(row?.sql && /'queued'/.test(row.sql));
+      })();
+
+      if (!statusSupportsQueued) {
+        // SQLite does not support ALTER COLUMN CHECK constraints, so we use
+        // the recommended rename-create-copy-drop approach inside a
+        // transaction. List columns explicitly so the copy is robust to
+        // extra columns added by other migrations running in the same pass.
+        db.exec(`
+          BEGIN;
+          ALTER TABLE autonomous_tasks RENAME TO autonomous_tasks_old;
+          CREATE TABLE autonomous_tasks (
+            id TEXT PRIMARY KEY,
+            goal TEXT NOT NULL,
+            success_criteria TEXT NOT NULL DEFAULT '[]',
+            failure_conditions TEXT NOT NULL DEFAULT '[]',
+            constraints TEXT NOT NULL DEFAULT '{}',
+            strategy TEXT NOT NULL DEFAULT 'balanced'
+              CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+            retry_policy TEXT NOT NULL DEFAULT '{}',
+            context TEXT NOT NULL DEFAULT '{}',
+            priority TEXT NOT NULL DEFAULT 'medium'
+              CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+            status TEXT NOT NULL DEFAULT 'pending'
+              CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+            current_step INTEGER NOT NULL DEFAULT 0,
+            last_checkpoint_id TEXT,
+            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_at INTEGER,
+            started_at INTEGER,
+            completed_at INTEGER,
+            result TEXT,
+            error TEXT
+          );
+          INSERT INTO autonomous_tasks (
+            id, goal, success_criteria, failure_conditions, constraints,
+            strategy, retry_policy, context, priority, status, current_step,
+            last_checkpoint_id, created_at, updated_at, started_at,
+            completed_at, result, error
+          )
+          SELECT
+            id, goal, success_criteria, failure_conditions, constraints,
+            strategy, retry_policy, context, priority, status, current_step,
+            last_checkpoint_id, created_at, updated_at, started_at,
+            completed_at, result, error
+          FROM autonomous_tasks_old;
+          DROP TABLE autonomous_tasks_old;
+          COMMIT;
+        `);
+        log.info("Migration 1.24.0 complete: 'queued' status added to autonomous_tasks");
+      } else {
+        log.info("Migration 1.24.0 skipped: autonomous_tasks already supports 'queued' status");
+      }
     } catch (error) {
       log.error({ err: error }, "Migration 1.24.0 failed");
       throw error;

@@ -425,7 +425,7 @@ export class ApiServer {
         if (bindHost !== "127.0.0.1") {
           log.warn(
             `Management API is binding on ${bindHost} (all interfaces). ` +
-              "Set api.host = \"127.0.0.1\" in config.yaml to restrict to localhost only."
+              'Set api.host = "127.0.0.1" in config.yaml to restrict to localhost only.'
           );
         }
         this.server = serve(
