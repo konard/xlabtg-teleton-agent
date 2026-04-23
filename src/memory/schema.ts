@@ -575,7 +575,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.25.0";
+export const CURRENT_SCHEMA_VERSION = "1.26.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1260,6 +1260,25 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.25.0 complete: paused_at column added");
     } catch (error) {
       log.error({ err: error }, "Migration 1.25.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.26.0")) {
+    log.info("Running migration 1.26.0: Add last_fired_bucket to workflows (AUDIT-M7)");
+    try {
+      const tableExists = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'`)
+        .get();
+      if (tableExists) {
+        const columns = db.prepare(`PRAGMA table_info(workflows)`).all() as Array<{ name: string }>;
+        if (!columns.some((col) => col.name === "last_fired_bucket")) {
+          db.exec(`ALTER TABLE workflows ADD COLUMN last_fired_bucket INTEGER`);
+        }
+      }
+      log.info("Migration 1.26.0 complete: last_fired_bucket column added");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.26.0 failed");
       throw error;
     }
   }

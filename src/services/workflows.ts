@@ -76,6 +76,7 @@ export interface Workflow {
   lastRunAt: number | null;
   runCount: number;
   lastError: string | null;
+  lastFiredBucket: number | null;
 }
 
 interface WorkflowRow {
@@ -89,6 +90,7 @@ interface WorkflowRow {
   last_run_at: number | null;
   run_count: number;
   last_error: string | null;
+  last_fired_bucket: number | null;
 }
 
 function rowToWorkflow(row: WorkflowRow): Workflow {
@@ -103,6 +105,7 @@ function rowToWorkflow(row: WorkflowRow): Workflow {
     lastRunAt: row.last_run_at,
     runCount: row.run_count,
     lastError: row.last_error,
+    lastFiredBucket: row.last_fired_bucket ?? null,
   };
 }
 
@@ -206,6 +209,10 @@ export class WorkflowStore {
          WHERE id = ?`
       )
       .run(now, error ?? null, id);
+  }
+
+  recordFiredBucket(id: string, bucket: number): void {
+    this.db.prepare(`UPDATE workflows SET last_fired_bucket = ? WHERE id = ?`).run(bucket, id);
   }
 }
 
