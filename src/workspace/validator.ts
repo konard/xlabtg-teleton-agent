@@ -145,6 +145,18 @@ export function validatePath(inputPath: string, allowCreate: boolean = false): V
     return resolve(resolvedParent, basename(p));
   }
 
+  // Reject leaf symlinks before resolving: if the leaf itself is a symlink,
+  // reject it regardless of where it points (policy: no symlinks allowed).
+  if (existsSync(absolutePath)) {
+    const leafStats = lstatSync(absolutePath);
+    if (leafStats.isSymbolicLink()) {
+      throw new WorkspaceSecurityError(
+        `Access denied: Symbolic links are not allowed for security reasons.`,
+        inputPath
+      );
+    }
+  }
+
   const resolvedPath = resolveNearestAncestor(absolutePath);
   const resolvedRelative = relative(WORKSPACE_ROOT, resolvedPath);
 
@@ -166,20 +178,6 @@ export function validatePath(inputPath: string, allowCreate: boolean = false): V
       `File not found: '${inputPath}' does not exist in workspace.`,
       inputPath
     );
-  }
-
-  // Reject leaf symlinks (realpathSync above already handled the parent chain;
-  // lstatSync here catches the case where the leaf itself is a symlink pointing
-  // somewhere within the workspace — still disallowed per policy).
-  if (exists) {
-    const stats = lstatSync(absolutePath);
-
-    if (stats.isSymbolicLink()) {
-      throw new WorkspaceSecurityError(
-        `Access denied: Symbolic links are not allowed for security reasons.`,
-        inputPath
-      );
-    }
   }
 
   return {

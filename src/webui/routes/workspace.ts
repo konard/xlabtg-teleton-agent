@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import {
   readFileSync,
-  writeFileSync,
   mkdirSync,
   rmSync,
   renameSync,
