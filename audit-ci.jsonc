@@ -1,5 +1,5 @@
 {
-  "critical": true,
+  "high": true,
   "allowlist": [
     "GHSA-5rq4-664w-9x2c",
     "GHSA-m7jm-9gc2-mpf2"
