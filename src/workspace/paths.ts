@@ -3,11 +3,22 @@
 import { join } from "path";
 import { homedir } from "os";
 
+// Shell metacharacters that could be dangerous in subprocess invocations or SQL contexts.
+// We reject them at startup so every downstream consumer gets a pre-validated value.
+const UNSAFE_TELETON_ROOT_RE = /[`$\\!|;&<>*?{}()\[\]"]/;
+
 /**
  * Root directory for Teleton (agent CANNOT access this directly)
  * Configurable via TELETON_HOME env var (default: ~/.teleton)
  */
 export const TELETON_ROOT = process.env.TELETON_HOME || join(homedir(), ".teleton");
+
+if (UNSAFE_TELETON_ROOT_RE.test(TELETON_ROOT)) {
+  throw new Error(
+    `TELETON_ROOT contains unsafe characters: "${TELETON_ROOT}". ` +
+      `Set TELETON_HOME to a path without shell metacharacters.`
+  );
+}
 
 /**
  * Workspace directory - ONLY location agent can access
