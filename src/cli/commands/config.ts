@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { getDefaultConfigPath } from "../../config/loader.js";
 import { createPrompter, CancelledError } from "../prompts.js";
 import {
@@ -24,14 +25,72 @@ function requireWhitelisted(key: string): ConfigKeyMeta {
 
 // ── Actions ────────────────────────────────────────────────────────────
 
+// ── argv redaction helper ──────────────────────────────────────────────
+
+/**
+ * Overwrite all occurrences of `secret` in process.argv with "<redacted>"
+ * so that subsequent /proc/<pid>/cmdline snapshots no longer contain it.
+ */
+function redactArgv(secret: string): void {
+  for (let i = 0; i < process.argv.length; i++) {
+    if (process.argv[i] === secret) {
+      process.argv[i] = "<redacted>";
+    }
+  }
+}
+
+// ── Env-var name derivation ───────────────────────────────────────────
+
+/** Returns the TELETON_<KEY> env var name for a config key (dots → underscores, uppercase). */
+function envVarName(key: string): string {
+  return `TELETON_${key.toUpperCase().replace(/\./g, "_")}`;
+}
+
+// ── actionSet ─────────────────────────────────────────────────────────
+
 async function actionSet(
   key: string,
   value: string | undefined,
-  configPath: string
+  configPath: string,
+  valueFile?: string
 ): Promise<void> {
   const meta = requireWhitelisted(key);
 
-  if (!value) {
+  // Immediately zero out any matching argv slot to prevent ps-aux leaks,
+  // even if we are about to reject the call.
+  if (value !== undefined) {
+    redactArgv(value);
+  }
+
+  if (meta.sensitive && value !== undefined) {
+    // Sensitive secret passed as a positional argv argument — reject it.
+    console.error(
+      `Error: "${key}" is a sensitive key. Passing its value on the command line exposes it ` +
+        `in process listings (ps aux) and shell history.\n` +
+        `Use one of these safe alternatives instead:\n` +
+        `  • Interactive prompt:  teleton config set ${key}\n` +
+        `  • File:                teleton config set ${key} --value-file /path/to/secret\n` +
+        `  • Environment var:     ${envVarName(key)}=<value> teleton config set ${key}`
+    );
+    process.exit(1);
+  }
+
+  // --value-file: read secret from a file (no argv exposure)
+  if (valueFile !== undefined) {
+    value = readFileSync(valueFile, "utf-8").trimEnd();
+  }
+
+  // Env var: TELETON_<KEY>=<value>
+  if (value === undefined) {
+    const envVar = envVarName(key);
+    const envVal = process.env[envVar];
+    if (envVal !== undefined) {
+      value = envVal;
+    }
+  }
+
+  // Interactive prompt fallback
+  if (value === undefined) {
     const prompter = createPrompter();
     try {
       if (meta.sensitive) {
@@ -71,7 +130,8 @@ async function actionSet(
   const raw = readRawConfig(configPath);
   setNestedValue(raw, key, meta.parse(value));
   writeRawConfig(raw, configPath);
-  console.log(`✓ ${key} = ${meta.mask(value)}`);
+  // Do not echo the value (even masked) — just confirm it was saved.
+  console.log(`✓ ${key} updated`);
 }
 
 function actionGet(key: string, configPath: string): void {
@@ -117,7 +177,7 @@ export async function configCommand(
   action: string,
   key: string | undefined,
   value: string | undefined,
-  options: { config?: string }
+  options: { config?: string; valueFile?: string }
 ): Promise<void> {
   const configPath = options.config ?? getDefaultConfigPath();
 
@@ -139,7 +199,7 @@ export async function configCommand(
         console.error("Usage: teleton config set <key> [value]");
         process.exit(1);
       }
-      await actionSet(key, value, configPath);
+      await actionSet(key, value, configPath, options.valueFile);
       break;
 
     case "unset":

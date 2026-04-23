@@ -32,6 +32,18 @@ program
   .description("Teleton Agent - Personal AI Agent for Telegram")
   .version(packageJson.version as string);
 
+// ── argv redaction for setup secrets ──────────────────────────────────
+// Overwrite plaintext secret values in process.argv immediately after
+// Commander has parsed them so that subsequent ps/proc snapshots are clean.
+function redactArgvValue(value: string | undefined): void {
+  if (!value) return;
+  for (let i = 0; i < process.argv.length; i++) {
+    if (process.argv[i] === value) {
+      process.argv[i] = "<redacted>";
+    }
+  }
+}
+
 // Setup command
 program
   .command("setup")
@@ -48,6 +60,10 @@ program
   .option("--user-id <id>", "Telegram User ID")
   .option("--tavily-api-key <key>", "Tavily API key for web search")
   .action(async (options) => {
+    // Redact sensitive values from argv as soon as they are parsed.
+    redactArgvValue(options.apiHash);
+    redactArgvValue(options.apiKey);
+    redactArgvValue(options.tavilyApiKey);
     try {
       await onboardCommand({
         workspace: options.workspace,
@@ -199,8 +215,15 @@ program
   .description("Manage configuration keys (set, get, list, unset)")
   .argument("<action>", "set | get | list | unset")
   .argument("[key]", "Config key (e.g., tavily_api_key, telegram.bot_token)")
-  .argument("[value]", "Value to set (prompts interactively if omitted)")
+  .argument(
+    "[value]",
+    "Value to set — AVOID for sensitive keys; use --value-file or interactive prompt instead"
+  )
   .option("-c, --config <path>", "Config file path")
+  .option(
+    "--value-file <path>",
+    "Read value from file (safe alternative to passing secrets on the command line)"
+  )
   .action(async (action: string, key: string | undefined, value: string | undefined, options) => {
     try {
       await configCommand(action, key, value, options);
