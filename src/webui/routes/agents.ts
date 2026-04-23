@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { dirname, join } from "node:path";
-import type { ManagedAgentRuntimeStatus, ManagedAgentSnapshot } from "../../agents/types.js";
+import type {
+  ManagedAgentMode,
+  ManagedAgentRuntimeStatus,
+  ManagedAgentSnapshot,
+} from "../../agents/types.js";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
@@ -56,11 +60,12 @@ function makePrimaryOverview(deps: WebUIServerDeps): AgentOverview {
 }
 
 function makeManagedOverview(snapshot: ManagedAgentSnapshot): AgentOverview {
+  const supportsStart = snapshot.mode === "personal";
   return {
     ...snapshot,
     kind: "managed",
     canDelete: snapshot.state === "stopped" || snapshot.state === "error",
-    canStart: snapshot.state === "stopped" || snapshot.state === "error",
+    canStart: supportsStart && (snapshot.state === "stopped" || snapshot.state === "error"),
     canStop: snapshot.state === "running" || snapshot.state === "starting",
     logsAvailable: true,
   };
@@ -92,13 +97,19 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
 
   app.post("/", async (c) => {
     try {
-      const body = await c.req.json<{ name?: string; id?: string; cloneFromId?: string }>();
+      const body = await c.req.json<{
+        name?: string;
+        id?: string;
+        cloneFromId?: string;
+        mode?: ManagedAgentMode;
+      }>();
       const service = withManagedService(deps);
       const snapshot = service.createAgent({
         name: body.name?.trim() || "",
         id: body.id?.trim() || undefined,
         cloneFromId:
           body.cloneFromId && body.cloneFromId !== "primary" ? body.cloneFromId : undefined,
+        mode: body.mode === "bot" ? "bot" : body.mode === "personal" ? "personal" : undefined,
       });
       const response: APIResponse<AgentOverview> = {
         success: true,
@@ -114,8 +125,8 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
     try {
       const { id } = c.req.param();
       const body = await c.req
-        .json<{ name?: string; newId?: string }>()
-        .catch((): { name?: string; newId?: string } => ({}));
+        .json<{ name?: string; newId?: string; mode?: ManagedAgentMode }>()
+        .catch((): { name?: string; newId?: string; mode?: ManagedAgentMode } => ({}));
       const sourceName =
         id === "primary"
           ? makePrimaryOverview(deps).name
@@ -125,6 +136,7 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         name: body.name?.trim() || `${sourceName} Copy`,
         id: body.newId?.trim() || undefined,
         cloneFromId: id === "primary" ? undefined : id,
+        mode: body.mode === "bot" ? "bot" : body.mode === "personal" ? "personal" : undefined,
       });
       const response: APIResponse<AgentOverview> = {
         success: true,

@@ -49,6 +49,7 @@ describe("ManagedAgentService", () => {
     const clonedConfig = loadConfig(snapshot.configPath);
 
     expect(snapshot.id).toBe("support-copy");
+    expect(snapshot.mode).toBe("personal");
     expect(snapshot.homePath).toBe(join(rootDir, "agents", "support-copy"));
     expect(existsSync(join(snapshot.workspacePath, "SOUL.md"))).toBe(true);
     expect(readFileSync(join(snapshot.workspacePath, "SOUL.md"), "utf-8")).toBe("Primary soul");
@@ -79,5 +80,24 @@ describe("ManagedAgentService", () => {
       "trading-desk",
       "trading-desk-2",
     ]);
+  });
+
+  it("persists the requested mode and inherits it on clone", () => {
+    const service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const bot = service.createAgent({ name: "FAQ Bot", mode: "bot" });
+    const clone = service.createAgent({ name: "FAQ Bot Copy", cloneFromId: bot.id });
+
+    expect(bot.mode).toBe("bot");
+    expect(clone.mode).toBe("bot");
+  });
+
+  it("rejects starting bot-mode managed agents until runtime support lands", () => {
+    const service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+    const snapshot = service.createAgent({ name: "FAQ Bot", mode: "bot" });
+
+    expect(() => service.startAgent(snapshot.id)).toThrow(
+      "Bot-mode managed agents are not startable in this foundation slice yet"
+    );
   });
 });

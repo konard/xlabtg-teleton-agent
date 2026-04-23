@@ -21,6 +21,7 @@ import type {
   CreateManagedAgentInput,
   ManagedAgentCommand,
   ManagedAgentDefinition,
+  ManagedAgentMode,
   ManagedAgentRuntimeStatus,
   ManagedAgentSnapshot,
   ManagedAgentState,
@@ -115,10 +116,10 @@ export class ManagedAgentService {
     const workspacePath = join(homePath, "workspace");
     const logPath = join(homePath, "logs", "agent.log");
     const sourceId = input.cloneFromId ?? null;
-    const sourceConfigPath = sourceId
-      ? this.readDefinition(sourceId).configPath
-      : this.primaryConfigPath;
-    const sourceRoot = sourceId ? this.readDefinition(sourceId).homePath : this.rootDir;
+    const sourceDefinition = sourceId ? this.readDefinition(sourceId) : null;
+    const sourceConfigPath = sourceDefinition?.configPath ?? this.primaryConfigPath;
+    const sourceRoot = sourceDefinition?.homePath ?? this.rootDir;
+    const mode: ManagedAgentMode = input.mode ?? sourceDefinition?.mode ?? "personal";
 
     mkdirSync(homePath, { recursive: true, mode: 0o700 });
     mkdirSync(join(homePath, "logs"), { recursive: true, mode: 0o700 });
@@ -133,7 +134,7 @@ export class ManagedAgentService {
     const definition: ManagedAgentDefinition = {
       id,
       name,
-      mode: "personal",
+      mode,
       homePath,
       configPath,
       workspacePath,
@@ -146,7 +147,7 @@ export class ManagedAgentService {
     this.writeDefinition(definition);
     writeFileSync(
       logPath,
-      `[${timestamp}] Created managed agent "${name}" from ${sourceId ?? "primary"}\n`,
+      `[${timestamp}] Created ${mode} managed agent "${name}" from ${sourceId ?? "primary"}\n`,
       "utf-8"
     );
 
@@ -171,6 +172,9 @@ export class ManagedAgentService {
     const definition = this.readDefinition(id);
     const record = this.ensureProcessRecord(id);
 
+    if (definition.mode === "bot") {
+      throw new Error("Bot-mode managed agents are not startable in this foundation slice yet");
+    }
     if (record.state === "starting" || record.state === "running") {
       throw new Error("Agent is already running");
     }

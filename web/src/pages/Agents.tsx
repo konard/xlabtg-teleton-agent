@@ -34,6 +34,7 @@ export function Agents() {
   const [busyAgentId, setBusyAgentId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [cloneFromId, setCloneFromId] = useState("primary");
+  const [mode, setMode] = useState<AgentOverview["mode"]>("personal");
   const [selectedLogsAgent, setSelectedLogsAgent] = useState<AgentOverview | null>(null);
   const [logs, setLogs] = useState<AgentLogs | null>(null);
   const [loadingLogs, setLoadingLogs] = useState(false);
@@ -92,6 +93,7 @@ export function Agents() {
       await api.createAgent({
         name: trimmed,
         cloneFromId: cloneFromId === "primary" ? undefined : cloneFromId,
+        mode,
       });
       setName("");
       toast.success("Managed agent created");
@@ -101,7 +103,7 @@ export function Agents() {
     } finally {
       setCreating(false);
     }
-  }, [cloneFromId, loadAgents, name]);
+  }, [cloneFromId, loadAgents, mode, name]);
 
   const handleStartStop = useCallback(
     async (agent: AgentOverview, action: "start" | "stop") => {
@@ -196,6 +198,8 @@ export function Agents() {
           <div style={{ fontSize: "15px", fontWeight: 600 }}>Create managed agent</div>
           <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
             New agents clone an existing home directory, then run with their own `TELETON_HOME`.
+            Bot-mode definitions are stored now, but bot-mode child runtimes still land in a
+            follow-up slice.
           </div>
         </div>
         <div
@@ -217,6 +221,10 @@ export function Agents() {
                 Clone from {option.label}
               </option>
             ))}
+          </select>
+          <select value={mode} onChange={(e) => setMode(e.target.value as AgentOverview["mode"])}>
+            <option value="personal">Personal mode</option>
+            <option value="bot">Bot mode</option>
           </select>
           <button onClick={handleCreate} disabled={creating}>
             {creating ? "Creating..." : "Create"}
@@ -261,6 +269,9 @@ export function Agents() {
                     <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
                       {agent.kind}
                     </span>
+                    <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                      {agent.mode}
+                    </span>
                   </div>
                   <div style={{ fontSize: "17px", fontWeight: 600 }}>{agent.name}</div>
                   <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
@@ -281,6 +292,10 @@ export function Agents() {
                 <div>
                   <div style={{ color: "var(--text-secondary)" }}>State</div>
                   <div>{agent.state}</div>
+                </div>
+                <div>
+                  <div style={{ color: "var(--text-secondary)" }}>Mode</div>
+                  <div>{agent.mode}</div>
                 </div>
                 <div>
                   <div style={{ color: "var(--text-secondary)" }}>PID</div>
@@ -314,6 +329,12 @@ export function Agents() {
               >
                 <div>Home: {agent.homePath}</div>
                 <div>Config: {agent.configPath}</div>
+                {agent.mode === "bot" && (
+                  <div>
+                    Bot-mode agent definitions are stored, but starting managed bot runtimes is not
+                    implemented in this slice yet.
+                  </div>
+                )}
                 {agent.lastError && <div style={{ color: "var(--red)" }}>Last error: {agent.lastError}</div>}
               </div>
 

@@ -2283,14 +2283,14 @@ export const api = {
     return fetchAPI<APIResponse<{ agents: AgentOverview[] }>>("/agents");
   },
 
-  async createAgent(data: { name: string; id?: string; cloneFromId?: string }) {
+  async createAgent(data: { name: string; id?: string; cloneFromId?: string; mode?: ManagedAgentMode }) {
     return fetchAPI<APIResponse<AgentOverview>>("/agents", {
       method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  async cloneAgent(id: string, data?: { name?: string; newId?: string }) {
+  async cloneAgent(id: string, data?: { name?: string; newId?: string; mode?: ManagedAgentMode }) {
     return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}/clone`, {
       method: "POST",
       body: JSON.stringify(data ?? {}),

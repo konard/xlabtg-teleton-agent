@@ -142,7 +142,7 @@ describe("Agents routes", () => {
   it("creates a managed agent from the request body", async () => {
     const res = await app.request("/api/agents", {
       method: "POST",
-      body: JSON.stringify({ name: "Lab Copy" }),
+      body: JSON.stringify({ name: "Lab Copy", mode: "bot" }),
       headers: { "Content-Type": "application/json" },
     });
 
@@ -153,7 +153,44 @@ describe("Agents routes", () => {
       name: "Lab Copy",
       id: undefined,
       cloneFromId: undefined,
+      mode: "bot",
     });
+  });
+
+  it("marks bot-mode managed agents as not startable in the overview", async () => {
+    (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).listAgentSnapshots = vi.fn(
+      () => [
+        {
+          id: "faq-bot",
+          name: "FAQ Bot",
+          mode: "bot",
+          homePath: "/tmp/teleton/agents/faq-bot",
+          configPath: "/tmp/teleton/agents/faq-bot/config.yaml",
+          workspacePath: "/tmp/teleton/agents/faq-bot/workspace",
+          logPath: "/tmp/teleton/agents/faq-bot/logs/agent.log",
+          createdAt: "2026-04-23T00:10:00.000Z",
+          updatedAt: "2026-04-23T00:10:00.000Z",
+          sourceId: null,
+          provider: "anthropic",
+          model: "claude-opus-4-6",
+          ownerId: 123,
+          adminIds: [123],
+          hasBotToken: true,
+          state: "stopped",
+          pid: null,
+          startedAt: null,
+          uptimeMs: null,
+          lastError: null,
+        },
+      ]
+    );
+
+    const res = await app.request("/api/agents");
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.data.agents[1].mode).toBe("bot");
+    expect(body.data.agents[1].canStart).toBe(false);
   });
 
   it("starts the primary agent through the shared lifecycle", async () => {

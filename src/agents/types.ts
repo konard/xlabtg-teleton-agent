@@ -35,6 +35,7 @@ export interface CreateManagedAgentInput {
   id?: string;
   name: string;
   cloneFromId?: string;
+  mode?: ManagedAgentMode;
 }
 
 export interface ManagedAgentCommand {
