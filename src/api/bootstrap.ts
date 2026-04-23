@@ -3,6 +3,7 @@ import { AgentLifecycle } from "../agent/lifecycle.js";
 import { getDefaultConfigPath, configExists } from "../config/loader.js";
 import { createLogger } from "../utils/logger.js";
 import { SHUTDOWN_TIMEOUT_MS } from "../constants/timeouts.js";
+import { clearKeyPair } from "../ton/wallet-service.js";
 import type { ApiServerDeps } from "./deps.js";
 import type { ApiConfig } from "../config/schema.js";
 
@@ -107,6 +108,8 @@ export async function startApiOnly(options: { config?: string; apiPort?: string 
   const gracefulShutdown = async () => {
     if (shutdownInProgress) return;
     shutdownInProgress = true;
+
+    clearKeyPair();
 
     const forceExit = setTimeout(() => {
       log.error("Shutdown timed out, forcing exit");

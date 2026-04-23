@@ -8,7 +8,7 @@ import { MessageHandler } from "./telegram/handlers.js";
 import { AdminHandler } from "./telegram/admin.js";
 import { MessageDebouncer } from "./telegram/debounce.js";
 import { getDatabase, closeDatabase, initializeMemory, type MemorySystem } from "./memory/index.js";
-import { getWalletAddress } from "./ton/wallet-service.js";
+import { getWalletAddress, clearKeyPair } from "./ton/wallet-service.js";
 import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
 import { TELETON_ROOT, WORKSPACE_ROOT } from "./workspace/paths.js";
@@ -1651,6 +1651,8 @@ export async function main(configPath?: string): Promise<void> {
   const gracefulShutdown = async () => {
     if (shutdownInProgress) return;
     shutdownInProgress = true;
+
+    clearKeyPair();
 
     const forceExit = setTimeout(() => {
       log.error("⚠️ Shutdown timed out, forcing exit");

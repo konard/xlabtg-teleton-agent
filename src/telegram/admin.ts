@@ -1,7 +1,7 @@
 import type { TelegramConfig } from "../config/schema.js";
 import type { AgentRuntime } from "../agent/runtime.js";
 import type { TelegramBridge } from "./bridge.js";
-import { getWalletAddress, getWalletBalance } from "../ton/wallet-service.js";
+import { getWalletAddress, getWalletBalance, clearKeyPair } from "../ton/wallet-service.js";
 import { Address } from "@ton/core";
 import { DEALS_CONFIG } from "../deals/config.js";
 import { loadTemplate } from "../workspace/manager.js";
@@ -246,6 +246,7 @@ export class AdminHandler {
   private handlePauseCommand(): string {
     if (this.paused) return "⏸️ Already paused.";
     this.paused = true;
+    clearKeyPair();
     return "⏸️ Agent paused. Use /resume to restart.";
   }
 
