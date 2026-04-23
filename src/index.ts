@@ -60,6 +60,7 @@ import { initAlerting } from "./services/alerting.js";
 import { initAnomalyDetector } from "./services/anomaly-detector.js";
 import { flushOffsets } from "./telegram/offset-store.js";
 import { WorkflowScheduler } from "./services/workflow-scheduler.js";
+import { ManagedAgentService } from "./agents/service.js";
 
 const log = createLogger("App");
 
@@ -93,12 +94,14 @@ export class TeletonApp {
   private heartbeatRunning = false;
   private workflowScheduler: WorkflowScheduler | null = null;
   private autonomousManager: AutonomousTaskManager | null = null;
+  private agentManager: ManagedAgentService;
 
   private configPath: string;
 
   constructor(configPath?: string) {
     this.configPath = configPath ?? getDefaultConfigPath();
     this.config = loadConfig(this.configPath);
+    this.agentManager = new ManagedAgentService({ primaryConfigPath: this.configPath });
 
     // Wire YAML logging config to pino (H2 fix)
     initLoggerFromConfig(this.config.logging);
@@ -389,6 +392,7 @@ ${blue}  ┌──────────────────────�
           userHookEvaluator: this.userHookEvaluator,
           autonomousManager: this.autonomousManager ?? undefined,
           workflowScheduler: () => this.workflowScheduler,
+          agentManager: this.agentManager,
         });
         await this.webuiServer.start();
       } catch (error) {
@@ -427,6 +431,7 @@ ${blue}  ┌──────────────────────�
             userHookEvaluator: this.userHookEvaluator,
             autonomousManager: this.autonomousManager,
             workflowScheduler: () => this.workflowScheduler,
+            agentManager: this.agentManager,
           },
           this.config.api
         );
@@ -1431,6 +1436,12 @@ ${blue}  ┌──────────────────────�
       } catch (e) {
         log.error({ err: e }, "⚠️ Management API stop failed");
       }
+    }
+
+    try {
+      await this.agentManager.stopAll();
+    } catch (e) {
+      log.error({ err: e }, "⚠️ Managed agent shutdown failed");
     }
 
     // Close database last (shared with WebUI)

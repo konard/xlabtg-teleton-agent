@@ -152,6 +152,43 @@ export interface WalletResult {
   mnemonic: string[];
 }
 
+export type ManagedAgentKind = "primary" | "managed";
+export type ManagedAgentMode = "personal" | "bot";
+export type ManagedAgentState = "stopped" | "starting" | "running" | "stopping" | "error";
+
+export interface AgentOverview {
+  id: string;
+  name: string;
+  kind: ManagedAgentKind;
+  mode: ManagedAgentMode;
+  homePath: string;
+  configPath: string;
+  workspacePath: string;
+  logPath: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceId: string | null;
+  provider: string;
+  model: string;
+  ownerId: number | null;
+  adminIds: number[];
+  hasBotToken: boolean;
+  state: ManagedAgentState;
+  pid: number | null;
+  startedAt: string | null;
+  uptimeMs: number | null;
+  lastError: string | null;
+  canDelete: boolean;
+  canStart: boolean;
+  canStop: boolean;
+  logsAvailable: boolean;
+}
+
+export interface AgentLogs {
+  lines: string[];
+  path: string;
+}
+
 export interface AuthCodeResult {
   authSessionId: string;
   codeDelivery: "app" | "sms" | "fragment";
@@ -2240,6 +2277,64 @@ export const api = {
 
   async agentStatus() {
     return fetchAPI<{ state: string; uptime?: number; error?: string | null }>("/agent/status");
+  },
+
+  async listAgents() {
+    return fetchAPI<APIResponse<{ agents: AgentOverview[] }>>("/agents");
+  },
+
+  async createAgent(data: { name: string; id?: string; cloneFromId?: string }) {
+    return fetchAPI<APIResponse<AgentOverview>>("/agents", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async cloneAgent(id: string, data?: { name?: string; newId?: string }) {
+    return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}/clone`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  },
+
+  async deleteAgent(id: string) {
+    return fetchAPI<APIResponse<{ id: string }>>(`/agents/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async startManagedAgent(id: string) {
+    return fetchAPI<
+      APIResponse<{
+        state: ManagedAgentState;
+        pid: number | null;
+        startedAt: string | null;
+        uptimeMs: number | null;
+        lastError: string | null;
+      }>
+    >(`/agents/${encodeURIComponent(id)}/start`, {
+      method: "POST",
+    });
+  },
+
+  async stopManagedAgent(id: string) {
+    return fetchAPI<
+      APIResponse<{
+        state: ManagedAgentState;
+        pid: number | null;
+        startedAt: string | null;
+        uptimeMs: number | null;
+        lastError: string | null;
+      }>
+    >(`/agents/${encodeURIComponent(id)}/stop`, {
+      method: "POST",
+    });
+  },
+
+  async getManagedAgentLogs(id: string, lines = 200) {
+    return fetchAPI<APIResponse<AgentLogs>>(
+      `/agents/${encodeURIComponent(id)}/logs?lines=${lines}`
+    );
   },
 
   // ── Autonomous Task Engine ────────────────────────────────────────

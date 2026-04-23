@@ -6,6 +6,7 @@ import { ToastContainer } from "./components/ToastContainer";
 import { ConfirmDialogProvider } from "./components/ConfirmDialog";
 import { CommandPalette } from "./components/CommandPalette";
 import { Dashboard } from "./pages/Dashboard";
+import { Agents } from "./pages/Agents";
 import { Tools } from "./pages/Tools";
 import { Plugins } from "./pages/Plugins";
 import { Soul } from "./pages/Soul";
@@ -140,6 +141,7 @@ function AuthenticatedApp() {
           <Routes>
             <Route path="/" element={<Layout />}>
               <Route index element={<Dashboard />} />
+              <Route path="agents" element={<Agents />} />
               <Route path="tools" element={<Tools />} />
               <Route path="plugins" element={<Plugins />} />
               <Route path="soul" element={<Soul />} />
