@@ -1,0 +1,9 @@
+{
+  "tag": "v1.8.3",
+  "binaries": {
+    "tonutils-proxy-cli-darwin-amd64": "ae9e85bc909318606246a45325c20fa148300989b9405f6696dc298fc87fdcef",
+    "tonutils-proxy-cli-darwin-arm64": "d8d4720700a2c59cd2b5947a6d2f7119542b8baa51a2e6b2c247f3a099b8174b",
+    "tonutils-proxy-cli-linux-amd64": "8df4974e198db5c7de5883b6ec9b0d3e8e6fda90c0d42c8f6bc0164b9f94aa32",
+    "tonutils-proxy-cli-windows-amd64.exe": "4a3ef2798d65f76d62414d38bb53418e6fb33d11badac263ca5946f9359f6ba8"
+  }
+}

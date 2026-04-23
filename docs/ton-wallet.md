@@ -19,6 +19,7 @@ This guide covers setting up and using the TON blockchain wallet integrated into
 - [NFT Management](#nft-management)
 - [DNS Integration](#dns-integration)
 - [Security Considerations](#security-considerations)
+- [TON Proxy Binary Verification](#ton-proxy-binary-verification)
 - [TonAPI Key](#tonapi-key)
 
 ---
@@ -363,3 +364,48 @@ Without a TonAPI key, the agent uses public endpoints with standard rate limits.
 - DNS operations
 
 The key is never exposed to plugins (it is stripped from the sanitized config).
+
+---
+
+## TON Proxy Binary Verification
+
+Teleton Agent downloads the [Tonutils-Proxy](https://github.com/xssnick/Tonutils-Proxy) CLI binary to enable `.ton` domain browsing. To protect users from supply-chain attacks, the installation process enforces strict integrity checks before the binary is ever made executable.
+
+### Pinned Release Tag
+
+The downloaded binary is tied to a **specific, pinned release tag** — not the floating `latest` pointer. The tag and per-platform SHA-256 digests are stored in `src/ton-proxy/checksums.json`:
+
+```json
+{
+  "tag": "v1.8.3",
+  "binaries": {
+    "tonutils-proxy-cli-linux-amd64":    "8df4974e198db5c7de5883b6ec9b0d3e8e6fda90c0d42c8f6bc0164b9f94aa32",
+    "tonutils-proxy-cli-darwin-amd64":   "ae9e85bc909318606246a45325c20fa148300989b9405f6696dc298fc87fdcef",
+    "tonutils-proxy-cli-darwin-arm64":   "d8d4720700a2c59cd2b5947a6d2f7119542b8baa51a2e6b2c247f3a099b8174b",
+    "tonutils-proxy-cli-windows-amd64.exe": "4a3ef2798d65f76d62414d38bb53418e6fb33d11badac263ca5946f9359f6ba8"
+  }
+}
+```
+
+### What Is Verified During Download
+
+1. **Pinned tag** — the URL is constructed from `checksums.json`, not resolved from the GitHub `latest` API endpoint.
+2. **Redirect domain** — after following HTTP redirects the final URL must resolve to `github.com` or `objects.githubusercontent.com`. Any cross-domain redirect aborts the download.
+3. **Content-Length** — if the server declares a `Content-Length` header its value must not exceed 50 MB.
+4. **Streaming size cap** — bytes are counted during streaming; if the total exceeds 50 MB the download is aborted.
+5. **SHA-256 checksum** — after all bytes are received the digest is compared against the value in `checksums.json`. A mismatch is a hard failure.
+
+### What Happens on Verification Failure
+
+- The partially or fully downloaded file is **immediately deleted** from disk.
+- An error is thrown with the expected and actual digest (or the relevant message) so the user can see exactly what failed.
+- **No automatic retry** — retrying a tampered download would just fail again and could mask the problem.
+
+### Upgrading the Proxy Binary
+
+When a new Tonutils-Proxy release is available:
+
+1. Download the new CLI binaries for each supported platform.
+2. Compute their SHA-256 digests: `sha256sum tonutils-proxy-cli-*`
+3. Update `src/ton-proxy/checksums.json` with the new `tag` and digests.
+4. Submit a pull request — the CI test suite verifies the manifest is consistent.
