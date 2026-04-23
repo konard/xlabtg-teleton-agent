@@ -3,6 +3,9 @@ import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { getDatabase } from "../../memory/index.js";
 import { isHeartbeatOk, isSilentReply } from "../../constants/tokens.js";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("agent-actions");
 
 export function createAgentActionsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -106,12 +109,17 @@ export function createAgentActionsRoutes(deps: WebUIServerDeps) {
       const content = response.content ?? "";
       const suppressed = isHeartbeatOk(content) || isSilentReply(content);
 
-      // Send to Telegram only if bridge is available and response is actionable
-      if (!suppressed && content && deps.bridge?.isAvailable()) {
-        await deps.bridge.sendMessage({
-          chatId: String(adminChatId),
-          text: content,
-        });
+      let sentToTelegram = false;
+      if (!suppressed && content) {
+        if (deps.bridge?.isAvailable()) {
+          await deps.bridge.sendMessage({
+            chatId: String(adminChatId),
+            text: content,
+          });
+          sentToTelegram = true;
+        } else {
+          log.warn("Heartbeat trigger: bridge not available, alert not delivered to Telegram");
+        }
       }
 
       const result: APIResponse<{ content: string; suppressed: boolean; sentToTelegram: boolean }> =
@@ -120,8 +128,7 @@ export function createAgentActionsRoutes(deps: WebUIServerDeps) {
           data: {
             content,
             suppressed,
-            sentToTelegram:
-              !suppressed && content.length > 0 && (deps.bridge?.isAvailable() ?? false),
+            sentToTelegram,
           },
         };
       return c.json(result);
