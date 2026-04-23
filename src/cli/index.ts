@@ -5,8 +5,11 @@ import { mcpAddCommand, mcpRemoveCommand, mcpListCommand } from "./commands/mcp.
 import { configCommand } from "./commands/config.js";
 import { apiRotateKeyCommand, apiFingerprintCommand } from "./commands/api.js";
 import { autonomousCommand } from "./commands/autonomous.js";
-import { main as startApp } from "../index.js";
-import { configExists, getDefaultConfigPath } from "../config/loader.js";
+import {
+  configExists,
+  getDefaultConfigPath,
+  getNormalDefaultConfigPath,
+} from "../config/loader.js";
 import { readFileSync, existsSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
@@ -26,6 +29,48 @@ function findPackageJson(): Record<string, unknown> {
 const packageJson = findPackageJson();
 
 const program = new Command();
+
+function printConfigNotFoundError(configPath: string): void {
+  const teletonHome = process.env.TELETON_HOME;
+  const envDefaultConfigPath = getDefaultConfigPath();
+  const normalDefaultConfigPath = getNormalDefaultConfigPath();
+  const teletonHomeChangesDefault =
+    Boolean(teletonHome) &&
+    configPath === envDefaultConfigPath &&
+    envDefaultConfigPath !== normalDefaultConfigPath;
+
+  console.error("❌ Configuration not found");
+
+  if (!teletonHomeChangesDefault) {
+    console.error(`   Expected file: ${configPath}`);
+    console.error("\n💡 Run first: teleton setup");
+    console.error("   Or use: teleton start --api (for API-only bootstrap)");
+    return;
+  }
+
+  console.error(
+    "   A custom TELETON_HOME override is active, so Teleton is looking for config under that directory."
+  );
+  console.error(`   TELETON_HOME: ${teletonHome}`);
+  console.error(`   Expected file: ${configPath}`);
+  console.error(`   Normal default file: ${normalDefaultConfigPath}`);
+
+  if (configExists(normalDefaultConfigPath)) {
+    console.error("\n💡 A config already exists in the normal default location.");
+    console.error(
+      "   If TELETON_HOME was only set as a temporary workaround for #364, unset it and retry."
+    );
+  } else {
+    console.error("\n💡 Run first: teleton setup");
+    console.error("   Or unset TELETON_HOME to use the normal default location.");
+  }
+
+  console.error("\n   To unset TELETON_HOME:");
+  console.error("   Windows cmd: set TELETON_HOME=");
+  console.error("   PowerShell: $env:TELETON_HOME=$null");
+  console.error("   macOS/Linux: unset TELETON_HOME");
+  console.error("\n   Or use: teleton start --api (for API-only bootstrap)");
+}
 
 program
   .name("teleton")
@@ -111,10 +156,7 @@ program
 
       // Normal flow: config required
       if (!configExists(options.config)) {
-        console.error("❌ Configuration not found");
-        console.error(`   Expected file: ${options.config}`);
-        console.error("\n💡 Run first: teleton setup");
-        console.error("   Or use: teleton start --api (for API-only bootstrap)");
+        printConfigNotFoundError(options.config);
         process.exit(1);
       }
 
@@ -137,6 +179,7 @@ program
         process.env.TELETON_JSON_CREDENTIALS = "true";
       }
 
+      const { main: startApp } = await import("../index.js");
       await startApp(options.config);
     } catch (error) {
       console.error("Error:", getErrorMessage(error));

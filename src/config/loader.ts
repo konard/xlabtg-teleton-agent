@@ -10,6 +10,7 @@ import { createLogger } from "../utils/logger.js";
 const log = createLogger("Config");
 
 const DEFAULT_CONFIG_PATH = join(TELETON_ROOT, "config.yaml");
+const NORMAL_DEFAULT_CONFIG_PATH = join(homedir(), ".teleton", "config.yaml");
 
 export function parseEnvPort(name: string, value: string): number {
   const port = parseInt(value, 10);
@@ -250,4 +251,8 @@ export function configExists(configPath: string = DEFAULT_CONFIG_PATH): boolean 
 
 export function getDefaultConfigPath(): string {
   return DEFAULT_CONFIG_PATH;
+}
+
+export function getNormalDefaultConfigPath(): string {
+  return NORMAL_DEFAULT_CONFIG_PATH;
 }
