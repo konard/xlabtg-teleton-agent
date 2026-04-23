@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type {
   CreateManagedAgentInput,
@@ -14,6 +15,7 @@ import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
 import { initAudit } from "../../services/audit.js";
 import { validateBotTokenWithTelegram } from "../../telegram/bot-token.js";
+import { TelegramAuthManager } from "../setup-auth.js";
 
 const log = createLogger("agents-routes");
 
@@ -75,6 +77,23 @@ function makePrimaryOverview(deps: WebUIServerDeps): AgentOverview {
     ownerId: config.telegram.owner_id ?? null,
     adminIds: config.telegram.admin_ids ?? [],
     hasBotToken: Boolean(config.telegram.bot_token),
+    hasPersonalCredentials: Boolean(
+      Number.isFinite(config.telegram.api_id) &&
+      config.telegram.api_id > 0 &&
+      config.telegram.api_hash?.trim() &&
+      config.telegram.phone?.trim()
+    ),
+    hasPersonalSession: config.telegram.session_path
+      ? existsSync(config.telegram.session_path)
+      : false,
+    personalPhoneMasked: config.telegram.phone
+      ? `${config.telegram.phone.startsWith("+") ? "+" : ""}${"*".repeat(
+          Math.max(
+            3,
+            config.telegram.phone.length - (config.telegram.phone.startsWith("+") ? 3 : 2)
+          )
+        )}${config.telegram.phone.slice(-2)}`
+      : null,
     state,
     pid: process.pid,
     startedAt: uptimeMs !== null ? new Date(Date.now() - uptimeMs).toISOString() : null,
@@ -108,7 +127,11 @@ function makeManagedOverview(snapshot: ManagedAgentSnapshot): AgentOverview {
         ? "Bot token is required before this bot-mode agent can start"
         : snapshot.mode === "personal" && !snapshot.security.personalAccountAccessConfirmedAt
           ? "Private-account access consent is required before this personal agent can start"
-          : null;
+          : snapshot.mode === "personal" && !snapshot.hasPersonalCredentials
+            ? "Phone, API ID, and API hash are required before this personal agent can authenticate"
+            : snapshot.mode === "personal" && !snapshot.hasPersonalSession
+              ? "Telegram personal auth verification is required before this agent can start"
+              : null;
   const supportsStart = !canStartReason;
   return {
     ...snapshot,
@@ -136,8 +159,27 @@ function logAgentAudit(deps: WebUIServerDeps, details: string): void {
   }
 }
 
+function parseOptionalPositiveInt(value: unknown): number | undefined {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error("Telegram apiId must be a positive integer");
+  }
+  return parsed;
+}
+
+function isAuthenticatedAuthResult(result: { status: string }): boolean {
+  return result.status === "authenticated";
+}
+
+function getTelegramAuthErrorMessage(error: unknown): string {
+  const telegramError = error as { errorMessage?: string; message?: string };
+  return telegramError.errorMessage || telegramError.message || getErrorMessage(error);
+}
+
 export function createAgentsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
+  const personalAuthManager = new TelegramAuthManager();
 
   app.get("/", (c) => {
     try {
@@ -173,6 +215,13 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         mode: body.mode === "bot" ? "bot" : body.mode === "personal" ? "personal" : undefined,
         botToken: body.botToken?.trim() || undefined,
         botUsername: body.botUsername?.trim() || undefined,
+        personalConnection: body.personalConnection
+          ? {
+              apiId: parseOptionalPositiveInt(body.personalConnection.apiId),
+              apiHash: body.personalConnection.apiHash?.trim() || undefined,
+              phone: body.personalConnection.phone?.trim() || undefined,
+            }
+          : undefined,
         memoryPolicy: body.memoryPolicy,
         resources: body.resources,
         messaging: body.messaging,
@@ -185,7 +234,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       };
       return c.json(response, 201);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
     }
   });
 
@@ -198,7 +250,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       };
       return c.json(response);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
     }
   });
 
@@ -234,6 +289,13 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         mode: body.mode === "bot" ? "bot" : body.mode === "personal" ? "personal" : undefined,
         botToken: body.botToken?.trim() || undefined,
         botUsername: body.botUsername?.trim() || undefined,
+        personalConnection: body.personalConnection
+          ? {
+              apiId: parseOptionalPositiveInt(body.personalConnection.apiId),
+              apiHash: body.personalConnection.apiHash?.trim() || undefined,
+              phone: body.personalConnection.phone?.trim() || undefined,
+            }
+          : undefined,
         memoryPolicy: body.memoryPolicy,
         resources: body.resources,
         messaging: body.messaging,
@@ -246,7 +308,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       };
       return c.json(response, 201);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
     }
   });
 
@@ -264,7 +329,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       const response: APIResponse<{ id: string }> = { success: true, data: { id } };
       return c.json(response);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
     }
   });
 
@@ -281,6 +349,13 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         );
       }
       const body = await c.req.json<UpdateManagedAgentInput>();
+      if (body.personalConnection) {
+        body.personalConnection = {
+          apiId: parseOptionalPositiveInt(body.personalConnection.apiId),
+          apiHash: body.personalConnection.apiHash?.trim() || undefined,
+          phone: body.personalConnection.phone?.trim() || undefined,
+        };
+      }
       const snapshot = withManagedService(deps).updateAgent(id, body);
       logAgentAudit(deps, `agent:update:${id}`);
       const response: APIResponse<AgentOverview> = {
@@ -289,7 +364,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       };
       return c.json(response);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
     }
   });
 
@@ -319,7 +397,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       const response: APIResponse<ManagedAgentRuntimeStatus> = { success: true, data: status };
       return c.json(response);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
     }
   });
 
@@ -368,6 +449,178 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       }
       const response: APIResponse<ManagedAgentRuntimeStatus> = { success: true, data: status };
       return c.json(response);
+    } catch (error) {
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
+    }
+  });
+
+  app.post("/:id/personal-auth/send-code", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req
+        .json<{ apiId?: number; apiHash?: string; phone?: string }>()
+        .catch((): { apiId?: number; apiHash?: string; phone?: string } => ({}));
+      const authTarget = withManagedService(deps).resolvePersonalAuthTarget(id, {
+        apiId: parseOptionalPositiveInt(body.apiId),
+        apiHash: body.apiHash?.trim() || undefined,
+        phone: body.phone?.trim() || undefined,
+      });
+      const data = await personalAuthManager.sendCode(
+        authTarget.apiId,
+        authTarget.apiHash,
+        authTarget.phone,
+        {
+          configPath: authTarget.configPath,
+          sessionPath: authTarget.sessionPath,
+        }
+      );
+      logAgentAudit(deps, `agent:personal-auth:send-code:${id}`);
+      return c.json({ success: true, data } as APIResponse<typeof data>);
+    } catch (error: unknown) {
+      const rateLimit = error as { seconds?: number; errorMessage?: string; message?: string };
+      if (rateLimit.seconds) {
+        return c.json(
+          {
+            success: false,
+            error: `Rate limited. Please wait ${rateLimit.seconds} seconds.`,
+          } as APIResponse,
+          429
+        );
+      }
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
+    }
+  });
+
+  app.post("/:id/personal-auth/verify-code", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req.json<{ authSessionId?: string; code?: string }>();
+      if (!body.authSessionId || !body.code) {
+        return c.json(
+          { success: false, error: "Missing authSessionId or code" } as APIResponse,
+          400
+        );
+      }
+      const data = await personalAuthManager.verifyCode(body.authSessionId, body.code);
+      if (isAuthenticatedAuthResult(data)) {
+        withManagedService(deps).recordPersonalAuth(id);
+        logAgentAudit(deps, `agent:personal-auth:verified:${id}`);
+      }
+      return c.json({ success: true, data } as APIResponse<typeof data>);
+    } catch (error) {
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+    }
+  });
+
+  app.post("/:id/personal-auth/verify-password", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req.json<{ authSessionId?: string; password?: string }>();
+      if (!body.authSessionId || !body.password) {
+        return c.json(
+          { success: false, error: "Missing authSessionId or password" } as APIResponse,
+          400
+        );
+      }
+      const data = await personalAuthManager.verifyPassword(body.authSessionId, body.password);
+      if (isAuthenticatedAuthResult(data)) {
+        withManagedService(deps).recordPersonalAuth(id);
+        logAgentAudit(deps, `agent:personal-auth:verified:${id}`);
+      }
+      return c.json({ success: true, data } as APIResponse<typeof data>);
+    } catch (error) {
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+    }
+  });
+
+  app.post("/:id/personal-auth/resend-code", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req.json<{ authSessionId?: string }>();
+      if (!body.authSessionId) {
+        return c.json({ success: false, error: "Missing authSessionId" } as APIResponse, 400);
+      }
+      const data = await personalAuthManager.resendCode(body.authSessionId);
+      if (!data) {
+        return c.json({ success: false, error: "Session expired or invalid" } as APIResponse, 400);
+      }
+      logAgentAudit(deps, `agent:personal-auth:resend-code:${id}`);
+      return c.json({ success: true, data } as APIResponse<typeof data>);
+    } catch (error: unknown) {
+      const rateLimit = error as { seconds?: number; errorMessage?: string; message?: string };
+      if (rateLimit.seconds) {
+        return c.json(
+          {
+            success: false,
+            error: `Rate limited. Please wait ${rateLimit.seconds} seconds.`,
+          } as APIResponse,
+          429
+        );
+      }
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+    }
+  });
+
+  app.delete("/:id/personal-auth/session", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req
+        .json<{ authSessionId?: string }>()
+        .catch(() => ({ authSessionId: "" }));
+      await personalAuthManager.cancelSession(body.authSessionId ?? "");
+      logAgentAudit(deps, `agent:personal-auth:cancel:${id}`);
+      return c.json({ success: true } as APIResponse);
     } catch (error) {
       return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
     }

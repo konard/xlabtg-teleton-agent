@@ -61,6 +61,11 @@ describe("ManagedAgentService", () => {
 
     const snapshot = service.createAgent({
       name: "Support Copy",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
       acknowledgePersonalAccountAccess: true,
     });
     const clonedConfig = loadConfig(snapshot.configPath);
@@ -68,6 +73,9 @@ describe("ManagedAgentService", () => {
     expect(snapshot.id).toBe("support-copy");
     expect(snapshot.mode).toBe("personal");
     expect(snapshot.memoryPolicy).toBe("isolated");
+    expect(snapshot.hasPersonalCredentials).toBe(true);
+    expect(snapshot.hasPersonalSession).toBe(false);
+    expect(snapshot.personalPhoneMasked).toBe("+*********67");
     expect(snapshot.homePath).toBe(join(rootDir, "agents", "support-copy"));
     expect(existsSync(join(snapshot.workspacePath, "SOUL.md"))).toBe(true);
     expect(readFileSync(join(snapshot.workspacePath, "SOUL.md"), "utf-8")).toBe("Primary soul");
@@ -81,9 +89,70 @@ describe("ManagedAgentService", () => {
     expect(clonedConfig.storage.memory_file).toBe(
       join(rootDir, "agents", "support-copy", "memory.json")
     );
+    expect(clonedConfig.telegram.api_id).toBe(98765);
+    expect(clonedConfig.telegram.api_hash).toBe("managedhash123");
+    expect(clonedConfig.telegram.phone).toBe("+15551234567");
     expect(clonedConfig.webui.enabled).toBe(false);
     expect(clonedConfig.api?.enabled).toBe(false);
     expect(clonedConfig.ton_proxy.enabled).toBe(false);
+  });
+
+  it("blocks personal-mode startup until the per-agent auth session is verified", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Standalone Personal",
+      mode: "personal",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+
+    expect(() => service?.startAgent(snapshot.id)).toThrow(
+      "verified Telegram auth session before they can start"
+    );
+  });
+
+  it("starts personal-mode managed agents after the isolated session exists", async () => {
+    service = new ManagedAgentService({
+      rootDir,
+      primaryConfigPath: configPath,
+      resolveCommand: () => ({
+        command: process.execPath,
+        args: [
+          "-e",
+          [
+            "console.log('managed-mode=' + process.env.TELETON_MANAGED_AGENT_MODE);",
+            "console.log('Teleton Agent is running!');",
+            "setTimeout(() => process.exit(0), 5000);",
+          ].join(" "),
+        ],
+      }),
+    });
+
+    const snapshot = service.createAgent({
+      name: "Standalone Personal",
+      mode: "personal",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+    const authTarget = service.resolvePersonalAuthTarget(snapshot.id);
+    writeFileSync(authTarget.sessionPath, "session-string", "utf-8");
+    service.recordPersonalAuth(snapshot.id);
+
+    service.startAgent(snapshot.id);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    const logs = service.readLogs(snapshot.id, 20).lines.join("\n");
+    expect(logs).toContain("managed-mode=personal");
+    expect(service.getRuntimeStatus(snapshot.id).transport).toBe("mtproto");
   });
 
   it("allocates unique ids when the same name is cloned twice", () => {

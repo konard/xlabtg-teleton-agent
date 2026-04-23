@@ -205,6 +205,9 @@ export interface AgentOverview {
   ownerId: number | null;
   adminIds: number[];
   hasBotToken: boolean;
+  hasPersonalCredentials: boolean;
+  hasPersonalSession: boolean;
+  personalPhoneMasked: string | null;
   state: ManagedAgentState;
   pid: number | null;
   startedAt: string | null;
@@ -245,6 +248,11 @@ export interface CreateAgentInput {
   mode?: ManagedAgentMode;
   botToken?: string;
   botUsername?: string;
+  personalConnection?: {
+    apiId?: number;
+    apiHash?: string;
+    phone?: string;
+  };
   memoryPolicy?: ManagedAgentMemoryPolicy;
   resources?: Partial<AgentResourcePolicy>;
   messaging?: Partial<AgentMessagingPolicy>;
@@ -255,6 +263,11 @@ export interface UpdateAgentInput {
   name?: string;
   botToken?: string | null;
   botUsername?: string | null;
+  personalConnection?: {
+    apiId?: number;
+    apiHash?: string;
+    phone?: string;
+  };
   memoryPolicy?: ManagedAgentMemoryPolicy;
   resources?: Partial<AgentResourcePolicy>;
   messaging?: Partial<AgentMessagingPolicy>;
@@ -270,7 +283,13 @@ export interface AuthCodeResult {
 }
 
 export interface AuthVerifyResult {
-  status: "authenticated" | "2fa_required";
+  status:
+    | "authenticated"
+    | "2fa_required"
+    | "invalid_code"
+    | "invalid_password"
+    | "expired"
+    | "too_many_attempts";
   user?: { id: number; firstName: string; username: string };
   passwordHint?: string;
 }
@@ -2369,6 +2388,59 @@ export const api = {
     });
   },
 
+  async sendManagedPersonalCode(
+    id: string,
+    data: { apiId?: number; apiHash?: string; phone?: string }
+  ) {
+    return fetchAPI<APIResponse<AuthCodeResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/send-code`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async verifyManagedPersonalCode(id: string, authSessionId: string, code: string) {
+    return fetchAPI<APIResponse<AuthVerifyResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/verify-code`,
+      {
+        method: "POST",
+        body: JSON.stringify({ authSessionId, code }),
+      }
+    );
+  },
+
+  async verifyManagedPersonalPassword(id: string, authSessionId: string, password: string) {
+    return fetchAPI<APIResponse<AuthVerifyResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/verify-password`,
+      {
+        method: "POST",
+        body: JSON.stringify({ authSessionId, password }),
+      }
+    );
+  },
+
+  async resendManagedPersonalCode(id: string, authSessionId: string) {
+    return fetchAPI<
+      APIResponse<{
+        codeDelivery: "app" | "sms" | "fragment";
+        fragmentUrl?: string;
+        codeLength?: number;
+      }>
+    >(`/agents/${encodeURIComponent(id)}/personal-auth/resend-code`, {
+      method: "POST",
+      body: JSON.stringify({ authSessionId }),
+    });
+  },
+
+  async cancelManagedPersonalAuth(id: string, authSessionId: string) {
+    return fetchAPI<APIResponse<void>>(`/agents/${encodeURIComponent(id)}/personal-auth/session`, {
+      method: "DELETE",
+      body: JSON.stringify({ authSessionId }),
+    });
+  },
+
   async cloneAgent(
     id: string,
     data?: CreateAgentInput & {
@@ -2395,25 +2467,25 @@ export const api = {
   },
 
   async startManagedAgent(id: string) {
-    return fetchAPI<APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>>(
-      `/agents/${encodeURIComponent(id)}/start`,
-      {
-        method: "POST",
-      }
-    );
+    return fetchAPI<
+      APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>
+    >(`/agents/${encodeURIComponent(id)}/start`, {
+      method: "POST",
+    });
   },
 
   async stopManagedAgent(id: string) {
-    return fetchAPI<APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>>(
-      `/agents/${encodeURIComponent(id)}/stop`,
-      {
-        method: "POST",
-      }
-    );
+    return fetchAPI<
+      APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>
+    >(`/agents/${encodeURIComponent(id)}/stop`, {
+      method: "POST",
+    });
   },
 
   async getManagedAgentLogs(id: string, lines = 200) {
-    return fetchAPI<APIResponse<AgentLogs>>(`/agents/${encodeURIComponent(id)}/logs?lines=${lines}`);
+    return fetchAPI<APIResponse<AgentLogs>>(
+      `/agents/${encodeURIComponent(id)}/logs?lines=${lines}`
+    );
   },
 
   async getManagedAgentMessages(id: string, limit = 100) {

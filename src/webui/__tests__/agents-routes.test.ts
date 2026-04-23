@@ -4,6 +4,14 @@ import { AgentLifecycle } from "../../agent/lifecycle.js";
 import { createAgentsRoutes } from "../routes/agents.js";
 import type { WebUIServerDeps } from "../types.js";
 
+const telegramAuthMocks = vi.hoisted(() => ({
+  sendCode: vi.fn(),
+  verifyCode: vi.fn(),
+  verifyPassword: vi.fn(),
+  resendCode: vi.fn(),
+  cancelSession: vi.fn(),
+}));
+
 vi.mock("../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
@@ -17,6 +25,12 @@ vi.mock("../../services/audit.js", () => ({
   initAudit: vi.fn(() => ({
     log: vi.fn(),
   })),
+}));
+
+vi.mock("../setup-auth.js", () => ({
+  TelegramAuthManager: vi.fn(function TelegramAuthManager() {
+    return telegramAuthMocks;
+  }),
 }));
 
 function managedSnapshot(overrides: Record<string, unknown> = {}) {
@@ -57,6 +71,9 @@ function managedSnapshot(overrides: Record<string, unknown> = {}) {
     ownerId: 123,
     adminIds: [123],
     hasBotToken: false,
+    hasPersonalCredentials: true,
+    hasPersonalSession: true,
+    personalPhoneMasked: "+********90",
     state: "stopped",
     pid: null,
     startedAt: null,
@@ -122,6 +139,14 @@ function buildDeps(): WebUIServerDeps {
         id: "support-copy",
         name: "Support Copy",
       })),
+      resolvePersonalAuthTarget: vi.fn(() => ({
+        configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+        sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+        apiId: 12345,
+        apiHash: "abcdef",
+        phone: "+1234567890",
+      })),
+      recordPersonalAuth: vi.fn(() => managedSnapshot()),
       deleteAgent: vi.fn(),
       getRuntimeStatus: vi.fn(() => ({
         state: "running",
@@ -204,6 +229,7 @@ describe("Agents routes", () => {
   let app: ReturnType<typeof buildApp>;
 
   beforeEach(() => {
+    vi.clearAllMocks();
     deps = buildDeps();
     app = buildApp(deps);
   });
@@ -246,7 +272,41 @@ describe("Agents routes", () => {
       resources: undefined,
       messaging: { enabled: true, allowlist: ["primary"] },
       acknowledgePersonalAccountAccess: undefined,
+      personalConnection: undefined,
     });
+  });
+
+  it("creates a personal managed agent with standalone Telegram credentials", async () => {
+    const res = await app.request("/api/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        name: "Personal Lab",
+        mode: "personal",
+        personalConnection: {
+          apiId: 23456,
+          apiHash: "personal-hash",
+          phone: "+15551234567",
+        },
+        acknowledgePersonalAccountAccess: true,
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(201);
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).createAgent
+    ).toHaveBeenCalledWith(
+      expect.objectContaining({
+        name: "Personal Lab",
+        mode: "personal",
+        personalConnection: {
+          apiId: 23456,
+          apiHash: "personal-hash",
+          phone: "+15551234567",
+        },
+        acknowledgePersonalAccountAccess: true,
+      })
+    );
   });
 
   it("validates bot-token format before bot-mode setup", async () => {
@@ -297,6 +357,57 @@ describe("Agents routes", () => {
       name: "Support Copy Updated",
       messaging: { enabled: true, allowlist: ["primary", "lab-copy"] },
     });
+  });
+
+  it("starts managed personal auth against the agent-specific config and session path", async () => {
+    telegramAuthMocks.sendCode.mockResolvedValueOnce({
+      authSessionId: "auth-1",
+      codeDelivery: "app",
+      codeLength: 5,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await app.request("/api/agents/support-copy/personal-auth/send-code", {
+      method: "POST",
+      body: JSON.stringify({
+        apiId: 23456,
+        apiHash: "personal-hash",
+        phone: "+15551234567",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).resolvePersonalAuthTarget
+    ).toHaveBeenCalledWith("support-copy", {
+      apiId: 23456,
+      apiHash: "personal-hash",
+      phone: "+15551234567",
+    });
+    expect(telegramAuthMocks.sendCode).toHaveBeenCalledWith(12345, "abcdef", "+1234567890", {
+      configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+      sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+    });
+  });
+
+  it("records successful managed personal auth verification", async () => {
+    telegramAuthMocks.verifyCode.mockResolvedValueOnce({
+      status: "authenticated",
+      user: { id: 123, firstName: "Alex", username: "alex" },
+    });
+
+    const res = await app.request("/api/agents/support-copy/personal-auth/verify-code", {
+      method: "POST",
+      body: JSON.stringify({ authSessionId: "auth-1", code: "12345" }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(telegramAuthMocks.verifyCode).toHaveBeenCalledWith("auth-1", "12345");
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).recordPersonalAuth
+    ).toHaveBeenCalledWith("support-copy");
   });
 
   it("starts the primary agent through the shared lifecycle", async () => {

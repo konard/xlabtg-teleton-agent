@@ -26,6 +26,8 @@ import type {
   ManagedAgentMessage,
   ManagedAgentMemoryPolicy,
   ManagedAgentMode,
+  ManagedAgentPersonalAuthTarget,
+  ManagedAgentPersonalConnectionInput,
   ManagedAgentRuntimeStatus,
   ManagedAgentSnapshot,
   ManagedAgentState,
@@ -147,6 +149,30 @@ function mergeMessaging(input?: Partial<ManagedAgentMessagingPolicy>): ManagedAg
   };
 }
 
+function maskPhone(phone: string | undefined): string | null {
+  if (!phone) return null;
+  const trimmed = phone.trim();
+  if (trimmed.length <= 4) return "***";
+  const prefix = trimmed.startsWith("+") ? "+" : "";
+  return `${prefix}${"*".repeat(Math.max(3, trimmed.length - prefix.length - 2))}${trimmed.slice(-2)}`;
+}
+
+function normalizePersonalConnection(
+  input?: ManagedAgentPersonalConnectionInput
+): ManagedAgentPersonalConnectionInput | undefined {
+  if (!input) return undefined;
+  const apiId = Number(input.apiId);
+  const apiHash = input.apiHash?.trim();
+  const phone = input.phone?.trim();
+
+  if (!apiId && !apiHash && !phone) return undefined;
+  return {
+    apiId: Number.isFinite(apiId) ? apiId : undefined,
+    apiHash: apiHash || undefined,
+    phone: phone || undefined,
+  };
+}
+
 export class ManagedAgentService {
   private readonly rootDir: string;
   private readonly agentsRoot: string;
@@ -186,6 +212,7 @@ export class ManagedAgentService {
     const sourceRoot = sourceDefinition?.homePath ?? this.rootDir;
     const mode: ManagedAgentMode = input.mode ?? sourceDefinition?.mode ?? "personal";
     const sourceConfig = loadConfig(sourceConfigPath);
+    const personalConnection = normalizePersonalConnection(input.personalConnection);
     const explicitBotToken = input.botToken?.trim();
     const inheritedBotToken = sourceDefinition
       ? this.resolveBotToken(sourceDefinition, sourceConfig)
@@ -231,8 +258,12 @@ export class ManagedAgentService {
     const managedConfig = this.prepareManagedConfig(sourceConfig, homePath, {
       mode,
       botUsername,
+      personalConnection,
       resources,
     });
+    if (mode === "personal") {
+      this.validatePersonalConnectionConfig(managedConfig);
+    }
     saveConfig(managedConfig, configPath);
 
     const timestamp = nowIso();
@@ -311,6 +342,14 @@ export class ManagedAgentService {
       const tokenFormatError = validateBotTokenFormat(botToken);
       if (tokenFormatError) {
         throw new Error(`Invalid bot token: ${tokenFormatError}`);
+      }
+    }
+    if (definition.mode === "personal") {
+      this.validatePersonalConnectionConfig(config);
+      if (!this.hasPersonalSession(config)) {
+        throw new Error(
+          "Personal-mode managed agents require a verified Telegram auth session before they can start"
+        );
       }
     }
 
@@ -598,6 +637,11 @@ export class ManagedAgentService {
         config.telegram.bot_username = nextDefinition.connection.botUsername ?? undefined;
       }
     }
+    const personalConnection = normalizePersonalConnection(input.personalConnection);
+    if (nextDefinition.mode === "personal") {
+      this.applyPersonalConnectionToConfig(config, personalConnection);
+      this.validatePersonalConnectionConfig(config);
+    }
 
     saveConfig(config, definition.configPath);
     this.writeDefinition(nextDefinition);
@@ -658,6 +702,53 @@ export class ManagedAgentService {
     return message;
   }
 
+  resolvePersonalAuthTarget(
+    id: string,
+    input?: ManagedAgentPersonalConnectionInput
+  ): ManagedAgentPersonalAuthTarget & {
+    apiId: number;
+    apiHash: string;
+    phone: string;
+  } {
+    const definition = this.readDefinition(id);
+    if (definition.mode !== "personal") {
+      throw new Error("Telegram personal auth is only available for personal-mode agents");
+    }
+    if (!definition.security.personalAccountAccessConfirmedAt) {
+      throw new Error(
+        "Personal-mode managed agents require explicit private-account access consent"
+      );
+    }
+
+    const config = loadConfig(definition.configPath);
+    const overrides = normalizePersonalConnection(input);
+    this.applyPersonalConnectionToConfig(config, overrides);
+    this.validatePersonalConnectionConfig(config);
+    saveConfig(config, definition.configPath);
+
+    return {
+      configPath: definition.configPath,
+      sessionPath: config.telegram.session_path,
+      apiId: config.telegram.api_id,
+      apiHash: config.telegram.api_hash,
+      phone: config.telegram.phone,
+    };
+  }
+
+  recordPersonalAuth(id: string): ManagedAgentSnapshot {
+    const definition = this.readDefinition(id);
+    if (definition.mode !== "personal") {
+      throw new Error("Telegram personal auth is only available for personal-mode agents");
+    }
+
+    const nextDefinition: ManagedAgentDefinition = {
+      ...definition,
+      updatedAt: nowIso(),
+    };
+    this.writeDefinition(nextDefinition);
+    return this.toSnapshot(nextDefinition);
+  }
+
   private listDefinitions(): ManagedAgentDefinition[] {
     if (!existsSync(this.agentsRoot)) return [];
 
@@ -698,6 +789,10 @@ export class ManagedAgentService {
       ownerId: config.telegram.owner_id ?? null,
       adminIds: config.telegram.admin_ids ?? [],
       hasBotToken: Boolean(this.resolveBotToken(definition, config)),
+      hasPersonalCredentials:
+        definition.mode === "personal" ? this.hasPersonalCredentials(config) : false,
+      hasPersonalSession: definition.mode === "personal" ? this.hasPersonalSession(config) : false,
+      personalPhoneMasked: definition.mode === "personal" ? maskPhone(config.telegram.phone) : null,
     };
   }
 
@@ -720,6 +815,7 @@ export class ManagedAgentService {
     options: {
       mode: ManagedAgentMode;
       botUsername?: string | null;
+      personalConnection?: ManagedAgentPersonalConnectionInput;
       resources: ManagedAgentResourcePolicy;
     }
   ): Config {
@@ -732,6 +828,8 @@ export class ManagedAgentService {
       next.telegram.bot_token = undefined;
       next.telegram.bot_username = options.botUsername ?? undefined;
       next.deals.enabled = false;
+    } else {
+      this.applyPersonalConnectionToConfig(next, options.personalConnection);
     }
     next.webui.enabled = false;
     if (next.api) {
@@ -787,6 +885,43 @@ export class ManagedAgentService {
       0.1,
       resources.rateLimitPerMinute / 60
     );
+  }
+
+  private applyPersonalConnectionToConfig(
+    config: Config,
+    input?: ManagedAgentPersonalConnectionInput
+  ): void {
+    if (!input) return;
+    if (input.apiId !== undefined) {
+      config.telegram.api_id = input.apiId;
+    }
+    if (input.apiHash !== undefined) {
+      config.telegram.api_hash = input.apiHash;
+    }
+    if (input.phone !== undefined) {
+      config.telegram.phone = input.phone;
+    }
+  }
+
+  private validatePersonalConnectionConfig(config: Config): void {
+    if (!this.hasPersonalCredentials(config)) {
+      throw new Error(
+        "Personal-mode managed agents require phone, api_id, and api_hash credentials"
+      );
+    }
+  }
+
+  private hasPersonalCredentials(config: Config): boolean {
+    return Boolean(
+      Number.isFinite(config.telegram.api_id) &&
+      config.telegram.api_id > 0 &&
+      config.telegram.api_hash?.trim() &&
+      config.telegram.phone?.trim()
+    );
+  }
+
+  private hasPersonalSession(config: Config): boolean {
+    return existsSync(config.telegram.session_path);
   }
 
   private buildNodeOptions(resources: ManagedAgentResourcePolicy): string {

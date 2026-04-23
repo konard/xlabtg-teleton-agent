@@ -22,6 +22,18 @@ const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CODE_ATTEMPTS = 5;
 const MAX_PASSWORD_ATTEMPTS = 3;
 
+export interface TelegramAuthSaveTarget {
+  rootDir?: string;
+  configPath?: string;
+  sessionPath?: string;
+}
+
+interface AuthenticatedUser {
+  id: number;
+  firstName: string;
+  username?: string;
+}
+
 interface AuthSessionBase {
   id: string;
   client: TelegramClient;
@@ -32,6 +44,7 @@ interface AuthSessionBase {
   apiId: number;
   apiHash: string;
   timer: ReturnType<typeof setTimeout>;
+  saveTarget?: TelegramAuthSaveTarget;
 }
 
 interface PhoneAuthSession extends AuthSessionBase {
@@ -58,7 +71,8 @@ export class TelegramAuthManager {
   async sendCode(
     apiId: number,
     apiHash: string,
-    phone: string
+    phone: string,
+    saveTarget?: TelegramAuthSaveTarget
   ): Promise<{
     authSessionId: string;
     codeDelivery: "app" | "sms" | "fragment";
@@ -130,6 +144,7 @@ export class TelegramAuthManager {
       createdAt: Date.now(),
       apiId,
       apiHash,
+      saveTarget,
       timer: setTimeout(() => void this.cleanup(), SESSION_TTL_MS),
     };
 
@@ -169,7 +184,7 @@ export class TelegramAuthManager {
       // Success - save session
       session.state = "authenticated";
       const user = this.extractUser(result);
-      await this.saveSession(session);
+      await this.saveSession(session, user);
       log.info("Telegram authentication successful");
       return { status: "authenticated", user };
     } catch (err: unknown) {
@@ -229,7 +244,7 @@ export class TelegramAuthManager {
 
       session.state = "authenticated";
       const user = this.extractUser(result);
-      await this.saveSession(session);
+      await this.saveSession(session, user);
       log.info("Telegram 2FA authentication successful");
       return { status: "authenticated", user };
     } catch (err: unknown) {
@@ -296,7 +311,8 @@ export class TelegramAuthManager {
    */
   async startQrSession(
     apiId: number,
-    apiHash: string
+    apiHash: string,
+    saveTarget?: TelegramAuthSaveTarget
   ): Promise<{
     authSessionId: string;
     token: string;
@@ -339,6 +355,7 @@ export class TelegramAuthManager {
       createdAt: Date.now(),
       apiId,
       apiHash,
+      saveTarget,
       timer: setTimeout(() => void this.cleanup(), SESSION_TTL_MS),
     };
 
@@ -381,7 +398,7 @@ export class TelegramAuthManager {
       if (result instanceof Api.auth.LoginTokenSuccess) {
         session.state = "authenticated";
         const user = this.extractUser(result.authorization);
-        await this.saveSession(session);
+        await this.saveSession(session, user);
         log.info("QR code authentication successful");
         return { status: "authenticated", user };
       }
@@ -397,7 +414,7 @@ export class TelegramAuthManager {
         if (imported instanceof Api.auth.LoginTokenSuccess) {
           session.state = "authenticated";
           const user = this.extractUser(imported.authorization);
-          await this.saveSession(session);
+          await this.saveSession(session, user);
           log.info("QR code authentication successful (after DC migration)");
           return { status: "authenticated", user };
         }
@@ -469,9 +486,7 @@ export class TelegramAuthManager {
     return this.session;
   }
 
-  private extractUser(
-    result: Api.auth.TypeAuthorization
-  ): { id: number; firstName: string; username?: string } | undefined {
+  private extractUser(result: Api.auth.TypeAuthorization): AuthenticatedUser | undefined {
     if (result instanceof Api.auth.Authorization && result.user instanceof Api.User) {
       return {
         id: Number(result.user.id),
@@ -482,9 +497,10 @@ export class TelegramAuthManager {
     return undefined;
   }
 
-  private async saveSession(session: AuthSession): Promise<void> {
+  private async saveSession(session: AuthSession, user?: AuthenticatedUser): Promise<void> {
     const sessionString = session.client.session.save() as unknown as string;
-    const sessionPath = join(TELETON_ROOT, "telegram_session.txt");
+    const rootDir = session.saveTarget?.rootDir ?? TELETON_ROOT;
+    const sessionPath = session.saveTarget?.sessionPath ?? join(rootDir, "telegram_session.txt");
 
     const dir = dirname(sessionPath);
     if (!existsSync(dir)) {
@@ -494,13 +510,21 @@ export class TelegramAuthManager {
     writeFileSync(sessionPath, sessionString, { mode: 0o600 });
 
     // Persist telegram credentials to config.yaml
-    const configPath = join(TELETON_ROOT, "config.yaml");
+    const configPath = session.saveTarget?.configPath ?? join(rootDir, "config.yaml");
     const raw = readRawConfig(configPath);
     raw.telegram = raw.telegram ?? {};
     raw.telegram.api_id = session.apiId;
     raw.telegram.api_hash = session.apiHash;
+    raw.telegram.session_path = sessionPath;
     if (session.type === "phone") {
       raw.telegram.phone = session.phone;
+    }
+    if (user) {
+      raw.telegram.owner_id = raw.telegram.owner_id ?? user.id;
+      raw.telegram.owner_name = raw.telegram.owner_name ?? user.firstName;
+      raw.telegram.owner_username = raw.telegram.owner_username ?? user.username;
+      const adminIds = Array.isArray(raw.telegram.admin_ids) ? raw.telegram.admin_ids : [];
+      raw.telegram.admin_ids = [...new Set([...adminIds, user.id])];
     }
     writeRawConfig(raw, configPath);
 

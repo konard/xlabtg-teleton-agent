@@ -29,6 +29,17 @@ export interface ManagedAgentConnectionSettings {
   botUsername: string | null;
 }
 
+export interface ManagedAgentPersonalConnectionInput {
+  apiId?: number;
+  apiHash?: string;
+  phone?: string;
+}
+
+export interface ManagedAgentPersonalAuthTarget {
+  configPath: string;
+  sessionPath: string;
+}
+
 export interface ManagedAgentMessage {
   id: string;
   fromId: string;
@@ -77,6 +88,9 @@ export interface ManagedAgentSnapshot extends ManagedAgentDefinition, ManagedAge
   ownerId: number | null;
   adminIds: number[];
   hasBotToken: boolean;
+  hasPersonalCredentials: boolean;
+  hasPersonalSession: boolean;
+  personalPhoneMasked: string | null;
 }
 
 export interface CreateManagedAgentInput {
@@ -86,6 +100,7 @@ export interface CreateManagedAgentInput {
   mode?: ManagedAgentMode;
   botToken?: string;
   botUsername?: string;
+  personalConnection?: ManagedAgentPersonalConnectionInput;
   memoryPolicy?: ManagedAgentMemoryPolicy;
   resources?: Partial<ManagedAgentResourcePolicy>;
   messaging?: Partial<ManagedAgentMessagingPolicy>;
@@ -96,6 +111,7 @@ export interface UpdateManagedAgentInput {
   name?: string;
   botToken?: string | null;
   botUsername?: string | null;
+  personalConnection?: ManagedAgentPersonalConnectionInput;
   memoryPolicy?: ManagedAgentMemoryPolicy;
   resources?: Partial<ManagedAgentResourcePolicy>;
   messaging?: Partial<ManagedAgentMessagingPolicy>;

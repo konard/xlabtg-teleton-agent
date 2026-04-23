@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import {
   api,
   type AgentLogs,
@@ -16,6 +23,9 @@ interface AgentFormState {
   mode: AgentOverview["mode"];
   botToken: string;
   botUsername: string;
+  personalApiId: string;
+  personalApiHash: string;
+  personalPhone: string;
   memoryPolicy: ManagedAgentMemoryPolicy;
   acknowledgePersonalAccountAccess: boolean;
   maxMemoryMb: string;
@@ -36,6 +46,9 @@ const DEFAULT_FORM: AgentFormState = {
   mode: "personal",
   botToken: "",
   botUsername: "",
+  personalApiId: "",
+  personalApiHash: "",
+  personalPhone: "",
   memoryPolicy: "isolated",
   acknowledgePersonalAccountAccess: false,
   maxMemoryMb: "512",
@@ -73,6 +86,9 @@ function formFromAgent(agent: AgentOverview): AgentFormState {
     mode: agent.mode,
     botToken: "",
     botUsername: agent.connection.botUsername ?? "",
+    personalApiId: "",
+    personalApiHash: "",
+    personalPhone: "",
     memoryPolicy: agent.memoryPolicy,
     acknowledgePersonalAccountAccess: Boolean(agent.security.personalAccountAccessConfirmedAt),
     maxMemoryMb: String(agent.resources.maxMemoryMb),
@@ -93,6 +109,18 @@ function numberOrUndefined(value: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
+function personalConnectionOrUndefined(form: AgentFormState) {
+  if (form.mode !== "personal") return undefined;
+  const hasInput =
+    form.personalApiId.trim() || form.personalApiHash.trim() || form.personalPhone.trim();
+  if (!hasInput) return undefined;
+  return {
+    apiId: numberOrUndefined(form.personalApiId),
+    apiHash: form.personalApiHash.trim() || undefined,
+    phone: form.personalPhone.trim() || undefined,
+  };
+}
+
 function toCreatePayload(form: AgentFormState): CreateAgentInput {
   return {
     name: form.name.trim(),
@@ -100,8 +128,10 @@ function toCreatePayload(form: AgentFormState): CreateAgentInput {
     mode: form.mode,
     botToken: form.botToken.trim() || undefined,
     botUsername: form.botUsername.trim() || undefined,
+    personalConnection: personalConnectionOrUndefined(form),
     memoryPolicy: form.memoryPolicy,
-    acknowledgePersonalAccountAccess: form.mode === "personal" ? form.acknowledgePersonalAccountAccess : undefined,
+    acknowledgePersonalAccountAccess:
+      form.mode === "personal" ? form.acknowledgePersonalAccountAccess : undefined,
     resources: {
       maxMemoryMb: numberOrUndefined(form.maxMemoryMb),
       maxConcurrentTasks: numberOrUndefined(form.maxConcurrentTasks),
@@ -127,8 +157,10 @@ function toUpdatePayload(form: AgentFormState): UpdateAgentInput {
     name: form.name.trim() || undefined,
     botToken: form.botToken.trim() || undefined,
     botUsername: form.botUsername.trim() || null,
+    personalConnection: personalConnectionOrUndefined(form),
     memoryPolicy: form.memoryPolicy,
-    acknowledgePersonalAccountAccess: form.mode === "personal" ? form.acknowledgePersonalAccountAccess : undefined,
+    acknowledgePersonalAccountAccess:
+      form.mode === "personal" ? form.acknowledgePersonalAccountAccess : undefined,
     resources: {
       maxMemoryMb: numberOrUndefined(form.maxMemoryMb),
       maxConcurrentTasks: numberOrUndefined(form.maxConcurrentTasks),
@@ -268,21 +300,59 @@ function FormFields({
       )}
 
       {form.mode === "personal" && (
-        <label style={{ display: "flex", gap: "10px", alignItems: "flex-start", fontSize: "13px" }}>
-          <input
-            type="checkbox"
-            checked={form.acknowledgePersonalAccountAccess}
-            onChange={(e) =>
-              setForm((current) => ({
-                ...current,
-                acknowledgePersonalAccountAccess: e.target.checked,
-              }))
-            }
-          />
-          <span>
-            I understand this personal-mode agent can access the cloned private-account session and chat scope.
-          </span>
-        </label>
+        <div style={{ display: "grid", gap: "12px" }}>
+          <div
+            style={{
+              display: "grid",
+              gap: "12px",
+              gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            }}
+          >
+            <input
+              type="number"
+              min="1"
+              placeholder="Telegram API ID"
+              value={form.personalApiId}
+              onChange={(e) =>
+                setForm((current) => ({ ...current, personalApiId: e.target.value }))
+              }
+            />
+            <input
+              type="password"
+              placeholder="Telegram API hash"
+              value={form.personalApiHash}
+              onChange={(e) =>
+                setForm((current) => ({ ...current, personalApiHash: e.target.value }))
+              }
+            />
+            <input
+              type="tel"
+              placeholder="Phone number"
+              value={form.personalPhone}
+              onChange={(e) =>
+                setForm((current) => ({ ...current, personalPhone: e.target.value }))
+              }
+            />
+          </div>
+          <label
+            style={{ display: "flex", gap: "10px", alignItems: "flex-start", fontSize: "13px" }}
+          >
+            <input
+              type="checkbox"
+              checked={form.acknowledgePersonalAccountAccess}
+              onChange={(e) =>
+                setForm((current) => ({
+                  ...current,
+                  acknowledgePersonalAccountAccess: e.target.checked,
+                }))
+              }
+            />
+            <span>
+              I understand this personal-mode agent can access the authenticated private-account
+              chat scope.
+            </span>
+          </label>
+        </div>
       )}
 
       <div
@@ -340,7 +410,9 @@ function FormFields({
           <input
             type="checkbox"
             checked={form.restartOnCrash}
-            onChange={(e) => setForm((current) => ({ ...current, restartOnCrash: e.target.checked }))}
+            onChange={(e) =>
+              setForm((current) => ({ ...current, restartOnCrash: e.target.checked }))
+            }
           />
           <span>Restart on crash</span>
         </label>
@@ -356,9 +428,7 @@ function FormFields({
           min="0"
           placeholder="Restart backoff ms"
           value={form.restartBackoffMs}
-          onChange={(e) =>
-            setForm((current) => ({ ...current, restartBackoffMs: e.target.value }))
-          }
+          onChange={(e) => setForm((current) => ({ ...current, restartBackoffMs: e.target.value }))}
         />
       </div>
 
@@ -373,7 +443,9 @@ function FormFields({
           <input
             type="checkbox"
             checked={form.messagingEnabled}
-            onChange={(e) => setForm((current) => ({ ...current, messagingEnabled: e.target.checked }))}
+            onChange={(e) =>
+              setForm((current) => ({ ...current, messagingEnabled: e.target.checked }))
+            }
           />
           <span>Enable inter-agent inbox</span>
         </label>
@@ -397,6 +469,276 @@ function FormFields({
       <button onClick={() => void onSubmit()} disabled={submitting}>
         {submitting ? "Working..." : submitLabel}
       </button>
+    </section>
+  );
+}
+
+function PersonalAuthPanel({
+  agent,
+  onAuthenticated,
+}: {
+  agent: AgentOverview;
+  onAuthenticated: () => Promise<void> | void;
+}) {
+  const [apiId, setApiId] = useState("");
+  const [apiHash, setApiHash] = useState("");
+  const [phone, setPhone] = useState("");
+  const [authSessionId, setAuthSessionId] = useState<string | null>(null);
+  const [code, setCode] = useState("");
+  const [password, setPassword] = useState("");
+  const [passwordRequired, setPasswordRequired] = useState(false);
+  const [passwordHint, setPasswordHint] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    setApiId("");
+    setApiHash("");
+    setPhone("");
+    setAuthSessionId(null);
+    setCode("");
+    setPassword("");
+    setPasswordRequired(false);
+    setPasswordHint(null);
+    setMessage(null);
+  }, [agent.id]);
+
+  const handleSendCode = useCallback(async () => {
+    setBusy(true);
+    try {
+      const response = await api.sendManagedPersonalCode(agent.id, {
+        apiId: numberOrUndefined(apiId),
+        apiHash: apiHash.trim() || undefined,
+        phone: phone.trim() || undefined,
+      });
+      const result = response.data;
+      setAuthSessionId(result.authSessionId);
+      setPasswordRequired(false);
+      setPasswordHint(null);
+      setMessage(
+        result.codeDelivery === "fragment" && result.fragmentUrl
+          ? `Code sent via Fragment: ${result.fragmentUrl}`
+          : `Code sent via ${result.codeDelivery}${result.codeLength ? ` (${result.codeLength} digits)` : ""}`
+      );
+      toast.success("Telegram code sent");
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setMessage(text);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [agent.id, apiHash, apiId, phone]);
+
+  const handleVerifyCode = useCallback(async () => {
+    if (!authSessionId) return;
+    setBusy(true);
+    try {
+      const response = await api.verifyManagedPersonalCode(agent.id, authSessionId, code.trim());
+      const result = response.data;
+      if (result.status === "authenticated") {
+        setMessage(result.user ? `Authenticated as ${result.user.firstName}` : "Authenticated");
+        setAuthSessionId(null);
+        setCode("");
+        setPassword("");
+        setPasswordRequired(false);
+        toast.success("Personal Telegram session verified");
+        await onAuthenticated();
+      } else if (result.status === "2fa_required") {
+        setPasswordRequired(true);
+        setPasswordHint(result.passwordHint ?? null);
+        setMessage("Two-factor password required");
+      } else {
+        setMessage(result.status.replace(/_/g, " "));
+      }
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setMessage(text);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [agent.id, authSessionId, code, onAuthenticated]);
+
+  const handleVerifyPassword = useCallback(async () => {
+    if (!authSessionId) return;
+    setBusy(true);
+    try {
+      const response = await api.verifyManagedPersonalPassword(agent.id, authSessionId, password);
+      const result = response.data;
+      if (result.status === "authenticated") {
+        setMessage(result.user ? `Authenticated as ${result.user.firstName}` : "Authenticated");
+        setAuthSessionId(null);
+        setCode("");
+        setPassword("");
+        setPasswordRequired(false);
+        toast.success("Personal Telegram session verified");
+        await onAuthenticated();
+      } else {
+        setMessage(result.status.replace(/_/g, " "));
+      }
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setMessage(text);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [agent.id, authSessionId, onAuthenticated, password]);
+
+  const handleResend = useCallback(async () => {
+    if (!authSessionId) return;
+    setBusy(true);
+    try {
+      const response = await api.resendManagedPersonalCode(agent.id, authSessionId);
+      const result = response.data;
+      setMessage(
+        result.codeDelivery === "fragment" && result.fragmentUrl
+          ? `Code resent via Fragment: ${result.fragmentUrl}`
+          : `Code resent via ${result.codeDelivery}${result.codeLength ? ` (${result.codeLength} digits)` : ""}`
+      );
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setMessage(text);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [agent.id, authSessionId]);
+
+  const handleCancel = useCallback(async () => {
+    if (!authSessionId) return;
+    setBusy(true);
+    try {
+      await api.cancelManagedPersonalAuth(agent.id, authSessionId);
+      setAuthSessionId(null);
+      setCode("");
+      setPassword("");
+      setPasswordRequired(false);
+      setMessage("Authentication session cancelled");
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setMessage(text);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [agent.id, authSessionId]);
+
+  return (
+    <section
+      style={{
+        display: "grid",
+        gap: "12px",
+        padding: "16px",
+        borderRadius: "16px",
+        border: "1px solid var(--separator)",
+        background: "var(--surface)",
+      }}
+    >
+      <div>
+        <div style={{ fontSize: "15px", fontWeight: 600 }}>Personal Telegram auth</div>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+          Session: {agent.hasPersonalSession ? "verified" : "missing"} · Credentials:{" "}
+          {agent.hasPersonalCredentials ? "configured" : "missing"}
+          {agent.personalPhoneMasked ? ` · ${agent.personalPhoneMasked}` : ""}
+        </div>
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+        }}
+      >
+        <input
+          type="number"
+          min="1"
+          placeholder={agent.hasPersonalCredentials ? "API ID (saved)" : "Telegram API ID"}
+          value={apiId}
+          onChange={(e) => setApiId(e.target.value)}
+        />
+        <input
+          type="password"
+          placeholder={agent.hasPersonalCredentials ? "API hash (saved)" : "Telegram API hash"}
+          value={apiHash}
+          onChange={(e) => setApiHash(e.target.value)}
+        />
+        <input
+          type="tel"
+          placeholder={agent.personalPhoneMasked ?? "Phone number"}
+          value={phone}
+          onChange={(e) => setPhone(e.target.value)}
+        />
+        <button
+          type="button"
+          onClick={() => void handleSendCode()}
+          disabled={
+            busy ||
+            (!agent.hasPersonalCredentials && (!apiId.trim() || !apiHash.trim() || !phone.trim()))
+          }
+        >
+          {busy ? "Working..." : "Send code"}
+        </button>
+      </div>
+
+      {authSessionId && (
+        <div
+          style={{
+            display: "grid",
+            gap: "12px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          }}
+        >
+          <input
+            type="text"
+            inputMode="numeric"
+            placeholder="Verification code"
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => void handleVerifyCode()}
+            disabled={busy || !code.trim()}
+          >
+            Verify code
+          </button>
+          <button type="button" onClick={() => void handleResend()} disabled={busy}>
+            Resend
+          </button>
+          <button type="button" onClick={() => void handleCancel()} disabled={busy}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {authSessionId && passwordRequired && (
+        <div
+          style={{
+            display: "grid",
+            gap: "12px",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          }}
+        >
+          <input
+            type="password"
+            placeholder={passwordHint ? `2FA password, hint: ${passwordHint}` : "2FA password"}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={() => void handleVerifyPassword()}
+            disabled={busy || !password}
+          >
+            Verify password
+          </button>
+        </div>
+      )}
+
+      {message && <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{message}</div>}
     </section>
   );
 }
@@ -501,11 +843,15 @@ export function Agents() {
 
     setCreating(true);
     try {
-      await api.createAgent(toCreatePayload(createForm));
+      const response = await api.createAgent(toCreatePayload(createForm));
       setCreateForm(DEFAULT_FORM);
       setCreateBotValidation(null);
       toast.success("Managed agent created");
       await loadAgents();
+      if (response.data.mode === "personal" && !response.data.hasPersonalSession) {
+        setEditingAgentId(response.data.id);
+        setEditForm(formFromAgent(response.data));
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : String(err));
     } finally {
@@ -594,7 +940,8 @@ export function Agents() {
 
   const handleDelete = useCallback(
     async (agent: AgentOverview) => {
-      if (!window.confirm(`Delete ${agent.name}? This removes its isolated home directory.`)) return;
+      if (!window.confirm(`Delete ${agent.name}? This removes its isolated home directory.`))
+        return;
 
       setBusyAgentId(agent.id);
       try {
@@ -668,7 +1015,9 @@ export function Agents() {
     <div style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
       <div className="header" style={{ marginBottom: 0 }}>
         <h1>Agents</h1>
-        <p>Run isolated Telegram runtimes with explicit mode, policy, restart, and inbox controls.</p>
+        <p>
+          Run isolated Telegram runtimes with explicit mode, policy, restart, and inbox controls.
+        </p>
       </div>
 
       {error && (
@@ -680,7 +1029,9 @@ export function Agents() {
       <section style={{ display: "grid", gap: "8px" }}>
         <div style={{ fontSize: "15px", fontWeight: 600 }}>Create managed agent</div>
         <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
-          Personal-mode agents require explicit consent for cloned private-account access. Bot-mode agents require a bot token and start with polling transport.
+          Personal-mode agents require phone/API credentials, explicit consent, and per-agent
+          Telegram verification. Bot-mode agents require a bot token and start with polling
+          transport.
         </div>
         <FormFields
           form={createForm}
@@ -714,6 +1065,9 @@ export function Agents() {
             onSubmit={handleSaveEdit}
             showCloneSource={false}
           />
+          {editableAgent.mode === "personal" && (
+            <PersonalAuthPanel agent={editableAgent} onAuthenticated={loadAgents} />
+          )}
         </section>
       )}
 
@@ -739,9 +1093,22 @@ export function Agents() {
                 background: "linear-gradient(180deg, var(--surface-hover), var(--surface))",
               }}
             >
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+              <div
+                style={{
+                  display: "flex",
+                  alignItems: "flex-start",
+                  justifyContent: "space-between",
+                }}
+              >
                 <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "6px" }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: "8px",
+                      marginBottom: "6px",
+                    }}
+                  >
                     <span
                       style={{
                         width: "9px",
@@ -751,18 +1118,38 @@ export function Agents() {
                         display: "inline-block",
                       }}
                     />
-                    <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                        textTransform: "uppercase",
+                      }}
+                    >
                       {agent.kind}
                     </span>
-                    <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                        textTransform: "uppercase",
+                      }}
+                    >
                       {agent.mode}
                     </span>
-                    <span style={{ fontSize: "12px", color: "var(--text-secondary)", textTransform: "uppercase" }}>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: "var(--text-secondary)",
+                        textTransform: "uppercase",
+                      }}
+                    >
                       {agent.transport}
                     </span>
                   </div>
                   <div style={{ fontSize: "17px", fontWeight: 600 }}>{agent.name}</div>
-                  <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}>
+                  <div
+                    style={{ fontSize: "12px", color: "var(--text-secondary)", marginTop: "4px" }}
+                  >
                     {agent.provider} / {agent.model}
                   </div>
                 </div>
@@ -830,24 +1217,43 @@ export function Agents() {
                 <div>Home: {agent.homePath}</div>
                 <div>Config: {agent.configPath}</div>
                 <div>
-                  Runtime: {agent.resources.maxConcurrentTasks} tasks, {agent.resources.rateLimitPerMinute} req/min,{" "}
+                  Runtime: {agent.resources.maxConcurrentTasks} tasks,{" "}
+                  {agent.resources.rateLimitPerMinute} req/min,{" "}
                   {agent.resources.llmRateLimitPerMinute} LLM/min, {agent.resources.maxMemoryMb} MB
                 </div>
                 <div>
-                  Restart: {agent.resources.restartOnCrash ? "on" : "off"} / {agent.resources.maxRestarts} max /{" "}
-                  {agent.resources.restartBackoffMs} ms backoff
+                  Restart: {agent.resources.restartOnCrash ? "on" : "off"} /{" "}
+                  {agent.resources.maxRestarts} max / {agent.resources.restartBackoffMs} ms backoff
                 </div>
                 <div>
                   Inbox: {agent.messaging.enabled ? "enabled" : "disabled"}
-                  {agent.messaging.allowlist.length > 0 ? ` · allowlist ${agent.messaging.allowlist.join(", ")}` : " · open"}
+                  {agent.messaging.allowlist.length > 0
+                    ? ` · allowlist ${agent.messaging.allowlist.join(", ")}`
+                    : " · open"}
                 </div>
                 {agent.mode === "personal" && (
                   <div>
-                    Personal consent: {agent.security.personalAccountAccessConfirmedAt ? formatDate(agent.security.personalAccountAccessConfirmedAt) : "missing"}
+                    Personal consent:{" "}
+                    {agent.security.personalAccountAccessConfirmedAt
+                      ? formatDate(agent.security.personalAccountAccessConfirmedAt)
+                      : "missing"}
                   </div>
                 )}
-                {agent.canStartReason && <div style={{ color: "var(--red)" }}>Start blocked: {agent.canStartReason}</div>}
-                {agent.lastError && <div style={{ color: "var(--red)" }}>Last error: {agent.lastError}</div>}
+                {agent.mode === "personal" && (
+                  <div>
+                    Personal auth: {agent.hasPersonalSession ? "verified" : "missing session"} ·{" "}
+                    {agent.hasPersonalCredentials
+                      ? "credentials configured"
+                      : "credentials missing"}
+                    {agent.personalPhoneMasked ? ` · ${agent.personalPhoneMasked}` : ""}
+                  </div>
+                )}
+                {agent.canStartReason && (
+                  <div style={{ color: "var(--red)" }}>Start blocked: {agent.canStartReason}</div>
+                )}
+                {agent.lastError && (
+                  <div style={{ color: "var(--red)" }}>Last error: {agent.lastError}</div>
+                )}
               </div>
 
               <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
@@ -874,7 +1280,11 @@ export function Agents() {
                   Clone
                 </button>
                 {agent.canDelete && (
-                  <button onClick={() => void handleDelete(agent)} disabled={busy} className="btn-danger">
+                  <button
+                    onClick={() => void handleDelete(agent)}
+                    disabled={busy}
+                    className="btn-danger"
+                  >
                     Delete
                   </button>
                 )}
@@ -947,12 +1357,17 @@ export function Agents() {
         >
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div>
-              <div style={{ fontSize: "15px", fontWeight: 600 }}>{selectedMessagesAgent.name} inbox</div>
+              <div style={{ fontSize: "15px", fontWeight: 600 }}>
+                {selectedMessagesAgent.name} inbox
+              </div>
               <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                 File-backed backend primitive with allowlist and rate-limit enforcement.
               </div>
             </div>
-            <button onClick={() => void refreshMessages(selectedMessagesAgent.id)} disabled={loadingMessages}>
+            <button
+              onClick={() => void refreshMessages(selectedMessagesAgent.id)}
+              disabled={loadingMessages}
+            >
               {loadingMessages ? "Refreshing..." : "Refresh"}
             </button>
           </div>
@@ -989,7 +1404,9 @@ export function Agents() {
             }}
           >
             {messages.length === 0 && (
-              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>No inbox messages yet.</div>
+              <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+                No inbox messages yet.
+              </div>
             )}
             {messages.map((message) => (
               <div
@@ -1001,7 +1418,9 @@ export function Agents() {
                   background: "var(--surface-hover)",
                 }}
               >
-                <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>
+                <div
+                  style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}
+                >
                   {message.fromId} → {message.toId} · {formatDate(message.createdAt)}
                 </div>
                 <div style={{ whiteSpace: "pre-wrap", fontSize: "13px" }}>{message.text}</div>
