@@ -20,7 +20,8 @@ const SECRET_PATTERN = /(sk-|gsk_|Bearer )\S+/g;
 const MAX_ERROR_BODY_LENGTH = 200;
 
 function sanitizeErrorBody(body: string): string {
-  const truncated = body.length > MAX_ERROR_BODY_LENGTH ? body.slice(0, MAX_ERROR_BODY_LENGTH) + "…" : body;
+  const truncated =
+    body.length > MAX_ERROR_BODY_LENGTH ? body.slice(0, MAX_ERROR_BODY_LENGTH) + "…" : body;
   return truncated.replace(SECRET_PATTERN, "[REDACTED]");
 }
 
@@ -141,7 +142,9 @@ export async function groqListModels(apiKey: string): Promise<GroqModelListEntry
   if (!response.ok) {
     const errorType = parseGroqErrorType(response.status);
     const rawBody = await response.text().catch(() => "");
-    throw new Error(`Groq models list error (${response.status} ${errorType}): ${sanitizeErrorBody(rawBody)}`);
+    throw new Error(
+      `Groq models list error (${response.status} ${errorType}): ${sanitizeErrorBody(rawBody)}`
+    );
   }
 
   const result = (await response.json()) as { data: GroqModelListEntry[] };

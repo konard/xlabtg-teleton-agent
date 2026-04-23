@@ -121,7 +121,9 @@ describe("groqComplete — secret redaction in errors", () => {
 
     await expect(
       groqComplete({ apiKey: "gsk_key", messages: [{ role: "user", content: "hi" }] })
-    ).rejects.toThrow(expect.objectContaining({ message: expect.not.stringContaining("sk-leaked-secret-key") }));
+    ).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining("sk-leaked-secret-key") })
+    );
   });
 
   it("throws an error with [REDACTED] when upstream body contains Bearer token", async () => {

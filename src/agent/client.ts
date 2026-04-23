@@ -310,8 +310,7 @@ export async function chatWithContext(
     provider === "claude-code" &&
     response.stopReason === "error" &&
     response.errorMessage &&
-    (/\b401\b/.test(response.errorMessage) ||
-      /\bunauthorized\b/i.test(response.errorMessage))
+    (/\b401\b/.test(response.errorMessage) || /\bunauthorized\b/i.test(response.errorMessage))
   ) {
     log.warn("Claude Code token rejected (401), refreshing credentials and retrying...");
     const refreshedKey = await refreshClaudeCodeApiKey();
