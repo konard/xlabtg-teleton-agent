@@ -228,6 +228,50 @@ describe("executeScheduledTask()", () => {
     expect(prompt).not.toContain("PARENT TASK");
   });
 
+  // ── Invalid JSON payload ─────────────────────────────────────────────────
+
+  it("returns failed message for invalid JSON payload without throwing", async () => {
+    const task = makeTask({ payload: "not valid json {{" });
+
+    const prompt = await executeScheduledTask(
+      task,
+      makeAgent(),
+      makeToolContext(),
+      makeToolRegistry()
+    );
+
+    expect(prompt).toContain("FAILED");
+    expect(prompt).toContain("invalid JSON payload");
+  });
+
+  it("continues executing other tasks when one has invalid JSON payload", async () => {
+    // Executor returns a failure string, not an exception — caller loop continues
+    const badTask = makeTask({ id: "bad-task", payload: "{broken" });
+    const goodTask = makeTask({
+      id: "good-task",
+      payload: JSON.stringify({ type: "agent_task", instructions: "do something" }),
+    });
+
+    const badPromise = executeScheduledTask(
+      badTask,
+      makeAgent(),
+      makeToolContext(),
+      makeToolRegistry()
+    );
+    const goodPromise = executeScheduledTask(
+      goodTask,
+      makeAgent(),
+      makeToolContext(),
+      makeToolRegistry()
+    );
+
+    const [badResult, goodResult] = await Promise.all([badPromise, goodPromise]);
+
+    expect(badResult).toContain("FAILED");
+    expect(goodResult).toContain("INSTRUCTIONS:");
+    expect(goodResult).toContain("do something");
+  });
+
   // ── Unknown payload type ─────────────────────────────────────────────────
 
   it("falls back to reminder prompt for unknown payload type", async () => {

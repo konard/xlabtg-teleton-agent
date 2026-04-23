@@ -12,12 +12,35 @@ export function sanitizeForPrompt(text: string): string {
     .replace(/[\u{E0000}-\u{E007F}]/gu, "") // Unicode Tag Block (invisible instruction injection)
     .replace(/[\u{E0100}-\u{E01EF}]/gu, "") // extended variation selectors
     .replace(/[\u202A-\u202E\u2066-\u2069]/g, "") // directional overrides
-    .replace(/[\r\n\u2028\u2029]+/g, " ") // all line breaks → space (including Unicode LS/PS)
+    .replace(/[\r\n\u2028\u2029]+/g, " ") // all line breaks to space (including Unicode LS/PS)
     .replace(/#{1,6}\s/g, "") // markdown headers
     .replace(/<\/?[a-zA-Z_][^>]*>/g, "") // XML/HTML tags
-    .replace(/`{3,}/g, "`") // triple+ backticks → single (prevent code block injection)
+    .replace(/`{3,}/g, "`") // triple+ backticks to single (prevent code block injection)
     .trim()
     .slice(0, 128); // hard length cap for names
+}
+
+/**
+ * Sanitize a task description before embedding it in Saved Messages or a prompt.
+ * Like sanitizeForPrompt but also strips bracket role-markers ([SYSTEM], [USER], etc.)
+ * and applies a 500-char cap instead of the 128-char name cap.
+ */
+export function sanitizeTaskDescription(text: string): string {
+  return text
+    .normalize("NFKC") // canonicalize homoglyphs (fullwidth, math variants, ligatures)
+    .replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "") // control chars (keep \n \r \t)
+    .replace(/[\u00AD\u034F\u061C\u180E\u200B-\u200F\u2060-\u2064\uFEFF]/g, "") // zero-width/invisible chars
+    .replace(/[\uFE00-\uFE0F]/g, "") // variation selectors (emoji smuggling)
+    .replace(/[\u{E0000}-\u{E007F}]/gu, "") // Unicode Tag Block (invisible instruction injection)
+    .replace(/[\u{E0100}-\u{E01EF}]/gu, "") // extended variation selectors
+    .replace(/[\u202A-\u202E\u2066-\u2069]/g, "") // directional overrides
+    .replace(/[\r\n\u2028\u2029]+/g, " ") // all line breaks to space (including Unicode LS/PS)
+    .replace(/#{1,6}\s/g, "") // markdown headers
+    .replace(/<\/?[a-zA-Z_][^>]*>/g, "") // XML/HTML tags
+    .replace(/`{3,}/g, "`") // triple+ backticks to single (prevent code block injection)
+    .replace(/\[(?:SYSTEM|USER|ASSISTANT|INST|HUMAN|AI|GPT|PROMPT)\]/gi, "") // bracket role markers
+    .trim()
+    .slice(0, 500); // cap for task descriptions (longer than names, shorter than context)
 }
 
 /**
@@ -34,9 +57,9 @@ export function sanitizeForContext(text: string): string {
     .replace(/[\u{E0000}-\u{E007F}]/gu, "") // Unicode Tag Block (invisible instruction injection)
     .replace(/[\u{E0100}-\u{E01EF}]/gu, "") // extended variation selectors
     .replace(/[\u202A-\u202E\u2066-\u2069]/g, "") // directional overrides
-    .replace(/[\u2028\u2029]/g, "\n") // Unicode line/paragraph separators → standard newline
+    .replace(/[\u2028\u2029]/g, "\n") // Unicode line/paragraph separators to standard newline
     .replace(/<\/?[a-zA-Z_][^>]*>/g, "") // XML/HTML tags
-    .replace(/`{3,}/g, "``") // triple+ backticks → double (prevent code block escape)
+    .replace(/`{3,}/g, "``") // triple+ backticks to double (prevent code block escape)
     .trim()
     .slice(0, 32768); // 32 KB cap to prevent large payload injection
 }
