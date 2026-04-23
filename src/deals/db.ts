@@ -43,6 +43,7 @@ export function openDealsDb(): Database.Database {
       user_payment_wallet TEXT,
       agent_sent_at INTEGER,
       agent_sent_tx_hash TEXT,
+      agent_sent_tx_status TEXT CHECK(agent_sent_tx_status IN ('pending', 'confirmed', 'failed')),
       agent_sent_gift_msgid TEXT,
       strategy_check TEXT,
       profit_ton REAL,
@@ -79,6 +80,14 @@ export function openDealsDb(): Database.Database {
 
     ${JOURNAL_SCHEMA}
   `);
+
+  // Add agent_sent_tx_status column to existing databases (idempotent)
+  const columns = db.pragma("table_info(deals)") as { name: string }[];
+  if (!columns.some((c) => c.name === "agent_sent_tx_status")) {
+    db.exec(
+      `ALTER TABLE deals ADD COLUMN agent_sent_tx_status TEXT CHECK(agent_sent_tx_status IN ('pending', 'confirmed', 'failed'))`
+    );
+  }
 
   // One-time migration from memory.db (existing users)
   migrateFromMainDb(db, ["deals", "user_trade_stats", "used_transactions"]);

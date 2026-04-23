@@ -25,6 +25,7 @@ export interface Deal {
   user_payment_wallet: string | null;
   agent_sent_at: number | null;
   agent_sent_tx_hash: string | null;
+  agent_sent_tx_status: "pending" | "confirmed" | "failed" | null;
   agent_sent_gift_msgid: string | null;
   strategy_check: string | null;
   profit_ton: number | null;
