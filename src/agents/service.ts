@@ -1,5 +1,5 @@
 import { spawn, type ChildProcessByStdio } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from "node:crypto";
 import {
   cpSync,
   createWriteStream,
@@ -18,6 +18,7 @@ import type { Config } from "../config/schema.js";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import { loadTemplate } from "../workspace/manager.js";
 import { getErrorMessage } from "../utils/errors.js";
+import { validateBotTokenFormat } from "../telegram/bot-token.js";
 import type {
   CreateManagedAgentInput,
   ManagedAgentCommand,
@@ -38,6 +39,9 @@ const MANAGED_AGENTS_DIRNAME = "agents";
 const LOG_LINES_FALLBACK = 200;
 const STOP_GRACE_MS = 15_000;
 const MESSAGE_LINES_FALLBACK = 100;
+const STARTUP_READY_TIMEOUT_MS = 120_000;
+const SECRET_KEY_FILENAME = ".secret-key";
+const CREDENTIALS_FILENAME = "credentials.json";
 
 const DEFAULT_RESOURCES: ManagedAgentResourcePolicy = {
   maxMemoryMb: 512,
@@ -80,6 +84,21 @@ interface ManagedAgentProcessRecord {
   lastExitCode: number | null;
   lastExitSignal: string | null;
   messageTimestamps: number[];
+  startupTimer: ReturnType<typeof setTimeout> | null;
+}
+
+interface EncryptedSecret {
+  encrypted: true;
+  algorithm: "aes-256-gcm";
+  iv: string;
+  tag: string;
+  ciphertext: string;
+  updatedAt: string;
+}
+
+interface ManagedAgentCredentials {
+  version: 1;
+  botToken?: EncryptedSecret;
 }
 
 export interface ManagedAgentServiceOptions {
@@ -168,7 +187,9 @@ export class ManagedAgentService {
     const mode: ManagedAgentMode = input.mode ?? sourceDefinition?.mode ?? "personal";
     const sourceConfig = loadConfig(sourceConfigPath);
     const explicitBotToken = input.botToken?.trim();
-    const inheritedBotToken = sourceConfig.telegram.bot_token?.trim();
+    const inheritedBotToken = sourceDefinition
+      ? this.resolveBotToken(sourceDefinition, sourceConfig)
+      : sourceConfig.telegram.bot_token?.trim();
     const botToken = explicitBotToken || inheritedBotToken || undefined;
     const botUsername =
       input.botUsername?.trim() ||
@@ -189,6 +210,12 @@ export class ManagedAgentService {
     if (mode === "bot" && !botToken) {
       throw new Error("Bot-mode managed agents require a bot token");
     }
+    if (mode === "bot" && botToken) {
+      const tokenFormatError = validateBotTokenFormat(botToken);
+      if (tokenFormatError) {
+        throw new Error(`Invalid bot token: ${tokenFormatError}`);
+      }
+    }
     if (mode === "personal" && !personalAccountAccessConfirmedAt) {
       throw new Error(
         "Personal-mode managed agents require explicit private-account access consent"
@@ -203,8 +230,8 @@ export class ManagedAgentService {
 
     const managedConfig = this.prepareManagedConfig(sourceConfig, homePath, {
       mode,
-      botToken,
       botUsername,
+      resources,
     });
     saveConfig(managedConfig, configPath);
 
@@ -232,6 +259,9 @@ export class ManagedAgentService {
     };
 
     this.writeDefinition(definition);
+    if (mode === "bot" && botToken) {
+      this.writeBotToken(definition, botToken);
+    }
     writeFileSync(
       logPath,
       `[${timestamp}] Created ${mode} managed agent "${name}" from ${sourceId ?? "primary"}\n`,
@@ -260,6 +290,8 @@ export class ManagedAgentService {
     const definition = this.readDefinition(id);
     const record = this.ensureProcessRecord(id);
     const config = loadConfig(definition.configPath);
+    const botToken =
+      definition.mode === "bot" ? this.resolveBotToken(definition, config) : undefined;
 
     if (record.state === "starting" || record.state === "running") {
       throw new Error("Agent is already running");
@@ -272,24 +304,41 @@ export class ManagedAgentService {
         `Managed agent "${definition.id}" uses memory policy "${definition.memoryPolicy}", but only "isolated" is startable today`
       );
     }
-    if (definition.mode === "bot" && !config.telegram.bot_token?.trim()) {
+    if (definition.mode === "bot" && !botToken) {
       throw new Error("Bot-mode managed agents require telegram.bot_token before they can start");
+    }
+    if (definition.mode === "bot" && botToken) {
+      const tokenFormatError = validateBotTokenFormat(botToken);
+      if (tokenFormatError) {
+        throw new Error(`Invalid bot token: ${tokenFormatError}`);
+      }
     }
 
     mkdirSync(join(definition.homePath, "logs"), { recursive: true, mode: 0o700 });
     const logStream = createWriteStream(definition.logPath, { flags: "a" });
     const command = this.resolveCommand(definition.configPath);
+    const childEnv: NodeJS.ProcessEnv = {
+      ...process.env,
+      TELETON_HOME: definition.homePath,
+      TELETON_WEBUI_ENABLED: "false",
+      TELETON_API_ENABLED: "false",
+      TELETON_JSON_CREDENTIALS: "false",
+      TELETON_MANAGED_AGENT_MODE: definition.mode,
+      TELETON_AGENT_MAX_CONCURRENT_TASKS: String(definition.resources.maxConcurrentTasks),
+      TELETON_AGENT_RATE_LIMIT_PER_MINUTE: String(definition.resources.rateLimitPerMinute),
+      TELETON_AGENT_LLM_RATE_LIMIT_PER_MINUTE: String(definition.resources.llmRateLimitPerMinute),
+    };
+    const nodeOptions = this.buildNodeOptions(definition.resources);
+    if (nodeOptions) {
+      childEnv.NODE_OPTIONS = nodeOptions;
+    }
+    if (botToken) {
+      childEnv.TELETON_TG_BOT_TOKEN = botToken;
+    }
 
     const child = spawn(command.command, command.args, {
       cwd: definition.homePath,
-      env: {
-        ...process.env,
-        TELETON_HOME: definition.homePath,
-        TELETON_WEBUI_ENABLED: "false",
-        TELETON_API_ENABLED: "false",
-        TELETON_JSON_CREDENTIALS: "false",
-        TELETON_MANAGED_AGENT_MODE: definition.mode,
-      },
+      env: childEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
@@ -305,14 +354,15 @@ export class ManagedAgentService {
 
     this.appendLog(logStream, `\n[${nowIso()}] Starting managed agent "${definition.name}"\n`);
 
-    child.once("spawn", () => {
-      setTimeout(() => {
-        if (record.state === "starting" && record.child?.exitCode === null) {
-          record.state = "running";
-          record.startedAt = Date.now();
-        }
-      }, 2_000).unref();
-    });
+    record.startupTimer = setTimeout(() => {
+      if (record.state === "starting" && record.child) {
+        record.state = "error";
+        record.lastError = `Agent did not report readiness within ${STARTUP_READY_TIMEOUT_MS}ms`;
+        this.appendLog(logStream, `[${nowIso()}] ${record.lastError}\n`);
+        record.child.kill("SIGTERM");
+      }
+    }, STARTUP_READY_TIMEOUT_MS);
+    record.startupTimer.unref();
 
     child.stdout.on("data", (chunk: Buffer | string) => {
       const text = chunk.toString();
@@ -320,6 +370,7 @@ export class ManagedAgentService {
       if (record.state === "starting" && text.includes("Teleton Agent is running!")) {
         record.state = "running";
         record.startedAt = Date.now();
+        this.clearStartupTimer(record);
       }
     });
 
@@ -333,6 +384,7 @@ export class ManagedAgentService {
       record.child = null;
       record.startedAt = null;
       this.clearStopTimer(record);
+      this.clearStartupTimer(record);
       this.closeLogStream(record);
     });
 
@@ -342,6 +394,7 @@ export class ManagedAgentService {
       record.stopRequested = false;
       record.startedAt = null;
       this.clearStopTimer(record);
+      this.clearStartupTimer(record);
 
       if (expectedStop || code === 0) {
         record.state = "stopped";
@@ -517,15 +570,21 @@ export class ManagedAgentService {
     }
 
     const config = loadConfig(definition.configPath);
+    this.applyResourcePolicyToConfig(config, nextDefinition.resources);
+    let nextBotToken: string | undefined;
     if (nextDefinition.mode === "bot") {
-      const nextBotToken =
+      nextBotToken =
         input.botToken === null
           ? ""
-          : input.botToken?.trim() || config.telegram.bot_token?.trim() || "";
+          : input.botToken?.trim() || this.resolveBotToken(definition, config) || "";
       if (!nextBotToken) {
         throw new Error("Bot-mode managed agents require a bot token");
       }
-      config.telegram.bot_token = nextBotToken;
+      const tokenFormatError = validateBotTokenFormat(nextBotToken);
+      if (tokenFormatError) {
+        throw new Error(`Invalid bot token: ${tokenFormatError}`);
+      }
+      config.telegram.bot_token = undefined;
       config.telegram.bot_username = nextDefinition.connection.botUsername ?? undefined;
       config.deals.enabled = false;
     } else if (input.botToken === null) {
@@ -542,6 +601,9 @@ export class ManagedAgentService {
 
     saveConfig(config, definition.configPath);
     this.writeDefinition(nextDefinition);
+    if (nextDefinition.mode === "bot" && nextBotToken) {
+      this.writeBotToken(nextDefinition, nextBotToken);
+    }
     return this.toSnapshot(nextDefinition);
   }
 
@@ -635,7 +697,7 @@ export class ManagedAgentService {
       model: config.agent.model,
       ownerId: config.telegram.owner_id ?? null,
       adminIds: config.telegram.admin_ids ?? [],
-      hasBotToken: Boolean(config.telegram.bot_token),
+      hasBotToken: Boolean(this.resolveBotToken(definition, config)),
     };
   }
 
@@ -657,16 +719,17 @@ export class ManagedAgentService {
     homePath: string,
     options: {
       mode: ManagedAgentMode;
-      botToken?: string;
       botUsername?: string | null;
+      resources: ManagedAgentResourcePolicy;
     }
   ): Config {
     const next = structuredClone(sourceConfig);
     next.telegram.session_path = join(homePath, "telegram_session.txt");
     next.storage.sessions_file = join(homePath, "sessions.json");
     next.storage.memory_file = join(homePath, "memory.json");
+    this.applyResourcePolicyToConfig(next, options.resources);
     if (options.mode === "bot") {
-      next.telegram.bot_token = options.botToken;
+      next.telegram.bot_token = undefined;
       next.telegram.bot_username = options.botUsername ?? undefined;
       next.deals.enabled = false;
     }
@@ -715,6 +778,107 @@ export class ManagedAgentService {
     }
   }
 
+  private applyResourcePolicyToConfig(config: Config, resources: ManagedAgentResourcePolicy): void {
+    config.telegram.rate_limit_groups_per_minute = Math.max(
+      1,
+      Math.floor(resources.rateLimitPerMinute)
+    );
+    config.telegram.rate_limit_messages_per_second = Math.max(
+      0.1,
+      resources.rateLimitPerMinute / 60
+    );
+  }
+
+  private buildNodeOptions(resources: ManagedAgentResourcePolicy): string {
+    const existing = process.env.NODE_OPTIONS?.trim();
+    if (existing?.includes("--max-old-space-size")) {
+      return existing;
+    }
+
+    const memoryMb = Math.max(64, Math.floor(resources.maxMemoryMb));
+    return [existing, `--max-old-space-size=${memoryMb}`].filter(Boolean).join(" ");
+  }
+
+  private credentialsPath(definition: ManagedAgentDefinition): string {
+    return join(definition.homePath, CREDENTIALS_FILENAME);
+  }
+
+  private readCredentials(definition: ManagedAgentDefinition): ManagedAgentCredentials {
+    const path = this.credentialsPath(definition);
+    if (!existsSync(path)) {
+      return { version: 1 };
+    }
+    const parsed = readJsonFile<ManagedAgentCredentials>(path);
+    return { ...parsed, version: 1 };
+  }
+
+  private writeCredentials(
+    definition: ManagedAgentDefinition,
+    credentials: ManagedAgentCredentials
+  ): void {
+    writeFileSync(this.credentialsPath(definition), JSON.stringify(credentials, null, 2), {
+      encoding: "utf-8",
+      mode: 0o600,
+    });
+  }
+
+  private writeBotToken(definition: ManagedAgentDefinition, botToken: string): void {
+    const credentials = this.readCredentials(definition);
+    credentials.botToken = this.encryptSecret(botToken);
+    this.writeCredentials(definition, credentials);
+  }
+
+  private resolveBotToken(definition: ManagedAgentDefinition, config: Config): string | undefined {
+    const credentials = this.readCredentials(definition);
+    if (credentials.botToken) {
+      return this.decryptSecret(credentials.botToken);
+    }
+    return config.telegram.bot_token?.trim() || undefined;
+  }
+
+  private encryptSecret(value: string): EncryptedSecret {
+    const iv = randomBytes(12);
+    const cipher = createCipheriv("aes-256-gcm", this.getSecretKey(), iv);
+    const ciphertext = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+    return {
+      encrypted: true,
+      algorithm: "aes-256-gcm",
+      iv: iv.toString("hex"),
+      tag: cipher.getAuthTag().toString("hex"),
+      ciphertext: ciphertext.toString("hex"),
+      updatedAt: nowIso(),
+    };
+  }
+
+  private decryptSecret(secret: EncryptedSecret): string {
+    const decipher = createDecipheriv(
+      secret.algorithm,
+      this.getSecretKey(),
+      Buffer.from(secret.iv, "hex")
+    );
+    decipher.setAuthTag(Buffer.from(secret.tag, "hex"));
+    return Buffer.concat([
+      decipher.update(Buffer.from(secret.ciphertext, "hex")),
+      decipher.final(),
+    ]).toString("utf8");
+  }
+
+  private getSecretKey(): Buffer {
+    mkdirSync(this.agentsRoot, { recursive: true, mode: 0o700 });
+    const keyPath = join(this.agentsRoot, SECRET_KEY_FILENAME);
+    if (existsSync(keyPath)) {
+      const keyHex = readFileSync(keyPath, "utf-8").trim();
+      if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
+        throw new Error("Managed agent secret key is invalid");
+      }
+      return Buffer.from(keyHex, "hex");
+    }
+
+    const keyHex = randomBytes(32).toString("hex");
+    writeFileSync(keyPath, `${keyHex}\n`, { encoding: "utf-8", mode: 0o600 });
+    return Buffer.from(keyHex, "hex");
+  }
+
   private ensureProcessRecord(id: string): ManagedAgentProcessRecord {
     let record = this.processes.get(id);
     if (!record) {
@@ -731,6 +895,7 @@ export class ManagedAgentService {
         lastExitCode: null,
         lastExitSignal: null,
         messageTimestamps: [],
+        startupTimer: null,
       };
       this.processes.set(id, record);
     }
@@ -750,6 +915,13 @@ export class ManagedAgentService {
     if (record.stopTimer) {
       clearTimeout(record.stopTimer);
       record.stopTimer = null;
+    }
+  }
+
+  private clearStartupTimer(record: ManagedAgentProcessRecord): void {
+    if (record.startupTimer) {
+      clearTimeout(record.startupTimer);
+      record.startupTimer = null;
     }
   }
 

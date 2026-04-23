@@ -132,6 +132,8 @@ describe("ManagedAgentService", () => {
           "-e",
           [
             "console.log('managed-mode=' + process.env.TELETON_MANAGED_AGENT_MODE);",
+            "console.log('bot-token-env=' + Boolean(process.env.TELETON_TG_BOT_TOKEN));",
+            "console.log('Teleton Agent is running!');",
             "setTimeout(() => process.exit(0), 5000);",
           ].join(" "),
         ],
@@ -146,15 +148,59 @@ describe("ManagedAgentService", () => {
     });
     const savedConfig = loadConfig(snapshot.configPath);
 
-    expect(savedConfig.telegram.bot_token).toBe("123456:ABCDEF");
+    expect(savedConfig.telegram.bot_token).toBeUndefined();
     expect(savedConfig.deals.enabled).toBe(false);
+    expect(readFileSync(join(snapshot.homePath, "credentials.json"), "utf-8")).not.toContain(
+      "123456:ABCDEF"
+    );
 
     service.startAgent(snapshot.id);
     await new Promise((resolve) => setTimeout(resolve, 150));
 
     const logs = service.readLogs(snapshot.id, 20).lines.join("\n");
     expect(logs).toContain("managed-mode=bot");
+    expect(logs).toContain("bot-token-env=true");
     expect(service.getRuntimeStatus(snapshot.id).transport).toBe("bot-api");
+  });
+
+  it("rejects malformed bot tokens before creating bot-mode agents", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    expect(() =>
+      service?.createAgent({
+        name: "FAQ Bot",
+        mode: "bot",
+        botToken: "not-a-token",
+      })
+    ).toThrow("Invalid bot token");
+  });
+
+  it("does not mark child processes running before they report readiness", async () => {
+    service = new ManagedAgentService({
+      rootDir,
+      primaryConfigPath: configPath,
+      resolveCommand: () => ({
+        command: process.execPath,
+        args: [
+          "-e",
+          [
+            "console.log('spawned-without-readiness');",
+            "setTimeout(() => process.exit(0), 5000);",
+          ].join(" "),
+        ],
+      }),
+    });
+
+    const snapshot = service.createAgent({
+      name: "Slow Bot",
+      mode: "bot",
+      botToken: "123456:ABCDEF",
+    });
+
+    service.startAgent(snapshot.id);
+    await new Promise((resolve) => setTimeout(resolve, 2_200));
+
+    expect(service.getRuntimeStatus(snapshot.id).state).toBe("starting");
   });
 
   it("blocks non-isolated memory policies from starting", () => {

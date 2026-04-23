@@ -147,6 +147,9 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
   if (process.env.TELETON_TG_PHONE) {
     config.telegram.phone = process.env.TELETON_TG_PHONE;
   }
+  if (process.env.TELETON_TG_BOT_TOKEN) {
+    config.telegram.bot_token = process.env.TELETON_TG_BOT_TOKEN;
+  }
 
   // WebUI environment variable overrides
   if (process.env.TELETON_WEBUI_ENABLED) {

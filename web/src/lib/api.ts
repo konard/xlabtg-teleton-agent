@@ -2362,6 +2362,13 @@ export const api = {
     });
   },
 
+  async validateManagedBotToken(token: string) {
+    return fetchAPI<APIResponse<BotValidation>>("/agents/validate-bot-token", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  },
+
   async cloneAgent(
     id: string,
     data?: CreateAgentInput & {

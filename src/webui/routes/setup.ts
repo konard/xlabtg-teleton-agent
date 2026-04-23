@@ -30,10 +30,10 @@ import {
   importWallet,
   saveWallet,
 } from "../../ton/wallet-service.js";
-import { fetchWithTimeout } from "../../utils/fetch.js";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../constants/limits.js";
 import { TelegramAuthManager } from "../setup-auth.js";
 import { createLogger } from "../../utils/logger.js";
+import { validateBotTokenWithTelegram } from "../../telegram/bot-token.js";
 
 const log = createLogger("Setup");
 
@@ -160,36 +160,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
   app.post("/validate/bot-token", async (c) => {
     try {
       const body = await c.req.json<{ token: string }>();
-      if (!body.token || !body.token.includes(":")) {
-        return c.json({
-          success: true,
-          data: { valid: false, networkError: false, error: "Invalid format (expected id:hash)" },
-        });
-      }
-
-      try {
-        const res = await fetchWithTimeout(`https://api.telegram.org/bot${body.token}/getMe`);
-        const data = await res.json();
-        if (!data.ok) {
-          return c.json({
-            success: true,
-            data: { valid: false, networkError: false, error: "Bot token is invalid" },
-          });
-        }
-        return c.json({
-          success: true,
-          data: {
-            valid: true,
-            networkError: false,
-            bot: { username: data.result.username, firstName: data.result.first_name },
-          },
-        });
-      } catch {
-        return c.json({
-          success: true,
-          data: { valid: false, networkError: true, error: "Could not reach Telegram API" },
-        });
-      }
+      return c.json({ success: true, data: await validateBotTokenWithTelegram(body.token ?? "") });
     } catch (err) {
       return c.json(
         { success: false, error: err instanceof Error ? err.message : String(err) },

@@ -156,6 +156,9 @@ function FormFields({
   submitting,
   onSubmit,
   showCloneSource,
+  onValidateBotToken,
+  botValidationMessage,
+  botValidationLoading,
 }: {
   form: AgentFormState;
   setForm: Dispatch<SetStateAction<AgentFormState>>;
@@ -163,6 +166,9 @@ function FormFields({
   submitting: boolean;
   onSubmit: () => Promise<void> | void;
   showCloneSource: boolean;
+  onValidateBotToken?: () => Promise<void> | void;
+  botValidationMessage?: string | null;
+  botValidationLoading?: boolean;
 }) {
   return (
     <section
@@ -244,6 +250,20 @@ function FormFields({
             value={form.botUsername}
             onChange={(e) => setForm((current) => ({ ...current, botUsername: e.target.value }))}
           />
+          {onValidateBotToken && (
+            <button
+              type="button"
+              onClick={() => void onValidateBotToken()}
+              disabled={botValidationLoading || !form.botToken.trim()}
+            >
+              {botValidationLoading ? "Checking..." : "Validate token"}
+            </button>
+          )}
+        </div>
+      )}
+      {form.mode === "bot" && botValidationMessage && (
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+          {botValidationMessage}
         </div>
       )}
 
@@ -396,6 +416,8 @@ export function Agents() {
   const [creating, setCreating] = useState(false);
   const [busyAgentId, setBusyAgentId] = useState<string | null>(null);
   const [createForm, setCreateForm] = useState<AgentFormState>(DEFAULT_FORM);
+  const [createBotValidation, setCreateBotValidation] = useState<string | null>(null);
+  const [validatingCreateBot, setValidatingCreateBot] = useState(false);
   const [editingAgentId, setEditingAgentId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<AgentFormState>(DEFAULT_FORM);
   const [savingEdit, setSavingEdit] = useState(false);
@@ -481,6 +503,7 @@ export function Agents() {
     try {
       await api.createAgent(toCreatePayload(createForm));
       setCreateForm(DEFAULT_FORM);
+      setCreateBotValidation(null);
       toast.success("Managed agent created");
       await loadAgents();
     } catch (err) {
@@ -489,6 +512,40 @@ export function Agents() {
       setCreating(false);
     }
   }, [createForm, loadAgents]);
+
+  const handleValidateCreateBot = useCallback(async () => {
+    const token = createForm.botToken.trim();
+    if (!token) {
+      toast.error("Enter a bot token first");
+      return;
+    }
+
+    setValidatingCreateBot(true);
+    try {
+      const response = await api.validateManagedBotToken(token);
+      const result = response.data;
+      if (result.valid) {
+        const username = result.bot?.username ?? "";
+        if (username) {
+          setCreateForm((current) => ({
+            ...current,
+            botUsername: current.botUsername || username,
+          }));
+        }
+        setCreateBotValidation(username ? `Validated @${username}` : "Bot token validated");
+        toast.success("Bot token validated");
+      } else {
+        setCreateBotValidation(result.error ?? "Bot token is invalid");
+        toast.error(result.error ?? "Bot token is invalid");
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setCreateBotValidation(message);
+      toast.error(message);
+    } finally {
+      setValidatingCreateBot(false);
+    }
+  }, [createForm.botToken]);
 
   const handleStartStop = useCallback(
     async (agent: AgentOverview, action: "start" | "stop") => {
@@ -632,6 +689,9 @@ export function Agents() {
           submitting={creating}
           onSubmit={handleCreate}
           showCloneSource
+          onValidateBotToken={handleValidateCreateBot}
+          botValidationMessage={createBotValidation}
+          botValidationLoading={validatingCreateBot}
         />
       </section>
 

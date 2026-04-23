@@ -9,6 +9,7 @@ import {
 } from "./bridge.js";
 import { markdownToTelegramHtml } from "./formatting.js";
 import { createLogger } from "../utils/logger.js";
+import { validateBotTokenFormat } from "./bot-token.js";
 
 const log = createLogger("TelegramBot");
 
@@ -50,6 +51,10 @@ export class TelegramBotBridge extends TelegramBridge {
 
   constructor(config: TelegramBotBridgeConfig) {
     super(config);
+    const tokenFormatError = validateBotTokenFormat(config.botToken);
+    if (tokenFormatError) {
+      throw new Error(`Invalid bot token: ${tokenFormatError}`);
+    }
     this.bot = new Bot(config.botToken);
   }
 

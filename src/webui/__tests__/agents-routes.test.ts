@@ -249,6 +249,19 @@ describe("Agents routes", () => {
     });
   });
 
+  it("validates bot-token format before bot-mode setup", async () => {
+    const res = await app.request("/api/agents/validate-bot-token", {
+      method: "POST",
+      body: JSON.stringify({ token: "not-a-token" }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.data.valid).toBe(false);
+    expect(body.data.error).toContain("Invalid format");
+  });
+
   it("explains why non-isolated managed agents cannot start", async () => {
     (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).listAgentSnapshots = vi.fn(
       () => [

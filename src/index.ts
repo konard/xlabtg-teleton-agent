@@ -823,28 +823,6 @@ ${blue}  ┌──────────────────────�
     this.cacheInvalidationWatcher = new CacheInvalidationWatcher(this.configPath);
     this.cacheInvalidationWatcher.start();
 
-    // Display startup summary
-    log.info(`✅ SOUL.md loaded`);
-    log.info(`✅ Knowledge: ${indexResult.indexed} files, ${ftsResult.knowledge} chunks indexed`);
-    if (this.agentMode === "bot") {
-      log.info(`✅ Telegram Bot: @${username} connected`);
-    } else {
-      log.info(`✅ Telegram: @${username} connected`);
-    }
-    log.info(`✅ TON Blockchain: connected`);
-    if (this.config.tonapi_key) {
-      log.info(`🔑 TonAPI key configured`);
-    }
-    log.info(`✅ DEXs: STON.fi, DeDust connected`);
-    log.info(`✅ Wallet: ${walletAddress || "not configured"}`);
-    log.info(`✅ Model: ${provider}/${this.config.agent.model}`);
-    log.info(`✅ Admins: ${this.config.telegram.admin_ids.join(", ")}`);
-    log.info(
-      `✅ Policy: DM ${this.config.telegram.dm_policy}, Groups ${this.config.telegram.group_policy}, Debounce ${this.config.telegram.debounce_ms}ms\n`
-    );
-
-    log.info("Teleton Agent is running! Press Ctrl+C to stop.");
-
     // Hook: agent:start
     this.startTime = Date.now();
     this.messagesProcessed = 0;
@@ -955,6 +933,29 @@ ${blue}  ┌──────────────────────�
 
       this.messageHandlersRegistered = true;
     }
+
+    // Display startup summary after Telegram handlers are registered. The managed-agent
+    // process manager treats this line as the readiness signal.
+    log.info(`✅ SOUL.md loaded`);
+    log.info(`✅ Knowledge: ${indexResult.indexed} files, ${ftsResult.knowledge} chunks indexed`);
+    if (this.agentMode === "bot") {
+      log.info(`✅ Telegram Bot: @${username} connected`);
+    } else {
+      log.info(`✅ Telegram: @${username} connected`);
+    }
+    log.info(`✅ TON Blockchain: connected`);
+    if (this.config.tonapi_key) {
+      log.info(`🔑 TonAPI key configured`);
+    }
+    log.info(`✅ DEXs: STON.fi, DeDust connected`);
+    log.info(`✅ Wallet: ${walletAddress || "not configured"}`);
+    log.info(`✅ Model: ${provider}/${this.config.agent.model}`);
+    log.info(`✅ Admins: ${this.config.telegram.admin_ids.join(", ")}`);
+    log.info(
+      `✅ Policy: DM ${this.config.telegram.dm_policy}, Groups ${this.config.telegram.group_policy}, Debounce ${this.config.telegram.debounce_ms}ms\n`
+    );
+
+    log.info("Teleton Agent is running! Press Ctrl+C to stop.");
   }
 
   /**

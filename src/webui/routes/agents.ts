@@ -13,6 +13,7 @@ import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
 import { initAudit } from "../../services/audit.js";
+import { validateBotTokenWithTelegram } from "../../telegram/bot-token.js";
 
 const log = createLogger("agents-routes");
 
@@ -183,6 +184,19 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         data: makeManagedOverview(snapshot),
       };
       return c.json(response, 201);
+    } catch (error) {
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+    }
+  });
+
+  app.post("/validate-bot-token", async (c) => {
+    try {
+      const body = await c.req.json<{ token?: string }>();
+      const response: APIResponse<Awaited<ReturnType<typeof validateBotTokenWithTelegram>>> = {
+        success: true,
+        data: await validateBotTokenWithTelegram(body.token ?? ""),
+      };
+      return c.json(response);
     } catch (error) {
       return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
     }
