@@ -41,6 +41,7 @@ export async function startApiOnly(options: { config?: string; apiPort?: string 
   const apiConfig: ApiConfig = {
     enabled: true,
     port: parseInt(options.apiPort || process.env.TELETON_API_PORT || "7778"),
+    host: "127.0.0.1",
     key_hash: "",
     allowed_ips: [],
   };

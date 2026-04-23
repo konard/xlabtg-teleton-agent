@@ -45,7 +45,10 @@ const MAX_SCAN_ENTRIES = 5000;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono context type
 function errorResponse(c: any, error: unknown, status: number = 500) {
   if (error instanceof WorkspaceSecurityError) {
-    log.warn({ attemptedPath: error.attemptedPath, message: error.message }, "workspace path rejected");
+    log.warn(
+      { attemptedPath: error.attemptedPath, message: error.message },
+      "workspace path rejected"
+    );
     const response: APIResponse = { success: false, error: "Workspace path is not allowed" };
     return c.json(response, 403);
   }
