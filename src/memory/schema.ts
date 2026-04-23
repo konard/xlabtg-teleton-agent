@@ -1267,9 +1267,14 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.26.0")) {
     log.info("Running migration 1.26.0: Add last_fired_bucket to workflows (AUDIT-M7)");
     try {
-      const columns = db.prepare(`PRAGMA table_info(workflows)`).all() as Array<{ name: string }>;
-      if (!columns.some((col) => col.name === "last_fired_bucket")) {
-        db.exec(`ALTER TABLE workflows ADD COLUMN last_fired_bucket INTEGER`);
+      const tableExists = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='workflows'`)
+        .get();
+      if (tableExists) {
+        const columns = db.prepare(`PRAGMA table_info(workflows)`).all() as Array<{ name: string }>;
+        if (!columns.some((col) => col.name === "last_fired_bucket")) {
+          db.exec(`ALTER TABLE workflows ADD COLUMN last_fired_bucket INTEGER`);
+        }
       }
       log.info("Migration 1.26.0 complete: last_fired_bucket column added");
     } catch (error) {

@@ -212,9 +212,7 @@ export class WorkflowStore {
   }
 
   recordFiredBucket(id: string, bucket: number): void {
-    this.db
-      .prepare(`UPDATE workflows SET last_fired_bucket = ? WHERE id = ?`)
-      .run(bucket, id);
+    this.db.prepare(`UPDATE workflows SET last_fired_bucket = ? WHERE id = ?`).run(bucket, id);
   }
 }
 

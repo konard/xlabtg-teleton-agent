@@ -25,6 +25,9 @@ export class WorkflowScheduler {
 
   start(): void {
     if (this.timer) return;
+    void this.tick().catch((err) => {
+      log.warn({ err }, "Workflow scheduler initial tick failed");
+    });
     this.timer = setInterval(() => {
       void this.tick().catch((err) => {
         log.warn({ err }, "Workflow scheduler tick failed");
