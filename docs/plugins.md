@@ -18,6 +18,7 @@ This guide walks through building, testing, and distributing plugins for Teleton
   - [sdk.storage](#sdkstorage)
   - [sdk.secrets](#sdksecrets)
   - [sdk.log](#sdklog)
+  - [sdk.isAdmin](#sdkisadmin)
 - [Database Migrations](#database-migrations)
 - [Event Hooks](#event-hooks)
   - [onMessage](#onmessage)
@@ -37,7 +38,7 @@ A Teleton plugin is a JavaScript module (ESM) placed in `~/.teleton/plugins/`. I
 Key facts:
 - Plugins receive a **frozen SDK** object -- they cannot modify or extend it
 - Each plugin gets an **isolated SQLite database** (if `migrate` is exported)
-- Plugins see a **sanitized config** with no API keys or secrets
+- Plugins see a **sanitized config** with no API keys, secrets, or admin IDs — use `sdk.isAdmin(userId)` for admin checks
 - The official SDK package is `@teleton-agent/sdk` on npm
 
 ---
@@ -636,6 +637,34 @@ Prefixed logger for consistent log output.
 | `debug(...args)` | Debug (visible only when `DEBUG` or `VERBOSE` env vars are set) |
 
 All methods auto-prefix output with the plugin name: `[my-plugin] Your message here`.
+
+---
+
+### sdk.isAdmin
+
+Check whether a Telegram user ID is configured as an admin — without exposing the admin list.
+
+```javascript
+export const tools = (sdk) => [
+  {
+    name: "admin_action",
+    description: "Do something only admins can trigger",
+    execute: async (params, context) => {
+      if (!sdk.isAdmin(context.senderId)) {
+        return { success: false, error: "Not authorized" };
+      }
+      // ... admin logic
+      return { success: true };
+    },
+  },
+];
+```
+
+| Call | Returns |
+|------|---------|
+| `sdk.isAdmin(userId)` | `true` if the numeric user ID (or numeric string) is in the admin list |
+
+> **Security note**: `sdk.config` never contains `admin_ids`. Always use `sdk.isAdmin()` for authorization checks — never ask the user to pass their own ID as proof of admin status.
 
 ---
 

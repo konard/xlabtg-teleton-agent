@@ -238,6 +238,7 @@ export function adaptPlugin(
             db: pluginDb,
             sanitizedConfig,
             pluginConfig,
+            adminIds: config.telegram.admin_ids,
             botManifest: manifest?.bot,
             hookRegistry,
             declaredHooks: manifest?.hooks,

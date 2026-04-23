@@ -2237,6 +2237,17 @@ export interface PluginSDK {
   /** Bot inline mode SDK (null if bot not available or plugin has no bot manifest) */
   readonly bot: BotSDK | null;
 
+  /**
+   * Check whether a Telegram user ID belongs to an admin.
+   *
+   * Use this instead of reading `sdk.config` for admin checks — the admin list
+   * is never exposed to plugins.
+   *
+   * @param userId — Telegram user ID (number or numeric string)
+   * @returns `true` if the user is configured as an admin, `false` otherwise
+   */
+  isAdmin(userId: number | string): boolean;
+
   /** Register a typed hook handler for agent lifecycle events. */
   on<K extends HookName>(
     hookName: K,
