@@ -1146,6 +1146,35 @@ describe("Management API", () => {
       await startPromise;
     });
 
+    it("two parallel POST /v1/agent/restart yield one 200 and one 409", async () => {
+      const lifecycle = new AgentLifecycle();
+      let resolveStop!: () => void;
+      lifecycle.registerCallbacks(
+        async () => {},
+        async () =>
+          new Promise<void>((resolve) => {
+            resolveStop = resolve;
+          })
+      );
+      await lifecycle.start();
+
+      const app = createTestApp({ lifecycle, skipAuth: true });
+
+      // Fire both requests without awaiting — they race to set restartInFlight
+      const [res1, res2] = await Promise.all([
+        app.request("/v1/agent/restart", { method: "POST" }),
+        app.request("/v1/agent/restart", { method: "POST" }),
+      ]);
+
+      const statuses = [res1.status, res2.status].sort();
+      expect(statuses).toEqual([200, 409]);
+
+      // Unblock the in-flight stop so the background promise completes cleanly
+      resolveStop?.();
+      // Give the event loop a tick to complete the background restart
+      await new Promise<void>((r) => setTimeout(r, 0));
+    });
+
     it("deps adapter throws 503 for null agent dep", () => {
       const deps = {
         config: {} as any,
