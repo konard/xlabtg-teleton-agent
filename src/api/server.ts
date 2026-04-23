@@ -336,8 +336,24 @@ export class ApiServer {
       return streamSSE(c, async (stream) => {
         let aborted = false;
 
+        const onStateChange = (event: StateChangeEvent) => {
+          if (aborted) return;
+          void stream.writeSSE({
+            event: "status",
+            id: String(event.timestamp),
+            data: JSON.stringify({
+              state: event.state,
+              error: event.error ?? null,
+              timestamp: event.timestamp,
+            }),
+          });
+        };
+
+        const detach = () => lifecycle.off("stateChange", onStateChange);
+
         stream.onAbort(() => {
           aborted = true;
+          detach();
         });
 
         const now = Date.now();
@@ -352,19 +368,6 @@ export class ApiServer {
           retry: 3000,
         });
 
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
         lifecycle.on("stateChange", onStateChange);
 
         while (!aborted) {
@@ -376,7 +379,7 @@ export class ApiServer {
           });
         }
 
-        lifecycle.off("stateChange", onStateChange);
+        detach();
       });
     });
 

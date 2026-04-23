@@ -36,21 +36,6 @@ function createSSEApp(lifecycle: AgentLifecycle) {
   app.get("/api/agent/events", (c) => {
     return streamSSE(c, async (stream) => {
       let aborted = false;
-      stream.onAbort(() => {
-        aborted = true;
-      });
-
-      const now = Date.now();
-      await stream.writeSSE({
-        event: "status",
-        id: String(now),
-        data: JSON.stringify({
-          state: lifecycle.getState(),
-          error: lifecycle.getError() ?? null,
-          timestamp: now,
-        }),
-        retry: 3000,
-      });
 
       const onStateChange = (event: StateChangeEvent) => {
         if (aborted) return;
@@ -65,12 +50,31 @@ function createSSEApp(lifecycle: AgentLifecycle) {
         });
       };
 
+      const detach = () => lifecycle.off("stateChange", onStateChange);
+
+      stream.onAbort(() => {
+        aborted = true;
+        detach();
+      });
+
+      const now = Date.now();
+      await stream.writeSSE({
+        event: "status",
+        id: String(now),
+        data: JSON.stringify({
+          state: lifecycle.getState(),
+          error: lifecycle.getError() ?? null,
+          timestamp: now,
+        }),
+        retry: 3000,
+      });
+
       lifecycle.on("stateChange", onStateChange);
 
       // For testing: don't loop forever — just wait briefly for events to propagate
       await stream.sleep(50);
 
-      lifecycle.off("stateChange", onStateChange);
+      detach();
     });
   });
 

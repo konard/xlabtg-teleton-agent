@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
+import { streamSSE } from "hono/streaming";
 import { createHash, timingSafeEqual } from "node:crypto";
 
 // ── Mocks ────────────────────────────────────────────────────────────
@@ -32,7 +33,7 @@ vi.mock("selfsigned", () => ({
 
 // ── Imports (after mocks) ────────────────────────────────────────────
 
-import { AgentLifecycle } from "../../agent/lifecycle.js";
+import { AgentLifecycle, type StateChangeEvent } from "../../agent/lifecycle.js";
 import { bodyLimit } from "hono/body-limit";
 
 import { requestId } from "../middleware/request-id.js";
@@ -195,6 +196,58 @@ function createTestApp(opts: TestAppOptions = {}) {
       state: lifecycle.getState(),
       uptime: lifecycle.getUptime(),
       error: lifecycle.getError() ?? null,
+    });
+  });
+
+  app.get("/v1/agent/events", (c) => {
+    if (!lifecycle) {
+      return c.json(
+        createProblem(503, "Service Unavailable", "Agent lifecycle not available"),
+        503,
+        { "Content-Type": "application/problem+json" }
+      );
+    }
+    return streamSSE(c, async (stream) => {
+      let aborted = false;
+
+      const onStateChange = (event: StateChangeEvent) => {
+        if (aborted) return;
+        void stream.writeSSE({
+          event: "status",
+          id: String(event.timestamp),
+          data: JSON.stringify({
+            state: event.state,
+            error: event.error ?? null,
+            timestamp: event.timestamp,
+          }),
+        });
+      };
+
+      const detach = () => lifecycle!.off("stateChange", onStateChange);
+
+      stream.onAbort(() => {
+        aborted = true;
+        detach();
+      });
+
+      const now = Date.now();
+      await stream.writeSSE({
+        event: "status",
+        id: String(now),
+        data: JSON.stringify({
+          state: lifecycle!.getState(),
+          error: lifecycle!.getError() ?? null,
+          timestamp: now,
+        }),
+        retry: 3000,
+      });
+
+      lifecycle!.on("stateChange", onStateChange);
+
+      // For testing: short sleep so the stream ends promptly
+      await stream.sleep(50);
+
+      detach();
     });
   });
 
@@ -1196,6 +1249,51 @@ describe("Management API", () => {
       } catch (err: any) {
         expect(err.status).toBe(503);
       }
+    });
+  });
+
+  // ── SSE Events Endpoint (/v1/agent/events) ────────────────────────
+
+  describe("GET /v1/agent/events", () => {
+    let lifecycle: AgentLifecycle;
+    let app: ReturnType<typeof createTestApp>;
+
+    beforeEach(() => {
+      lifecycle = new AgentLifecycle();
+      lifecycle.registerCallbacks(
+        async () => {},
+        async () => {}
+      );
+      app = createTestApp({ lifecycle, skipAuth: true });
+    });
+
+    it("returns text/event-stream content type", async () => {
+      const res = await app.request("/v1/agent/events");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("content-type")).toContain("text/event-stream");
+    });
+
+    it("initial connection pushes current state as status event", async () => {
+      const res = await app.request("/v1/agent/events");
+      const text = await res.text();
+      expect(text).toContain("event: status");
+      expect(text).toContain('"state":"stopped"');
+    });
+
+    it("returns 503 when lifecycle is not available", async () => {
+      const noLifecycleApp = createTestApp({ lifecycle: null, skipAuth: true });
+      const res = await noLifecycleApp.request("/v1/agent/events");
+      expect(res.status).toBe(503);
+    });
+
+    it("stateChange listener is removed immediately on client disconnect (no leak)", async () => {
+      const before = lifecycle.listenerCount("stateChange");
+
+      const res = await app.request("/v1/agent/events");
+      await res.text(); // consume stream to completion
+
+      // Listener must be removed after stream ends
+      expect(lifecycle.listenerCount("stateChange")).toBe(before);
     });
   });
 });
