@@ -9,7 +9,7 @@ vi.mock("../../utils/logger.js", () => ({
   })),
 }));
 
-import { testGroqApiKey } from "../groq/GroqTextProvider.js";
+import { testGroqApiKey, groqComplete, groqListModels } from "../groq/GroqTextProvider.js";
 
 // Helper to mock global fetch
 function mockFetch(status: number, body = "") {
@@ -81,5 +81,80 @@ describe("testGroqApiKey", () => {
     mockFetch(401, '{"error":"Invalid API Key"}');
     const result = await testGroqApiKey("gsk_bad");
     expect(result.error).toContain("401");
+  });
+
+  it("does not expose raw API key from upstream body in error message", async () => {
+    mockFetch(401, '{"detail":"Invalid key sk-secret-key-1234 rejected"}');
+    const result = await testGroqApiKey("gsk_bad");
+    expect(result.error).not.toContain("sk-secret-key-1234");
+    expect(result.error).toContain("[REDACTED]");
+  });
+
+  it("does not expose gsk_ token from upstream body in error message", async () => {
+    mockFetch(403, '{"error":"token gsk_verysecrettoken123 is not authorized"}');
+    const result = await testGroqApiKey("gsk_bad");
+    expect(result.error).not.toContain("gsk_verysecrettoken123");
+    expect(result.error).toContain("[REDACTED]");
+  });
+
+  it("truncates upstream body longer than 200 characters in error message", async () => {
+    const longBody = "x".repeat(300);
+    mockFetch(500, longBody);
+    const result = await testGroqApiKey("gsk_key");
+    expect(result.error!.length).toBeLessThan(300);
+    expect(result.error).toContain("…");
+  });
+});
+
+describe("groqComplete — secret redaction in errors", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("throws an error without raw secret token in message when upstream body contains sk-", async () => {
+    const mockResponse = {
+      ok: false,
+      status: 401,
+      text: vi.fn().mockResolvedValue('{"error":"sk-leaked-secret-key is invalid"}'),
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+
+    await expect(
+      groqComplete({ apiKey: "gsk_key", messages: [{ role: "user", content: "hi" }] })
+    ).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining("sk-leaked-secret-key") })
+    );
+  });
+
+  it("throws an error with [REDACTED] when upstream body contains Bearer token", async () => {
+    const mockResponse = {
+      ok: false,
+      status: 403,
+      text: vi.fn().mockResolvedValue("Bearer gsk_sometoken: forbidden"),
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+
+    await expect(
+      groqComplete({ apiKey: "gsk_key", messages: [{ role: "user", content: "hi" }] })
+    ).rejects.toThrow(expect.objectContaining({ message: expect.stringContaining("[REDACTED]") }));
+  });
+});
+
+describe("groqListModels — secret redaction in errors", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("throws an error without raw secret token when upstream body contains gsk_", async () => {
+    const mockResponse = {
+      ok: false,
+      status: 401,
+      text: vi.fn().mockResolvedValue('{"error":"gsk_leaked123 is invalid"}'),
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(mockResponse));
+
+    await expect(groqListModels("gsk_key")).rejects.toThrow(
+      expect.objectContaining({ message: expect.not.stringContaining("gsk_leaked123") })
+    );
   });
 });

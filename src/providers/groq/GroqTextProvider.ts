@@ -16,6 +16,15 @@ import { GROQ_API_BASE } from "./GroqSTTProvider.js";
 
 const log = createLogger("GroqText");
 
+const SECRET_PATTERN = /(sk-|gsk_|Bearer )\S+/g;
+const MAX_ERROR_BODY_LENGTH = 200;
+
+function sanitizeErrorBody(body: string): string {
+  const truncated =
+    body.length > MAX_ERROR_BODY_LENGTH ? body.slice(0, MAX_ERROR_BODY_LENGTH) + "…" : body;
+  return truncated.replace(SECRET_PATTERN, "[REDACTED]");
+}
+
 export interface GroqMessage {
   role: "system" | "user" | "assistant";
   content: string;
@@ -72,8 +81,8 @@ export async function groqComplete(options: GroqCompletionOptions): Promise<Groq
 
     if (!response.ok) {
       const errorType = parseGroqErrorType(response.status);
-      const errorBody = await response.text().catch(() => "");
-      const msg = `Groq API error (${response.status} ${errorType}): ${errorBody}`;
+      const rawBody = await response.text().catch(() => "");
+      const msg = `Groq API error (${response.status} ${errorType}): ${sanitizeErrorBody(rawBody)}`;
       log.error(msg);
       throw new Error(msg);
     }
@@ -132,8 +141,10 @@ export async function groqListModels(apiKey: string): Promise<GroqModelListEntry
 
   if (!response.ok) {
     const errorType = parseGroqErrorType(response.status);
-    const errorBody = await response.text().catch(() => "");
-    throw new Error(`Groq models list error (${response.status} ${errorType}): ${errorBody}`);
+    const rawBody = await response.text().catch(() => "");
+    throw new Error(
+      `Groq models list error (${response.status} ${errorType}): ${sanitizeErrorBody(rawBody)}`
+    );
   }
 
   const result = (await response.json()) as { data: GroqModelListEntry[] };
@@ -190,7 +201,7 @@ export async function testGroqApiKey(apiKey: string): Promise<GroqKeyTestResult>
   }
 
   const statusCode = response.status;
-  const errorBody = await response.text().catch(() => "");
+  const rawBody = await response.text().catch(() => "");
   const errorType = parseGroqErrorType(statusCode);
 
   const hints: Record<number, string> = {
@@ -202,7 +213,7 @@ export async function testGroqApiKey(apiKey: string): Promise<GroqKeyTestResult>
   const hint =
     hints[statusCode] ?? (statusCode >= 500 ? "Groq server error. Try again later." : null);
 
-  const msg = `Groq API error (${statusCode} ${errorType}): ${errorBody}`;
+  const msg = `Groq API error (${statusCode} ${errorType}): ${sanitizeErrorBody(rawBody)}`;
   log.warn(`Key test failed: ${msg}`);
 
   return { valid: false, error: msg, statusCode, hint };

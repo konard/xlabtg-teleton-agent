@@ -112,6 +112,46 @@ describe("claude-code 401 retry", () => {
     expect(response.text).toBe("Hello!");
   });
 
+  // T12b
+  it("does not trigger token-refresh when body contains '401' string but HTTP status is 200", async () => {
+    writeCredsFile(validCredentials());
+
+    // Error message simulates an upstream body that happened to contain the string "401"
+    // but is not actually a 401 Unauthorized response (stop reason is still "error" from
+    // a different cause, and the message body contains "401" incidentally)
+    mockComplete.mockResolvedValueOnce(
+      makeAssistantMessage("", "error", 'upstream body: {"detail":"error code 4012 triggered"}')
+    );
+
+    const { chatWithContext } = await import("../../agent/client.js");
+    const { _resetCache } = await import("../claude-code-credentials.js");
+    _resetCache();
+
+    await chatWithContext(
+      {
+        provider: "claude-code",
+        api_key: "",
+        model: "claude-opus-4-6",
+        max_tokens: 1024,
+        temperature: 0.7,
+        system_prompt: null,
+        max_agentic_iterations: 5,
+        session_reset_policy: {
+          daily_reset_enabled: false,
+          daily_reset_hour: 4,
+          idle_expiry_enabled: false,
+          idle_expiry_minutes: 1440,
+        },
+      },
+      {
+        context: { messages: [], systemPrompt: "test" },
+      }
+    );
+
+    // Should NOT have retried — "4012" does not match \b401\b
+    expect(mockComplete).toHaveBeenCalledTimes(1);
+  });
+
   // T13
   it("does not retry more than once on persistent 401", async () => {
     writeCredsFile(validCredentials());
