@@ -57,6 +57,9 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("embedding_cache");
       expect(tableNames).toContain("agent_registry");
       expect(tableNames).toContain("audit_events");
+      expect(tableNames).toContain("integrations");
+      expect(tableNames).toContain("integration_credentials");
+      expect(tableNames).toContain("integration_usage");
       expect(tableNames).toContain("journal");
       expect(tableNames).toContain("temporal_metadata");
       expect(tableNames).toContain("time_patterns");
@@ -217,6 +220,48 @@ describe("Memory Schema", () => {
           "created_at",
           "updated_at",
         ])
+      );
+    });
+
+    it("creates integration registry tables with credential and usage columns", () => {
+      ensureSchema(db);
+
+      const integrationInfo = db.prepare("PRAGMA table_info(integrations)").all() as Array<{
+        name: string;
+        type: string;
+      }>;
+      const credentialInfo = db
+        .prepare("PRAGMA table_info(integration_credentials)")
+        .all() as Array<{ name: string; type: string }>;
+      const usageInfo = db.prepare("PRAGMA table_info(integration_usage)").all() as Array<{
+        name: string;
+        type: string;
+      }>;
+
+      expect(integrationInfo.map((c) => c.name)).toEqual(
+        expect.arrayContaining([
+          "id",
+          "name",
+          "type",
+          "provider",
+          "config",
+          "auth",
+          "auth_id",
+          "status",
+          "health_check_url",
+        ])
+      );
+      expect(credentialInfo.map((c) => c.name)).toEqual(
+        expect.arrayContaining([
+          "id",
+          "integration_id",
+          "auth_type",
+          "credentials_encrypted",
+          "expires_at",
+        ])
+      );
+      expect(usageInfo.map((c) => c.name)).toEqual(
+        expect.arrayContaining(["integration_id", "action", "success", "latency_ms", "error"])
       );
     });
 
@@ -1241,7 +1286,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.32.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.33.0");
     });
   });
 

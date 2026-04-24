@@ -21,6 +21,7 @@ function inferActionType(method: string, path: string): AuditActionType {
     return method === "DELETE" ? "plugin_remove" : "plugin_install";
   if (lower.includes("/api/hooks")) return "hook_change";
   if (lower.includes("/api/mcp")) return "mcp_change";
+  if (lower.includes("/api/integrations")) return "integration_change";
   if (lower.includes("/api/memory")) return "memory_delete";
   if (lower.includes("/api/workspace")) return "workspace_change";
   if (lower.includes("/api/sessions")) return "session_delete";
