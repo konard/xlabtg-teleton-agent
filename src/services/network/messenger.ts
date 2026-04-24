@@ -101,7 +101,7 @@ export class NetworkMessenger {
 
   constructor(options: NetworkMessengerOptions) {
     this.store = options.store;
-    this.localAgentId = options.localAgentId ?? "primary";
+    this.localAgentId = options.localAgentId?.trim() || "primary";
     this.privateKey = options.privateKey ?? null;
     this.fetcher = options.fetcher ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 15_000;
@@ -170,6 +170,12 @@ export class NetworkMessenger {
   }
 
   receiveMessage(message: NetworkMessageEnvelope): NetworkMessageRecord {
+    if (message.to !== this.localAgentId) {
+      throw new Error(
+        `Network message to ${message.to} is not addressed to local agent ${this.localAgentId}`
+      );
+    }
+
     const sender = this.store.getAgent(message.from);
     if (!sender) {
       throw new Error(`Unknown network sender: ${message.from}`);
