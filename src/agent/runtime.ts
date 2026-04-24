@@ -486,13 +486,6 @@ export class AgentRuntime {
         { sessionId: session.sessionId }
       );
 
-      this.observeFeedbackSignals({
-        sessionId: session.sessionId,
-        chatId,
-        userMessage: effectiveMessage,
-        timestamp: now,
-      });
-
       publishRuntimeEvent(
         "agent.message.received",
         {
@@ -509,6 +502,13 @@ export class AgentRuntime {
         },
         session.sessionId
       );
+
+      this.observeFeedbackSignals({
+        sessionId: session.sessionId,
+        chatId,
+        userMessage: effectiveMessage,
+        timestamp: now,
+      });
 
       this.recordBehaviorMessage({
         sessionId: session.sessionId,
@@ -1570,14 +1570,6 @@ export class AgentRuntime {
         }
       }
 
-      this.recordFeedbackResponse({
-        sessionId: session.sessionId,
-        chatId,
-        userMessage: effectiveMessage,
-        responseText: content,
-        toolsUsed: totalToolCalls.map((toolCall) => toolCall.name),
-      });
-
       publishRuntimeEvent(
         "agent.message.sent",
         {
@@ -1590,6 +1582,14 @@ export class AgentRuntime {
         },
         session.sessionId
       );
+
+      this.recordFeedbackResponse({
+        sessionId: session.sessionId,
+        chatId,
+        userMessage: effectiveMessage,
+        responseText: content,
+        toolsUsed: totalToolCalls.map((toolCall) => toolCall.name),
+      });
 
       return {
         content,
