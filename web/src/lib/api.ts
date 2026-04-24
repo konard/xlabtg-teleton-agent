@@ -1208,6 +1208,7 @@ export type AuditActionType =
   | "session_delete"
   | "secret_change"
   | "security_change"
+  | "financial_operation"
   | "login"
   | "logout"
   | "other";
@@ -1226,6 +1227,63 @@ export interface AuditLogPage {
   total: number;
   page: number;
   limit: number;
+}
+
+export type AuditTrailEventType =
+  | "agent.decision"
+  | "tool.invoke"
+  | "tool.result"
+  | "llm.request"
+  | "llm.response"
+  | "config.change"
+  | "security.validation"
+  | "user.action"
+  | "session.lifecycle";
+
+export type AuditReportType = "daily_activity" | "security_events" | "cost_resource" | "tool_usage";
+
+export interface AuditTrailEvent {
+  id: string;
+  sequence: number;
+  event_type: AuditTrailEventType;
+  actor: string;
+  session_id: string | null;
+  payload: Record<string, unknown>;
+  parent_event_id: string | null;
+  previous_checksum: string | null;
+  checksum: string;
+  created_at: number;
+}
+
+export interface AuditTrailPage {
+  entries: AuditTrailEvent[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AuditVerifyResult {
+  valid: boolean;
+  checked: number;
+  from: number | null;
+  to: number | null;
+  brokenAtEventId: string | null;
+  expectedChecksum: string | null;
+  actualChecksum: string | null;
+  errors: string[];
+}
+
+export interface AuditChain {
+  targetEventId: string;
+  events: AuditTrailEvent[];
+}
+
+export interface AuditReport {
+  type: AuditReportType;
+  generatedAt: string;
+  periodHours: number;
+  rows: Array<Record<string, unknown>>;
+  summary: Record<string, unknown>;
 }
 
 export interface SecuritySettings {
@@ -2752,6 +2810,78 @@ export const api = {
     if (opts.since != null) params.set("since", String(opts.since));
     if (opts.until != null) params.set("until", String(opts.until));
     return `${API_BASE}/security/audit/export?${params}`;
+  },
+
+  async getAuditEvents(
+    opts: {
+      page?: number;
+      limit?: number;
+      type?: AuditTrailEventType | null;
+      session?: string | null;
+      actor?: string | null;
+      from?: number | null;
+      to?: number | null;
+    } = {}
+  ) {
+    const params = new URLSearchParams();
+    if (opts.page) params.set("page", String(opts.page));
+    if (opts.limit) params.set("limit", String(opts.limit));
+    if (opts.type) params.set("type", opts.type);
+    if (opts.session) params.set("session", opts.session);
+    if (opts.actor) params.set("actor", opts.actor);
+    if (opts.from != null) params.set("from", String(opts.from));
+    if (opts.to != null) params.set("to", String(opts.to));
+    return fetchAPI<APIResponse<AuditTrailPage>>(`/audit/events?${params}`);
+  },
+
+  async getAuditChain(eventId: string) {
+    return fetchAPI<APIResponse<AuditChain>>(`/audit/chain/${encodeURIComponent(eventId)}`);
+  },
+
+  async verifyAuditTrail(opts: { from?: number | null; to?: number | null } = {}) {
+    const params = new URLSearchParams();
+    if (opts.from != null) params.set("from", String(opts.from));
+    if (opts.to != null) params.set("to", String(opts.to));
+    return fetchAPI<APIResponse<AuditVerifyResult>>(`/audit/verify?${params}`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
+  async getAuditReport(type: AuditReportType, periodHours = 24) {
+    const params = new URLSearchParams({ period: String(periodHours) });
+    return fetchAPI<APIResponse<AuditReport>>(`/audit/reports/${type}?${params}`);
+  },
+
+  async exportAuditTrail(opts: {
+    format?: "json" | "csv";
+    type?: AuditTrailEventType | null;
+    session?: string | null;
+    actor?: string | null;
+    from?: number | null;
+    to?: number | null;
+  }) {
+    const csrfToken = getCookieValue("teleton_csrf");
+    const res = await fetch(`${API_BASE}/audit/export`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(error.error || `HTTP ${res.status}`);
+    }
+    return {
+      blob: await res.blob(),
+      filename:
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        `audit-events.${opts.format ?? "json"}`,
+      signature: res.headers.get("X-Audit-Signature") ?? "",
+    };
   },
 
   async getSecuritySettings() {
