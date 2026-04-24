@@ -1,3 +1,5 @@
+import type { MtprotoProxyEntry } from "../config/schema.js";
+
 export type ManagedAgentMode = "personal" | "bot";
 export type ManagedAgentMemoryPolicy = "isolated" | "shared-read" | "shared-write";
 export type BuiltInAgentType =
@@ -66,6 +68,7 @@ export interface ManagedAgentPersonalConnectionInput {
 export interface ManagedAgentPersonalAuthTarget {
   configPath: string;
   sessionPath: string;
+  mtprotoProxies?: MtprotoProxyEntry[];
 }
 
 export interface ManagedAgentMessage {

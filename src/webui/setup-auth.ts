@@ -6,6 +6,7 @@
  */
 
 import { TelegramClient, Api } from "telegram";
+import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { computeCheck } from "telegram/Password.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
@@ -15,6 +16,8 @@ import { randomBytes } from "crypto";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
 import { createLogger } from "../utils/logger.js";
+import type { MtprotoProxyEntry } from "../config/schema.js";
+import { MTPROTO_PROXY_CONNECT_TIMEOUT_MS } from "../constants/timeouts.js";
 
 const log = createLogger("Setup");
 
@@ -66,6 +69,82 @@ type AuthSession = PhoneAuthSession | QrAuthSession;
 export class TelegramAuthManager {
   private session: AuthSession | null = null;
 
+  private buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
+    return {
+      ip: entry.server,
+      port: entry.port,
+      secret: entry.secret,
+      MTProxy: true,
+    } as ProxyInterface;
+  }
+
+  private buildClient(apiId: number, apiHash: string, proxy?: ProxyInterface): TelegramClient {
+    const gramLogger = new Logger(LogLevel.NONE);
+    return new TelegramClient(new StringSession(""), apiId, apiHash, {
+      connectionRetries: 3,
+      floodSleepThreshold: 0,
+      baseLogger: gramLogger,
+      proxy,
+    });
+  }
+
+  private async connectWithTimeout(client: TelegramClient, proxyIndex: number): Promise<void> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new Error(
+              `[MTProxy] Auth proxy ${proxyIndex + 1} timed out after ${MTPROTO_PROXY_CONNECT_TIMEOUT_MS / 1000}s`
+            )
+          ),
+        MTPROTO_PROXY_CONNECT_TIMEOUT_MS
+      );
+    });
+
+    try {
+      await Promise.race([client.connect(), timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async createConnectedClient(
+    apiId: number,
+    apiHash: string,
+    mtprotoProxies?: MtprotoProxyEntry[]
+  ): Promise<TelegramClient> {
+    const proxies = mtprotoProxies ?? [];
+
+    for (let i = 0; i < proxies.length; i++) {
+      const proxy = proxies[i];
+      const client = this.buildClient(apiId, apiHash, this.buildProxy(proxy));
+      log.info(
+        { server: proxy.server, port: proxy.port },
+        `[MTProxy] Trying auth proxy ${i + 1}/${proxies.length}`
+      );
+
+      try {
+        await this.connectWithTimeout(client, i);
+        return client;
+      } catch (error) {
+        void Promise.resolve(client.disconnect()).catch(() => {});
+        log.warn(
+          { err: error, server: proxy.server },
+          `[MTProxy] Auth proxy ${i + 1}/${proxies.length} failed, trying next`
+        );
+      }
+    }
+
+    if (proxies.length > 0) {
+      log.warn("[MTProxy] All auth proxies failed, trying direct connection");
+    }
+
+    const client = this.buildClient(apiId, apiHash);
+    await client.connect();
+    return client;
+  }
+
   /**
    * Send verification code to phone number
    */
@@ -73,7 +152,8 @@ export class TelegramAuthManager {
     apiId: number,
     apiHash: string,
     phone: string,
-    saveTarget?: TelegramAuthSaveTarget
+    saveTarget?: TelegramAuthSaveTarget,
+    mtprotoProxies?: MtprotoProxyEntry[]
   ): Promise<{
     authSessionId: string;
     codeDelivery: "app" | "sms" | "fragment";
@@ -84,14 +164,7 @@ export class TelegramAuthManager {
     // Clean up any existing session
     await this.cleanup();
 
-    const gramLogger = new Logger(LogLevel.NONE);
-    const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
-      connectionRetries: 3,
-      floodSleepThreshold: 0,
-      baseLogger: gramLogger,
-    });
-
-    await client.connect();
+    const client = await this.createConnectedClient(apiId, apiHash, mtprotoProxies);
 
     const result = await client.invoke(
       new Api.auth.SendCode({
@@ -313,7 +386,8 @@ export class TelegramAuthManager {
   async startQrSession(
     apiId: number,
     apiHash: string,
-    saveTarget?: TelegramAuthSaveTarget
+    saveTarget?: TelegramAuthSaveTarget,
+    mtprotoProxies?: MtprotoProxyEntry[]
   ): Promise<{
     authSessionId: string;
     token: string;
@@ -322,14 +396,7 @@ export class TelegramAuthManager {
   }> {
     await this.cleanup();
 
-    const gramLogger = new Logger(LogLevel.NONE);
-    const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
-      connectionRetries: 3,
-      floodSleepThreshold: 0,
-      baseLogger: gramLogger,
-    });
-
-    await client.connect();
+    const client = await this.createConnectedClient(apiId, apiHash, mtprotoProxies);
 
     const result = await client.invoke(
       new Api.auth.ExportLoginToken({

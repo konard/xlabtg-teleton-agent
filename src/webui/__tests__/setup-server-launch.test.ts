@@ -67,6 +67,7 @@ vi.mock("../setup-auth.js", () => ({
     verifyCode = vi.fn();
     verifyPassword = vi.fn();
     resendCode = vi.fn();
+    startQrSession = vi.fn();
     cancelSession = vi.fn();
   },
 }));

@@ -217,6 +217,43 @@ describe("ManagedAgentService", () => {
     expect(service.getAgentSnapshot(snapshot.id).hasPersonalSession).toBe(false);
   });
 
+  it("returns configured MTProto proxies for managed personal authentication", () => {
+    writeFileSync(
+      configPath,
+      `${PRIMARY_CONFIG}
+mtproto:
+  enabled: true
+  proxies:
+    - server: proxy1.example.com
+      port: 443
+      secret: ${"a".repeat(32)}
+`,
+      "utf-8"
+    );
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Proxy Personal",
+      mode: "personal",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+
+    const authTarget = service.resolvePersonalAuthTarget(snapshot.id);
+
+    expect(authTarget.mtprotoProxies).toEqual([
+      {
+        server: "proxy1.example.com",
+        port: 443,
+        secret: "a".repeat(32),
+      },
+    ]);
+  });
+
   it("allocates unique ids when the same name is cloned twice", () => {
     service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
 
