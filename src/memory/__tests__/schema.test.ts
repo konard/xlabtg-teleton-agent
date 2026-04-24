@@ -47,6 +47,8 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("sessions");
       expect(tableNames).toContain("tasks");
       expect(tableNames).toContain("task_dependencies");
+      expect(tableNames).toContain("task_subtasks");
+      expect(tableNames).toContain("task_subtask_dependencies");
       expect(tableNames).toContain("graph_nodes");
       expect(tableNames).toContain("graph_edges");
       expect(tableNames).toContain("tg_chats");
@@ -189,6 +191,41 @@ describe("Memory Schema", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "task_id", pk: 1 }),
           expect.objectContaining({ name: "depends_on_task_id", pk: 2 }),
+        ])
+      );
+    });
+
+    it("creates task delegation tables with correct schema", () => {
+      ensureSchema(db);
+
+      const subtaskInfo = db.prepare("PRAGMA table_info(task_subtasks)").all() as Array<{
+        name: string;
+        pk: number;
+      }>;
+      const dependencyInfo = db
+        .prepare("PRAGMA table_info(task_subtask_dependencies)")
+        .all() as Array<{ name: string; pk: number }>;
+
+      const subtaskColumns = subtaskInfo.map((c) => c.name);
+      expect(subtaskColumns).toEqual(
+        expect.arrayContaining([
+          "id",
+          "task_id",
+          "parent_id",
+          "description",
+          "required_skills",
+          "required_tools",
+          "agent_id",
+          "status",
+          "depth",
+          "result",
+          "error",
+        ])
+      );
+      expect(dependencyInfo).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ name: "subtask_id", pk: 1 }),
+          expect.objectContaining({ name: "depends_on_subtask_id", pk: 2 }),
         ])
       );
     });
@@ -1139,7 +1176,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.27.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.28.0");
     });
   });
 
