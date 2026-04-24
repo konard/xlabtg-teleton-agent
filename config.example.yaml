@@ -172,6 +172,23 @@ webhooks:
   delivery_timeout_ms: 5000           # Timeout for each outgoing webhook POST
   # Secrets are stored encrypted with TELETON_WEBHOOK_KEY or generated ~/.teleton/.webhook-secret-key.
 
+# Optional: multi-agent network protocol for cross-deployment collaboration.
+network:
+  enabled: false
+  agent_id: "primary"
+  agent_name: "Primary Agent"
+  endpoint: null                      # Public HTTPS URL ending in /api/agent-network
+  discovery_mode: "central"           # central | peer-to-peer | dns
+  registry_url: null
+  known_peers: []
+  public_key: null                    # PEM Ed25519 public key advertised to peers
+  private_key: null                   # PEM Ed25519 private key for outbound signatures
+  allowlist: []                       # Optional trusted agent ids
+  blocklist: []                       # Blocked agent ids
+  default_trust_level: "untrusted"    # trusted | verified | untrusted
+  message_timeout_ms: 15000
+  max_clock_skew_seconds: 300
+
 # Autonomous task engine settings.
 autonomous:
   pause_timeout_hours: 24              # Hours a paused task may wait before being auto-cancelled (AUDIT-M5)

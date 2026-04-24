@@ -66,6 +66,7 @@ import { createFeedbackRoutes } from "./routes/feedback.js";
 import { createPromptRoutes } from "./routes/prompts.js";
 import { createDashboardsRoutes } from "./routes/dashboards.js";
 import { createWidgetGeneratorRoutes } from "./routes/widget-generator.js";
+import { createAgentNetworkIngressRoutes, createNetworkRoutes } from "./routes/network.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -192,6 +193,10 @@ export class WebUIServer {
     // Auth for all /api/* routes
     // Accepts: HttpOnly cookie > Bearer header > ?token= query param (fallback)
     this.app.use("/api/*", async (c, next) => {
+      if (c.req.path === "/api/agent-network") {
+        return next();
+      }
+
       // 1. Check HttpOnly session cookie (primary — browser).
       // The cookie always carries the in-memory session token, so a raw
       // comparison is correct regardless of whether the config stores a hash.
@@ -309,6 +314,8 @@ export class WebUIServer {
     this.app.route("/api/prompts", createPromptRoutes(this.deps));
     this.app.route("/api/dashboards", createDashboardsRoutes(this.deps));
     this.app.route("/api/widgets", createWidgetGeneratorRoutes(this.deps));
+    this.app.route("/api/network", createNetworkRoutes(this.deps));
+    this.app.route("/api/agent-network", createAgentNetworkIngressRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {

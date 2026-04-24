@@ -72,6 +72,9 @@ function DashboardNav() {
         <Link to="/integrations" className={isActive("/integrations") ? "active" : ""}>
           Integrations
         </Link>
+        <Link to="/network" className={isActive("/network") ? "active" : ""}>
+          Network
+        </Link>
         <Link to="/hooks" className={isActive("/hooks") ? "active" : ""}>
           Hooks
         </Link>

@@ -392,6 +392,54 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_subtask_deps_subtask ON task_subtask_dependencies(subtask_id);
     CREATE INDEX IF NOT EXISTS idx_subtask_deps_parent ON task_subtask_dependencies(depends_on_subtask_id);
 
+    -- Agent Network Protocol
+    CREATE TABLE IF NOT EXISTS network_agents (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      capabilities TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'offline'
+        CHECK(status IN ('available', 'busy', 'offline', 'degraded')),
+      load REAL NOT NULL DEFAULT 0 CHECK(load >= 0 AND load <= 1),
+      public_key TEXT,
+      trust_level TEXT NOT NULL DEFAULT 'untrusted'
+        CHECK(trust_level IN ('trusted', 'verified', 'untrusted')),
+      blocked INTEGER NOT NULL DEFAULT 0 CHECK(blocked IN (0, 1)),
+      latency_ms INTEGER,
+      error_rate REAL NOT NULL DEFAULT 0 CHECK(error_rate >= 0 AND error_rate <= 1),
+      metadata TEXT NOT NULL DEFAULT '{}',
+      last_seen_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_network_agents_status ON network_agents(status);
+    CREATE INDEX IF NOT EXISTS idx_network_agents_trust ON network_agents(trust_level, blocked);
+    CREATE INDEX IF NOT EXISTS idx_network_agents_seen ON network_agents(last_seen_at DESC);
+
+    CREATE TABLE IF NOT EXISTS network_messages (
+      id TEXT PRIMARY KEY,
+      type TEXT NOT NULL
+        CHECK(type IN ('task_request', 'task_response', 'capability_query', 'heartbeat', 'negotiation')),
+      from_agent_id TEXT NOT NULL,
+      to_agent_id TEXT NOT NULL,
+      correlation_id TEXT NOT NULL,
+      payload TEXT NOT NULL DEFAULT '{}',
+      signature TEXT,
+      timestamp TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued'
+        CHECK(status IN ('queued', 'sent', 'received', 'failed')),
+      error TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      sent_at INTEGER,
+      received_at INTEGER
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_network_messages_from ON network_messages(from_agent_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_network_messages_to ON network_messages(to_agent_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_network_messages_correlation ON network_messages(correlation_id);
+    CREATE INDEX IF NOT EXISTS idx_network_messages_status ON network_messages(status, created_at DESC);
+
     -- ============================================
     -- PIPELINE EXECUTION
     -- ============================================
@@ -889,7 +937,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.34.0";
+export const CURRENT_SCHEMA_VERSION = "1.35.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1974,6 +2022,64 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.34.0 complete: dynamic dashboard tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.34.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.35.0")) {
+    log.info("Running migration 1.35.0: Add agent network protocol tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS network_agents (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          endpoint TEXT NOT NULL,
+          capabilities TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'offline'
+            CHECK(status IN ('available', 'busy', 'offline', 'degraded')),
+          load REAL NOT NULL DEFAULT 0 CHECK(load >= 0 AND load <= 1),
+          public_key TEXT,
+          trust_level TEXT NOT NULL DEFAULT 'untrusted'
+            CHECK(trust_level IN ('trusted', 'verified', 'untrusted')),
+          blocked INTEGER NOT NULL DEFAULT 0 CHECK(blocked IN (0, 1)),
+          latency_ms INTEGER,
+          error_rate REAL NOT NULL DEFAULT 0 CHECK(error_rate >= 0 AND error_rate <= 1),
+          metadata TEXT NOT NULL DEFAULT '{}',
+          last_seen_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_network_agents_status ON network_agents(status);
+        CREATE INDEX IF NOT EXISTS idx_network_agents_trust ON network_agents(trust_level, blocked);
+        CREATE INDEX IF NOT EXISTS idx_network_agents_seen ON network_agents(last_seen_at DESC);
+
+        CREATE TABLE IF NOT EXISTS network_messages (
+          id TEXT PRIMARY KEY,
+          type TEXT NOT NULL
+            CHECK(type IN ('task_request', 'task_response', 'capability_query', 'heartbeat', 'negotiation')),
+          from_agent_id TEXT NOT NULL,
+          to_agent_id TEXT NOT NULL,
+          correlation_id TEXT NOT NULL,
+          payload TEXT NOT NULL DEFAULT '{}',
+          signature TEXT,
+          timestamp TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'queued'
+            CHECK(status IN ('queued', 'sent', 'received', 'failed')),
+          error TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          sent_at INTEGER,
+          received_at INTEGER
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_network_messages_from ON network_messages(from_agent_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_network_messages_to ON network_messages(to_agent_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_network_messages_correlation ON network_messages(correlation_id);
+        CREATE INDEX IF NOT EXISTS idx_network_messages_status ON network_messages(status, created_at DESC);
+      `);
+      log.info("Migration 1.35.0 complete: agent network tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.35.0 failed");
       throw error;
     }
   }

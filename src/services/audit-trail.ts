@@ -14,6 +14,7 @@ export const AUDIT_EVENT_TYPES = [
   "llm.response",
   "config.change",
   "security.validation",
+  "network.message",
   "user.action",
   "session.lifecycle",
 ] as const;

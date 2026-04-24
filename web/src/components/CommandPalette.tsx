@@ -22,6 +22,7 @@ const NAV_ITEMS: SearchItem[] = [
   { id: 'nav-events', label: 'Events', category: 'Pages', path: '/events', keywords: 'event bus webhooks deliveries stream replay' },
   { id: 'nav-mcp', label: 'MCP', category: 'Pages', path: '/mcp', keywords: 'model context protocol servers' },
   { id: 'nav-integrations', label: 'Integrations', category: 'Pages', path: '/integrations', keywords: 'api oauth webhooks credentials external services' },
+  { id: 'nav-network', label: 'Network', category: 'Pages', path: '/network', keywords: 'remote agents trust topology messages' },
   { id: 'nav-hooks', label: 'Hooks', category: 'Pages', path: '/hooks', keywords: 'rules blocklist triggers' },
   { id: 'nav-sessions', label: 'Sessions', category: 'Pages', path: '/sessions', keywords: 'conversations chats history' },
   { id: 'nav-analytics', label: 'Analytics', category: 'Pages', path: '/analytics', keywords: 'metrics costs usage' },

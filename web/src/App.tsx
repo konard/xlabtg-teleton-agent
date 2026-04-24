@@ -18,6 +18,7 @@ import { Pipelines } from "./pages/Pipelines";
 import { Events } from "./pages/Events";
 import { Mcp } from "./pages/Mcp";
 import { Integrations } from "./pages/Integrations";
+import { Network } from "./pages/Network";
 import { Config } from "./pages/Config";
 import { Hooks } from "./pages/Hooks";
 import { Sessions } from "./pages/Sessions";
@@ -157,6 +158,7 @@ function AuthenticatedApp() {
               <Route path="events" element={<Events />} />
               <Route path="mcp" element={<Mcp />} />
               <Route path="integrations" element={<Integrations />} />
+              <Route path="network" element={<Network />} />
               <Route path="config" element={<Config />} />
               <Route path="hooks" element={<Hooks />} />
               <Route path="sessions" element={<Sessions />} />

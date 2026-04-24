@@ -58,6 +58,11 @@ export function createCsrfMiddleware(): MiddlewareHandler {
       return next();
     }
 
+    // Signed inter-agent network ingress uses message signatures instead of browser CSRF cookies.
+    if (path === "/api/agent-network") {
+      return next();
+    }
+
     // Ensure a CSRF cookie exists (set one if missing)
     let csrfToken = getCookie(c, CSRF_COOKIE_NAME);
     if (!csrfToken) {
