@@ -95,6 +95,8 @@ import { getAnalytics } from "../services/analytics.js";
 import { getAnomalyDetector } from "../services/anomaly-detector.js";
 import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
+import { getFeedback } from "../services/feedback/capture.js";
+import { FeedbackLearner } from "../services/feedback/learner.js";
 import { getPreloader } from "../services/preloader.js";
 import { getEventBus, type EventType, type EventPayload } from "../services/event-bus.js";
 import {
@@ -501,6 +503,13 @@ export class AgentRuntime {
         session.sessionId
       );
 
+      this.observeFeedbackSignals({
+        sessionId: session.sessionId,
+        chatId,
+        userMessage: effectiveMessage,
+        timestamp: now,
+      });
+
       this.recordBehaviorMessage({
         sessionId: session.sessionId,
         chatId,
@@ -595,7 +604,13 @@ export class AgentRuntime {
         sessionIndex: context.messages.length,
         sessionMessageCount: session.messageCount,
       });
-      const contextSections = [statsContext, temporalContext, retrievalContext].filter(Boolean);
+      const feedbackContext = this.buildFeedbackPromptContext();
+      const contextSections = [
+        statsContext,
+        temporalContext,
+        feedbackContext,
+        retrievalContext,
+      ].filter(Boolean);
 
       const additionalContext = `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${contextSections.join("\n\n")}`;
 
@@ -1568,6 +1583,14 @@ export class AgentRuntime {
         session.sessionId
       );
 
+      this.recordFeedbackResponse({
+        sessionId: session.sessionId,
+        chatId,
+        userMessage: effectiveMessage,
+        responseText: content,
+        toolsUsed: totalToolCalls.map((toolCall) => toolCall.name),
+      });
+
       return {
         content,
         toolCalls: totalToolCalls,
@@ -1919,6 +1942,38 @@ export class AgentRuntime {
     }
   }
 
+  private observeFeedbackSignals(opts: {
+    sessionId: string;
+    chatId: string;
+    userMessage: string;
+    timestamp: number;
+  }): void {
+    if (this.config.feedback?.enabled !== true || this.config.feedback.implicit_signals !== true) {
+      return;
+    }
+    try {
+      getFeedback()?.observeImplicitSignals(opts);
+    } catch (error) {
+      log.warn({ err: error }, "Implicit feedback tracking failed");
+    }
+  }
+
+  private recordFeedbackResponse(opts: {
+    sessionId: string;
+    chatId: string;
+    userMessage: string;
+    responseText: string;
+    toolsUsed: string[];
+  }): void {
+    if (this.config.feedback?.enabled !== true) return;
+    if (!opts.responseText.trim() && opts.toolsUsed.length === 0) return;
+    try {
+      getFeedback()?.recordResponse(opts);
+    } catch (error) {
+      log.warn({ err: error }, "Feedback response tracking failed");
+    }
+  }
+
   private detectAnomalies(): void {
     if (this.config.anomaly_detection?.enabled !== true) return;
     const detector = getAnomalyDetector();
@@ -1958,6 +2013,25 @@ export class AgentRuntime {
       return sanitizeForContext(formatTemporalContextForPrompt(snapshot));
     } catch (error) {
       log.warn({ err: error }, "Temporal context build failed");
+      return "";
+    }
+  }
+
+  private buildFeedbackPromptContext(): string {
+    if (
+      this.config.feedback?.enabled !== true ||
+      this.config.feedback.prompt_adjustments !== true
+    ) {
+      return "";
+    }
+
+    try {
+      const prompt = new FeedbackLearner(getDatabase().getDb()).buildPromptAdjustment({
+        minThemeCount: this.config.feedback.min_feedback_for_prompt,
+      });
+      return prompt ? sanitizeForContext(prompt) : "";
+    } catch (error) {
+      log.warn({ err: error }, "Feedback prompt context build failed");
       return "";
     }
   }

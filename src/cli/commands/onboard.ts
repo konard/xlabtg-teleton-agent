@@ -46,6 +46,7 @@ import {
   MarketplaceConfigSchema,
   MemoryConfigSchema,
   PredictionsConfigSchema,
+  FeedbackConfigSchema,
   TemporalContextConfigSchema,
   SelfCorrectionConfigSchema,
   AnomalyDetectionConfigSchema,
@@ -1029,6 +1030,7 @@ async function runInteractiveOnboarding(
       log_requests: false,
     },
     predictions: PredictionsConfigSchema.parse({}),
+    feedback: FeedbackConfigSchema.parse({}),
     anomaly_detection: AnomalyDetectionConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {
@@ -1239,6 +1241,7 @@ async function runNonInteractiveOnboarding(
       log_requests: false,
     },
     predictions: PredictionsConfigSchema.parse({}),
+    feedback: FeedbackConfigSchema.parse({}),
     anomaly_detection: AnomalyDetectionConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {

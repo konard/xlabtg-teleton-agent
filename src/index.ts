@@ -56,6 +56,7 @@ import { initAnalytics } from "./services/analytics.js";
 import { initAuditTrail } from "./services/audit-trail.js";
 import { initBehaviorTracker } from "./services/behavior-tracker.js";
 import { initPredictions } from "./services/predictions.js";
+import { initFeedback } from "./services/feedback/capture.js";
 import { initCache } from "./services/cache.js";
 import { CacheInvalidationWatcher, initPreloader } from "./services/preloader.js";
 import { initAlerting } from "./services/alerting.js";
@@ -213,6 +214,10 @@ export class TeletonApp {
     initAuditTrail(db, { maxPayloadBytes: this.config.audit_trail.payload_max_bytes });
     initBehaviorTracker(db, { historyLimit: this.config.predictions.history_limit });
     initPredictions(db);
+    initFeedback(db, {
+      correctionWindowSeconds: this.config.feedback.correction_window_seconds,
+      acceptanceDelaySeconds: this.config.feedback.acceptance_delay_seconds,
+    });
     const alerting = initAlerting(db, {
       config: this.config.anomaly_detection,
       telegram: {

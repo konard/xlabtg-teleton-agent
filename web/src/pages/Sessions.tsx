@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import {
   api,
   type CorrectionLogEntry,
+  type FeedbackRecord,
   type SessionListItem,
   type SessionMessage,
 } from "../lib/api";
@@ -43,7 +44,166 @@ function ChatTypeBadge({ type }: { type: string | null }) {
   );
 }
 
-function ChatBubble({ msg }: { msg: SessionMessage }) {
+function ThumbIcon({ direction }: { direction: "up" | "down" }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      style={{ transform: direction === "down" ? "rotate(180deg)" : undefined }}
+    >
+      <path d="M7 10v11" />
+      <path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z" />
+    </svg>
+  );
+}
+
+function InlineFeedback({
+  sessionId,
+  messageId,
+  existing,
+}: {
+  sessionId: string;
+  messageId: string;
+  existing?: FeedbackRecord;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [selected, setSelected] = useState<"positive" | "negative" | null>(
+    existing?.type === "positive" || existing?.type === "negative" ? existing.type : null
+  );
+  const [rating, setRating] = useState(existing?.rating ?? 5);
+  const [text, setText] = useState(existing?.text ?? "");
+  const [tags, setTags] = useState<string[]>(existing?.tags ?? []);
+  const [saving, setSaving] = useState(false);
+  const [status, setStatus] = useState<string | null>(existing ? "Saved" : null);
+
+  const submit = async (type: "positive" | "negative", extraTags = tags, note = text) => {
+    setSaving(true);
+    setStatus(null);
+    try {
+      const res = await api.submitFeedback({
+        sessionId,
+        messageId,
+        type,
+        rating: type === "positive" ? Math.max(rating, 4) : Math.min(rating, 2),
+        text: note || null,
+        tags: extraTags,
+      });
+      setSelected(res.data?.type === "negative" ? "negative" : "positive");
+      setStatus("Saved");
+    } catch (err) {
+      setStatus(err instanceof Error ? err.message : "Failed");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const toggleTag = (tag: string) => {
+    setTags((prev) => (prev.includes(tag) ? prev.filter((item) => item !== tag) : [...prev, tag]));
+  };
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexWrap: "wrap",
+        alignItems: "center",
+        gap: "6px",
+        marginTop: "5px",
+        maxWidth: "75%",
+      }}
+    >
+      <button
+        className={selected === "positive" ? "btn-sm" : "btn-ghost btn-sm"}
+        onClick={() => submit("positive", tags.includes("helpful") ? tags : [...tags, "helpful"])}
+        disabled={saving}
+        title="Mark helpful"
+        aria-label="Mark helpful"
+        style={{ padding: "3px 7px", minWidth: "28px" }}
+      >
+        <ThumbIcon direction="up" />
+      </button>
+      <button
+        className={selected === "negative" ? "btn-sm" : "btn-ghost btn-sm"}
+        onClick={() => submit("negative")}
+        disabled={saving}
+        title="Mark not helpful"
+        aria-label="Mark not helpful"
+        style={{ padding: "3px 7px", minWidth: "28px" }}
+      >
+        <ThumbIcon direction="down" />
+      </button>
+      <select
+        value={rating}
+        onChange={(event) => setRating(Number(event.target.value))}
+        title="Rating"
+        aria-label="Rating"
+        style={{ width: "56px", padding: "3px 18px 3px 7px", fontSize: "12px" }}
+      >
+        {[1, 2, 3, 4, 5].map((value) => (
+          <option key={value} value={value}>
+            {value}
+          </option>
+        ))}
+      </select>
+      <button
+        className="btn-ghost btn-sm"
+        onClick={() => setExpanded((value) => !value)}
+        style={{ padding: "3px 8px", fontSize: "12px" }}
+      >
+        Note
+      </button>
+      {status && <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>{status}</span>}
+      {expanded && (
+        <div style={{ flexBasis: "100%", display: "grid", gap: "6px", marginTop: "2px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "5px" }}>
+            {["too_long", "too_short", "wrong", "unclear"].map((tag) => (
+              <button
+                key={tag}
+                className={tags.includes(tag) ? "btn-sm" : "btn-ghost btn-sm"}
+                onClick={() => toggleTag(tag)}
+                style={{ padding: "2px 7px", fontSize: "11px" }}
+              >
+                {tag.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+          <textarea
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder="What could be better?"
+            rows={2}
+            style={{ fontSize: "12px", minHeight: "54px" }}
+          />
+          <button
+            className="btn-sm"
+            onClick={() => submit(selected ?? (rating >= 4 ? "positive" : "negative"))}
+            disabled={saving}
+            style={{ justifySelf: "start", padding: "3px 10px", fontSize: "12px" }}
+          >
+            Save
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ChatBubble({
+  msg,
+  sessionId,
+  feedback,
+}: {
+  msg: SessionMessage;
+  sessionId: string;
+  feedback?: FeedbackRecord;
+}) {
   const isAgent = msg.isFromAgent;
   const senderLabel = isAgent
     ? "Agent"
@@ -93,6 +253,7 @@ function ChatBubble({ msg }: { msg: SessionMessage }) {
           </div>
         )}
       </div>
+      {isAgent && <InlineFeedback sessionId={sessionId} messageId={msg.id} existing={feedback} />}
     </div>
   );
 }
@@ -221,6 +382,7 @@ function SessionDetail({
 }) {
   const { confirm } = useConfirm();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
+  const [feedbackByMessage, setFeedbackByMessage] = useState<Record<string, FeedbackRecord>>({});
   const [corrections, setCorrections] = useState<CorrectionLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -233,13 +395,21 @@ function SessionDetail({
       setLoading(true);
       setError(null);
       try {
-        const [res, correctionRes] = await Promise.all([
+        const [res, correctionRes, feedbackRes] = await Promise.all([
           api.getSessionMessages(session.sessionId, p, limit),
           api.getSessionCorrections(session.sessionId),
+          api.getFeedback({ session: session.sessionId, limit: 500 }),
         ]);
         setMessages(res.data.messages);
         setTotal(res.data.total);
         setCorrections(correctionRes.data.corrections);
+        const nextFeedbackByMessage: Record<string, FeedbackRecord> = {};
+        for (const record of feedbackRes.data?.feedback ?? []) {
+          if (record.messageId && !nextFeedbackByMessage[record.messageId]) {
+            nextFeedbackByMessage[record.messageId] = record;
+          }
+        }
+        setFeedbackByMessage(nextFeedbackByMessage);
         setPage(p);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -379,7 +549,14 @@ function SessionDetail({
             No Telegram messages found for this session.
           </div>
         ) : (
-          messages.map((msg) => <ChatBubble key={msg.id} msg={msg} />)
+          messages.map((msg) => (
+            <ChatBubble
+              key={msg.id}
+              msg={msg}
+              sessionId={session.sessionId}
+              feedback={feedbackByMessage[msg.id]}
+            />
+          ))
         )}
       </div>
 

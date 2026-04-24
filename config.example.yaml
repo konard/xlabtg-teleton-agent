@@ -184,6 +184,15 @@ predictions:
   max_suggestions: 5                  # Max predictions per API response
   history_limit: 5000                 # Max behavior events retained locally
 
+# Feedback learning: explicit ratings plus conservative cross-session preferences.
+feedback:
+  enabled: true                       # Store feedback and expose feedback analytics APIs
+  implicit_signals: true              # Infer corrections/rephrasing/accepted output signals
+  prompt_adjustments: true            # Apply repeated learned preferences to future prompts
+  min_feedback_for_prompt: 2          # Repeated theme count needed before prompt injection
+  correction_window_seconds: 600      # Follow-up correction window
+  acceptance_delay_seconds: 300       # Delay before treating no correction as accepted output
+
 # Anomaly detection: rolling baselines for volume, errors, latency, tool usage, and cost.
 anomaly_detection:
   enabled: true                       # Enable automated anomaly detection

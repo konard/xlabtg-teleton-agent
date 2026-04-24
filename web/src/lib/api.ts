@@ -1237,6 +1237,87 @@ export interface BudgetStatus {
   projection_usd: number | null;
 }
 
+// ── Feedback learning types ─────────────────────────────────────────
+
+export type FeedbackType = "positive" | "negative" | "rating" | "text" | "implicit";
+
+export interface FeedbackRecord {
+  id: number;
+  sessionId: string;
+  messageId: string | null;
+  type: FeedbackType;
+  rating: number | null;
+  text: string | null;
+  tags: string[];
+  implicitSignals: Record<string, unknown>;
+  topic: string | null;
+  agentType: string | null;
+  createdAt: number;
+}
+
+export interface FeedbackListData {
+  feedback: FeedbackRecord[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface FeedbackTheme {
+  theme: string;
+  label: string;
+  count: number;
+  positive: number;
+  negative: number;
+  neutral: number;
+  averageRating: number | null;
+  lastSeen: number;
+}
+
+export interface FeedbackTrendPoint {
+  date: string;
+  count: number;
+  averageRating: number | null;
+  satisfactionScore: number | null;
+  positive: number;
+  negative: number;
+}
+
+export interface FeedbackAnalyticsData {
+  totalFeedback: number;
+  explicitFeedback: number;
+  implicitFeedback: number;
+  averageRating: number | null;
+  satisfactionScore: number | null;
+  improvementTrend: number | null;
+  feedbackCoverage: number | null;
+  topImprovementOpportunities: FeedbackTheme[];
+  trend: FeedbackTrendPoint[];
+}
+
+export interface FeedbackPreferenceEntry<T extends string = string> {
+  value: T;
+  confidence: number;
+  source: "learned" | "manual";
+  updatedAt: number | null;
+}
+
+export interface FeedbackPreferenceProfile {
+  responseLength: FeedbackPreferenceEntry<"concise" | "balanced" | "detailed">;
+  codeStyle: FeedbackPreferenceEntry<"clean" | "commented" | "verified_examples">;
+  interactionStyle: FeedbackPreferenceEntry<"direct" | "neutral" | "supportive">;
+  toolSelection: FeedbackPreferenceEntry<"conservative" | "normal" | "exploratory">;
+}
+
+export interface FeedbackSubmitInput {
+  sessionId: string;
+  messageId?: string | null;
+  type: FeedbackType;
+  rating?: number | null;
+  text?: string | null;
+  tags?: string[];
+  implicitSignals?: Record<string, unknown>;
+}
+
 // ── Temporal context types ───────────────────────────────────────────
 
 export interface TemporalMetadata {
@@ -3050,6 +3131,57 @@ export const api = {
     return fetchAPI<APIResponse<BudgetStatus>>("/analytics/budget", {
       method: "PUT",
       body: JSON.stringify({ monthly_limit_usd }),
+    });
+  },
+
+  // ── Feedback Learning ────────────────────────────────────────────
+
+  async submitFeedback(input: FeedbackSubmitInput) {
+    return fetchAPI<APIResponse<FeedbackRecord>>("/feedback", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getFeedback(
+    params: {
+      session?: string;
+      message?: string;
+      type?: FeedbackType;
+      page?: number;
+      limit?: number;
+    } = {}
+  ) {
+    const search = new URLSearchParams();
+    if (params.session) search.set("session", params.session);
+    if (params.message) search.set("message", params.message);
+    if (params.type) search.set("type", params.type);
+    if (params.page) search.set("page", String(params.page));
+    if (params.limit) search.set("limit", String(params.limit));
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return fetchAPI<APIResponse<FeedbackListData>>(`/feedback${suffix}`);
+  },
+
+  async getFeedbackAnalytics(periodDays = 30) {
+    return fetchAPI<APIResponse<FeedbackAnalyticsData>>(
+      `/feedback/analytics?periodDays=${periodDays}`
+    );
+  },
+
+  async getFeedbackThemes(periodDays = 30, limit = 20) {
+    return fetchAPI<APIResponse<FeedbackTheme[]>>(
+      `/feedback/themes?periodDays=${periodDays}&limit=${limit}`
+    );
+  },
+
+  async getFeedbackPreferences() {
+    return fetchAPI<APIResponse<FeedbackPreferenceProfile>>("/feedback/preferences");
+  },
+
+  async updateFeedbackPreferences(input: Partial<Record<keyof FeedbackPreferenceProfile, string>>) {
+    return fetchAPI<APIResponse<FeedbackPreferenceProfile>>("/feedback/preferences", {
+      method: "PUT",
+      body: JSON.stringify(input),
     });
   },
 

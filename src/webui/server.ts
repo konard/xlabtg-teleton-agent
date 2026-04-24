@@ -62,6 +62,7 @@ import { createPredictionsRoutes } from "./routes/predictions.js";
 import { createAgentsRoutes } from "./routes/agents.js";
 import { createIntegrationsRoutes } from "./routes/integrations.js";
 import { createTemporalRoutes } from "./routes/temporal.js";
+import { createFeedbackRoutes } from "./routes/feedback.js";
 import { createDashboardsRoutes } from "./routes/dashboards.js";
 import { createWidgetGeneratorRoutes } from "./routes/widget-generator.js";
 
@@ -303,6 +304,7 @@ export class WebUIServer {
     this.app.route("/api/agents", createAgentsRoutes(this.deps));
     this.app.route("/api/integrations", createIntegrationsRoutes(this.deps));
     this.app.route("/api/context", createTemporalRoutes(this.deps));
+    this.app.route("/api/feedback", createFeedbackRoutes(this.deps));
     this.app.route("/api/dashboards", createDashboardsRoutes(this.deps));
     this.app.route("/api/widgets", createWidgetGeneratorRoutes(this.deps));
 
