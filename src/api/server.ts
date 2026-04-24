@@ -47,6 +47,25 @@ import { createWebhooksRoutes } from "../webui/routes/webhooks.js";
 import { createIntegrationsRoutes } from "../webui/routes/integrations.js";
 import { createFeedbackRoutes } from "../webui/routes/feedback.js";
 import { createPromptRoutes } from "../webui/routes/prompts.js";
+import { createNotificationsRoutes } from "../webui/routes/notifications.js";
+import { createCacheRoutes } from "../webui/routes/cache.js";
+import { createMetricsRoutes } from "../webui/routes/metrics.js";
+import { createSessionsRoutes } from "../webui/routes/sessions.js";
+import { createAnalyticsRoutes } from "../webui/routes/analytics.js";
+import { createAnomaliesRoutes } from "../webui/routes/anomalies.js";
+import { createSecurityRoutes } from "../webui/routes/security.js";
+import { createAuditRoutes } from "../webui/routes/audit.js";
+import { createHealthRoutes } from "../webui/routes/health.js";
+import { createExportImportRoutes } from "../webui/routes/export-import.js";
+import { createWorkflowsRoutes } from "../webui/routes/workflows.js";
+import { createPipelinesRoutes } from "../webui/routes/pipelines.js";
+import { createSelfImprovementRoutes } from "../webui/routes/self-improvement.js";
+import { createAutonomousRoutes } from "../webui/routes/autonomous.js";
+import { createPredictionsRoutes } from "../webui/routes/predictions.js";
+import { createTemporalRoutes } from "../webui/routes/temporal.js";
+import { createDashboardsRoutes } from "../webui/routes/dashboards.js";
+import { createWidgetGeneratorRoutes } from "../webui/routes/widget-generator.js";
+import { createNetworkRoutes } from "../webui/routes/network.js";
 
 // New API routes
 import { createAgentRoutes } from "./routes/agent.js";
@@ -91,7 +110,14 @@ function getSetupStatus(): Record<string, boolean> {
 }
 
 /** SSE path patterns that must be excluded from timeout middleware */
-const SSE_PATHS = ["/v1/agent/events", "/v1/logs/stream", "/v1/events/stream"];
+const SSE_PATHS = [
+  "/v1/agent/events",
+  "/v1/api-logs/stream",
+  "/v1/audit/stream",
+  "/v1/events/stream",
+  "/v1/logs/stream",
+  "/v1/notifications/stream",
+];
 
 export interface ApiCredentials {
   apiKey: string;
@@ -250,6 +276,29 @@ export class ApiServer {
     this.app.route("/v1/prompts", createPromptRoutes(adaptedDeps));
     this.app.route("/v1/events", createEventsRoutes(adaptedDeps));
     this.app.route("/v1/webhooks", createWebhooksRoutes(adaptedDeps));
+    this.app.route("/v1/notifications", createNotificationsRoutes(adaptedDeps));
+    this.app.route("/v1/cache", createCacheRoutes(adaptedDeps));
+    this.app.route("/v1/metrics", createMetricsRoutes(adaptedDeps));
+    this.app.route("/v1/sessions", createSessionsRoutes(adaptedDeps));
+    this.app.route("/v1/analytics", createAnalyticsRoutes(adaptedDeps));
+    this.app.route("/v1/anomalies", createAnomaliesRoutes(adaptedDeps));
+    this.app.route("/v1/security", createSecurityRoutes(adaptedDeps));
+    this.app.route("/v1/audit", createAuditRoutes(adaptedDeps));
+    this.app.route("/v1/health-check", createHealthRoutes(adaptedDeps));
+    this.app.route("/v1/export", createExportImportRoutes(adaptedDeps));
+    this.app.route("/v1/workflows", createWorkflowsRoutes(adaptedDeps));
+    this.app.route("/v1/pipelines", createPipelinesRoutes(adaptedDeps));
+    this.app.route("/v1/self-improvement", createSelfImprovementRoutes(adaptedDeps));
+    this.app.route("/v1/autonomous", createAutonomousRoutes(adaptedDeps));
+    this.app.route("/v1/predictions", createPredictionsRoutes(adaptedDeps));
+    this.app.route("/v1/context", createTemporalRoutes(adaptedDeps));
+    this.app.route("/v1/dashboards", createDashboardsRoutes(adaptedDeps));
+    this.app.route("/v1/widgets", createWidgetGeneratorRoutes(adaptedDeps));
+    this.app.route("/v1/network", createNetworkRoutes(adaptedDeps));
+
+    // WebUI-only groups not mirrored here:
+    // - agent-network uses signed inter-agent protocol auth instead of API keys.
+    // - agent-actions, groq, and mtproto are browser setup/control helpers.
 
     // Setup routes (no agent deps needed, keyHash for config persistence)
     this.app.route("/v1/setup", createSetupRoutes({ keyHash: this.keyHash }));

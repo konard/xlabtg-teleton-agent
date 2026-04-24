@@ -3,7 +3,7 @@ import type { TelegramBridge } from "../telegram/bridge.js";
 import type { MemorySystem } from "../memory/index.js";
 import type { ToolRegistry } from "../agent/tools/registry.js";
 import type { WebUIServerDeps, LoadedPlugin, McpServerInfo } from "../webui/types.js";
-import type { WebUIConfig } from "../config/schema.js";
+import type { NetworkConfig, WebUIConfig } from "../config/schema.js";
 import type { Database } from "better-sqlite3";
 import type { AgentLifecycle } from "../agent/lifecycle.js";
 import type { UserHookEvaluator } from "../agent/hooks/user-hook-evaluator.js";
@@ -28,6 +28,7 @@ export interface ApiServerDeps {
   plugins?: LoadedPlugin[] | null;
   mcpServers?: McpServerInfo[] | (() => McpServerInfo[]) | null;
   config: WebUIConfig;
+  networkConfig?: NetworkConfig;
   configPath: string;
   lifecycle?: AgentLifecycle | null;
   marketplace?: MarketplaceDeps | null;
@@ -50,6 +51,7 @@ export function createDepsAdapter(apiDeps: ApiServerDeps): WebUIServerDeps {
       // These are always available
       if (
         prop === "config" ||
+        prop === "networkConfig" ||
         prop === "configPath" ||
         prop === "lifecycle" ||
         prop === "userHookEvaluator" ||
