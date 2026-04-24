@@ -41,6 +41,7 @@ import {
   CacheConfigSchema,
   CommandAccessSchema,
   DealsConfigSchema,
+  IntegrationsConfigSchema,
   MarketplaceConfigSchema,
   MemoryConfigSchema,
   PredictionsConfigSchema,
@@ -1013,6 +1014,7 @@ async function runInteractiveOnboarding(
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
     cache: CacheConfigSchema.parse({}),
+    integrations: IntegrationsConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,
@@ -1219,6 +1221,7 @@ async function runNonInteractiveOnboarding(
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
     cache: CacheConfigSchema.parse({}),
+    integrations: IntegrationsConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,

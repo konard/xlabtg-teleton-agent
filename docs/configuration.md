@@ -430,6 +430,30 @@ mcp:
 
 ---
 
+## integrations
+
+Unified external integration registry settings. Individual integrations and encrypted credentials are stored in SQLite and managed through the WebUI or API.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `integrations.enabled` | `boolean` | `true` | Enable the integration registry. |
+| `integrations.credential_key` | `string` | *generated* | Optional key material for AES-256-GCM credential encryption. When omitted, Teleton creates a local key in the security settings table. |
+| `integrations.health_check_interval_minutes` | `number` | `5` | Default interval for future background health checks. |
+| `integrations.global_rate_limit.requests_per_minute` | `number` | *optional* | Global outbound integration request limit per minute. |
+| `integrations.global_rate_limit.requests_per_hour` | `number` | *optional* | Global outbound integration request limit per hour. |
+
+### Example
+
+```yaml
+integrations:
+  enabled: true
+  global_rate_limit:
+    requests_per_minute: 120
+    requests_per_hour: 5000
+```
+
+---
+
 ## dev
 
 Developer options.

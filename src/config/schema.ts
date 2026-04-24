@@ -480,6 +480,41 @@ const _ApiObject = z.object({
 });
 export const ApiConfigSchema = _ApiObject.default(_ApiObject.parse({}));
 
+const _IntegrationsRateLimitObject = z.object({
+  requests_per_minute: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Global outbound integration requests per minute"),
+  requests_per_hour: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Global outbound integration requests per hour"),
+});
+
+const _IntegrationsObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable the unified integration registry"),
+  credential_key: z
+    .string()
+    .optional()
+    .describe(
+      "Optional key material for encrypting integration credentials. " +
+        "If omitted, Teleton generates a local key in the security settings table."
+    ),
+  health_check_interval_minutes: z
+    .number()
+    .int()
+    .min(1)
+    .default(5)
+    .describe("Default interval for future background integration health checks"),
+  global_rate_limit: _IntegrationsRateLimitObject.default(_IntegrationsRateLimitObject.parse({})),
+});
+export const IntegrationsConfigSchema = _IntegrationsObject.default(_IntegrationsObject.parse({}));
+export type IntegrationsConfig = z.infer<typeof _IntegrationsObject>;
+
 const McpServerSchema = z
   .object({
     command: z
@@ -772,6 +807,7 @@ export const ConfigSchema = z.object({
   cache: CacheConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
+  integrations: IntegrationsConfigSchema,
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
