@@ -224,6 +224,44 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
     CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
 
+    -- Task Delegation
+    CREATE TABLE IF NOT EXISTS task_subtasks (
+      id TEXT PRIMARY KEY,
+      task_id TEXT NOT NULL,
+      parent_id TEXT,
+      description TEXT NOT NULL,
+      required_skills TEXT NOT NULL DEFAULT '[]',
+      required_tools TEXT NOT NULL DEFAULT '[]',
+      agent_id TEXT,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'delegated', 'in_progress', 'done', 'failed', 'cancelled')),
+      result TEXT,
+      error TEXT,
+      depth INTEGER NOT NULL DEFAULT 1 CHECK(depth >= 1 AND depth <= 3),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      started_at INTEGER,
+      completed_at INTEGER,
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (parent_id) REFERENCES task_subtasks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks(task_id, depth, created_at);
+    CREATE INDEX IF NOT EXISTS idx_task_subtasks_parent ON task_subtasks(parent_id) WHERE parent_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_task_subtasks_agent ON task_subtasks(agent_id) WHERE agent_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_task_subtasks_status ON task_subtasks(status);
+
+    CREATE TABLE IF NOT EXISTS task_subtask_dependencies (
+      subtask_id TEXT NOT NULL,
+      depends_on_subtask_id TEXT NOT NULL,
+      PRIMARY KEY (subtask_id, depends_on_subtask_id),
+      FOREIGN KEY (subtask_id) REFERENCES task_subtasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (depends_on_subtask_id) REFERENCES task_subtasks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_subtask_deps_subtask ON task_subtask_dependencies(subtask_id);
+    CREATE INDEX IF NOT EXISTS idx_subtask_deps_parent ON task_subtask_dependencies(depends_on_subtask_id);
+
     -- ============================================
     -- ASSOCIATIVE MEMORY GRAPH
     -- ============================================
@@ -595,7 +633,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.27.0";
+export const CURRENT_SCHEMA_VERSION = "1.28.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1327,6 +1365,54 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.27.0 complete: agent_registry table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.27.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.28.0")) {
+    log.info("Running migration 1.28.0: Add task delegation tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS task_subtasks (
+          id TEXT PRIMARY KEY,
+          task_id TEXT NOT NULL,
+          parent_id TEXT,
+          description TEXT NOT NULL,
+          required_skills TEXT NOT NULL DEFAULT '[]',
+          required_tools TEXT NOT NULL DEFAULT '[]',
+          agent_id TEXT,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'delegated', 'in_progress', 'done', 'failed', 'cancelled')),
+          result TEXT,
+          error TEXT,
+          depth INTEGER NOT NULL DEFAULT 1 CHECK(depth >= 1 AND depth <= 3),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          started_at INTEGER,
+          completed_at INTEGER,
+          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+          FOREIGN KEY (parent_id) REFERENCES task_subtasks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_task_subtasks_task ON task_subtasks(task_id, depth, created_at);
+        CREATE INDEX IF NOT EXISTS idx_task_subtasks_parent ON task_subtasks(parent_id) WHERE parent_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_task_subtasks_agent ON task_subtasks(agent_id) WHERE agent_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_task_subtasks_status ON task_subtasks(status);
+
+        CREATE TABLE IF NOT EXISTS task_subtask_dependencies (
+          subtask_id TEXT NOT NULL,
+          depends_on_subtask_id TEXT NOT NULL,
+          PRIMARY KEY (subtask_id, depends_on_subtask_id),
+          FOREIGN KEY (subtask_id) REFERENCES task_subtasks(id) ON DELETE CASCADE,
+          FOREIGN KEY (depends_on_subtask_id) REFERENCES task_subtasks(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_subtask_deps_subtask ON task_subtask_dependencies(subtask_id);
+        CREATE INDEX IF NOT EXISTS idx_subtask_deps_parent ON task_subtask_dependencies(depends_on_subtask_id);
+      `);
+      log.info("Migration 1.28.0 complete: task delegation tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.28.0 failed");
       throw error;
     }
   }

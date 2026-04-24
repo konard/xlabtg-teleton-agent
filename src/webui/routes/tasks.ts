@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getTaskStore, type TaskStatus } from "../../memory/agent/tasks.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { createTaskDelegationRoutes } from "./delegation.js";
 
 const VALID_STATUSES: TaskStatus[] = ["pending", "in_progress", "done", "failed", "cancelled"];
 const TERMINAL_STATUSES: TaskStatus[] = ["done", "failed", "cancelled"];
@@ -12,6 +13,8 @@ export function createTasksRoutes(deps: WebUIServerDeps) {
   function store() {
     return getTaskStore(deps.memory.db);
   }
+
+  app.route("/", createTaskDelegationRoutes(deps));
 
   // List tasks (optional ?status= filter)
   app.get("/", (c) => {

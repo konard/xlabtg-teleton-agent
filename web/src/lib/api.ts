@@ -599,6 +599,63 @@ export interface TaskData {
   dependents: string[];
 }
 
+export type TaskSubtaskStatus =
+  | "pending"
+  | "delegated"
+  | "in_progress"
+  | "done"
+  | "failed"
+  | "cancelled";
+
+export interface TaskSubtaskData {
+  id: string;
+  taskId: string;
+  parentId?: string;
+  description: string;
+  requiredSkills: string[];
+  requiredTools: string[];
+  agentId?: string;
+  status: TaskSubtaskStatus;
+  result?: string | null;
+  error?: string | null;
+  depth: number;
+  createdAt: string;
+  updatedAt: string;
+  startedAt?: string | null;
+  completedAt?: string | null;
+  dependencies: string[];
+}
+
+export interface TaskSubtaskNodeData extends TaskSubtaskData {
+  children: TaskSubtaskNodeData[];
+}
+
+export interface DelegationTimelineEventData {
+  id: string;
+  type: "created" | "delegated" | "started" | "completed" | "failed" | "cancelled";
+  subtaskId: string;
+  subtaskDescription: string;
+  agentId?: string;
+  at: string;
+  message: string;
+}
+
+export interface TaskDelegationTreeData {
+  taskId: string;
+  subtasks: TaskSubtaskData[];
+  roots: TaskSubtaskNodeData[];
+  timeline: DelegationTimelineEventData[];
+}
+
+export interface SubtaskPlanInput {
+  planId?: string;
+  description: string;
+  requiredSkills?: string[];
+  requiredTools?: string[];
+  dependsOn?: string[];
+  agentId?: string | null;
+}
+
 export interface SoulVersionMeta {
   id: number;
   filename: string;
@@ -1621,6 +1678,64 @@ export const api = {
 
   async tasksCleanDone() {
     return fetchAPI<APIResponse<{ deleted: number }>>("/tasks/clean-done", { method: "POST" });
+  },
+
+  async tasksDecompose(
+    id: string,
+    data?: { parentId?: string | null; subtasks?: SubtaskPlanInput[] }
+  ) {
+    return fetchAPI<
+      APIResponse<{
+        subtasks: TaskSubtaskData[];
+        tree: TaskDelegationTreeData;
+      }>
+    >(`/tasks/${encodeURIComponent(id)}/decompose`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  },
+
+  async tasksSubtasks(id: string) {
+    return fetchAPI<APIResponse<{ subtasks: TaskSubtaskData[] }>>(
+      `/tasks/${encodeURIComponent(id)}/subtasks`
+    );
+  },
+
+  async tasksTree(id: string) {
+    return fetchAPI<APIResponse<TaskDelegationTreeData>>(`/tasks/${encodeURIComponent(id)}/tree`);
+  },
+
+  async tasksDelegate(
+    id: string,
+    data: {
+      subtaskId?: string;
+      agentId: string;
+      description?: string;
+      requiredSkills?: string[];
+      requiredTools?: string[];
+    }
+  ) {
+    return fetchAPI<
+      APIResponse<{
+        subtask: TaskSubtaskData;
+        tree: TaskDelegationTreeData;
+      }>
+    >(`/tasks/${encodeURIComponent(id)}/delegate`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async tasksRetrySubtask(id: string, subtaskId: string, data?: { agentId?: string }) {
+    return fetchAPI<
+      APIResponse<{
+        subtask: TaskSubtaskData;
+        tree: TaskDelegationTreeData;
+      }>
+    >(`/tasks/${encodeURIComponent(id)}/subtasks/${encodeURIComponent(subtaskId)}/retry`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
   },
 
   async getConfigKeys() {

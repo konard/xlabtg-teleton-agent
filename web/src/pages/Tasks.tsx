@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api, TaskData } from '../lib/api';
+import { api, type AgentOverview, type TaskData, type TaskDelegationTreeData } from '../lib/api';
 import { useConfirm } from '../components/ConfirmDialog';
+import { TaskDelegationPanel } from '../components/TaskDelegationPanel';
 
 type TaskStatus = TaskData['status'];
 type Task = TaskData;
@@ -20,7 +21,6 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   failed: 'Failed',
   cancelled: 'Cancelled',
 };
-
 
 function StatusBadge({ status }: { status: TaskStatus }) {
   return (
@@ -52,7 +52,8 @@ function formatDate(iso: string | null | undefined): string {
 }
 
 function PriorityDots({ priority }: { priority: number }) {
-  if (priority === 0) return <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>—</span>;
+  if (priority === 0)
+    return <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>—</span>;
   const filled = Math.min(priority, 10);
   return (
     <span title={`Priority: ${priority}/10`} style={{ fontSize: '11px', letterSpacing: '1px' }}>
@@ -77,6 +78,11 @@ export function Tasks() {
 
   // Detail panel
   const [selected, setSelected] = useState<Task | null>(null);
+  const [agents, setAgents] = useState<AgentOverview[]>([]);
+  const [delegationTree, setDelegationTree] = useState<TaskDelegationTreeData | null>(null);
+  const [delegationLoading, setDelegationLoading] = useState(false);
+  const [manualSubtask, setManualSubtask] = useState('');
+  const [manualAgentId, setManualAgentId] = useState('primary');
 
   // Clean dropdown + confirm modal
   const [cleanMenuOpen, setCleanMenuOpen] = useState(false);
@@ -107,6 +113,40 @@ export function Tasks() {
     loadTasks();
   }, [loadTasks]);
 
+  const loadAgents = useCallback(async () => {
+    try {
+      const res = await api.listAgents();
+      const nextAgents = res.data?.agents ?? [];
+      setAgents(nextAgents);
+      setManualAgentId((prev) =>
+        nextAgents.some((agent) => agent.id === prev) ? prev : (nextAgents[0]?.id ?? '')
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
+  const loadDelegation = useCallback(async (taskId: string) => {
+    setDelegationLoading(true);
+    try {
+      const res = await api.tasksTree(taskId);
+      setDelegationTree(res.data ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegationLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!selected) {
+      setDelegationTree(null);
+      return;
+    }
+    loadAgents();
+    loadDelegation(selected.id);
+  }, [loadAgents, loadDelegation, selected]);
+
   // Close clean dropdown on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -134,7 +174,8 @@ export function Tasks() {
   };
 
   const cancelTask = async (id: string) => {
-    if (!(await confirm({ title: "Cancel task?", variant: "warning", confirmText: "Cancel Task" }))) return;
+    if (!(await confirm({ title: 'Cancel task?', variant: 'warning', confirmText: 'Cancel Task' })))
+      return;
     try {
       await api.tasksCancel(id);
       loadTasks();
@@ -145,13 +186,97 @@ export function Tasks() {
   };
 
   const deleteTask = async (id: string) => {
-    if (!(await confirm({ title: "Delete task?", description: "This cannot be undone.", variant: "danger", confirmText: "Delete" }))) return;
+    if (
+      !(await confirm({
+        title: 'Delete task?',
+        description: 'This cannot be undone.',
+        variant: 'danger',
+        confirmText: 'Delete',
+      }))
+    )
+      return;
     try {
       await api.tasksDelete(id);
       loadTasks();
       if (selected?.id === id) setSelected(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const decomposeTask = async () => {
+    if (!selected) return;
+    setDelegationLoading(true);
+    try {
+      const res = await api.tasksDecompose(selected.id);
+      setDelegationTree(res.data?.tree ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegationLoading(false);
+    }
+  };
+
+  const createManualSubtask = async () => {
+    if (!selected || !manualSubtask.trim()) return;
+    setDelegationLoading(true);
+    try {
+      const res = await api.tasksDecompose(selected.id, {
+        subtasks: [
+          {
+            description: manualSubtask.trim(),
+            agentId: manualAgentId || undefined,
+          },
+        ],
+      });
+      setManualSubtask('');
+      setDelegationTree(res.data?.tree ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegationLoading(false);
+    }
+  };
+
+  const delegateRootTask = async () => {
+    if (!selected || !manualAgentId) return;
+    setDelegationLoading(true);
+    try {
+      const res = await api.tasksDelegate(selected.id, {
+        agentId: manualAgentId,
+        description: selected.description,
+      });
+      setDelegationTree(res.data?.tree ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegationLoading(false);
+    }
+  };
+
+  const assignSubtask = async (subtaskId: string, agentId: string) => {
+    if (!selected) return;
+    setDelegationLoading(true);
+    try {
+      const res = await api.tasksDelegate(selected.id, { subtaskId, agentId });
+      setDelegationTree(res.data?.tree ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegationLoading(false);
+    }
+  };
+
+  const retrySubtask = async (subtaskId: string) => {
+    if (!selected) return;
+    setDelegationLoading(true);
+    try {
+      const res = await api.tasksRetrySubtask(selected.id, subtaskId);
+      setDelegationTree(res.data?.tree ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setDelegationLoading(false);
     }
   };
 
@@ -163,14 +288,16 @@ export function Tasks() {
     },
     {} as Record<string, number>
   );
-  const terminalCount = (counts['done'] || 0) + (counts['failed'] || 0) + (counts['cancelled'] || 0);
+  const terminalCount =
+    (counts['done'] || 0) + (counts['failed'] || 0) + (counts['cancelled'] || 0);
   const statusFiltered = filter ? tasks.filter((t) => t.status === filter) : tasks;
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const filteredTasks = trimmedQuery
-    ? statusFiltered.filter((t) =>
-        t.description.toLowerCase().includes(trimmedQuery) ||
-        (t.reason ?? '').toLowerCase().includes(trimmedQuery) ||
-        t.id.toLowerCase().includes(trimmedQuery)
+    ? statusFiltered.filter(
+        (t) =>
+          t.description.toLowerCase().includes(trimmedQuery) ||
+          (t.reason ?? '').toLowerCase().includes(trimmedQuery) ||
+          t.id.toLowerCase().includes(trimmedQuery)
       )
     : statusFiltered;
 
@@ -184,14 +311,30 @@ export function Tasks() {
       {error && (
         <div className="alert error" style={{ marginBottom: '14px' }}>
           {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>
+          <button
+            onClick={() => setError(null)}
+            style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}
+          >
             Dismiss
           </button>
         </div>
       )}
 
       {/* Stats bar */}
-      <div className="card" style={{ padding: '10px 14px', marginBottom: '14px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', overflow: 'visible', position: 'relative', zIndex: 2 }}>
+      <div
+        className="card"
+        style={{
+          padding: '10px 14px',
+          marginBottom: '14px',
+          display: 'flex',
+          gap: '16px',
+          alignItems: 'center',
+          flexWrap: 'wrap',
+          overflow: 'visible',
+          position: 'relative',
+          zIndex: 2,
+        }}
+      >
         <span
           onClick={() => setFilter('')}
           style={{
@@ -225,7 +368,9 @@ export function Tasks() {
               placeholder="Search tasks..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Escape') setSearchQuery(''); }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setSearchQuery('');
+              }}
               style={{
                 padding: '4px 24px 4px 12px',
                 fontSize: '13px',
@@ -259,7 +404,9 @@ export function Tasks() {
             )}
           </div>
           {trimmedQuery && (
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+            <span
+              style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}
+            >
               {filteredTasks.length} of {statusFiltered.length} tasks
             </span>
           )}
@@ -268,10 +415,7 @@ export function Tasks() {
         {/* Clean dropdown */}
         {terminalCount > 0 && (
           <div ref={cleanRef} style={{ position: 'relative' }}>
-            <button
-              className="btn-ghost btn-sm"
-              onClick={() => setCleanMenuOpen(!cleanMenuOpen)}
-            >
+            <button className="btn-ghost btn-sm" onClick={() => setCleanMenuOpen(!cleanMenuOpen)}>
               Clean
             </button>
             {cleanMenuOpen && (
@@ -293,10 +437,21 @@ export function Tasks() {
                     <div
                       key={s}
                       className="custom-select-option"
-                      onClick={() => { setCleanMenuOpen(false); setCleanConfirm(s); }}
+                      onClick={() => {
+                        setCleanMenuOpen(false);
+                        setCleanConfirm(s);
+                      }}
                       style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
                     >
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: STATUS_COLORS[s], flexShrink: 0 }} />
+                      <span
+                        style={{
+                          width: '8px',
+                          height: '8px',
+                          borderRadius: '50%',
+                          backgroundColor: STATUS_COLORS[s],
+                          flexShrink: 0,
+                        }}
+                      />
                       {STATUS_LABELS[s]} ({counts[s]})
                     </div>
                   ))}
@@ -304,10 +459,7 @@ export function Tasks() {
             )}
           </div>
         )}
-        <button
-          style={{ padding: '4px 12px', fontSize: '12px', opacity: 0.7 }}
-          onClick={loadTasks}
-        >
+        <button style={{ padding: '4px 12px', fontSize: '12px', opacity: 0.7 }} onClick={loadTasks}>
           Refresh
         </button>
       </div>
@@ -316,7 +468,9 @@ export function Tasks() {
       {cleanConfirm && (
         <div className="modal-overlay" onClick={() => setCleanConfirm(null)}>
           <div className="modal" style={{ maxWidth: '380px' }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: '4px' }}>Clean {STATUS_LABELS[cleanConfirm].toLowerCase()} tasks</h2>
+            <h2 style={{ marginBottom: '4px' }}>
+              Clean {STATUS_LABELS[cleanConfirm].toLowerCase()} tasks
+            </h2>
             <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
               Permanently delete all {counts[cleanConfirm] || 0}{' '}
               <span style={{ color: STATUS_COLORS[cleanConfirm], fontWeight: 600 }}>
@@ -325,7 +479,9 @@ export function Tasks() {
               tasks? This cannot be undone.
             </p>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn-ghost" onClick={() => setCleanConfirm(null)}>Cancel</button>
+              <button className="btn-ghost" onClick={() => setCleanConfirm(null)}>
+                Cancel
+              </button>
               <button className="btn-danger btn-sm" onClick={() => handleClean(cleanConfirm)}>
                 Delete {counts[cleanConfirm] || 0} tasks
               </button>
@@ -342,10 +498,19 @@ export function Tasks() {
           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
             {trimmedQuery
               ? 'No tasks match your search'
-              : filter ? `No ${STATUS_LABELS[filter].toLowerCase()} tasks` : 'No tasks yet'}
+              : filter
+                ? `No ${STATUS_LABELS[filter].toLowerCase()} tasks`
+                : 'No tasks yet'}
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
+          <table
+            style={{
+              width: '100%',
+              borderCollapse: 'collapse',
+              fontSize: '13px',
+              tableLayout: 'fixed',
+            }}
+          >
             <thead>
               <tr
                 style={{
@@ -370,7 +535,12 @@ export function Tasks() {
                   <React.Fragment key={task.id}>
                     <tr
                       onClick={() => setSelected(isExpanded ? null : task)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(isExpanded ? null : task); } }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelected(isExpanded ? null : task);
+                        }
+                      }}
                       tabIndex={0}
                       role="button"
                       style={{
@@ -382,13 +552,27 @@ export function Tasks() {
                     >
                       <td style={{ padding: '8px 14px' }}>
                         <div>
-                          <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
+                          <span
+                            style={{
+                              display: 'inline-block',
+                              width: '14px',
+                              fontSize: '10px',
+                              color: 'var(--text-secondary)',
+                            }}
+                          >
                             {isExpanded ? '\u25BC' : '\u25B6'}
                           </span>
                           {truncate(task.description, 80)}
                         </div>
                         {task.reason && (
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '14px' }}>
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: 'var(--text-secondary)',
+                              marginTop: '2px',
+                              paddingLeft: '14px',
+                            }}
+                          >
                             {truncate(task.reason, 60)}
                           </div>
                         )}
@@ -399,10 +583,22 @@ export function Tasks() {
                       <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                         <PriorityDots priority={task.priority} />
                       </td>
-                      <td style={{ textAlign: 'right', padding: '8px 14px', color: 'var(--text-secondary)' }}>
+                      <td
+                        style={{
+                          textAlign: 'right',
+                          padding: '8px 14px',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
                         {formatDate(task.scheduledFor)}
                       </td>
-                      <td style={{ textAlign: 'right', padding: '8px 14px', color: 'var(--text-secondary)' }}>
+                      <td
+                        style={{
+                          textAlign: 'right',
+                          padding: '8px 14px',
+                          color: 'var(--text-secondary)',
+                        }}
+                      >
                         {formatDate(task.createdAt)}
                       </td>
                       <td
@@ -410,24 +606,49 @@ export function Tasks() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         {(task.status === 'pending' || task.status === 'in_progress') && (
-                          <button className="icon-button" onClick={() => cancelTask(task.id)} title="Cancel">
+                          <button
+                            className="icon-button"
+                            onClick={() => cancelTask(task.id)}
+                            title="Cancel"
+                          >
                             &#10006;
                           </button>
                         )}
-                        <button className="icon-button" onClick={() => deleteTask(task.id)} title="Delete">
+                        <button
+                          className="icon-button"
+                          onClick={() => deleteTask(task.id)}
+                          title="Delete"
+                        >
                           &#128465;
                         </button>
                       </td>
                     </tr>
                     {isExpanded && selected && (
-                      <tr style={{ backgroundColor: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--separator)' }}>
+                      <tr
+                        style={{
+                          backgroundColor: 'rgba(255,255,255,0.03)',
+                          borderBottom: '1px solid var(--separator)',
+                        }}
+                      >
                         <td colSpan={6} style={{ padding: '0 14px 14px 14px', overflow: 'hidden' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 12px', fontSize: '13px', padding: '10px 0' }}>
+                          <div
+                            style={{
+                              display: 'grid',
+                              gridTemplateColumns: '120px 1fr',
+                              gap: '6px 12px',
+                              fontSize: '13px',
+                              padding: '10px 0',
+                            }}
+                          >
                             <span style={{ color: 'var(--text-secondary)' }}>ID</span>
-                            <code style={{ fontSize: '11px', wordBreak: 'break-all' }}>{selected.id}</code>
+                            <code style={{ fontSize: '11px', wordBreak: 'break-all' }}>
+                              {selected.id}
+                            </code>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Status</span>
-                            <span><StatusBadge status={selected.status} /></span>
+                            <span>
+                              <StatusBadge status={selected.status} />
+                            </span>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Priority</span>
                             <span>{selected.priority}/10</span>
@@ -460,21 +681,49 @@ export function Tasks() {
                             {selected.dependencies.length > 0 && (
                               <>
                                 <span style={{ color: 'var(--text-secondary)' }}>Depends on</span>
-                                <span style={{ fontSize: '11px' }}>{selected.dependencies.length} task(s)</span>
+                                <span style={{ fontSize: '11px' }}>
+                                  {selected.dependencies.length} task(s)
+                                </span>
                               </>
                             )}
 
                             {selected.dependents.length > 0 && (
                               <>
                                 <span style={{ color: 'var(--text-secondary)' }}>Dependents</span>
-                                <span style={{ fontSize: '11px' }}>{selected.dependents.length} task(s)</span>
+                                <span style={{ fontSize: '11px' }}>
+                                  {selected.dependents.length} task(s)
+                                </span>
                               </>
                             )}
                           </div>
 
+                          <TaskDelegationPanel
+                            task={selected}
+                            tree={delegationTree}
+                            agents={agents}
+                            loading={delegationLoading}
+                            manualDescription={manualSubtask}
+                            manualAgentId={manualAgentId}
+                            onManualDescription={setManualSubtask}
+                            onManualAgent={setManualAgentId}
+                            onDecompose={decomposeTask}
+                            onCreateManual={createManualSubtask}
+                            onDelegateRoot={delegateRootTask}
+                            onAssign={assignSubtask}
+                            onRetry={retrySubtask}
+                          />
+
                           {selected.payload && (
                             <div style={{ marginTop: '4px' }}>
-                              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Payload</div>
+                              <div
+                                style={{
+                                  fontSize: '12px',
+                                  color: 'var(--text-secondary)',
+                                  marginBottom: '4px',
+                                }}
+                              >
+                                Payload
+                              </div>
                               <pre
                                 style={{
                                   padding: '8px',
@@ -501,7 +750,11 @@ export function Tasks() {
 
                           {selected.result && (
                             <div style={{ marginTop: '12px' }}>
-                              <div style={{ fontSize: '12px', color: '#5cb85c', marginBottom: '4px' }}>Result</div>
+                              <div
+                                style={{ fontSize: '12px', color: '#5cb85c', marginBottom: '4px' }}
+                              >
+                                Result
+                              </div>
                               <pre
                                 style={{
                                   padding: '8px',
@@ -522,7 +775,11 @@ export function Tasks() {
 
                           {selected.error && (
                             <div style={{ marginTop: '12px' }}>
-                              <div style={{ fontSize: '12px', color: '#d9534f', marginBottom: '4px' }}>Error</div>
+                              <div
+                                style={{ fontSize: '12px', color: '#d9534f', marginBottom: '4px' }}
+                              >
+                                Error
+                              </div>
                               <pre
                                 style={{
                                   padding: '8px',
@@ -549,7 +806,6 @@ export function Tasks() {
           </table>
         )}
       </div>
-
     </div>
   );
 }
