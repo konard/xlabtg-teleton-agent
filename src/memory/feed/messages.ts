@@ -1,6 +1,10 @@
 import type Database from "better-sqlite3";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { serializeEmbedding } from "../embeddings/index.js";
+import {
+  upsertTemporalMetadata,
+  type TemporalContextConfig,
+} from "../../services/temporal-context.js";
 
 export interface TelegramMessage {
   id: string;
@@ -18,7 +22,8 @@ export class MessageStore {
   constructor(
     private db: Database.Database,
     private embedder: EmbeddingProvider,
-    private vectorEnabled: boolean
+    private vectorEnabled: boolean,
+    private temporalConfig?: TemporalContextConfig
   ) {}
 
   private ensureChat(chatId: string, isGroup: boolean = false): void {
@@ -82,6 +87,17 @@ export class MessageStore {
         .prepare(`UPDATE tg_chats SET last_message_at = ?, last_message_id = ? WHERE id = ?`)
         .run(message.timestamp, message.id, message.chatId);
     })();
+
+    upsertTemporalMetadata(this.db, "message", message.id, message.timestamp, {
+      timezone: this.temporalConfig?.timezone,
+      metadata: {
+        chatId: message.chatId,
+        senderId: message.senderId,
+        isFromAgent: message.isFromAgent,
+        hasMedia: message.hasMedia,
+        mediaType: message.mediaType,
+      },
+    });
   }
 
   getRecentMessages(chatId: string, limit: number = 20): TelegramMessage[] {

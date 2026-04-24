@@ -115,6 +115,20 @@ memory:
     archive_days: 30
     auto_cleanup: false # Set true to let the scheduler archive candidates automatically
 
+# Temporal context engine.
+# Timezone can also be overridden with TELETON_TIMEZONE.
+temporal_context:
+  enabled: true
+  timezone: "UTC"                    # IANA timezone, e.g. "America/New_York"
+  pattern_min_frequency: 2
+  pattern_confidence_threshold: 0.5
+  context_patterns_limit: 5
+  weighting:
+    enabled: true
+    decay_curve: "exponential"       # exponential | linear | step
+    recency_half_life_days: 30
+    temporal_relevance_weight: 0.2
+
 # Optional: WebUI dashboard (disabled by default for security)
 webui:
   enabled: false                      # Enable web dashboard

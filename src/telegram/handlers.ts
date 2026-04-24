@@ -153,7 +153,7 @@ export class MessageHandler {
       config.rate_limit_groups_per_minute
     );
 
-    this.messageStore = new MessageStore(db, embedder, vectorEnabled);
+    this.messageStore = new MessageStore(db, embedder, vectorEnabled, fullConfig?.temporal_context);
     this.chatStore = new ChatStore(db);
     this.userStore = new UserStore(db);
     this.pendingHistory = new PendingHistory();

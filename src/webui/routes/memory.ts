@@ -91,7 +91,13 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
         return c.json(response, 400);
       }
 
-      const search = new HybridSearch(deps.memory.db, false, deps.memory.vectorStore);
+      const temporalConfig = deps.agent?.getConfig?.()?.temporal_context;
+      const search = new HybridSearch(deps.memory.db, false, deps.memory.vectorStore, {
+        ...temporalConfig?.weighting,
+        enabled:
+          temporalConfig?.enabled === false ? false : (temporalConfig?.weighting.enabled ?? true),
+        timezone: temporalConfig?.timezone,
+      });
       const results = await search.searchKnowledge(query, [], {
         limit,
         minScore: Number.isFinite(minScore) ? minScore : undefined,
@@ -106,6 +112,7 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
         keywordScore: row.keywordScore,
         vectorScore: row.vectorScore,
         importanceScore: row.importanceScore,
+        temporalScore: row.temporalScore,
       }));
 
       const response: APIResponse<MemorySearchResult[]> = {

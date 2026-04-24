@@ -319,6 +319,56 @@ const _MemoryObject = z.object({
 });
 export const MemoryConfigSchema = _MemoryObject.default(_MemoryObject.parse({}));
 
+const _TemporalWeightingObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable temporal relevance weighting for RAG"),
+  decay_curve: z
+    .enum(["exponential", "linear", "step"])
+    .default("exponential")
+    .describe("Freshness decay curve used by temporal retrieval scoring"),
+  recency_half_life_days: z
+    .number()
+    .min(1)
+    .default(30)
+    .describe("Age, in days, where exponential temporal freshness decays to 0.5"),
+  temporal_relevance_weight: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.2)
+    .describe("Blend weight for temporal relevance in retrieval result scores"),
+});
+
+const _TemporalContextObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable time-aware context and pattern analysis"),
+  timezone: z
+    .string()
+    .default("UTC")
+    .describe("IANA timezone used for local day, hour, and greeting context"),
+  pattern_min_frequency: z
+    .number()
+    .int()
+    .min(1)
+    .default(2)
+    .describe("Minimum observations required before storing a temporal pattern"),
+  pattern_confidence_threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.5)
+    .describe("Minimum pattern confidence before it is surfaced"),
+  context_patterns_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(5)
+    .describe("Maximum active temporal patterns injected into prompt context"),
+  weighting: _TemporalWeightingObject.default(_TemporalWeightingObject.parse({})),
+});
+export const TemporalContextConfigSchema = _TemporalContextObject.default(
+  _TemporalContextObject.parse({})
+);
+
 const _LoggingObject = z.object({
   level: z
     .enum(["trace", "debug", "info", "warn", "error", "fatal"])
@@ -663,6 +713,7 @@ export const ConfigSchema = z.object({
   embedding: EmbeddingConfigSchema,
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
+  temporal_context: TemporalContextConfigSchema,
   autonomous: AutonomousConfigSchema,
   deals: DealsConfigSchema,
   webui: WebUIConfigSchema,
@@ -779,6 +830,8 @@ export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;
 export type MemoryRetentionConfig = z.infer<typeof _MemoryRetentionObject>;
+export type TemporalContextConfig = z.infer<typeof _TemporalContextObject>;
+export type TemporalWeightingConfig = z.infer<typeof _TemporalWeightingObject>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;
