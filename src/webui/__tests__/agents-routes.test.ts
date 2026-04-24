@@ -9,6 +9,8 @@ const telegramAuthMocks = vi.hoisted(() => ({
   verifyCode: vi.fn(),
   verifyPassword: vi.fn(),
   resendCode: vi.fn(),
+  startQrSession: vi.fn(),
+  refreshQrToken: vi.fn(),
   cancelSession: vi.fn(),
 }));
 
@@ -405,6 +407,57 @@ describe("Agents routes", () => {
 
     expect(res.status).toBe(200);
     expect(telegramAuthMocks.verifyCode).toHaveBeenCalledWith("auth-1", "12345");
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).recordPersonalAuth
+    ).toHaveBeenCalledWith("support-copy");
+  });
+
+  it("starts managed personal QR auth against the agent-specific config and session path", async () => {
+    telegramAuthMocks.startQrSession.mockResolvedValueOnce({
+      authSessionId: "qr-auth-1",
+      token: "qr-token",
+      expires: 1_714_000_000,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await app.request("/api/agents/support-copy/personal-auth/qr-start", {
+      method: "POST",
+      body: JSON.stringify({
+        apiId: 23456,
+        apiHash: "personal-hash",
+        phone: "+15551234567",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).resolvePersonalAuthTarget
+    ).toHaveBeenCalledWith("support-copy", {
+      apiId: 23456,
+      apiHash: "personal-hash",
+      phone: "+15551234567",
+    });
+    expect(telegramAuthMocks.startQrSession).toHaveBeenCalledWith(12345, "abcdef", {
+      configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+      sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+    });
+  });
+
+  it("records successful managed personal QR authentication", async () => {
+    telegramAuthMocks.refreshQrToken.mockResolvedValueOnce({
+      status: "authenticated",
+      user: { id: 123, firstName: "Alex", username: "alex" },
+    });
+
+    const res = await app.request("/api/agents/support-copy/personal-auth/qr-refresh", {
+      method: "POST",
+      body: JSON.stringify({ authSessionId: "qr-auth-1" }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(telegramAuthMocks.refreshQrToken).toHaveBeenCalledWith("qr-auth-1");
     expect(
       (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).recordPersonalAuth
     ).toHaveBeenCalledWith("support-copy");

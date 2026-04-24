@@ -2,10 +2,12 @@ import {
   useCallback,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type SetStateAction,
 } from "react";
+import { QRCodeSVG } from "qrcode.react";
 import {
   api,
   type AgentLogs,
@@ -480,6 +482,7 @@ function PersonalAuthPanel({
   agent: AgentOverview;
   onAuthenticated: () => Promise<void> | void;
 }) {
+  const [authMethod, setAuthMethod] = useState<"phone" | "qr">("phone");
   const [apiId, setApiId] = useState("");
   const [apiHash, setApiHash] = useState("");
   const [phone, setPhone] = useState("");
@@ -488,10 +491,21 @@ function PersonalAuthPanel({
   const [password, setPassword] = useState("");
   const [passwordRequired, setPasswordRequired] = useState(false);
   const [passwordHint, setPasswordHint] = useState<string | null>(null);
+  const [qrToken, setQrToken] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const qrPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopQrPolling = useCallback(() => {
+    if (qrPollRef.current) {
+      clearInterval(qrPollRef.current);
+      qrPollRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
+    stopQrPolling();
+    setAuthMethod("phone");
     setApiId("");
     setApiHash("");
     setPhone("");
@@ -500,10 +514,57 @@ function PersonalAuthPanel({
     setPassword("");
     setPasswordRequired(false);
     setPasswordHint(null);
+    setQrToken("");
     setMessage(null);
-  }, [agent.id]);
+    return () => stopQrPolling();
+  }, [agent.id, stopQrPolling]);
+
+  const handleQrRefresh = useCallback(
+    async (sessionId: string) => {
+      try {
+        const response = await api.refreshManagedPersonalQr(agent.id, sessionId);
+        const result = response.data;
+        if (result.status === "authenticated") {
+          stopQrPolling();
+          setMessage(result.user ? `Authenticated as ${result.user.firstName}` : "Authenticated");
+          setAuthSessionId(null);
+          setQrToken("");
+          setPassword("");
+          setPasswordRequired(false);
+          toast.success("Personal Telegram session verified");
+          await onAuthenticated();
+        } else if (result.status === "2fa_required") {
+          stopQrPolling();
+          setPasswordRequired(true);
+          setPasswordHint(result.passwordHint ?? null);
+          setMessage("Two-factor password required");
+        } else if (result.status === "expired") {
+          stopQrPolling();
+          setAuthSessionId(null);
+          setQrToken("");
+          setMessage("QR authentication session expired");
+        } else if (result.status === "waiting" && result.token) {
+          setQrToken(result.token);
+        }
+      } catch {
+        // Polling retries on the next interval so transient network errors do not cancel auth.
+      }
+    },
+    [agent.id, onAuthenticated, stopQrPolling]
+  );
+
+  const startQrPolling = useCallback(
+    (sessionId: string) => {
+      stopQrPolling();
+      qrPollRef.current = setInterval(() => {
+        void handleQrRefresh(sessionId);
+      }, 5_000);
+    },
+    [handleQrRefresh, stopQrPolling]
+  );
 
   const handleSendCode = useCallback(async () => {
+    stopQrPolling();
     setBusy(true);
     try {
       const response = await api.sendManagedPersonalCode(agent.id, {
@@ -512,7 +573,9 @@ function PersonalAuthPanel({
         phone: phone.trim() || undefined,
       });
       const result = response.data;
+      setAuthMethod("phone");
       setAuthSessionId(result.authSessionId);
+      setQrToken("");
       setPasswordRequired(false);
       setPasswordHint(null);
       setMessage(
@@ -528,7 +591,35 @@ function PersonalAuthPanel({
     } finally {
       setBusy(false);
     }
-  }, [agent.id, apiHash, apiId, phone]);
+  }, [agent.id, apiHash, apiId, phone, stopQrPolling]);
+
+  const handleStartQr = useCallback(async () => {
+    stopQrPolling();
+    setBusy(true);
+    try {
+      const response = await api.startManagedPersonalQr(agent.id, {
+        apiId: numberOrUndefined(apiId),
+        apiHash: apiHash.trim() || undefined,
+        phone: phone.trim() || undefined,
+      });
+      const result = response.data;
+      setAuthMethod("qr");
+      setAuthSessionId(result.authSessionId);
+      setQrToken(result.token);
+      setCode("");
+      setPassword("");
+      setPasswordRequired(false);
+      setPasswordHint(null);
+      setMessage("QR code ready for Telegram authorization");
+      startQrPolling(result.authSessionId);
+    } catch (err) {
+      const text = err instanceof Error ? err.message : String(err);
+      setMessage(text);
+      toast.error(text);
+    } finally {
+      setBusy(false);
+    }
+  }, [agent.id, apiHash, apiId, phone, startQrPolling, stopQrPolling]);
 
   const handleVerifyCode = useCallback(async () => {
     if (!authSessionId) return;
@@ -542,6 +633,7 @@ function PersonalAuthPanel({
         setCode("");
         setPassword("");
         setPasswordRequired(false);
+        setQrToken("");
         toast.success("Personal Telegram session verified");
         await onAuthenticated();
       } else if (result.status === "2fa_required") {
@@ -572,6 +664,8 @@ function PersonalAuthPanel({
         setCode("");
         setPassword("");
         setPasswordRequired(false);
+        setQrToken("");
+        stopQrPolling();
         toast.success("Personal Telegram session verified");
         await onAuthenticated();
       } else {
@@ -584,7 +678,7 @@ function PersonalAuthPanel({
     } finally {
       setBusy(false);
     }
-  }, [agent.id, authSessionId, onAuthenticated, password]);
+  }, [agent.id, authSessionId, onAuthenticated, password, stopQrPolling]);
 
   const handleResend = useCallback(async () => {
     if (!authSessionId) return;
@@ -608,6 +702,7 @@ function PersonalAuthPanel({
 
   const handleCancel = useCallback(async () => {
     if (!authSessionId) return;
+    stopQrPolling();
     setBusy(true);
     try {
       await api.cancelManagedPersonalAuth(agent.id, authSessionId);
@@ -615,6 +710,7 @@ function PersonalAuthPanel({
       setCode("");
       setPassword("");
       setPasswordRequired(false);
+      setQrToken("");
       setMessage("Authentication session cancelled");
     } catch (err) {
       const text = err instanceof Error ? err.message : String(err);
@@ -623,7 +719,10 @@ function PersonalAuthPanel({
     } finally {
       setBusy(false);
     }
-  }, [agent.id, authSessionId]);
+  }, [agent.id, authSessionId, stopQrPolling]);
+
+  const missingRequiredCredentialInput =
+    !agent.hasPersonalCredentials && (!apiId.trim() || !apiHash.trim() || !phone.trim());
 
   return (
     <section
@@ -643,6 +742,35 @@ function PersonalAuthPanel({
           {agent.hasPersonalCredentials ? "configured" : "missing"}
           {agent.personalPhoneMasked ? ` · ${agent.personalPhoneMasked}` : ""}
         </div>
+      </div>
+
+      <div
+        style={{
+          display: "inline-flex",
+          width: "fit-content",
+          padding: "3px",
+          borderRadius: "10px",
+          border: "1px solid var(--separator)",
+          background: "var(--surface-hover)",
+        }}
+      >
+        {(["phone", "qr"] as const).map((method) => (
+          <button
+            key={method}
+            type="button"
+            disabled={Boolean(authSessionId) || busy}
+            onClick={() => setAuthMethod(method)}
+            style={{
+              border: 0,
+              background: authMethod === method ? "var(--accent)" : "transparent",
+              color: authMethod === method ? "white" : "var(--text)",
+              padding: "7px 12px",
+              borderRadius: "8px",
+            }}
+          >
+            {method === "phone" ? "Phone code" : "QR code"}
+          </button>
+        ))}
       </div>
 
       <div
@@ -671,19 +799,26 @@ function PersonalAuthPanel({
           value={phone}
           onChange={(e) => setPhone(e.target.value)}
         />
-        <button
-          type="button"
-          onClick={() => void handleSendCode()}
-          disabled={
-            busy ||
-            (!agent.hasPersonalCredentials && (!apiId.trim() || !apiHash.trim() || !phone.trim()))
-          }
-        >
-          {busy ? "Working..." : "Send code"}
-        </button>
+        {authMethod === "phone" ? (
+          <button
+            type="button"
+            onClick={() => void handleSendCode()}
+            disabled={busy || missingRequiredCredentialInput}
+          >
+            {busy ? "Working..." : "Send code"}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => void handleStartQr()}
+            disabled={busy || missingRequiredCredentialInput}
+          >
+            {busy ? "Working..." : "Show QR code"}
+          </button>
+        )}
       </div>
 
-      {authSessionId && (
+      {authSessionId && authMethod === "phone" && (
         <div
           style={{
             display: "grid",
@@ -708,6 +843,39 @@ function PersonalAuthPanel({
           <button type="button" onClick={() => void handleResend()} disabled={busy}>
             Resend
           </button>
+          <button type="button" onClick={() => void handleCancel()} disabled={busy}>
+            Cancel
+          </button>
+        </div>
+      )}
+
+      {authSessionId && authMethod === "qr" && qrToken && !passwordRequired && (
+        <div
+          style={{
+            display: "grid",
+            gap: "12px",
+            justifyItems: "start",
+          }}
+        >
+          <div
+            style={{
+              display: "inline-block",
+              padding: "12px",
+              borderRadius: "12px",
+              background: "#fff",
+            }}
+          >
+            <QRCodeSVG
+              value={`tg://login?token=${qrToken}`}
+              size={220}
+              level="M"
+              marginSize={4}
+              title="Scan with Telegram to authorize this managed agent"
+            />
+          </div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
+            Open Telegram, go to Devices, and link this QR code.
+          </div>
           <button type="button" onClick={() => void handleCancel()} disabled={busy}>
             Cancel
           </button>

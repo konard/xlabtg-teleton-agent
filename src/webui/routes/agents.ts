@@ -603,6 +603,90 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
     }
   });
 
+  app.post("/:id/personal-auth/qr-start", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req
+        .json<{ apiId?: number; apiHash?: string; phone?: string }>()
+        .catch((): { apiId?: number; apiHash?: string; phone?: string } => ({}));
+      const authTarget = withManagedService(deps).resolvePersonalAuthTarget(id, {
+        apiId: parseOptionalPositiveInt(body.apiId),
+        apiHash: body.apiHash?.trim() || undefined,
+        phone: body.phone?.trim() || undefined,
+      });
+      const data = await personalAuthManager.startQrSession(authTarget.apiId, authTarget.apiHash, {
+        configPath: authTarget.configPath,
+        sessionPath: authTarget.sessionPath,
+      });
+      logAgentAudit(deps, `agent:personal-auth:qr-start:${id}`);
+      return c.json({ success: true, data } as APIResponse<typeof data>);
+    } catch (error: unknown) {
+      const rateLimit = error as { seconds?: number; errorMessage?: string; message?: string };
+      if (rateLimit.seconds) {
+        return c.json(
+          {
+            success: false,
+            error: `Rate limited. Please wait ${rateLimit.seconds} seconds.`,
+          } as APIResponse,
+          429
+        );
+      }
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
+    }
+  });
+
+  app.post("/:id/personal-auth/qr-refresh", async (c) => {
+    try {
+      const { id } = c.req.param();
+      if (id === "primary") {
+        return c.json(
+          {
+            success: false,
+            error: "Use the setup Telegram auth flow for the primary agent",
+          } as APIResponse,
+          400
+        );
+      }
+      const body = await c.req.json<{ authSessionId?: string }>();
+      if (!body.authSessionId) {
+        return c.json({ success: false, error: "Missing authSessionId" } as APIResponse, 400);
+      }
+      const data = await personalAuthManager.refreshQrToken(body.authSessionId);
+      if (isAuthenticatedAuthResult(data)) {
+        withManagedService(deps).recordPersonalAuth(id);
+        logAgentAudit(deps, `agent:personal-auth:qr-verified:${id}`);
+      }
+      return c.json({ success: true, data } as APIResponse<typeof data>);
+    } catch (error: unknown) {
+      const rateLimit = error as { seconds?: number; errorMessage?: string; message?: string };
+      if (rateLimit.seconds) {
+        return c.json(
+          {
+            success: false,
+            error: `Rate limited. Please wait ${rateLimit.seconds} seconds.`,
+          } as APIResponse,
+          429
+        );
+      }
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
+    }
+  });
+
   app.delete("/:id/personal-auth/session", async (c) => {
     try {
       const { id } = c.req.param();

@@ -282,6 +282,13 @@ export interface AuthCodeResult {
   expiresAt: number;
 }
 
+export interface AuthQrResult {
+  authSessionId: string;
+  token: string;
+  expires: number;
+  expiresAt: number;
+}
+
 export interface AuthVerifyResult {
   status:
     | "authenticated"
@@ -291,6 +298,14 @@ export interface AuthVerifyResult {
     | "expired"
     | "too_many_attempts";
   user?: { id: number; firstName: string; username: string };
+  passwordHint?: string;
+}
+
+export interface AuthQrRefreshResult {
+  status: "waiting" | "authenticated" | "2fa_required" | "expired";
+  token?: string;
+  expires?: number;
+  user?: { id: number; firstName: string; username?: string };
   passwordHint?: string;
 }
 
@@ -2432,6 +2447,29 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ authSessionId }),
     });
+  },
+
+  async startManagedPersonalQr(
+    id: string,
+    data: { apiId?: number; apiHash?: string; phone?: string }
+  ) {
+    return fetchAPI<APIResponse<AuthQrResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/qr-start`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async refreshManagedPersonalQr(id: string, authSessionId: string) {
+    return fetchAPI<APIResponse<AuthQrRefreshResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/qr-refresh`,
+      {
+        method: "POST",
+        body: JSON.stringify({ authSessionId }),
+      }
+    );
   },
 
   async cancelManagedPersonalAuth(id: string, authSessionId: string) {
