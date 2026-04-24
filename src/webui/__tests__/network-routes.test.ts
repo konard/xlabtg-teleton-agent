@@ -2,7 +2,9 @@ import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import Database from "better-sqlite3";
+import { getTaskStore } from "../../memory/agent/tasks.js";
 import { ensureSchema } from "../../memory/schema.js";
+import { getAgentNetworkStore } from "../../services/network/discovery.js";
 import { signNetworkMessage } from "../../services/network/messenger.js";
 import { createAgentNetworkIngressRoutes, createNetworkRoutes } from "../routes/network.js";
 import type { WebUIServerDeps } from "../types.js";
@@ -57,6 +59,32 @@ function buildDeps(
       ...networkConfigOverrides,
     },
   };
+}
+
+async function registerSignedPeer(
+  app: Hono,
+  input: {
+    agentId: string;
+    publicKey: string;
+    capabilities?: string[];
+  }
+): Promise<void> {
+  const res = await app.request("/api/network/agents", {
+    method: "POST",
+    body: JSON.stringify({
+      agentId: input.agentId,
+      name: input.agentId,
+      endpoint: `https://${input.agentId}.example.com/api/agent-network`,
+      capabilities: input.capabilities ?? ["task-delegation"],
+      status: "available",
+      load: 0.2,
+      trustLevel: "verified",
+      publicKey: input.publicKey,
+    }),
+    headers: { "Content-Type": "application/json" },
+  });
+
+  expect(res.status).toBe(201);
 }
 
 describe("network routes", () => {
@@ -157,19 +185,9 @@ describe("network routes", () => {
 
   it("accepts signed ingress task requests and rejects unsigned ones", async () => {
     const { publicKey, privateKey } = generateKeyPairSync("ed25519");
-    await app.request("/api/network/agents", {
-      method: "POST",
-      body: JSON.stringify({
-        agentId: "agent-003",
-        name: "Remote Worker",
-        endpoint: "https://agent-003.example.com/api/agent-network",
-        capabilities: ["task-delegation"],
-        status: "available",
-        load: 0.2,
-        trustLevel: "verified",
-        publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
-      }),
-      headers: { "Content-Type": "application/json" },
+    await registerSignedPeer(app, {
+      agentId: "agent-003",
+      publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
     });
     const message = {
       type: "task_request" as const,
@@ -195,6 +213,117 @@ describe("network routes", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(unsignedRes.status).toBe(400);
+  });
+
+  it("rejects replayed signed task requests before creating duplicate tasks", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    await registerSignedPeer(app, {
+      agentId: "agent-004",
+      publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
+    });
+    const signed = signNetworkMessage(
+      {
+        type: "task_request",
+        from: "agent-004",
+        to: "primary",
+        correlationId: "route-corr-replay-task",
+        timestamp: new Date().toISOString(),
+        payload: { description: "Handle delegated work", payload: { source: "test" } },
+      },
+      privateKey
+    );
+
+    const firstRes = await app.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signed),
+      headers: { "Content-Type": "application/json" },
+    });
+    const replayRes = await app.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signed),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(firstRes.status).toBe(202);
+    expect(replayRes.status).toBe(409);
+    const replayBody = await replayRes.json();
+    expect(replayBody.error).toMatch(/replay/i);
+    expect(getTaskStore(db).listTasks({ createdBy: "network:agent-004" })).toHaveLength(1);
+    expect(
+      getAgentNetworkStore(db).listMessages({ from: "agent-004", to: "primary" })
+    ).toHaveLength(1);
+  });
+
+  it("rejects replayed signed heartbeats", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    await registerSignedPeer(app, {
+      agentId: "agent-005",
+      publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
+    });
+    const signed = signNetworkMessage(
+      {
+        type: "heartbeat",
+        from: "agent-005",
+        to: "primary",
+        correlationId: "route-corr-replay-heartbeat",
+        timestamp: new Date().toISOString(),
+        payload: { status: "available", load: 0.1 },
+      },
+      privateKey
+    );
+
+    const firstRes = await app.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signed),
+      headers: { "Content-Type": "application/json" },
+    });
+    const replayRes = await app.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signed),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(firstRes.status).toBe(200);
+    expect(replayRes.status).toBe(409);
+    expect(
+      getAgentNetworkStore(db).listMessages({ from: "agent-005", to: "primary" })
+    ).toHaveLength(1);
+  });
+
+  it("rejects replayed signed task responses", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    await registerSignedPeer(app, {
+      agentId: "agent-006",
+      publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
+    });
+    const signed = signNetworkMessage(
+      {
+        type: "task_response",
+        from: "agent-006",
+        to: "primary",
+        correlationId: "route-corr-replay-response",
+        timestamp: new Date().toISOString(),
+        payload: { status: "done", result: "ok" },
+      },
+      privateKey
+    );
+
+    const firstRes = await app.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signed),
+      headers: { "Content-Type": "application/json" },
+    });
+    const replayRes = await app.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signed),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(firstRes.status).toBe(200);
+    expect(replayRes.status).toBe(409);
+    expect(
+      getAgentNetworkStore(db).listMessages({ from: "agent-006", to: "primary" })
+    ).toHaveLength(1);
   });
 
   it("rejects remote ingress when the network is disabled", async () => {

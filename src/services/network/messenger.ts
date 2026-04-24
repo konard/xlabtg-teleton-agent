@@ -89,6 +89,13 @@ export function verifyNetworkMessage(
   }
 }
 
+export class NetworkMessageReplayError extends Error {
+  constructor(readonly existingMessage: NetworkMessageRecord) {
+    super(`Network message replay detected for correlation id ${existingMessage.correlationId}`);
+    this.name = "NetworkMessageReplayError";
+  }
+}
+
 export class NetworkMessenger {
   private readonly store: AgentNetworkStore;
   private readonly localAgentId: string;
@@ -196,7 +203,21 @@ export class NetworkMessenger {
       throw new Error(authorization.reason ?? "Network sender is not authorized");
     }
 
-    const record = this.store.logMessage(message, "received");
+    const existing = this.store.findReceivedMessage(message);
+    if (existing) {
+      throw new NetworkMessageReplayError(existing);
+    }
+
+    let record: NetworkMessageRecord;
+    try {
+      record = this.store.logMessage(message, "received");
+    } catch (error) {
+      const replayed = this.store.findReceivedMessage(message);
+      if (replayed) {
+        throw new NetworkMessageReplayError(replayed);
+      }
+      throw error;
+    }
     this.auditMessage(record);
     return record;
   }

@@ -424,6 +424,7 @@ export function ensureSchema(db: Database.Database): void {
       from_agent_id TEXT NOT NULL,
       to_agent_id TEXT NOT NULL,
       correlation_id TEXT NOT NULL,
+      replay_key TEXT,
       payload TEXT NOT NULL DEFAULT '{}',
       signature TEXT,
       timestamp TEXT NOT NULL,
@@ -438,6 +439,8 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_network_messages_from ON network_messages(from_agent_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_network_messages_to ON network_messages(to_agent_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_network_messages_correlation ON network_messages(correlation_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_network_messages_replay_key
+      ON network_messages(replay_key) WHERE replay_key IS NOT NULL;
     CREATE INDEX IF NOT EXISTS idx_network_messages_status ON network_messages(status, created_at DESC);
 
     -- ============================================
@@ -937,7 +940,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.35.0";
+export const CURRENT_SCHEMA_VERSION = "1.36.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -2061,6 +2064,7 @@ export function runMigrations(db: Database.Database): void {
           from_agent_id TEXT NOT NULL,
           to_agent_id TEXT NOT NULL,
           correlation_id TEXT NOT NULL,
+          replay_key TEXT,
           payload TEXT NOT NULL DEFAULT '{}',
           signature TEXT,
           timestamp TEXT NOT NULL,
@@ -2075,11 +2079,33 @@ export function runMigrations(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_network_messages_from ON network_messages(from_agent_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_network_messages_to ON network_messages(to_agent_id, created_at DESC);
         CREATE INDEX IF NOT EXISTS idx_network_messages_correlation ON network_messages(correlation_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_network_messages_replay_key
+          ON network_messages(replay_key) WHERE replay_key IS NOT NULL;
         CREATE INDEX IF NOT EXISTS idx_network_messages_status ON network_messages(status, created_at DESC);
       `);
       log.info("Migration 1.35.0 complete: agent network tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.35.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.36.0")) {
+    log.info("Running migration 1.36.0: Add agent network replay protection");
+    try {
+      const columns = db.prepare("PRAGMA table_info(network_messages)").all() as Array<{
+        name: string;
+      }>;
+      if (!columns.some((column) => column.name === "replay_key")) {
+        db.exec(`ALTER TABLE network_messages ADD COLUMN replay_key TEXT;`);
+      }
+      db.exec(`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_network_messages_replay_key
+          ON network_messages(replay_key) WHERE replay_key IS NOT NULL;
+      `);
+      log.info("Migration 1.36.0 complete: agent network replay protection added");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.36.0 failed");
       throw error;
     }
   }
