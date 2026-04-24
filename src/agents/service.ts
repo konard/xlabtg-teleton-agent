@@ -19,7 +19,13 @@ import { TELETON_ROOT } from "../workspace/paths.js";
 import { loadTemplate } from "../workspace/manager.js";
 import { getErrorMessage } from "../utils/errors.js";
 import { validateBotTokenFormat } from "../telegram/bot-token.js";
+import {
+  DEFAULT_AGENT_REGISTRY_CONFIG,
+  getBuiltInAgentArchetype,
+  listBuiltInAgentArchetypes,
+} from "./archetypes.js";
 import type {
+  ManagedAgentArchetype,
   CreateManagedAgentInput,
   ManagedAgentCommand,
   ManagedAgentDefinition,
@@ -33,6 +39,7 @@ import type {
   ManagedAgentState,
   ManagedAgentHealth,
   ManagedAgentMessagingPolicy,
+  ManagedAgentRegistryConfig,
   ManagedAgentResourcePolicy,
   UpdateManagedAgentInput,
 } from "./types.js";
@@ -149,6 +156,65 @@ function mergeMessaging(input?: Partial<ManagedAgentMessagingPolicy>): ManagedAg
   };
 }
 
+function normalizeTools(input?: string[]): string[] | undefined {
+  if (!input) return undefined;
+  return [...new Set(input.map((tool) => tool.trim()).filter(Boolean))];
+}
+
+function mergeRegistryConfig(
+  base?: ManagedAgentRegistryConfig,
+  input?: Partial<ManagedAgentRegistryConfig>
+): ManagedAgentRegistryConfig {
+  const next: ManagedAgentRegistryConfig = {
+    ...DEFAULT_AGENT_REGISTRY_CONFIG,
+    ...base,
+    hookRules: base?.hookRules ? [...base.hookRules] : [],
+  };
+
+  if (!input) return next;
+
+  if (input.hookRules !== undefined) {
+    next.hookRules = [...new Set(input.hookRules.map((rule) => rule.trim()).filter(Boolean))];
+  }
+  if (input.provider !== undefined) {
+    next.provider = input.provider?.trim() || null;
+  }
+  if (input.model !== undefined) {
+    next.model = input.model?.trim() || null;
+  }
+  if (input.temperature !== undefined) {
+    next.temperature = Number.isFinite(input.temperature) ? input.temperature : null;
+  }
+  if (input.maxTokens !== undefined) {
+    next.maxTokens =
+      Number.isFinite(input.maxTokens) && input.maxTokens !== null
+        ? Math.max(1, Math.floor(input.maxTokens))
+        : null;
+  }
+  if (input.maxToolCallsPerTurn !== undefined) {
+    next.maxToolCallsPerTurn =
+      Number.isFinite(input.maxToolCallsPerTurn) && input.maxToolCallsPerTurn !== null
+        ? Math.max(1, Math.floor(input.maxToolCallsPerTurn))
+        : null;
+  }
+
+  return next;
+}
+
+function resolveRegistryType(
+  input: CreateManagedAgentInput | UpdateManagedAgentInput,
+  sourceDefinition?: ManagedAgentDefinition | null
+): {
+  type: string;
+  archetype: ManagedAgentArchetype | null;
+} {
+  const type = input.type?.trim() || sourceDefinition?.type || "CustomAgent";
+  return {
+    type,
+    archetype: getBuiltInAgentArchetype(type),
+  };
+}
+
 function maskPhone(phone: string | undefined): string | null {
   if (!phone) return null;
   const trimmed = phone.trim();
@@ -187,6 +253,10 @@ export class ManagedAgentService {
     this.resolveCommand = options.resolveCommand ?? this.defaultResolveCommand;
   }
 
+  listArchetypes(): ManagedAgentArchetype[] {
+    return listBuiltInAgentArchetypes();
+  }
+
   listAgentSnapshots(): ManagedAgentSnapshot[] {
     return this.listDefinitions().map((definition) => this.toSnapshot(definition));
   }
@@ -212,6 +282,33 @@ export class ManagedAgentService {
     const sourceRoot = sourceDefinition?.homePath ?? this.rootDir;
     const mode: ManagedAgentMode = input.mode ?? sourceDefinition?.mode ?? "personal";
     const sourceConfig = loadConfig(sourceConfigPath);
+    const { type, archetype } = resolveRegistryType(input, sourceDefinition);
+    const typeProvided = Boolean(input.type?.trim());
+    const description =
+      input.description?.trim() ||
+      (typeProvided ? archetype?.description : sourceDefinition?.description) ||
+      archetype?.description ||
+      "";
+    const soulTemplate =
+      input.soulTemplate?.trim() ||
+      (typeProvided ? archetype?.soulTemplate : sourceDefinition?.soulTemplate) ||
+      archetype?.soulTemplate ||
+      sourceConfig.agent.system_prompt ||
+      "";
+    const tools =
+      normalizeTools(input.tools) ??
+      (typeProvided
+        ? archetype?.tools
+          ? [...archetype.tools]
+          : undefined
+        : sourceDefinition?.tools
+          ? [...sourceDefinition.tools]
+          : undefined) ??
+      (archetype?.tools ? [...archetype.tools] : []);
+    const registryConfig = mergeRegistryConfig(
+      typeProvided ? archetype?.config : (sourceDefinition?.config ?? archetype?.config),
+      input.config
+    );
     const personalConnection = normalizePersonalConnection(input.personalConnection);
     const explicitBotToken = input.botToken?.trim();
     const inheritedBotToken = sourceDefinition
@@ -224,9 +321,17 @@ export class ManagedAgentService {
       sourceConfig.telegram.bot_username ||
       null;
     const memoryPolicy: ManagedAgentMemoryPolicy =
-      input.memoryPolicy ?? sourceDefinition?.memoryPolicy ?? "isolated";
-    const resources = mergeResources(input.resources ?? sourceDefinition?.resources);
-    const messaging = mergeMessaging(input.messaging ?? sourceDefinition?.messaging);
+      input.memoryPolicy ?? sourceDefinition?.memoryPolicy ?? archetype?.memoryPolicy ?? "isolated";
+    const resources = mergeResources({
+      ...(archetype?.resources ?? {}),
+      ...(sourceDefinition?.resources ?? {}),
+      ...(input.resources ?? {}),
+    });
+    const messaging = mergeMessaging({
+      ...(archetype?.messaging ?? {}),
+      ...(sourceDefinition?.messaging ?? {}),
+      ...(input.messaging ?? {}),
+    });
     const personalAccountAccessConfirmedAt =
       mode === "personal"
         ? input.acknowledgePersonalAccountAccess
@@ -254,12 +359,15 @@ export class ManagedAgentService {
     mkdirSync(join(homePath, "messages"), { recursive: true, mode: 0o700 });
 
     this.bootstrapWorkspace(sourceRoot, homePath);
+    this.writeSoulTemplate(homePath, soulTemplate);
 
     const managedConfig = this.prepareManagedConfig(sourceConfig, homePath, {
       mode,
       botUsername,
       personalConnection,
       resources,
+      registryConfig,
+      soulTemplate,
     });
     if (mode === "personal") {
       this.validatePersonalConnectionConfig(managedConfig);
@@ -270,7 +378,12 @@ export class ManagedAgentService {
     const definition: ManagedAgentDefinition = {
       id,
       name,
+      type,
+      description,
       mode,
+      soulTemplate,
+      tools,
+      config: registryConfig,
       memoryPolicy,
       resources,
       messaging,
@@ -576,9 +689,35 @@ export class ManagedAgentService {
       throw new Error("Stop the managed agent before editing its configuration");
     }
 
+    const { type, archetype } = resolveRegistryType(input, definition);
+    const typeChanged = type !== definition.type;
+    const description =
+      input.description !== undefined
+        ? input.description.trim()
+        : typeChanged
+          ? (archetype?.description ?? definition.description)
+          : definition.description;
+    const soulTemplate =
+      input.soulTemplate !== undefined
+        ? input.soulTemplate.trim()
+        : typeChanged
+          ? (archetype?.soulTemplate ?? definition.soulTemplate)
+          : definition.soulTemplate;
+    const tools =
+      normalizeTools(input.tools) ??
+      (typeChanged && archetype?.tools ? [...archetype.tools] : [...definition.tools]);
+    const registryConfig = mergeRegistryConfig(
+      typeChanged ? (archetype?.config ?? definition.config) : definition.config,
+      input.config
+    );
     const nextDefinition: ManagedAgentDefinition = {
       ...definition,
       name: input.name?.trim() || definition.name,
+      type,
+      description,
+      soulTemplate,
+      tools,
+      config: registryConfig,
       memoryPolicy: input.memoryPolicy ?? definition.memoryPolicy,
       resources: mergeResources({ ...definition.resources, ...input.resources }),
       messaging: mergeMessaging({ ...definition.messaging, ...input.messaging }),
@@ -610,6 +749,7 @@ export class ManagedAgentService {
 
     const config = loadConfig(definition.configPath);
     this.applyResourcePolicyToConfig(config, nextDefinition.resources);
+    this.applyRegistryConfigToConfig(config, registryConfig, soulTemplate);
     let nextBotToken: string | undefined;
     if (nextDefinition.mode === "bot") {
       nextBotToken =
@@ -650,6 +790,7 @@ export class ManagedAgentService {
     }
 
     saveConfig(config, definition.configPath);
+    this.writeSoulTemplate(definition.homePath, soulTemplate);
     this.writeDefinition(nextDefinition);
     if (nextDefinition.mode === "bot" && nextBotToken) {
       this.writeBotToken(nextDefinition, nextBotToken);
@@ -790,9 +931,11 @@ export class ManagedAgentService {
 
   private toSnapshot(definition: ManagedAgentDefinition): ManagedAgentSnapshot {
     const config = loadConfig(definition.configPath);
+    const status = this.getRuntimeStatus(definition.id);
     return {
       ...definition,
-      ...this.getRuntimeStatus(definition.id),
+      ...status,
+      status: status.state,
       provider: config.agent.provider,
       model: config.agent.model,
       ownerId: config.telegram.owner_id ?? null,
@@ -826,6 +969,8 @@ export class ManagedAgentService {
       botUsername?: string | null;
       personalConnection?: ManagedAgentPersonalConnectionInput;
       resources: ManagedAgentResourcePolicy;
+      registryConfig: ManagedAgentRegistryConfig;
+      soulTemplate: string;
     }
   ): Config {
     const next = structuredClone(sourceConfig);
@@ -833,6 +978,7 @@ export class ManagedAgentService {
     next.storage.sessions_file = join(homePath, "sessions.json");
     next.storage.memory_file = join(homePath, "memory.json");
     this.applyResourcePolicyToConfig(next, options.resources);
+    this.applyRegistryConfigToConfig(next, options.registryConfig, options.soulTemplate);
     if (options.mode === "bot") {
       next.telegram.bot_token = undefined;
       next.telegram.bot_username = options.botUsername ?? undefined;
@@ -882,6 +1028,39 @@ export class ManagedAgentService {
           force: true,
         });
       }
+    }
+  }
+
+  private writeSoulTemplate(homePath: string, soulTemplate: string): void {
+    const trimmed = soulTemplate.trim();
+    if (!trimmed) return;
+    const workspacePath = join(homePath, "workspace");
+    mkdirSync(workspacePath, { recursive: true, mode: 0o700 });
+    writeFileSync(join(workspacePath, "SOUL.md"), `${trimmed}\n`, "utf-8");
+  }
+
+  private applyRegistryConfigToConfig(
+    config: Config,
+    registryConfig: ManagedAgentRegistryConfig,
+    soulTemplate: string
+  ): void {
+    if (registryConfig.provider) {
+      config.agent.provider = registryConfig.provider as Config["agent"]["provider"];
+    }
+    if (registryConfig.model) {
+      config.agent.model = registryConfig.model;
+    }
+    if (registryConfig.temperature !== null) {
+      config.agent.temperature = registryConfig.temperature;
+    }
+    if (registryConfig.maxTokens !== null) {
+      config.agent.max_tokens = registryConfig.maxTokens;
+    }
+    if (registryConfig.maxToolCallsPerTurn !== null) {
+      config.agent.max_agentic_iterations = registryConfig.maxToolCallsPerTurn;
+    }
+    if (soulTemplate.trim()) {
+      config.agent.system_prompt = soulTemplate.trim();
     }
   }
 
@@ -1087,6 +1266,11 @@ export class ManagedAgentService {
   private normalizeDefinition(definition: ManagedAgentDefinition): ManagedAgentDefinition {
     return {
       ...definition,
+      type: definition.type ?? "CustomAgent",
+      description: definition.description ?? "",
+      soulTemplate: definition.soulTemplate ?? "",
+      tools: normalizeTools(definition.tools) ?? [],
+      config: mergeRegistryConfig(undefined, definition.config),
       memoryPolicy: definition.memoryPolicy ?? "isolated",
       resources: mergeResources(definition.resources),
       messaging: mergeMessaging(definition.messaging),

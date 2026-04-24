@@ -17,6 +17,14 @@ agent:
     idle_expiry_enabled: true
     idle_expiry_minutes: 1440        # 24 hours
 
+# Optional: managed-agent registry defaults.
+# The WebUI Agents page can create agents from ResearchAgent, CodeAgent,
+# ContentAgent, OrchestratorAgent, MonitorAgent, or custom definitions.
+# agent_registry:
+#   enabled: true
+#   default_type: "CustomAgent"
+#   default_memory_policy: "isolated"
+
 telegram:
   api_id: 0                          # From https://my.telegram.org/apps
   api_hash: "YOUR_API_HASH"

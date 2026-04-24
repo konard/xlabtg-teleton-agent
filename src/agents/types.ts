@@ -1,9 +1,37 @@
 export type ManagedAgentMode = "personal" | "bot";
 export type ManagedAgentMemoryPolicy = "isolated" | "shared-read" | "shared-write";
+export type BuiltInAgentType =
+  | "ResearchAgent"
+  | "CodeAgent"
+  | "ContentAgent"
+  | "OrchestratorAgent"
+  | "MonitorAgent";
+export type ManagedAgentType = BuiltInAgentType | "CustomAgent" | (string & {});
 
 export type ManagedAgentState = "stopped" | "starting" | "running" | "stopping" | "error";
 export type ManagedAgentTransport = "mtproto" | "bot-api";
 export type ManagedAgentHealth = "stopped" | "starting" | "healthy" | "degraded" | "error";
+
+export interface ManagedAgentRegistryConfig {
+  hookRules: string[];
+  provider: string | null;
+  model: string | null;
+  temperature: number | null;
+  maxTokens: number | null;
+  maxToolCallsPerTurn: number | null;
+}
+
+export interface ManagedAgentArchetype {
+  type: BuiltInAgentType;
+  name: string;
+  description: string;
+  soulTemplate: string;
+  tools: string[];
+  config: ManagedAgentRegistryConfig;
+  resources?: Partial<ManagedAgentResourcePolicy>;
+  messaging?: Partial<ManagedAgentMessagingPolicy>;
+  memoryPolicy?: ManagedAgentMemoryPolicy;
+}
 
 export interface ManagedAgentResourcePolicy {
   maxMemoryMb: number;
@@ -52,7 +80,12 @@ export interface ManagedAgentMessage {
 export interface ManagedAgentDefinition {
   id: string;
   name: string;
+  type: ManagedAgentType;
+  description: string;
   mode: ManagedAgentMode;
+  soulTemplate: string;
+  tools: string[];
+  config: ManagedAgentRegistryConfig;
   memoryPolicy: ManagedAgentMemoryPolicy;
   resources: ManagedAgentResourcePolicy;
   messaging: ManagedAgentMessagingPolicy;
@@ -83,6 +116,7 @@ export interface ManagedAgentRuntimeStatus {
 }
 
 export interface ManagedAgentSnapshot extends ManagedAgentDefinition, ManagedAgentRuntimeStatus {
+  status: ManagedAgentState;
   provider: string;
   model: string;
   ownerId: number | null;
@@ -96,6 +130,11 @@ export interface ManagedAgentSnapshot extends ManagedAgentDefinition, ManagedAge
 export interface CreateManagedAgentInput {
   id?: string;
   name: string;
+  type?: ManagedAgentType;
+  description?: string;
+  soulTemplate?: string;
+  tools?: string[];
+  config?: Partial<ManagedAgentRegistryConfig>;
   cloneFromId?: string;
   mode?: ManagedAgentMode;
   botToken?: string;
@@ -109,6 +148,11 @@ export interface CreateManagedAgentInput {
 
 export interface UpdateManagedAgentInput {
   name?: string;
+  type?: ManagedAgentType;
+  description?: string;
+  soulTemplate?: string;
+  tools?: string[];
+  config?: Partial<ManagedAgentRegistryConfig>;
   botToken?: string | null;
   botUsername?: string | null;
   personalConnection?: ManagedAgentPersonalConnectionInput;

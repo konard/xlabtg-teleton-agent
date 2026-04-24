@@ -1,11 +1,13 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type {
   CreateManagedAgentInput,
+  ManagedAgentArchetype,
   ManagedAgentMessage,
   ManagedAgentMode,
   ManagedAgentMemoryPolicy,
+  ManagedAgentRegistryConfig,
   ManagedAgentRuntimeStatus,
   ManagedAgentSnapshot,
   UpdateManagedAgentInput,
@@ -43,7 +45,19 @@ function makePrimaryOverview(deps: WebUIServerDeps): AgentOverview {
     id: "primary",
     name: "Primary Agent",
     kind: "primary",
+    type: "CustomAgent",
+    description: "Primary configured Teleton agent",
     mode: "personal",
+    soulTemplate: config.agent.system_prompt ?? "",
+    tools: [],
+    config: {
+      hookRules: [],
+      provider: config.agent.provider,
+      model: config.agent.model,
+      temperature: config.agent.temperature,
+      maxTokens: config.agent.max_tokens,
+      maxToolCallsPerTurn: config.agent.max_agentic_iterations,
+    },
     memoryPolicy: "isolated",
     resources: {
       maxMemoryMb: 0,
@@ -95,6 +109,7 @@ function makePrimaryOverview(deps: WebUIServerDeps): AgentOverview {
         )}${config.telegram.phone.slice(-2)}`
       : null,
     state,
+    status: state,
     pid: process.pid,
     startedAt: uptimeMs !== null ? new Date(Date.now() - uptimeMs).toISOString() : null,
     uptimeMs,
@@ -168,6 +183,22 @@ function parseOptionalPositiveInt(value: unknown): number | undefined {
   return parsed;
 }
 
+function parseStringList(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value)) {
+    throw new Error("Expected a string array");
+  }
+  return value.map((item) => String(item).trim()).filter(Boolean);
+}
+
+function parseRegistryConfig(value: unknown): Partial<ManagedAgentRegistryConfig> | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("Agent registry config must be an object");
+  }
+  return value as Partial<ManagedAgentRegistryConfig>;
+}
+
 function isAuthenticatedAuthResult(result: { status: string }): boolean {
   return result.status === "authenticated";
 }
@@ -180,6 +211,19 @@ function getTelegramAuthErrorMessage(error: unknown): string {
 export function createAgentsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
   const personalAuthManager = new TelegramAuthManager();
+
+  app.get("/archetypes", (c) => {
+    try {
+      const archetypes = withManagedService(deps).listArchetypes();
+      const response: APIResponse<{ archetypes: ManagedAgentArchetype[] }> = {
+        success: true,
+        data: { archetypes },
+      };
+      return c.json(response);
+    } catch (error) {
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 500);
+    }
+  });
 
   app.get("/", (c) => {
     try {
@@ -207,7 +251,7 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         }
       >();
       const service = withManagedService(deps);
-      const snapshot = service.createAgent({
+      const input: CreateManagedAgentInput = {
         name: body.name?.trim() || "",
         id: body.id?.trim() || undefined,
         cloneFromId:
@@ -226,7 +270,13 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         resources: body.resources,
         messaging: body.messaging,
         acknowledgePersonalAccountAccess: body.acknowledgePersonalAccountAccess,
-      });
+      };
+      if (body.type !== undefined) input.type = body.type.trim();
+      if (body.description !== undefined) input.description = body.description.trim();
+      if (body.soulTemplate !== undefined) input.soulTemplate = body.soulTemplate;
+      if (body.tools !== undefined) input.tools = parseStringList(body.tools);
+      if (body.config !== undefined) input.config = parseRegistryConfig(body.config);
+      const snapshot = service.createAgent(input);
       logAgentAudit(deps, `agent:create:${snapshot.id}:${snapshot.mode}`);
       const response: APIResponse<AgentOverview> = {
         success: true,
@@ -282,7 +332,7 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
           ? makePrimaryOverview(deps).name
           : withManagedService(deps).getAgentSnapshot(id).name;
       const service = withManagedService(deps);
-      const snapshot = service.createAgent({
+      const input: CreateManagedAgentInput = {
         name: body.name?.trim() || `${sourceName} Copy`,
         id: body.newId?.trim() || undefined,
         cloneFromId: id === "primary" ? undefined : id,
@@ -300,7 +350,13 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         resources: body.resources,
         messaging: body.messaging,
         acknowledgePersonalAccountAccess: body.acknowledgePersonalAccountAccess,
-      });
+      };
+      if (body.type !== undefined) input.type = body.type.trim();
+      if (body.description !== undefined) input.description = body.description.trim();
+      if (body.soulTemplate !== undefined) input.soulTemplate = body.soulTemplate;
+      if (body.tools !== undefined) input.tools = parseStringList(body.tools);
+      if (body.config !== undefined) input.config = parseRegistryConfig(body.config);
+      const snapshot = service.createAgent(input);
       logAgentAudit(deps, `agent:clone:${id}->${snapshot.id}:${snapshot.mode}`);
       const response: APIResponse<AgentOverview> = {
         success: true,
@@ -336,7 +392,27 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
     }
   });
 
-  app.patch("/:id", async (c) => {
+  app.get("/:id", (c) => {
+    try {
+      const { id } = c.req.param();
+      const agent =
+        id === "primary"
+          ? makePrimaryOverview(deps)
+          : makeManagedOverview(withManagedService(deps).getAgentSnapshot(id));
+      const response: APIResponse<AgentOverview> = {
+        success: true,
+        data: agent,
+      };
+      return c.json(response);
+    } catch (error) {
+      return c.json(
+        { success: false, error: getTelegramAuthErrorMessage(error) } as APIResponse,
+        400
+      );
+    }
+  });
+
+  const updateAgentFromRequest = async (c: Context) => {
     try {
       const { id } = c.req.param();
       if (id === "primary") {
@@ -356,6 +432,12 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
           phone: body.personalConnection.phone?.trim() || undefined,
         };
       }
+      if (body.tools !== undefined) {
+        body.tools = parseStringList(body.tools);
+      }
+      if (body.config !== undefined) {
+        body.config = parseRegistryConfig(body.config);
+      }
       const snapshot = withManagedService(deps).updateAgent(id, body);
       logAgentAudit(deps, `agent:update:${id}`);
       const response: APIResponse<AgentOverview> = {
@@ -369,7 +451,10 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         400
       );
     }
-  });
+  };
+
+  app.put("/:id", updateAgentFromRequest);
+  app.patch("/:id", updateAgentFromRequest);
 
   app.get("/:id/status", (c) => {
     try {

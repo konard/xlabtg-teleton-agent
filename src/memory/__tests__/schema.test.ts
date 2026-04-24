@@ -53,6 +53,7 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("tg_users");
       expect(tableNames).toContain("tg_messages");
       expect(tableNames).toContain("embedding_cache");
+      expect(tableNames).toContain("agent_registry");
       expect(tableNames).toContain("journal");
       expect(tableNames).toContain("knowledge_fts");
       expect(tableNames).toContain("knowledge_fts_data");
@@ -149,6 +150,31 @@ describe("Memory Schema", () => {
       expect(columnNames).toContain("payload");
       expect(columnNames).toContain("reason");
       expect(columnNames).toContain("scheduled_message_id");
+    });
+
+    it("creates agent_registry table with registry columns", () => {
+      ensureSchema(db);
+
+      const info = db.prepare("PRAGMA table_info(agent_registry)").all() as Array<{
+        name: string;
+        type: string;
+      }>;
+
+      const columnNames = info.map((c) => c.name);
+      expect(columnNames).toEqual(
+        expect.arrayContaining([
+          "id",
+          "name",
+          "type",
+          "description",
+          "config",
+          "soul_template",
+          "tools",
+          "status",
+          "created_at",
+          "updated_at",
+        ])
+      );
     });
 
     it("creates task_dependencies table with correct schema", () => {
@@ -1113,7 +1139,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.26.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.27.0");
     });
   });
 

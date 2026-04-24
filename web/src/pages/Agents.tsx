@@ -10,10 +10,12 @@ import {
 import { QRCodeSVG } from "qrcode.react";
 import {
   api,
+  type AgentArchetype,
   type AgentLogs,
   type AgentMessage,
   type AgentOverview,
   type CreateAgentInput,
+  type AgentRegistryConfig,
   type ManagedAgentMemoryPolicy,
   type UpdateAgentInput,
 } from "../lib/api";
@@ -21,6 +23,16 @@ import { toast } from "../lib/toast-store";
 
 interface AgentFormState {
   name: string;
+  type: string;
+  description: string;
+  soulTemplate: string;
+  tools: string;
+  provider: string;
+  model: string;
+  temperature: string;
+  maxTokens: string;
+  maxToolCallsPerTurn: string;
+  hookRules: string;
   cloneFromId: string;
   mode: AgentOverview["mode"];
   botToken: string;
@@ -44,6 +56,16 @@ interface AgentFormState {
 
 const DEFAULT_FORM: AgentFormState = {
   name: "",
+  type: "CustomAgent",
+  description: "",
+  soulTemplate: "",
+  tools: "",
+  provider: "",
+  model: "",
+  temperature: "",
+  maxTokens: "",
+  maxToolCallsPerTurn: "",
+  hookRules: "",
   cloneFromId: "primary",
   mode: "personal",
   botToken: "",
@@ -84,6 +106,17 @@ function formatUptime(value: number | null): string {
 function formFromAgent(agent: AgentOverview): AgentFormState {
   return {
     name: agent.name,
+    type: agent.type,
+    description: agent.description,
+    soulTemplate: agent.soulTemplate,
+    tools: agent.tools.join(", "),
+    provider: agent.config.provider ?? "",
+    model: agent.config.model ?? "",
+    temperature: agent.config.temperature === null ? "" : String(agent.config.temperature),
+    maxTokens: agent.config.maxTokens === null ? "" : String(agent.config.maxTokens),
+    maxToolCallsPerTurn:
+      agent.config.maxToolCallsPerTurn === null ? "" : String(agent.config.maxToolCallsPerTurn),
+    hookRules: agent.config.hookRules.join(", "),
     cloneFromId: agent.sourceId ?? "primary",
     mode: agent.mode,
     botToken: "",
@@ -123,9 +156,35 @@ function personalConnectionOrUndefined(form: AgentFormState) {
   };
 }
 
+function commaList(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function registryConfigOrUndefined(form: AgentFormState): Partial<AgentRegistryConfig> | undefined {
+  const config: Partial<AgentRegistryConfig> = {};
+  const hookRules = commaList(form.hookRules);
+  if (hookRules.length > 0) config.hookRules = hookRules;
+  if (form.provider.trim()) config.provider = form.provider.trim();
+  if (form.model.trim()) config.model = form.model.trim();
+  if (form.temperature.trim()) config.temperature = numberOrUndefined(form.temperature);
+  if (form.maxTokens.trim()) config.maxTokens = numberOrUndefined(form.maxTokens);
+  if (form.maxToolCallsPerTurn.trim()) {
+    config.maxToolCallsPerTurn = numberOrUndefined(form.maxToolCallsPerTurn);
+  }
+  return Object.keys(config).length > 0 ? config : undefined;
+}
+
 function toCreatePayload(form: AgentFormState): CreateAgentInput {
   return {
     name: form.name.trim(),
+    type: form.type.trim() || undefined,
+    description: form.description.trim() || undefined,
+    soulTemplate: form.soulTemplate.trim() || undefined,
+    tools: commaList(form.tools).length > 0 ? commaList(form.tools) : undefined,
+    config: registryConfigOrUndefined(form),
     cloneFromId: form.cloneFromId === "primary" ? undefined : form.cloneFromId,
     mode: form.mode,
     botToken: form.botToken.trim() || undefined,
@@ -157,6 +216,11 @@ function toCreatePayload(form: AgentFormState): CreateAgentInput {
 function toUpdatePayload(form: AgentFormState): UpdateAgentInput {
   return {
     name: form.name.trim() || undefined,
+    type: form.type.trim() || undefined,
+    description: form.description.trim() || undefined,
+    soulTemplate: form.soulTemplate.trim() || undefined,
+    tools: commaList(form.tools).length > 0 ? commaList(form.tools) : undefined,
+    config: registryConfigOrUndefined(form),
     botToken: form.botToken.trim() || undefined,
     botUsername: form.botUsername.trim() || null,
     personalConnection: personalConnectionOrUndefined(form),
@@ -186,6 +250,7 @@ function toUpdatePayload(form: AgentFormState): UpdateAgentInput {
 function FormFields({
   form,
   setForm,
+  archetypes,
   submitLabel,
   submitting,
   onSubmit,
@@ -196,6 +261,7 @@ function FormFields({
 }: {
   form: AgentFormState;
   setForm: Dispatch<SetStateAction<AgentFormState>>;
+  archetypes: AgentArchetype[];
   submitLabel: string;
   submitting: boolean;
   onSubmit: () => Promise<void> | void;
@@ -204,6 +270,31 @@ function FormFields({
   botValidationMessage?: string | null;
   botValidationLoading?: boolean;
 }) {
+  const applyArchetype = (type: string) => {
+    const archetype = archetypes.find((item) => item.type === type);
+    setForm((current) => ({
+      ...current,
+      type,
+      description: archetype?.description ?? current.description,
+      soulTemplate: archetype?.soulTemplate ?? current.soulTemplate,
+      tools: archetype ? archetype.tools.join(", ") : current.tools,
+      temperature:
+        archetype?.config.temperature === null || archetype?.config.temperature === undefined
+          ? current.temperature
+          : String(archetype.config.temperature),
+      maxTokens:
+        archetype?.config.maxTokens === null || archetype?.config.maxTokens === undefined
+          ? current.maxTokens
+          : String(archetype.config.maxTokens),
+      maxToolCallsPerTurn:
+        archetype?.config.maxToolCallsPerTurn === null ||
+        archetype?.config.maxToolCallsPerTurn === undefined
+          ? current.maxToolCallsPerTurn
+          : String(archetype.config.maxToolCallsPerTurn),
+      hookRules: archetype ? archetype.config.hookRules.join(", ") : current.hookRules,
+    }));
+  };
+
   return (
     <section
       style={{
@@ -228,6 +319,14 @@ function FormFields({
           value={form.name}
           onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
         />
+        <select value={form.type} onChange={(e) => applyArchetype(e.target.value)}>
+          <option value="CustomAgent">Custom agent</option>
+          {archetypes.map((archetype) => (
+            <option key={archetype.type} value={archetype.type}>
+              {archetype.name}
+            </option>
+          ))}
+        </select>
         {showCloneSource && (
           <input
             type="text"
@@ -262,6 +361,27 @@ function FormFields({
           <option value="shared-read">Shared-read (modeled, blocked)</option>
           <option value="shared-write">Shared-write (modeled, blocked)</option>
         </select>
+      </div>
+
+      <div style={{ display: "grid", gap: "12px" }}>
+        <input
+          type="text"
+          placeholder="Registry description"
+          value={form.description}
+          onChange={(e) => setForm((current) => ({ ...current, description: e.target.value }))}
+        />
+        <textarea
+          placeholder="Soul/system prompt template"
+          value={form.soulTemplate}
+          onChange={(e) => setForm((current) => ({ ...current, soulTemplate: e.target.value }))}
+          rows={4}
+        />
+        <input
+          type="text"
+          placeholder="Allowed tool names (comma separated)"
+          value={form.tools}
+          onChange={(e) => setForm((current) => ({ ...current, tools: e.target.value }))}
+        />
       </div>
 
       {form.mode === "bot" && (
@@ -399,6 +519,58 @@ function FormFields({
           }
         />
       </div>
+
+      <div
+        style={{
+          display: "grid",
+          gap: "12px",
+          gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))",
+        }}
+      >
+        <input
+          type="text"
+          placeholder="Provider override"
+          value={form.provider}
+          onChange={(e) => setForm((current) => ({ ...current, provider: e.target.value }))}
+        />
+        <input
+          type="text"
+          placeholder="Model override"
+          value={form.model}
+          onChange={(e) => setForm((current) => ({ ...current, model: e.target.value }))}
+        />
+        <input
+          type="number"
+          step="0.1"
+          min="0"
+          max="2"
+          placeholder="Temperature"
+          value={form.temperature}
+          onChange={(e) => setForm((current) => ({ ...current, temperature: e.target.value }))}
+        />
+        <input
+          type="number"
+          min="1"
+          placeholder="Max tokens"
+          value={form.maxTokens}
+          onChange={(e) => setForm((current) => ({ ...current, maxTokens: e.target.value }))}
+        />
+        <input
+          type="number"
+          min="1"
+          placeholder="Max tool calls"
+          value={form.maxToolCallsPerTurn}
+          onChange={(e) =>
+            setForm((current) => ({ ...current, maxToolCallsPerTurn: e.target.value }))
+          }
+        />
+      </div>
+      <input
+        type="text"
+        placeholder="Hook rules (comma separated)"
+        value={form.hookRules}
+        onChange={(e) => setForm((current) => ({ ...current, hookRules: e.target.value }))}
+      />
 
       <div
         style={{
@@ -921,6 +1093,7 @@ const STATE_COLORS: Record<AgentOverview["state"], string> = {
 
 export function Agents() {
   const [agents, setAgents] = useState<AgentOverview[]>([]);
+  const [archetypes, setArchetypes] = useState<AgentArchetype[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -942,8 +1115,12 @@ export function Agents() {
 
   const loadAgents = useCallback(async () => {
     try {
-      const response = await api.listAgents();
-      setAgents(response.data.agents);
+      const [agentsResponse, archetypesResponse] = await Promise.all([
+        api.listAgents(),
+        api.listAgentArchetypes(),
+      ]);
+      setAgents(agentsResponse.data.agents);
+      setArchetypes(archetypesResponse.data.archetypes);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -976,6 +1153,48 @@ export function Agents() {
     () => agents.map((agent) => ({ id: agent.id, label: `${agent.name} (${agent.kind})` })),
     [agents]
   );
+
+  const applyArchetypeToCreate = useCallback((archetype: AgentArchetype) => {
+    setCreateForm((current) => ({
+      ...current,
+      name: current.name || archetype.name,
+      type: archetype.type,
+      description: archetype.description,
+      soulTemplate: archetype.soulTemplate,
+      tools: archetype.tools.join(", "),
+      memoryPolicy: archetype.memoryPolicy ?? current.memoryPolicy,
+      maxMemoryMb: archetype.resources?.maxMemoryMb
+        ? String(archetype.resources.maxMemoryMb)
+        : current.maxMemoryMb,
+      maxConcurrentTasks: archetype.resources?.maxConcurrentTasks
+        ? String(archetype.resources.maxConcurrentTasks)
+        : current.maxConcurrentTasks,
+      rateLimitPerMinute: archetype.resources?.rateLimitPerMinute
+        ? String(archetype.resources.rateLimitPerMinute)
+        : current.rateLimitPerMinute,
+      llmRateLimitPerMinute: archetype.resources?.llmRateLimitPerMinute
+        ? String(archetype.resources.llmRateLimitPerMinute)
+        : current.llmRateLimitPerMinute,
+      messagingEnabled: archetype.messaging?.enabled ?? current.messagingEnabled,
+      messagingAllowlist: archetype.messaging?.allowlist?.join(", ") ?? current.messagingAllowlist,
+      maxMessagesPerMinute: archetype.messaging?.maxMessagesPerMinute
+        ? String(archetype.messaging.maxMessagesPerMinute)
+        : current.maxMessagesPerMinute,
+      temperature:
+        archetype.config.temperature === null
+          ? current.temperature
+          : String(archetype.config.temperature),
+      maxTokens:
+        archetype.config.maxTokens === null
+          ? current.maxTokens
+          : String(archetype.config.maxTokens),
+      maxToolCallsPerTurn:
+        archetype.config.maxToolCallsPerTurn === null
+          ? current.maxToolCallsPerTurn
+          : String(archetype.config.maxToolCallsPerTurn),
+      hookRules: archetype.config.hookRules.join(", "),
+    }));
+  }, []);
 
   const refreshLogs = useCallback(async (agentId: string) => {
     setSelectedLogsAgentId(agentId);
@@ -1194,6 +1413,46 @@ export function Agents() {
         </div>
       )}
 
+      <section style={{ display: "grid", gap: "10px" }}>
+        <div style={{ fontSize: "15px", fontWeight: 600 }}>Archetype catalog</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+            gap: "12px",
+          }}
+        >
+          {archetypes.map((archetype) => (
+            <button
+              key={archetype.type}
+              type="button"
+              onClick={() => applyArchetypeToCreate(archetype)}
+              style={{
+                display: "grid",
+                gap: "8px",
+                textAlign: "left",
+                alignItems: "start",
+                padding: "14px",
+                borderRadius: "8px",
+                border:
+                  createForm.type === archetype.type
+                    ? "1px solid var(--accent)"
+                    : "1px solid var(--separator)",
+                background: "var(--surface)",
+              }}
+            >
+              <span style={{ fontSize: "14px", fontWeight: 600 }}>{archetype.name}</span>
+              <span style={{ fontSize: "12px", color: "var(--text-secondary)", lineHeight: 1.5 }}>
+                {archetype.description}
+              </span>
+              <span style={{ fontSize: "11px", color: "var(--text-tertiary)" }}>
+                {archetype.tools.slice(0, 4).join(", ")}
+              </span>
+            </button>
+          ))}
+        </div>
+      </section>
+
       <section style={{ display: "grid", gap: "8px" }}>
         <div style={{ fontSize: "15px", fontWeight: 600 }}>Create managed agent</div>
         <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
@@ -1204,6 +1463,7 @@ export function Agents() {
         <FormFields
           form={createForm}
           setForm={setCreateForm}
+          archetypes={archetypes}
           submitLabel="Create managed agent"
           submitting={creating}
           onSubmit={handleCreate}
@@ -1228,6 +1488,7 @@ export function Agents() {
           <FormFields
             form={editForm}
             setForm={setEditForm}
+            archetypes={archetypes}
             submitLabel="Save agent settings"
             submitting={savingEdit}
             onSubmit={handleSaveEdit}
@@ -1333,6 +1594,10 @@ export function Agents() {
                 }}
               >
                 <div>
+                  <div style={{ color: "var(--text-secondary)" }}>Type</div>
+                  <div>{agent.type}</div>
+                </div>
+                <div>
                   <div style={{ color: "var(--text-secondary)" }}>State</div>
                   <div>{agent.state}</div>
                 </div>
@@ -1382,6 +1647,8 @@ export function Agents() {
                   wordBreak: "break-word",
                 }}
               >
+                <div>Description: {agent.description || "—"}</div>
+                <div>Tools: {agent.tools.length > 0 ? agent.tools.join(", ") : "unrestricted"}</div>
                 <div>Home: {agent.homePath}</div>
                 <div>Config: {agent.configPath}</div>
                 <div>
