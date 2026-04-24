@@ -61,6 +61,8 @@ import { initCache } from "./services/cache.js";
 import { CacheInvalidationWatcher, initPreloader } from "./services/preloader.js";
 import { initAlerting } from "./services/alerting.js";
 import { initAnomalyDetector } from "./services/anomaly-detector.js";
+import { getEventBus } from "./services/event-bus.js";
+import { getWebhookDispatcher } from "./services/webhook-dispatcher.js";
 import { flushOffsets } from "./telegram/offset-store.js";
 import { WorkflowScheduler } from "./services/workflow-scheduler.js";
 import { ManagedAgentService } from "./agents/service.js";
@@ -184,6 +186,29 @@ export class TeletonApp {
     const db = getDatabase().getDb();
 
     // Initialize analytics and metrics singletons early so agent runtime can record data
+    const eventBus = getEventBus(db, {
+      enabled: this.config.event_bus.enabled,
+      maxLogEntries: this.config.event_bus.max_log_entries,
+    });
+    getWebhookDispatcher(db, {
+      enabled: this.config.webhooks.enabled,
+      defaultMaxRetries: this.config.webhooks.default_max_retries,
+      deliveryTimeoutMs: this.config.webhooks.delivery_timeout_ms,
+    });
+    this.lifecycle.on("stateChange", (event) => {
+      void eventBus
+        .publish({
+          type: "agent.state.changed",
+          source: "agent-lifecycle",
+          payload: {
+            state: event.state,
+            error: event.error ?? null,
+          },
+        })
+        .catch((err: unknown) => {
+          log.warn({ err }, "Failed to publish lifecycle event");
+        });
+    });
     initMetrics(db);
     initAnalytics(db);
     initAuditTrail(db, { maxPayloadBytes: this.config.audit_trail.payload_max_bytes });

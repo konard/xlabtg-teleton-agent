@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { createLogger } from "../utils/logger.js";
+import { getEventBus } from "./event-bus.js";
 
 const log = createLogger("AnomalyDetector");
 
@@ -804,7 +805,26 @@ export class AnomalyDetectorService {
       );
 
     const row = this.db.prepare("SELECT * FROM anomaly_events WHERE id = ?").get(id) as EventRow;
-    return rowToEvent(row);
+    const event = rowToEvent(row);
+    void getEventBus(this.db)
+      .publish({
+        type: "anomaly.detected",
+        source: "anomaly-detector",
+        payload: {
+          id: event.id,
+          type: event.type,
+          severity: event.severity,
+          metric: event.metric,
+          currentValue: event.currentValue,
+          expectedMin: event.expectedMin,
+          expectedMax: event.expectedMax,
+          description: event.description,
+        },
+      })
+      .catch((err: unknown) => {
+        log.warn({ err, anomalyId: event.id }, "Anomaly event publish failed");
+      });
+    return event;
   }
 
   private dispatchAlert(event: AnomalyEvent): void {

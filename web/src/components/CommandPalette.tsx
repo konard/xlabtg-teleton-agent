@@ -19,6 +19,7 @@ const NAV_ITEMS: SearchItem[] = [
   { id: 'nav-workspace', label: 'Workspace', category: 'Pages', path: '/workspace', keywords: 'files editor' },
   { id: 'nav-tasks', label: 'Tasks', category: 'Pages', path: '/tasks', keywords: 'queue jobs background' },
   { id: 'nav-pipelines', label: 'Pipelines', category: 'Pages', path: '/pipelines', keywords: 'dag workflow automation runs agent chain' },
+  { id: 'nav-events', label: 'Events', category: 'Pages', path: '/events', keywords: 'event bus webhooks deliveries stream replay' },
   { id: 'nav-mcp', label: 'MCP', category: 'Pages', path: '/mcp', keywords: 'model context protocol servers' },
   { id: 'nav-integrations', label: 'Integrations', category: 'Pages', path: '/integrations', keywords: 'api oauth webhooks credentials external services' },
   { id: 'nav-hooks', label: 'Hooks', category: 'Pages', path: '/hooks', keywords: 'rules blocklist triggers' },
@@ -29,6 +30,9 @@ const NAV_ITEMS: SearchItem[] = [
   { id: 'nav-autonomous', label: 'Autonomous', category: 'Pages', path: '/autonomous', keywords: 'autonomous mode ate self-managed goals loop agent' },
   { id: 'nav-config', label: 'Config', category: 'Pages', path: '/config', keywords: 'settings configuration api keys' },
 ];
+
+const OPEN_WIDGET_GENERATOR_EVENT = 'teleton:open-widget-generator';
+const OPEN_WIDGET_GENERATOR_STORAGE_KEY = 'teleton:open-widget-generator';
 
 function fuzzyMatch(query: string, target: string): boolean {
   const q = query.toLowerCase();
@@ -103,7 +107,26 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  const allItems = NAV_ITEMS;
+  const commandItems: SearchItem[] = [
+    {
+      id: 'cmd-generate-widget',
+      label: 'Generate Widget',
+      category: 'Commands',
+      keywords: 'dashboard ai chart table custom visualization',
+      action: () => {
+        try {
+          sessionStorage.setItem(OPEN_WIDGET_GENERATOR_STORAGE_KEY, '1');
+        } catch {
+          // ignore storage errors
+        }
+        navigate('/');
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent(OPEN_WIDGET_GENERATOR_EVENT));
+        }, 50);
+      },
+    },
+  ];
+  const allItems = [...NAV_ITEMS, ...commandItems];
   const filtered = filterItems(allItems, query);
   const grouped = groupByCategory(filtered);
   const flatFiltered = filtered;

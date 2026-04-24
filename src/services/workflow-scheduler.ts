@@ -4,6 +4,7 @@ import { WorkflowStore } from "./workflows.js";
 import type { CronTrigger, EventTrigger } from "./workflows.js";
 import { WorkflowExecutor } from "./workflow-executor.js";
 import { createLogger } from "../utils/logger.js";
+import { getEventBus } from "./event-bus.js";
 
 const log = createLogger("WorkflowScheduler");
 
@@ -92,6 +93,20 @@ export class WorkflowScheduler {
       }
       log.info({ workflowId: wf.id, cron: trigger.cron }, "Firing cron workflow");
       this.store.recordFiredBucket(wf.id, bucket);
+      void getEventBus(this.db)
+        .publish({
+          type: "schedule.triggered",
+          source: "workflow-scheduler",
+          payload: {
+            workflowId: wf.id,
+            workflowName: wf.name,
+            cron: trigger.cron,
+            bucket,
+          },
+        })
+        .catch((err: unknown) => {
+          log.warn({ err, workflowId: wf.id }, "Schedule event publish failed");
+        });
       await this.execute(wf.id);
     }
   }
