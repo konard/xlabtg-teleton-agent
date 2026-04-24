@@ -211,6 +211,7 @@ cache:
 #       - "npm"            # allows: npm run, npm install, etc.
 #       - "ls"
 #       - "cat"
+#     sandbox_mode: "unrestricted" # unrestricted | sandboxed (temp cwd/minimal env) | dry-run
 #     # NOTE: pipes, &&, ||, redirects, and command substitution are always rejected in allowlist mode.
 
 # Storage paths (defaults are fine for most users)

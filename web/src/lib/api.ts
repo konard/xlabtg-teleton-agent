@@ -1079,6 +1079,59 @@ export interface SecuritySettings {
   rate_limit_rpm: number | null;
 }
 
+export type PolicyAction = "allow" | "deny" | "require_approval";
+
+export interface PolicyMatch {
+  tool?: string | string[];
+  module?: string | string[];
+  params?: Record<string, unknown>;
+}
+
+export interface SecurityPolicy {
+  id: number;
+  name: string;
+  match: PolicyMatch;
+  action: PolicyAction;
+  reason: string | null;
+  enabled: boolean;
+  priority: number;
+  created_at: number;
+}
+
+export interface SecurityApproval {
+  id: string;
+  tool: string;
+  params: string;
+  requester_id: number | null;
+  chat_id: string | null;
+  status: "pending" | "approved" | "rejected";
+  reason: string;
+  policy_id: number | null;
+  policy_name: string | null;
+  created_at: number;
+  resolved_at: number | null;
+  resolved_by: number | null;
+  consumed_at: number | null;
+}
+
+export interface SecurityValidationLogEntry {
+  id: number;
+  tool: string;
+  params: string;
+  action: PolicyAction;
+  reason: string;
+  policy_id: number | null;
+  policy_name: string | null;
+  approval_id: string | null;
+  created_at: number;
+}
+
+export interface PolicyEvaluationResult {
+  action: PolicyAction;
+  reason: string;
+  policy: SecurityPolicy | null;
+}
+
 export interface MarketplacePlugin {
   id: string;
   name: string;
@@ -2407,6 +2460,87 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(patch),
     });
+  },
+
+  async getSecurityPolicies() {
+    return fetchAPI<APIResponse<SecurityPolicy[]>>("/security/policies");
+  },
+
+  async createSecurityPolicy(input: {
+    name?: string;
+    match?: PolicyMatch;
+    action?: PolicyAction;
+    reason?: string;
+    enabled?: boolean;
+    priority?: number;
+    yaml?: string;
+  }) {
+    return fetchAPI<APIResponse<SecurityPolicy | SecurityPolicy[]>>("/security/policies", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateSecurityPolicy(
+    id: number,
+    input: {
+      name?: string;
+      match?: PolicyMatch;
+      action?: PolicyAction;
+      reason?: string | null;
+      enabled?: boolean;
+      priority?: number;
+      yaml?: string;
+    }
+  ) {
+    return fetchAPI<APIResponse<SecurityPolicy>>(`/security/policies/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async deleteSecurityPolicy(id: number) {
+    return fetchAPI<APIResponse<null>>(`/security/policies/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async evaluateSecurityPolicy(input: {
+    tool: string;
+    params?: unknown;
+    senderId?: number;
+    chatId?: string;
+    module?: string | null;
+  }) {
+    return fetchAPI<APIResponse<PolicyEvaluationResult>>("/security/policies/evaluate", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getSecurityApprovals(status?: SecurityApproval["status"]) {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return fetchAPI<APIResponse<SecurityApproval[]>>(`/security/approvals${qs}`);
+  },
+
+  async approveSecurityApproval(id: string) {
+    return fetchAPI<APIResponse<SecurityApproval>>(
+      `/security/approvals/${encodeURIComponent(id)}/approve`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  },
+
+  async rejectSecurityApproval(id: string) {
+    return fetchAPI<APIResponse<SecurityApproval>>(
+      `/security/approvals/${encodeURIComponent(id)}/reject`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  },
+
+  async getSecurityValidationLog(limit = 100) {
+    return fetchAPI<APIResponse<SecurityValidationLogEntry[]>>(
+      `/security/validation-log?limit=${limit}`
+    );
   },
 
   connectLogs(onLog: (entry: LogEntry) => void, onError?: (error: Event) => void) {
