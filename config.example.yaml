@@ -197,6 +197,15 @@ anomaly_detection:
     telegram_chat_ids: []             # Optional explicit chat IDs; empty = admin_ids
     webhook_url: null                 # Optional Slack/PagerDuty-compatible webhook URL
 
+# Unified integration layer: registry, encrypted credentials, and outbound limits.
+integrations:
+  enabled: true
+  # credential_key: "..."             # Optional key material; generated locally if omitted
+  health_check_interval_minutes: 5
+  global_rate_limit:
+    # requests_per_minute: 120
+    # requests_per_hour: 5000
+
 # Tool RAG: semantic tool selection per message (ENABLED by default)
 # Reduces tool definitions sent to the LLM from 120+ to ~25 most relevant.
 # Uses local ONNX embeddings (zero-config) + FTS5 hybrid search.
@@ -247,6 +256,7 @@ cache:
 #       - "npm"            # allows: npm run, npm install, etc.
 #       - "ls"
 #       - "cat"
+#     sandbox_mode: "unrestricted" # unrestricted | sandboxed (temp cwd/minimal env) | dry-run
 #     # NOTE: pipes, &&, ||, redirects, and command substitution are always rejected in allowlist mode.
 
 # Storage paths (defaults are fine for most users)

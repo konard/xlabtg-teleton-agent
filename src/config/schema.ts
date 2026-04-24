@@ -511,6 +511,41 @@ const _WebhooksObject = z.object({
 });
 export const WebhooksConfigSchema = _WebhooksObject.default(_WebhooksObject.parse({}));
 
+const _IntegrationsRateLimitObject = z.object({
+  requests_per_minute: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Global outbound integration requests per minute"),
+  requests_per_hour: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Global outbound integration requests per hour"),
+});
+
+const _IntegrationsObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable the unified integration registry"),
+  credential_key: z
+    .string()
+    .optional()
+    .describe(
+      "Optional key material for encrypting integration credentials. " +
+        "If omitted, Teleton generates a local key in the security settings table."
+    ),
+  health_check_interval_minutes: z
+    .number()
+    .int()
+    .min(1)
+    .default(5)
+    .describe("Default interval for future background integration health checks"),
+  global_rate_limit: _IntegrationsRateLimitObject.default(_IntegrationsRateLimitObject.parse({})),
+});
+export const IntegrationsConfigSchema = _IntegrationsObject.default(_IntegrationsObject.parse({}));
+export type IntegrationsConfig = z.infer<typeof _IntegrationsObject>;
+
 const McpServerSchema = z
   .object({
     command: z
@@ -640,6 +675,12 @@ const _ExecObject = z.object({
         "A command is permitted when its first token (the program name) exactly matches an entry. " +
         "Shell operators (pipes, &&, redirects, command substitution) are always rejected in allowlist mode. " +
         "Empty list blocks all commands."
+    ),
+  sandbox_mode: z
+    .enum(["unrestricted", "sandboxed", "dry-run"])
+    .default("unrestricted")
+    .describe(
+      "Execution isolation for exec tools: unrestricted (current behavior), sandboxed (temporary cwd and minimal env), or dry-run (validate/audit without spawning)."
     ),
   limits: _ExecLimitsObject.default(_ExecLimitsObject.parse({})),
   audit: _ExecAuditObject.default(_ExecAuditObject.parse({})),
@@ -797,6 +838,7 @@ export const ConfigSchema = z.object({
   cache: CacheConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
+  integrations: IntegrationsConfigSchema,
   event_bus: EventBusConfigSchema,
   webhooks: WebhooksConfigSchema,
   ton_proxy: TonProxyConfigSchema,
