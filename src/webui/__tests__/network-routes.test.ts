@@ -2,6 +2,10 @@ import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import Database from "better-sqlite3";
+import { AutonomousTaskManager } from "../../autonomous/manager.js";
+import type { LoopDependencies } from "../../autonomous/loop.js";
+import { getAutonomousTaskStore } from "../../memory/agent/autonomous-tasks.js";
+import { getTaskStore } from "../../memory/agent/tasks.js";
 import { ensureSchema } from "../../memory/schema.js";
 import { signNetworkMessage } from "../../services/network/messenger.js";
 import { createAgentNetworkIngressRoutes, createNetworkRoutes } from "../routes/network.js";
@@ -9,12 +13,14 @@ import type { WebUIServerDeps } from "../types.js";
 
 const { privateKey: localPrivateKey } = generateKeyPairSync("ed25519");
 const LOCAL_PRIVATE_KEY = localPrivateKey.export({ format: "pem", type: "pkcs8" }).toString();
+type SigningKey = Parameters<typeof signNetworkMessage>[1];
 
 function buildDeps(
   db: InstanceType<typeof Database>,
-  networkConfigOverrides: Partial<NonNullable<WebUIServerDeps["networkConfig"]>> = {}
+  networkConfigOverrides: Partial<NonNullable<WebUIServerDeps["networkConfig"]>> = {},
+  depsOverrides: Partial<WebUIServerDeps> = {}
 ): WebUIServerDeps {
-  return {
+  const deps: WebUIServerDeps = {
     configPath: "/tmp/teleton/config.yaml",
     config: {
       auth_token: "test",
@@ -57,11 +63,40 @@ function buildDeps(
       ...networkConfigOverrides,
     },
   };
+  return { ...deps, ...depsOverrides };
+}
+
+function hangingLoopDeps(): LoopDependencies {
+  return {
+    planNextAction: vi.fn().mockImplementation(() => new Promise(() => {})),
+    executeTool: vi.fn().mockResolvedValue({ success: true, durationMs: 1 }),
+    evaluateSuccess: vi.fn().mockResolvedValue(false),
+    selfReflect: vi.fn().mockResolvedValue({ progressSummary: "", isStuck: false }),
+    escalate: vi.fn().mockResolvedValue(undefined),
+  };
+}
+
+async function signedTaskRequest(app: Hono, privateKey: SigningKey, from = "agent-003") {
+  const message = {
+    type: "task_request" as const,
+    from,
+    to: "primary",
+    correlationId: "route-corr-1",
+    timestamp: new Date().toISOString(),
+    payload: { description: "Handle delegated work", payload: { source: "test" } },
+  };
+
+  return app.request("/api/agent-network", {
+    method: "POST",
+    body: JSON.stringify(signNetworkMessage(message, privateKey)),
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 describe("network routes", () => {
   let db: InstanceType<typeof Database>;
   let app: Hono;
+  let managers: AutonomousTaskManager[] = [];
 
   beforeEach(() => {
     db = new Database(":memory:");
@@ -74,6 +109,8 @@ describe("network routes", () => {
   });
 
   afterEach(() => {
+    for (const manager of managers) manager.stopAll();
+    managers = [];
     vi.unstubAllGlobals();
     db.close();
   });
@@ -188,6 +225,18 @@ describe("network routes", () => {
     expect(acceptedRes.status).toBe(202);
     const acceptedBody = await acceptedRes.json();
     expect(acceptedBody.data.taskId).toEqual(expect.any(String));
+    expect(acceptedBody.data).toMatchObject({
+      taskRuntime: "manual_inbox",
+      taskStatus: "pending",
+      execution: {
+        mode: "manual_inbox",
+        state: "queued",
+      },
+    });
+    expect(getTaskStore(db).getTask(acceptedBody.data.taskId)).toMatchObject({
+      status: "pending",
+      createdBy: "network:agent-003",
+    });
 
     const unsignedRes = await app.request("/api/agent-network", {
       method: "POST",
@@ -195,6 +244,58 @@ describe("network routes", () => {
       headers: { "Content-Type": "application/json" },
     });
     expect(unsignedRes.status).toBe(400);
+  });
+
+  it("dispatches signed ingress task requests to the autonomous manager when available", async () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    await app.request("/api/network/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: "agent-004",
+        name: "Remote Autonomous Worker",
+        endpoint: "https://agent-004.example.com/api/agent-network",
+        capabilities: ["task-delegation"],
+        status: "available",
+        load: 0.2,
+        trustLevel: "verified",
+        publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const manager = new AutonomousTaskManager(db, hangingLoopDeps());
+    managers.push(manager);
+    const ingressApp = new Hono();
+    ingressApp.route(
+      "/api/agent-network",
+      createAgentNetworkIngressRoutes(buildDeps(db, {}, { autonomousManager: manager }))
+    );
+
+    const acceptedRes = await signedTaskRequest(ingressApp, privateKey, "agent-004");
+    expect(acceptedRes.status).toBe(202);
+    const acceptedBody = await acceptedRes.json();
+    expect(acceptedBody.data).toMatchObject({
+      accepted: true,
+      taskRuntime: "autonomous",
+      taskStatus: "running",
+      execution: { mode: "autonomous", state: "dispatched" },
+    });
+
+    const task = getAutonomousTaskStore(db).getTask(acceptedBody.data.taskId);
+    expect(task).toMatchObject({
+      goal: "Handle delegated work",
+      context: {
+        network: {
+          from: "agent-004",
+          correlationId: "route-corr-1",
+        },
+        payload: { source: "test" },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    expect(getAutonomousTaskStore(db).getTask(acceptedBody.data.taskId)?.status).toBe("running");
+    expect(manager.isTaskRunning(acceptedBody.data.taskId)).toBe(true);
   });
 
   it("rejects remote ingress when the network is disabled", async () => {
