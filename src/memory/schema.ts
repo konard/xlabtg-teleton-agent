@@ -401,6 +401,41 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_pipeline_run_steps_pipeline ON pipeline_run_steps(pipeline_id);
 
     -- ============================================
+    -- DYNAMIC DASHBOARDS
+    -- ============================================
+
+    CREATE TABLE IF NOT EXISTS widget_definitions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL CHECK(category IN ('metrics', 'status', 'content', 'action', 'custom')),
+      data_source TEXT NOT NULL DEFAULT '{"type":"static"}',
+      renderer TEXT NOT NULL CHECK(renderer IN ('chart', 'table', 'text', 'markdown', 'custom', 'kpi', 'list')),
+      default_size TEXT NOT NULL DEFAULT '{"w":6,"h":4}',
+      config_schema TEXT NOT NULL DEFAULT '{}',
+      built_in INTEGER NOT NULL DEFAULT 0 CHECK(built_in IN (0, 1)),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_widget_definitions_category ON widget_definitions(category);
+    CREATE INDEX IF NOT EXISTS idx_widget_definitions_renderer ON widget_definitions(renderer);
+
+    CREATE TABLE IF NOT EXISTS dashboards (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      widgets TEXT NOT NULL DEFAULT '[]',
+      layout TEXT NOT NULL DEFAULT '{}',
+      is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboards_default ON dashboards(is_default) WHERE is_default = 1;
+    CREATE INDEX IF NOT EXISTS idx_dashboards_created ON dashboards(created_at DESC);
+
+    -- ============================================
     -- ASSOCIATIVE MEMORY GRAPH
     -- ============================================
 
@@ -771,7 +806,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.31.0";
+export const CURRENT_SCHEMA_VERSION = "1.32.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1716,6 +1751,48 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.31.0 complete: temporal context tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.31.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.32.0")) {
+    log.info("Running migration 1.32.0: Add dynamic dashboard tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS widget_definitions (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          category TEXT NOT NULL CHECK(category IN ('metrics', 'status', 'content', 'action', 'custom')),
+          data_source TEXT NOT NULL DEFAULT '{"type":"static"}',
+          renderer TEXT NOT NULL CHECK(renderer IN ('chart', 'table', 'text', 'markdown', 'custom', 'kpi', 'list')),
+          default_size TEXT NOT NULL DEFAULT '{"w":6,"h":4}',
+          config_schema TEXT NOT NULL DEFAULT '{}',
+          built_in INTEGER NOT NULL DEFAULT 0 CHECK(built_in IN (0, 1)),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_widget_definitions_category ON widget_definitions(category);
+        CREATE INDEX IF NOT EXISTS idx_widget_definitions_renderer ON widget_definitions(renderer);
+
+        CREATE TABLE IF NOT EXISTS dashboards (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          widgets TEXT NOT NULL DEFAULT '[]',
+          layout TEXT NOT NULL DEFAULT '{}',
+          is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dashboards_default ON dashboards(is_default) WHERE is_default = 1;
+        CREATE INDEX IF NOT EXISTS idx_dashboards_created ON dashboards(created_at DESC);
+      `);
+      log.info("Migration 1.32.0 complete: dynamic dashboard tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.32.0 failed");
       throw error;
     }
   }

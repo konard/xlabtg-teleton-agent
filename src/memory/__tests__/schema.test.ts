@@ -1216,7 +1216,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.31.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.32.0");
     });
   });
 
@@ -1432,6 +1432,46 @@ describe("Memory Schema", () => {
           )
           .run(blob)
       ).toThrow();
+    });
+  });
+
+  // ============================================
+  // DYNAMIC DASHBOARDS
+  // ============================================
+
+  describe("Dynamic Dashboard Tables", () => {
+    it("creates dashboards and widget_definitions tables", () => {
+      ensureSchema(db);
+
+      const dashboards = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='dashboards'`)
+        .get() as { name: string } | undefined;
+      const definitions = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='widget_definitions'`)
+        .get() as { name: string } | undefined;
+
+      expect(dashboards).toBeDefined();
+      expect(definitions).toBeDefined();
+    });
+
+    it("migrates dynamic dashboard tables from the previous schema version", () => {
+      ensureSchema(db);
+      db.exec("DROP TABLE dashboards");
+      db.exec("DROP TABLE widget_definitions");
+      setSchemaVersion(db, "1.31.0");
+
+      runMigrations(db);
+
+      const dashboards = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='dashboards'`)
+        .get() as { name: string } | undefined;
+      const definitions = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='widget_definitions'`)
+        .get() as { name: string } | undefined;
+
+      expect(dashboards).toBeDefined();
+      expect(definitions).toBeDefined();
+      expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
     });
   });
 
