@@ -670,6 +670,7 @@ export interface TaskData {
   error?: string | null;
   dependencies: string[];
   dependents: string[];
+  correctionCount?: number;
 }
 
 export type TaskSubtaskStatus =
@@ -903,6 +904,60 @@ export interface BudgetStatus {
   current_month_cost_usd: number;
   percent_used: number | null;
   projection_usd: number | null;
+}
+
+// ── Temporal context types ───────────────────────────────────────────
+
+export interface TemporalMetadata {
+  timestamp: number;
+  isoString: string;
+  timezone: string;
+  localDate: string;
+  localTime: string;
+  dayOfWeek: number;
+  dayName: string;
+  hourOfDay: number;
+  timeOfDay: "morning" | "afternoon" | "evening" | "night";
+  relativePeriod: "weekday" | "weekend";
+  relativeMarkers: string[];
+  sessionPhase: "beginning" | "middle" | "end" | "unknown";
+}
+
+export interface TemporalPattern {
+  id: string;
+  patternType: "daily" | "weekly" | "recurring" | "seasonal" | "custom";
+  description: string;
+  scheduleCron: string | null;
+  confidence: number;
+  frequency: number;
+  lastSeen: number;
+  createdAt: number;
+  updatedAt: number;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  activeScore?: number;
+}
+
+export interface TemporalContextData {
+  timezone: string;
+  generatedAt: number;
+  metadata: TemporalMetadata;
+  activePatterns: TemporalPattern[];
+  suggestedGreeting: string;
+}
+
+export interface TemporalTimelineEntry {
+  id: string;
+  entityType: "knowledge" | "message" | "session" | "task" | "behavior" | "request" | "tool";
+  entityId: string;
+  timestamp: number;
+  timezone: string;
+  dayOfWeek: number;
+  hourOfDay: number;
+  timeOfDay: "morning" | "afternoon" | "evening" | "night";
+  relativePeriod: "weekday" | "weekend";
+  sessionPhase: "beginning" | "middle" | "end" | "unknown";
+  metadata: Record<string, unknown>;
 }
 
 // ── Cache types ─────────────────────────────────────────────────────
@@ -1224,6 +1279,50 @@ export interface SessionSearchResult {
   chatType: string | null;
   chatTitle: string | null;
   score: number;
+}
+
+export interface CorrectionEvaluation {
+  score: number;
+  feedback: string;
+  criteria: {
+    completeness: number;
+    correctness: number;
+    toolUsage: number;
+    formatting: number;
+  };
+  issues: string[];
+  needsCorrection: boolean;
+}
+
+export interface CorrectionLogEntry {
+  id: string;
+  sessionId: string;
+  taskId: string | null;
+  chatId: string;
+  iteration: number;
+  originalOutput: string;
+  evaluation: CorrectionEvaluation;
+  reflection: {
+    summary: string;
+    instructions: string[];
+    focusAreas: string[];
+  } | null;
+  correctedOutput: string | null;
+  score: number;
+  correctedScore: number | null;
+  scoreDelta: number;
+  threshold: number;
+  escalated: boolean;
+  toolRecoveries: Array<{
+    toolName: string;
+    error: string;
+    kind: string;
+    retryable: boolean;
+    guidance: string;
+    adaptedParams?: Record<string, unknown>;
+  }>;
+  feedback: string;
+  createdAt: number;
 }
 
 // ── Autonomous Task types ───────────────────────────────────────────
@@ -1787,6 +1886,12 @@ export const api = {
     return fetchAPI<APIResponse<TaskData>>(`/tasks/${id}`);
   },
 
+  async tasksCorrections(id: string) {
+    return fetchAPI<APIResponse<{ corrections: CorrectionLogEntry[] }>>(
+      `/tasks/${encodeURIComponent(id)}/corrections`
+    );
+  },
+
   async tasksDelete(_id: string) {
     return fetchAPI<APIResponse<{ message: string }>>(`/tasks/${_id}`, { method: "DELETE" });
   },
@@ -2323,6 +2428,29 @@ export const api = {
     });
   },
 
+  // ── Temporal Context ─────────────────────────────────────────────
+
+  async getTemporalContext() {
+    return fetchAPI<APIResponse<TemporalContextData>>("/context/temporal");
+  },
+
+  async getTemporalPatterns(includeDisabled = true) {
+    return fetchAPI<APIResponse<TemporalPattern[]>>(
+      `/context/patterns?includeDisabled=${includeDisabled ? "true" : "false"}`
+    );
+  },
+
+  async updateTemporalPattern(id: string, data: Partial<Pick<TemporalPattern, "enabled">>) {
+    return fetchAPI<APIResponse<TemporalPattern>>(`/context/patterns/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getTemporalTimeline(limit = 20) {
+    return fetchAPI<APIResponse<TemporalTimelineEntry[]>>(`/context/timeline?limit=${limit}`);
+  },
+
   // ── Cache ────────────────────────────────────────────────────────
 
   async getCacheStats() {
@@ -2583,6 +2711,12 @@ export const api = {
     return fetchAPI<
       APIResponse<{ messages: SessionMessage[]; total: number; page: number; limit: number }>
     >(`/sessions/${encodeURIComponent(sessionId)}/messages?${params}`);
+  },
+
+  async getSessionCorrections(sessionId: string) {
+    return fetchAPI<APIResponse<{ corrections: CorrectionLogEntry[] }>>(
+      `/sessions/${encodeURIComponent(sessionId)}/corrections`
+    );
   },
 
   async deleteSession(sessionId: string) {

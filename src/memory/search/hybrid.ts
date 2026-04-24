@@ -10,6 +10,10 @@ import {
 import { createLogger } from "../../utils/logger.js";
 import type { SemanticVectorStore } from "../vector-store.js";
 import { MemoryScorer } from "../scoring.js";
+import {
+  applyTemporalSearchWeights,
+  type TemporalSearchWeightingOptions,
+} from "../../services/temporal-context.js";
 
 const log = createLogger("Memory");
 
@@ -21,6 +25,7 @@ export interface HybridSearchResult {
   vectorScore?: number;
   keywordScore?: number;
   importanceScore?: number;
+  temporalScore?: number;
   createdAt?: number;
 }
 
@@ -79,7 +84,8 @@ export class HybridSearch {
   constructor(
     private db: Database.Database,
     private vectorEnabled: boolean,
-    private semanticVectorStore?: SemanticVectorStore
+    private semanticVectorStore?: SemanticVectorStore,
+    private temporalWeighting?: TemporalSearchWeightingOptions
   ) {}
 
   async searchKnowledge(
@@ -389,6 +395,11 @@ export class HybridSearch {
         r.score *= 1 - RECENCY_WEIGHT + RECENCY_WEIGHT * boost;
       }
     }
+
+    applyTemporalSearchWeights(results, {
+      ...this.temporalWeighting,
+      now,
+    });
 
     if (options.applyMemoryScores) {
       this.applyMemoryPriority(results, options);

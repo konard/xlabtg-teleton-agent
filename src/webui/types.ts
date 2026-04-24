@@ -162,6 +162,7 @@ export interface MemorySearchResult {
   vectorScore?: number;
   keywordScore?: number;
   importanceScore?: number;
+  temporalScore?: number;
 }
 
 export interface MemoryScoreInfo {

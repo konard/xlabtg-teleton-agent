@@ -1,5 +1,10 @@
-import React, { useEffect, useState, useCallback } from "react";
-import { api, SessionListItem, SessionMessage } from "../lib/api";
+import { useEffect, useState, useCallback } from "react";
+import {
+  api,
+  type CorrectionLogEntry,
+  type SessionListItem,
+  type SessionMessage,
+} from "../lib/api";
 import { useConfirm } from "../components/ConfirmDialog";
 
 function formatTs(ts: number): string {
@@ -92,6 +97,119 @@ function ChatBubble({ msg }: { msg: SessionMessage }) {
   );
 }
 
+function formatScore(score: number | null | undefined): string {
+  if (score == null) return "—";
+  return `${Math.round(score * 100)}%`;
+}
+
+function CorrectionTimeline({ corrections }: { corrections: CorrectionLogEntry[] }) {
+  if (corrections.length === 0) return null;
+
+  return (
+    <details
+      style={{
+        margin: "10px 14px 0",
+        border: "1px solid var(--separator)",
+        borderRadius: "6px",
+        overflow: "hidden",
+        flexShrink: 0,
+      }}
+    >
+      <summary
+        style={{
+          cursor: "pointer",
+          padding: "8px 10px",
+          fontSize: "13px",
+          fontWeight: 600,
+          backgroundColor: "var(--surface)",
+        }}
+      >
+        Corrections ({corrections.length})
+      </summary>
+      <div style={{ padding: "10px", display: "grid", gap: "10px" }}>
+        {corrections.map((entry) => (
+          <div
+            key={entry.id}
+            style={{
+              borderBottom: "1px solid var(--separator)",
+              paddingBottom: "10px",
+              fontSize: "12px",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "4px" }}>
+              <strong>Attempt {entry.iteration}</strong>
+              <span style={{ color: "var(--text-secondary)" }}>
+                {formatScore(entry.score)} → {formatScore(entry.correctedScore)}
+              </span>
+              {entry.escalated && <span style={{ color: "#d9534f" }}>Human review</span>}
+            </div>
+            <div style={{ color: "var(--text-secondary)", marginBottom: "6px" }}>
+              {entry.feedback}
+            </div>
+            {entry.reflection?.instructions.length ? (
+              <ul style={{ margin: 0, paddingLeft: "18px", color: "var(--text-secondary)" }}>
+                {entry.reflection.instructions.slice(0, 3).map((item, idx) => (
+                  <li key={idx}>{item}</li>
+                ))}
+              </ul>
+            ) : null}
+            {entry.correctedOutput ? (
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+                  gap: "8px",
+                  marginTop: "8px",
+                }}
+              >
+                {[
+                  ["Original", entry.originalOutput],
+                  ["Corrected", entry.correctedOutput],
+                ].map(([label, text]) => (
+                  <div key={label}>
+                    <div
+                      style={{
+                        fontSize: "11px",
+                        color: "var(--text-secondary)",
+                        marginBottom: "3px",
+                      }}
+                    >
+                      {label}
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        padding: "6px",
+                        maxHeight: "120px",
+                        overflow: "auto",
+                        borderRadius: "4px",
+                        backgroundColor: "rgba(0,0,0,0.18)",
+                        whiteSpace: "pre-wrap",
+                        wordBreak: "break-word",
+                      }}
+                    >
+                      {text}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {entry.toolRecoveries.length > 0 ? (
+              <div style={{ marginTop: "8px", color: "var(--text-secondary)" }}>
+                {entry.toolRecoveries.map((recovery, idx) => (
+                  <div key={`${recovery.toolName}-${idx}`}>
+                    {recovery.toolName}: {recovery.kind}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 function SessionDetail({
   session,
   onClose,
@@ -103,6 +221,7 @@ function SessionDetail({
 }) {
   const { confirm } = useConfirm();
   const [messages, setMessages] = useState<SessionMessage[]>([]);
+  const [corrections, setCorrections] = useState<CorrectionLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -114,9 +233,13 @@ function SessionDetail({
       setLoading(true);
       setError(null);
       try {
-        const res = await api.getSessionMessages(session.sessionId, p, limit);
+        const [res, correctionRes] = await Promise.all([
+          api.getSessionMessages(session.sessionId, p, limit),
+          api.getSessionCorrections(session.sessionId),
+        ]);
         setMessages(res.data.messages);
         setTotal(res.data.total);
+        setCorrections(correctionRes.data.corrections);
         setPage(p);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
@@ -135,7 +258,15 @@ function SessionDetail({
   const totalPages = Math.ceil(total / limit);
 
   const handleDelete = async () => {
-    if (!(await confirm({ title: "Delete session?", description: "This cannot be undone.", variant: "danger", confirmText: "Delete" }))) return;
+    if (
+      !(await confirm({
+        title: "Delete session?",
+        description: "This cannot be undone.",
+        variant: "danger",
+        confirmText: "Delete",
+      }))
+    )
+      return;
     try {
       await api.deleteSession(session.sessionId);
       onDelete(session.sessionId);
@@ -234,6 +365,8 @@ function SessionDetail({
           </button>
         </div>
       )}
+
+      <CorrectionTimeline corrections={corrections} />
 
       {/* Messages */}
       <div style={{ flex: 1, overflowY: "auto", padding: "14px" }}>
