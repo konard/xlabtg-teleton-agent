@@ -60,6 +60,9 @@ function DashboardNav() {
         <Link to="/workflows" className={isActive("/workflows") ? "active" : ""}>
           Workflows
         </Link>
+        <Link to="/pipelines" className={isActive("/pipelines") ? "active" : ""}>
+          Pipelines
+        </Link>
         <Link to="/mcp" className={isActive("/mcp") ? "active" : ""}>
           MCP
         </Link>

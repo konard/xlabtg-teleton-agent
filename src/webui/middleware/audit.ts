@@ -27,6 +27,7 @@ function inferActionType(method: string, path: string): AuditActionType {
   if (lower.includes("/auth/login")) return "login";
   if (lower.includes("/auth/logout")) return "logout";
   if (lower.includes("/api/workflows")) return "hook_change";
+  if (lower.includes("/api/pipelines")) return "hook_change";
   if (lower.includes("/api/tasks")) return "workspace_change";
   if (lower.includes("/api/secret")) return "secret_change";
 
