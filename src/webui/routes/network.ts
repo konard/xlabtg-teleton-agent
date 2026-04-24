@@ -3,7 +3,7 @@ import { getTaskStore } from "../../memory/agent/tasks.js";
 import { AuditTrailService } from "../../services/audit-trail.js";
 import { NetworkTaskCoordinator } from "../../services/network/coordinator.js";
 import { getAgentNetworkStore } from "../../services/network/discovery.js";
-import { NetworkMessenger } from "../../services/network/messenger.js";
+import { NetworkMessageReplayError, NetworkMessenger } from "../../services/network/messenger.js";
 import { NetworkTrustService } from "../../services/network/trust.js";
 import {
   NETWORK_AGENT_STATUSES,
@@ -342,7 +342,8 @@ export function createAgentNetworkIngressRoutes(deps: WebUIServerDeps) {
 
       return c.json({ success: true, data: { accepted: true, message: record } } as APIResponse);
     } catch (error) {
-      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, 400);
+      const status = error instanceof NetworkMessageReplayError ? 409 : 400;
+      return c.json({ success: false, error: getErrorMessage(error) } as APIResponse, status);
     }
   });
 
