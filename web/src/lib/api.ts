@@ -152,6 +152,128 @@ export interface WalletResult {
   mnemonic: string[];
 }
 
+export type ManagedAgentKind = "primary" | "managed";
+export type ManagedAgentMode = "personal" | "bot";
+export type ManagedAgentMemoryPolicy = "isolated" | "shared-read" | "shared-write";
+export type ManagedAgentState = "stopped" | "starting" | "running" | "stopping" | "error";
+export type ManagedAgentTransport = "mtproto" | "bot-api";
+export type ManagedAgentHealth = "stopped" | "starting" | "healthy" | "degraded" | "error";
+
+export interface AgentResourcePolicy {
+  maxMemoryMb: number;
+  maxConcurrentTasks: number;
+  rateLimitPerMinute: number;
+  llmRateLimitPerMinute: number;
+  restartOnCrash: boolean;
+  maxRestarts: number;
+  restartBackoffMs: number;
+}
+
+export interface AgentMessagingPolicy {
+  enabled: boolean;
+  allowlist: string[];
+  maxMessagesPerMinute: number;
+}
+
+export interface AgentSecurityPolicy {
+  personalAccountAccessConfirmedAt: string | null;
+}
+
+export interface AgentConnectionSettings {
+  botUsername: string | null;
+}
+
+export interface AgentOverview {
+  id: string;
+  name: string;
+  kind: ManagedAgentKind;
+  mode: ManagedAgentMode;
+  memoryPolicy: ManagedAgentMemoryPolicy;
+  resources: AgentResourcePolicy;
+  messaging: AgentMessagingPolicy;
+  security: AgentSecurityPolicy;
+  connection: AgentConnectionSettings;
+  homePath: string;
+  configPath: string;
+  workspacePath: string;
+  logPath: string;
+  createdAt: string;
+  updatedAt: string;
+  sourceId: string | null;
+  provider: string;
+  model: string;
+  ownerId: number | null;
+  adminIds: number[];
+  hasBotToken: boolean;
+  hasPersonalCredentials: boolean;
+  hasPersonalSession: boolean;
+  personalPhoneMasked: string | null;
+  state: ManagedAgentState;
+  pid: number | null;
+  startedAt: string | null;
+  uptimeMs: number | null;
+  lastError: string | null;
+  transport: ManagedAgentTransport;
+  health: ManagedAgentHealth;
+  restartCount: number;
+  lastExitAt: string | null;
+  lastExitCode: number | null;
+  lastExitSignal: string | null;
+  pendingMessages: number;
+  canDelete: boolean;
+  canStart: boolean;
+  canStop: boolean;
+  logsAvailable: boolean;
+  canStartReason: string | null;
+}
+
+export interface AgentLogs {
+  lines: string[];
+  path: string;
+}
+
+export interface AgentMessage {
+  id: string;
+  fromId: string;
+  toId: string;
+  text: string;
+  createdAt: string;
+  deliveredAt: string | null;
+}
+
+export interface CreateAgentInput {
+  name: string;
+  id?: string;
+  cloneFromId?: string;
+  mode?: ManagedAgentMode;
+  botToken?: string;
+  botUsername?: string;
+  personalConnection?: {
+    apiId?: number;
+    apiHash?: string;
+    phone?: string;
+  };
+  memoryPolicy?: ManagedAgentMemoryPolicy;
+  resources?: Partial<AgentResourcePolicy>;
+  messaging?: Partial<AgentMessagingPolicy>;
+  acknowledgePersonalAccountAccess?: boolean;
+}
+
+export interface UpdateAgentInput {
+  name?: string;
+  botToken?: string | null;
+  botUsername?: string | null;
+  personalConnection?: {
+    apiId?: number;
+    apiHash?: string;
+    phone?: string;
+  };
+  memoryPolicy?: ManagedAgentMemoryPolicy;
+  resources?: Partial<AgentResourcePolicy>;
+  messaging?: Partial<AgentMessagingPolicy>;
+  acknowledgePersonalAccountAccess?: boolean;
+}
+
 export interface AuthCodeResult {
   authSessionId: string;
   codeDelivery: "app" | "sms" | "fragment";
@@ -160,9 +282,30 @@ export interface AuthCodeResult {
   expiresAt: number;
 }
 
+export interface AuthQrResult {
+  authSessionId: string;
+  token: string;
+  expires: number;
+  expiresAt: number;
+}
+
 export interface AuthVerifyResult {
-  status: "authenticated" | "2fa_required";
+  status:
+    | "authenticated"
+    | "2fa_required"
+    | "invalid_code"
+    | "invalid_password"
+    | "expired"
+    | "too_many_attempts";
   user?: { id: number; firstName: string; username: string };
+  passwordHint?: string;
+}
+
+export interface AuthQrRefreshResult {
+  status: "waiting" | "authenticated" | "2fa_required" | "expired";
+  token?: string;
+  expires?: number;
+  user?: { id: number; firstName: string; username?: string };
   passwordHint?: string;
 }
 
@@ -2240,6 +2383,160 @@ export const api = {
 
   async agentStatus() {
     return fetchAPI<{ state: string; uptime?: number; error?: string | null }>("/agent/status");
+  },
+
+  async listAgents() {
+    return fetchAPI<APIResponse<{ agents: AgentOverview[] }>>("/agents");
+  },
+
+  async createAgent(data: CreateAgentInput) {
+    return fetchAPI<APIResponse<AgentOverview>>("/agents", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async validateManagedBotToken(token: string) {
+    return fetchAPI<APIResponse<BotValidation>>("/agents/validate-bot-token", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    });
+  },
+
+  async sendManagedPersonalCode(
+    id: string,
+    data: { apiId?: number; apiHash?: string; phone?: string }
+  ) {
+    return fetchAPI<APIResponse<AuthCodeResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/send-code`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async verifyManagedPersonalCode(id: string, authSessionId: string, code: string) {
+    return fetchAPI<APIResponse<AuthVerifyResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/verify-code`,
+      {
+        method: "POST",
+        body: JSON.stringify({ authSessionId, code }),
+      }
+    );
+  },
+
+  async verifyManagedPersonalPassword(id: string, authSessionId: string, password: string) {
+    return fetchAPI<APIResponse<AuthVerifyResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/verify-password`,
+      {
+        method: "POST",
+        body: JSON.stringify({ authSessionId, password }),
+      }
+    );
+  },
+
+  async resendManagedPersonalCode(id: string, authSessionId: string) {
+    return fetchAPI<
+      APIResponse<{
+        codeDelivery: "app" | "sms" | "fragment";
+        fragmentUrl?: string;
+        codeLength?: number;
+      }>
+    >(`/agents/${encodeURIComponent(id)}/personal-auth/resend-code`, {
+      method: "POST",
+      body: JSON.stringify({ authSessionId }),
+    });
+  },
+
+  async startManagedPersonalQr(
+    id: string,
+    data: { apiId?: number; apiHash?: string; phone?: string }
+  ) {
+    return fetchAPI<APIResponse<AuthQrResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/qr-start`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async refreshManagedPersonalQr(id: string, authSessionId: string) {
+    return fetchAPI<APIResponse<AuthQrRefreshResult>>(
+      `/agents/${encodeURIComponent(id)}/personal-auth/qr-refresh`,
+      {
+        method: "POST",
+        body: JSON.stringify({ authSessionId }),
+      }
+    );
+  },
+
+  async cancelManagedPersonalAuth(id: string, authSessionId: string) {
+    return fetchAPI<APIResponse<void>>(`/agents/${encodeURIComponent(id)}/personal-auth/session`, {
+      method: "DELETE",
+      body: JSON.stringify({ authSessionId }),
+    });
+  },
+
+  async cloneAgent(
+    id: string,
+    data?: CreateAgentInput & {
+      newId?: string;
+    }
+  ) {
+    return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}/clone`, {
+      method: "POST",
+      body: JSON.stringify(data ?? {}),
+    });
+  },
+
+  async updateAgent(id: string, data: UpdateAgentInput) {
+    return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteAgent(id: string) {
+    return fetchAPI<APIResponse<{ id: string }>>(`/agents/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async startManagedAgent(id: string) {
+    return fetchAPI<
+      APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>
+    >(`/agents/${encodeURIComponent(id)}/start`, {
+      method: "POST",
+    });
+  },
+
+  async stopManagedAgent(id: string) {
+    return fetchAPI<
+      APIResponse<Pick<AgentOverview, "state" | "pid" | "startedAt" | "uptimeMs" | "lastError">>
+    >(`/agents/${encodeURIComponent(id)}/stop`, {
+      method: "POST",
+    });
+  },
+
+  async getManagedAgentLogs(id: string, lines = 200) {
+    return fetchAPI<APIResponse<AgentLogs>>(
+      `/agents/${encodeURIComponent(id)}/logs?lines=${lines}`
+    );
+  },
+
+  async getManagedAgentMessages(id: string, limit = 100) {
+    return fetchAPI<APIResponse<{ messages: AgentMessage[] }>>(
+      `/agents/${encodeURIComponent(id)}/messages?limit=${limit}`
+    );
+  },
+
+  async sendManagedAgentMessage(id: string, data: { fromId?: string; text: string }) {
+    return fetchAPI<APIResponse<AgentMessage>>(`/agents/${encodeURIComponent(id)}/messages`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
   },
 
   // ── Autonomous Task Engine ────────────────────────────────────────

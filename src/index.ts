@@ -4,6 +4,7 @@ import { loadConfig, getDefaultConfigPath } from "./config/index.js";
 import { loadSoul } from "./soul/index.js";
 import { AgentRuntime } from "./agent/runtime.js";
 import { TelegramBridge, type TelegramMessage } from "./telegram/bridge.js";
+import { TelegramBotBridge } from "./telegram/bot-bridge.js";
 import { MessageHandler } from "./telegram/handlers.js";
 import { AdminHandler } from "./telegram/admin.js";
 import { MessageDebouncer } from "./telegram/debounce.js";
@@ -60,6 +61,8 @@ import { initAlerting } from "./services/alerting.js";
 import { initAnomalyDetector } from "./services/anomaly-detector.js";
 import { flushOffsets } from "./telegram/offset-store.js";
 import { WorkflowScheduler } from "./services/workflow-scheduler.js";
+import { ManagedAgentService } from "./agents/service.js";
+import type { ManagedAgentMode } from "./agents/types.js";
 
 const log = createLogger("App");
 
@@ -93,12 +96,22 @@ export class TeletonApp {
   private heartbeatRunning = false;
   private workflowScheduler: WorkflowScheduler | null = null;
   private autonomousManager: AutonomousTaskManager | null = null;
+  private agentManager: ManagedAgentService;
+  private readonly agentMode: ManagedAgentMode;
 
   private configPath: string;
 
   constructor(configPath?: string) {
     this.configPath = configPath ?? getDefaultConfigPath();
     this.config = loadConfig(this.configPath);
+    this.agentMode = process.env.TELETON_MANAGED_AGENT_MODE === "bot" ? "bot" : "personal";
+
+    if (this.agentMode === "bot" && this.config.deals.enabled) {
+      this.config.deals.enabled = false;
+      log.info("Bot-mode runtime: disabled deals module to avoid bot token polling conflicts");
+    }
+
+    this.agentManager = new ManagedAgentService({ primaryConfigPath: this.configPath });
 
     // Wire YAML logging config to pino (H2 fix)
     initLoggerFromConfig(this.config.logging);
@@ -123,16 +136,29 @@ export class TeletonApp {
         ? this.config.mtproto.proxies
         : undefined;
 
-    this.bridge = new TelegramBridge({
-      apiId: this.config.telegram.api_id,
-      apiHash: this.config.telegram.api_hash,
-      phone: this.config.telegram.phone,
-      sessionPath: join(TELETON_ROOT, "telegram_session.txt"),
-      connectionRetries: TELEGRAM_CONNECTION_RETRIES,
-      autoReconnect: true,
-      floodSleepThreshold: TELEGRAM_FLOOD_SLEEP_THRESHOLD,
-      mtprotoProxies,
-    });
+    this.bridge =
+      this.agentMode === "bot"
+        ? new TelegramBotBridge({
+            apiId: this.config.telegram.api_id,
+            apiHash: this.config.telegram.api_hash,
+            phone: this.config.telegram.phone,
+            botToken: this.requireBotToken(),
+            sessionPath: join(TELETON_ROOT, "telegram_session.txt"),
+            connectionRetries: TELEGRAM_CONNECTION_RETRIES,
+            autoReconnect: true,
+            floodSleepThreshold: TELEGRAM_FLOOD_SLEEP_THRESHOLD,
+            mtprotoProxies,
+          })
+        : new TelegramBridge({
+            apiId: this.config.telegram.api_id,
+            apiHash: this.config.telegram.api_hash,
+            phone: this.config.telegram.phone,
+            sessionPath: join(TELETON_ROOT, "telegram_session.txt"),
+            connectionRetries: TELEGRAM_CONNECTION_RETRIES,
+            autoReconnect: true,
+            floodSleepThreshold: TELEGRAM_FLOOD_SLEEP_THRESHOLD,
+            mtprotoProxies,
+          });
 
     const embeddingProvider = this.config.embedding.provider;
     this.memory = initializeMemory({
@@ -389,6 +415,7 @@ ${blue}  ┌──────────────────────�
           userHookEvaluator: this.userHookEvaluator,
           autonomousManager: this.autonomousManager ?? undefined,
           workflowScheduler: () => this.workflowScheduler,
+          agentManager: this.agentManager,
         });
         await this.webuiServer.start();
       } catch (error) {
@@ -427,6 +454,7 @@ ${blue}  ┌──────────────────────�
             userHookEvaluator: this.userHookEvaluator,
             autonomousManager: this.autonomousManager,
             workflowScheduler: () => this.workflowScheduler,
+            agentManager: this.agentManager,
           },
           this.config.api
         );
@@ -699,7 +727,9 @@ ${blue}  ┌──────────────────────�
     }
 
     // Resolve owner name/username from Telegram if not already set
-    await this.resolveOwnerInfo();
+    if (this.agentMode === "personal") {
+      await this.resolveOwnerInfo();
+    }
 
     // Set own user ID in handler after connection
     const ownUserId = this.bridge.getOwnUserId();
@@ -792,24 +822,6 @@ ${blue}  ┌──────────────────────�
 
     this.cacheInvalidationWatcher = new CacheInvalidationWatcher(this.configPath);
     this.cacheInvalidationWatcher.start();
-
-    // Display startup summary
-    log.info(`✅ SOUL.md loaded`);
-    log.info(`✅ Knowledge: ${indexResult.indexed} files, ${ftsResult.knowledge} chunks indexed`);
-    log.info(`✅ Telegram: @${username} connected`);
-    log.info(`✅ TON Blockchain: connected`);
-    if (this.config.tonapi_key) {
-      log.info(`🔑 TonAPI key configured`);
-    }
-    log.info(`✅ DEXs: STON.fi, DeDust connected`);
-    log.info(`✅ Wallet: ${walletAddress || "not configured"}`);
-    log.info(`✅ Model: ${provider}/${this.config.agent.model}`);
-    log.info(`✅ Admins: ${this.config.telegram.admin_ids.join(", ")}`);
-    log.info(
-      `✅ Policy: DM ${this.config.telegram.dm_policy}, Groups ${this.config.telegram.group_policy}, Debounce ${this.config.telegram.debounce_ms}ms\n`
-    );
-
-    log.info("Teleton Agent is running! Press Ctrl+C to stop.");
 
     // Hook: agent:start
     this.startTime = Date.now();
@@ -921,6 +933,29 @@ ${blue}  ┌──────────────────────�
 
       this.messageHandlersRegistered = true;
     }
+
+    // Display startup summary after Telegram handlers are registered. The managed-agent
+    // process manager treats this line as the readiness signal.
+    log.info(`✅ SOUL.md loaded`);
+    log.info(`✅ Knowledge: ${indexResult.indexed} files, ${ftsResult.knowledge} chunks indexed`);
+    if (this.agentMode === "bot") {
+      log.info(`✅ Telegram Bot: @${username} connected`);
+    } else {
+      log.info(`✅ Telegram: @${username} connected`);
+    }
+    log.info(`✅ TON Blockchain: connected`);
+    if (this.config.tonapi_key) {
+      log.info(`🔑 TonAPI key configured`);
+    }
+    log.info(`✅ DEXs: STON.fi, DeDust connected`);
+    log.info(`✅ Wallet: ${walletAddress || "not configured"}`);
+    log.info(`✅ Model: ${provider}/${this.config.agent.model}`);
+    log.info(`✅ Admins: ${this.config.telegram.admin_ids.join(", ")}`);
+    log.info(
+      `✅ Policy: DM ${this.config.telegram.dm_policy}, Groups ${this.config.telegram.group_policy}, Debounce ${this.config.telegram.debounce_ms}ms\n`
+    );
+
+    log.info("Teleton Agent is running! Press Ctrl+C to stop.");
   }
 
   /**
@@ -929,6 +964,10 @@ ${blue}  ┌──────────────────────�
    */
   private async resolveOwnerInfo(): Promise<void> {
     try {
+      if (this.agentMode !== "personal") {
+        return;
+      }
+
       // Skip if both are already set
       if (this.config.telegram.owner_name && this.config.telegram.owner_username) {
         return;
@@ -1325,76 +1364,107 @@ ${blue}  ┌──────────────────────�
       log.info(`🔗 ${hookCount} plugin onMessage hook(s) registered`);
     }
 
-    // Callback query handler: register ONCE, dispatch dynamically
-    if (!this.callbackHandlerRegistered) {
-      this.bridge.getClient().addCallbackQueryHandler(async (update: unknown) => {
-        if (!update || typeof update !== "object") {
-          return;
-        }
-        const callbackUpdate = update as {
-          queryId?: unknown;
-          data?: { toString(): string } | string;
-          peer?: {
-            channelId?: { toString(): string };
-            chatId?: { toString(): string };
-            userId?: { toString(): string };
-          };
-          msgId?: unknown;
-          userId?: unknown;
-        };
-        const queryId = callbackUpdate.queryId;
-        const data =
-          typeof callbackUpdate.data === "string"
-            ? callbackUpdate.data
-            : callbackUpdate.data?.toString() || "";
-        const parts = data.split(":");
-        const action = parts[0];
-        const params = parts.slice(1);
-
-        const chatId =
-          callbackUpdate.peer?.channelId?.toString() ??
-          callbackUpdate.peer?.chatId?.toString() ??
-          callbackUpdate.peer?.userId?.toString() ??
-          "";
-        const messageId =
-          typeof callbackUpdate.msgId === "number"
-            ? callbackUpdate.msgId
-            : Number(callbackUpdate.msgId || 0);
-        const userId = Number(callbackUpdate.userId);
-
-        const answer = async (text?: string, alert = false): Promise<void> => {
+    const dispatchCallbackEvent = async (event: PluginCallbackEvent): Promise<void> => {
+      for (const mod of this.modules) {
+        const withHooks = mod as PluginModuleWithHooks;
+        if (withHooks.onCallbackQuery) {
           try {
-            await this.bridge.getClient().answerCallbackQuery(queryId, { message: text, alert });
+            await withHooks.onCallbackQuery(event);
           } catch (err) {
             log.error(
-              `❌ Failed to answer callback query: ${err instanceof Error ? err.message : err}`
+              `❌ [${mod.name}] onCallbackQuery error: ${err instanceof Error ? err.message : err}`
             );
           }
-        };
+        }
+      }
+    };
 
-        const event: PluginCallbackEvent = {
-          data,
-          action,
-          params,
-          chatId,
-          messageId,
-          userId,
-          answer,
-        };
+    // Callback query handler: register ONCE, dispatch dynamically
+    if (!this.callbackHandlerRegistered) {
+      if (this.agentMode === "bot" && this.bridge instanceof TelegramBotBridge) {
+        const botBridge = this.bridge;
+        botBridge.onCallbackQuery(async (update) => {
+          const parts = update.data.split(":");
+          const action = parts[0];
+          const params = parts.slice(1);
 
-        for (const mod of this.modules) {
-          const withHooks = mod as PluginModuleWithHooks;
-          if (withHooks.onCallbackQuery) {
+          const answer = async (text?: string, alert = false): Promise<void> => {
             try {
-              await withHooks.onCallbackQuery(event);
+              await botBridge.answerCallbackQuery(update.queryId, { message: text, alert });
             } catch (err) {
               log.error(
-                `❌ [${mod.name}] onCallbackQuery error: ${err instanceof Error ? err.message : err}`
+                `❌ Failed to answer bot callback query: ${err instanceof Error ? err.message : err}`
               );
             }
+          };
+
+          await dispatchCallbackEvent({
+            data: update.data,
+            action,
+            params,
+            chatId: update.chatId,
+            messageId: update.messageId,
+            userId: update.userId,
+            answer,
+          });
+        });
+      } else {
+        this.bridge.getClient().addCallbackQueryHandler(async (update: unknown) => {
+          if (!update || typeof update !== "object") {
+            return;
           }
-        }
-      });
+          const callbackUpdate = update as {
+            queryId?: unknown;
+            data?: { toString(): string } | string;
+            peer?: {
+              channelId?: { toString(): string };
+              chatId?: { toString(): string };
+              userId?: { toString(): string };
+            };
+            msgId?: unknown;
+            userId?: unknown;
+          };
+          const queryId = callbackUpdate.queryId;
+          const data =
+            typeof callbackUpdate.data === "string"
+              ? callbackUpdate.data
+              : callbackUpdate.data?.toString() || "";
+          const parts = data.split(":");
+          const action = parts[0];
+          const params = parts.slice(1);
+
+          const chatId =
+            callbackUpdate.peer?.channelId?.toString() ??
+            callbackUpdate.peer?.chatId?.toString() ??
+            callbackUpdate.peer?.userId?.toString() ??
+            "";
+          const messageId =
+            typeof callbackUpdate.msgId === "number"
+              ? callbackUpdate.msgId
+              : Number(callbackUpdate.msgId || 0);
+          const userId = Number(callbackUpdate.userId);
+
+          const answer = async (text?: string, alert = false): Promise<void> => {
+            try {
+              await this.bridge.getClient().answerCallbackQuery(queryId, { message: text, alert });
+            } catch (err) {
+              log.error(
+                `❌ Failed to answer callback query: ${err instanceof Error ? err.message : err}`
+              );
+            }
+          };
+
+          await dispatchCallbackEvent({
+            data,
+            action,
+            params,
+            chatId,
+            messageId,
+            userId,
+            answer,
+          });
+        });
+      }
       this.callbackHandlerRegistered = true;
 
       const cbCount = this.modules.filter(
@@ -1404,6 +1474,14 @@ ${blue}  ┌──────────────────────�
         log.info(`🔗 ${cbCount} plugin onCallbackQuery hook(s) registered`);
       }
     }
+  }
+
+  private requireBotToken(): string {
+    const token = this.config.telegram.bot_token?.trim();
+    if (!token) {
+      throw new Error("Bot-mode runtime requires telegram.bot_token");
+    }
+    return token;
   }
 
   /**
@@ -1431,6 +1509,12 @@ ${blue}  ┌──────────────────────�
       } catch (e) {
         log.error({ err: e }, "⚠️ Management API stop failed");
       }
+    }
+
+    try {
+      await this.agentManager.stopAll();
+    } catch (e) {
+      log.error({ err: e }, "⚠️ Managed agent shutdown failed");
     }
 
     // Close database last (shared with WebUI)

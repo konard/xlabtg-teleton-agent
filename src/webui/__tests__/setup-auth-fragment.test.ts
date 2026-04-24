@@ -133,6 +133,7 @@ vi.mock("../../utils/logger.js", () => ({
 
 import { TelegramAuthManager } from "../setup-auth.js";
 import { Api } from "telegram";
+import { readRawConfig, writeRawConfig } from "../../config/configurable-keys.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -242,6 +243,45 @@ describe("TelegramAuthManager — Fragment support", () => {
       expect(result.user).toBeDefined();
       expect(result.user!.firstName).toBe("Fragment");
       expect(result.user!.username).toBe("fraguser");
+    });
+
+    it("overwrites cloned owner and admin metadata for managed-agent auth targets", async () => {
+      vi.mocked(readRawConfig).mockReturnValueOnce({
+        telegram: {
+          owner_id: 999,
+          owner_name: "Original",
+          owner_username: "original",
+          admin_ids: [999, 777],
+        },
+      });
+      const smsType = new Api.auth.SentCodeTypeSms({ length: 5 });
+      mockInvoke.mockResolvedValueOnce(makeSentCode(smsType));
+      const sendResult = await manager.sendCode(12345, "abcdef", "+1234567890", {
+        configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+        sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+        replaceTelegramIdentity: true,
+      });
+      const mockUser = new Api.User({
+        id: BigInt(123),
+        firstName: "Managed",
+        username: "manageduser",
+      });
+      mockInvoke.mockResolvedValueOnce(new Api.auth.Authorization({ user: mockUser }));
+
+      const result = await manager.verifyCode(sendResult.authSessionId, "12345");
+
+      expect(result.status).toBe("authenticated");
+      expect(writeRawConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          telegram: expect.objectContaining({
+            owner_id: 123,
+            owner_name: "Managed",
+            owner_username: "manageduser",
+            admin_ids: [123],
+          }),
+        }),
+        "/tmp/teleton/agents/support-copy/config.yaml"
+      );
     });
   });
 });

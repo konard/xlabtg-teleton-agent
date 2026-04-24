@@ -35,6 +35,9 @@ function DashboardNav() {
         <Link to="/" className={isActive("/") ? "active" : ""}>
           Dashboard
         </Link>
+        <Link to="/agents" className={isActive("/agents") ? "active" : ""}>
+          Agents
+        </Link>
         <Link to="/tools" className={isActive("/tools") ? "active" : ""}>
           Tools
         </Link>
