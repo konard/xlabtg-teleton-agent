@@ -26,6 +26,9 @@ import {
   type AnomalyEvent,
   type AnomalyBaseline,
   type AnomalyStats,
+  type TemporalContextData,
+  type TemporalPattern,
+  type TemporalTimelineEntry,
 } from "../lib/api";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -79,6 +82,10 @@ function fmtNumber(value: number): string {
 }
 
 const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function fmtPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
+}
 
 // ── Period Selector ──────────────────────────────────────────────────
 
@@ -151,11 +158,18 @@ function StatCard({
   color?: string;
 }) {
   return (
-    <div className="card" style={{ flex: 1, minWidth: 0, padding: "16px 20px" }}>
+    <div className="card" style={{ flex: "1 1 140px", minWidth: "140px", padding: "16px 20px" }}>
       <div style={{ fontSize: "12px", color: "var(--text-secondary)", marginBottom: "6px" }}>
         {label}
       </div>
-      <div style={{ fontSize: "24px", fontWeight: 700, color: color ?? "var(--text)" }}>
+      <div
+        style={{
+          fontSize: "24px",
+          fontWeight: 700,
+          color: color ?? "var(--text)",
+          overflowWrap: "anywhere",
+        }}
+      >
         {value}
       </div>
       {sub && (
@@ -550,81 +564,81 @@ function AnomalySection() {
             </div>
           ) : (
             <div style={{ maxHeight: "370px", overflowY: "auto", overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
-              <thead style={{ position: "sticky", top: 0, background: "var(--bg)", zIndex: 1 }}>
-                <tr style={{ color: "var(--text-secondary)", textAlign: "left" }}>
-                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                    Time
-                  </th>
-                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                    Severity
-                  </th>
-                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                    Metric
-                  </th>
-                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                    Current
-                  </th>
-                  <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                    Review
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {events.map((event) => (
-                  <tr key={event.id}>
-                    <td
-                      style={{
-                        padding: "8px",
-                        borderBottom: "1px solid var(--separator)",
-                        whiteSpace: "nowrap",
-                      }}
-                    >
-                      {fmtDateTime(event.createdAt)}
-                    </td>
-                    <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                      <span
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                <thead style={{ position: "sticky", top: 0, background: "var(--bg)", zIndex: 1 }}>
+                  <tr style={{ color: "var(--text-secondary)", textAlign: "left" }}>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Time
+                    </th>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Severity
+                    </th>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Metric
+                    </th>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Current
+                    </th>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Review
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {events.map((event) => (
+                    <tr key={event.id}>
+                      <td
                         style={{
-                          color: event.severity === "critical" ? "#ef4444" : "#f59e0b",
-                          fontWeight: 700,
-                          textTransform: "capitalize",
+                          padding: "8px",
+                          borderBottom: "1px solid var(--separator)",
+                          whiteSpace: "nowrap",
                         }}
                       >
-                        {event.severity}
-                      </span>
-                    </td>
-                    <td
-                      style={{
-                        padding: "8px",
-                        borderBottom: "1px solid var(--separator)",
-                        minWidth: 150,
-                      }}
-                    >
-                      <div style={{ fontWeight: 600 }}>{fmtMetricName(event.metric)}</div>
-                      <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>
-                        {event.type.replace(/_/g, " ")}
-                      </div>
-                    </td>
-                    <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                      {fmtNumber(event.currentValue)}
-                    </td>
-                    <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
-                      {event.acknowledged ? (
-                        <span style={{ color: "var(--text-secondary)" }}>Done</span>
-                      ) : (
-                        <button
-                          className="btn-ghost"
-                          onClick={() => acknowledge(event.id)}
-                          style={{ fontSize: "12px", padding: "4px 8px" }}
+                        {fmtDateTime(event.createdAt)}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                        <span
+                          style={{
+                            color: event.severity === "critical" ? "#ef4444" : "#f59e0b",
+                            fontWeight: 700,
+                            textTransform: "capitalize",
+                          }}
                         >
-                          Acknowledge
-                        </button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                          {event.severity}
+                        </span>
+                      </td>
+                      <td
+                        style={{
+                          padding: "8px",
+                          borderBottom: "1px solid var(--separator)",
+                          minWidth: 150,
+                        }}
+                      >
+                        <div style={{ fontWeight: 600 }}>{fmtMetricName(event.metric)}</div>
+                        <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>
+                          {event.type.replace(/_/g, " ")}
+                        </div>
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                        {fmtNumber(event.currentValue)}
+                      </td>
+                      <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                        {event.acknowledged ? (
+                          <span style={{ color: "var(--text-secondary)" }}>Done</span>
+                        ) : (
+                          <button
+                            className="btn-ghost"
+                            onClick={() => acknowledge(event.id)}
+                            style={{ fontSize: "12px", padding: "4px 8px" }}
+                          >
+                            Acknowledge
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           )}
         </div>
@@ -833,6 +847,274 @@ function HeatmapSection() {
         )}
         <div style={{ marginTop: 8, fontSize: "11px", color: "var(--text-secondary)" }}>
           Lighter = less activity. Darker blue = more activity.
+        </div>
+      </div>
+    </section>
+  );
+}
+
+// ── Temporal Context Section ────────────────────────────────────────
+
+function TemporalContextSection() {
+  const [context, setContext] = useState<TemporalContextData | null>(null);
+  const [patterns, setPatterns] = useState<TemporalPattern[]>([]);
+  const [timeline, setTimeline] = useState<TemporalTimelineEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [contextRes, patternsRes, timelineRes] = await Promise.all([
+        api.getTemporalContext(),
+        api.getTemporalPatterns(true),
+        api.getTemporalTimeline(8),
+      ]);
+      setContext(contextRes.data ?? null);
+      setPatterns(patternsRes.data ?? []);
+      setTimeline(timelineRes.data ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load temporal context");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const togglePattern = async (pattern: TemporalPattern) => {
+    try {
+      const res = await api.updateTemporalPattern(pattern.id, { enabled: !pattern.enabled });
+      if (res.data) {
+        setPatterns((items) => items.map((item) => (item.id === pattern.id ? res.data! : item)));
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update temporal pattern");
+    }
+  };
+
+  const activePatterns = context?.activePatterns ?? [];
+  const meta = context?.metadata;
+  const topPatterns = patterns.slice(0, 6);
+
+  return (
+    <section style={{ marginBottom: "32px" }}>
+      <SectionHeader title="Temporal Context" />
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: "12px", marginBottom: "20px", flexWrap: "wrap" }}>
+        <StatCard label="Local Time" value={meta ? `${meta.localTime.slice(0, 5)}` : "—"} />
+        <StatCard label="Day" value={meta ? meta.dayName : "—"} sub={meta?.relativePeriod} />
+        <StatCard label="Time Marker" value={meta ? meta.timeOfDay : "—"} />
+        <StatCard
+          label="Active Patterns"
+          value={activePatterns.length.toLocaleString()}
+          sub={context?.timezone ?? "timezone unset"}
+        />
+      </div>
+
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(min(280px, 100%), 1fr))",
+          gap: "20px",
+        }}
+      >
+        <div className="card" style={{ padding: "16px" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
+            Active Patterns
+          </h3>
+          {loading ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
+          ) : activePatterns.length === 0 ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No active patterns for this time
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "10px" }}>
+              {activePatterns.map((pattern) => (
+                <div
+                  key={pattern.id}
+                  style={{
+                    borderBottom: "1px solid var(--separator)",
+                    paddingBottom: "10px",
+                  }}
+                >
+                  <div style={{ fontWeight: 700, fontSize: "13px" }}>{pattern.description}</div>
+                  <div style={{ color: "var(--text-secondary)", fontSize: "12px", marginTop: 3 }}>
+                    {pattern.patternType} · {fmtPercent(pattern.confidence)} · {pattern.frequency}{" "}
+                    observations
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: "16px" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
+            Learned Patterns
+          </h3>
+          {loading ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
+          ) : topPatterns.length === 0 ? (
+            <div
+              style={{
+                height: 220,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Waiting for observations
+            </div>
+          ) : (
+            <div style={{ maxHeight: 300, overflowY: "auto", overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                <thead style={{ color: "var(--text-secondary)", textAlign: "left" }}>
+                  <tr>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Pattern
+                    </th>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Confidence
+                    </th>
+                    <th style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                      Status
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topPatterns.map((pattern) => (
+                    <tr key={pattern.id}>
+                      <td style={{ padding: "8px", borderBottom: "1px solid var(--separator)" }}>
+                        <div style={{ fontWeight: 600 }}>{pattern.description}</div>
+                        <div style={{ color: "var(--text-secondary)", marginTop: 2 }}>
+                          {pattern.scheduleCron ?? pattern.patternType}
+                        </div>
+                      </td>
+                      <td
+                        style={{
+                          padding: "8px",
+                          borderBottom: "1px solid var(--separator)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {fmtPercent(pattern.confidence)}
+                      </td>
+                      <td
+                        style={{
+                          padding: "8px",
+                          borderBottom: "1px solid var(--separator)",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        <button
+                          className="btn-ghost"
+                          onClick={() => togglePattern(pattern)}
+                          style={{ fontSize: "12px", padding: "4px 8px" }}
+                        >
+                          {pattern.enabled ? "Enabled" : "Disabled"}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+
+        <div className="card" style={{ padding: "16px", gridColumn: "1 / -1" }}>
+          <h3 style={{ margin: "0 0 12px", fontSize: "13px", color: "var(--text-secondary)" }}>
+            Timeline
+          </h3>
+          {loading ? (
+            <div
+              style={{
+                height: 120,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              Loading…
+            </div>
+          ) : timeline.length === 0 ? (
+            <div
+              style={{
+                height: 120,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                color: "var(--text-secondary)",
+              }}
+            >
+              No temporal metadata indexed yet
+            </div>
+          ) : (
+            <div style={{ display: "grid", gap: "8px" }}>
+              {timeline.map((entry) => (
+                <div
+                  key={entry.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(120px, 0.8fr) minmax(70px, 0.45fr) minmax(0, 1fr)",
+                    gap: "12px",
+                    fontSize: "12px",
+                    alignItems: "center",
+                    borderBottom: "1px solid var(--separator)",
+                    paddingBottom: "8px",
+                  }}
+                >
+                  <span style={{ color: "var(--text-secondary)" }}>
+                    {fmtDateTime(entry.timestamp)}
+                  </span>
+                  <strong>{entry.entityType}</strong>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {entry.entityId}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </section>
@@ -1284,6 +1566,7 @@ export function Analytics() {
       <UsageSection />
       <AnomalySection />
       <HeatmapSection />
+      <TemporalContextSection />
       <PerformanceSection />
       <CostSection />
     </div>

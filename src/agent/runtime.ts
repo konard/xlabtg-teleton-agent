@@ -97,6 +97,10 @@ import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
 import { getPreloader } from "../services/preloader.js";
 import {
+  TemporalContextService,
+  formatTemporalContextForPrompt,
+} from "../services/temporal-context.js";
+import {
   buildCorrectionPrompt,
   buildToolRecoveryMessage,
   CorrectionLogger,
@@ -276,7 +280,14 @@ export class AgentRuntime {
   ): void {
     this.embedder = embedder;
     const db = getDatabase().getDb();
-    this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled, semanticVectorStore);
+    this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled, semanticVectorStore, {
+      ...this.config.temporal_context.weighting,
+      enabled:
+        this.config.temporal_context.enabled === false
+          ? false
+          : this.config.temporal_context.weighting.enabled,
+      timezone: this.config.temporal_context.timezone,
+    });
   }
 
   getToolRegistry(): ToolRegistry | null {
@@ -485,10 +496,14 @@ export class AgentRuntime {
 
       const memoryStats = this.getMemoryStats();
       const statsContext = `[Memory Status: ${memoryStats.totalMessages} messages across ${memoryStats.totalChats} chats, ${memoryStats.knowledgeChunks} knowledge chunks]`;
+      const temporalContext = this.buildTemporalPromptContext({
+        timestamp: now,
+        sessionIndex: context.messages.length,
+        sessionMessageCount: session.messageCount,
+      });
+      const contextSections = [statsContext, temporalContext, retrievalContext].filter(Boolean);
 
-      const additionalContext = retrievalContext
-        ? `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}\n\n${retrievalContext}`
-        : `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${statsContext}`;
+      const additionalContext = `You are in a Telegram conversation with chat ID: ${chatId}. Maintain conversation continuity.\n\n${contextSections.join("\n\n")}`;
 
       // Hook: prompt:before — run concurrently with context assembly
       const promptEvent: BeforePromptBuildEvent = {
@@ -1627,6 +1642,30 @@ export class AgentRuntime {
       getBehaviorTracker()?.recordToolInvocation(opts);
     } catch (error) {
       log.warn({ err: error }, "Behavior tool tracking failed");
+    }
+  }
+
+  private buildTemporalPromptContext(opts: {
+    timestamp: number;
+    sessionIndex: number;
+    sessionMessageCount: number;
+  }): string {
+    if (this.config.temporal_context.enabled !== true) return "";
+
+    try {
+      const service = new TemporalContextService(
+        getDatabase().getDb(),
+        this.config.temporal_context
+      );
+      const snapshot = service.getCurrentTemporalContext({
+        time: opts.timestamp,
+        sessionIndex: opts.sessionIndex,
+        sessionMessageCount: opts.sessionMessageCount,
+      });
+      return sanitizeForContext(formatTemporalContextForPrompt(snapshot));
+    } catch (error) {
+      log.warn({ err: error }, "Temporal context build failed");
+      return "";
     }
   }
 

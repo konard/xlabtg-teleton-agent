@@ -5,6 +5,7 @@ import { MessageStore } from "../feed/messages.js";
 import { createLogger } from "../../utils/logger.js";
 import { FEED_MESSAGE_MAX_CHARS } from "../../constants/limits.js";
 import type { SemanticVectorStore } from "../vector-store.js";
+import type { TemporalSearchWeightingOptions } from "../../services/temporal-context.js";
 
 const log = createLogger("Memory");
 
@@ -65,9 +66,10 @@ export class ContextBuilder {
     private db: Database.Database,
     private embedder: EmbeddingProvider,
     vectorEnabled: boolean,
-    semanticVectorStore?: SemanticVectorStore
+    semanticVectorStore?: SemanticVectorStore,
+    temporalWeighting?: TemporalSearchWeightingOptions
   ) {
-    this.hybridSearch = new HybridSearch(db, vectorEnabled, semanticVectorStore);
+    this.hybridSearch = new HybridSearch(db, vectorEnabled, semanticVectorStore, temporalWeighting);
     this.messageStore = new MessageStore(db, embedder, vectorEnabled);
   }
 

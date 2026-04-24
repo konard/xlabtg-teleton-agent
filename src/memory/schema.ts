@@ -159,6 +159,54 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_memory_scores_updated ON memory_scores(updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_memory_scores_pinned ON memory_scores(pinned) WHERE pinned = 1;
 
+    -- Temporal metadata overlay for time-aware context retrieval and pattern analysis.
+    CREATE TABLE IF NOT EXISTS temporal_metadata (
+      id TEXT PRIMARY KEY,
+      entity_type TEXT NOT NULL CHECK(entity_type IN ('knowledge', 'message', 'session', 'task', 'behavior', 'request', 'tool')),
+      entity_id TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      timezone TEXT NOT NULL DEFAULT 'UTC',
+      day_of_week INTEGER NOT NULL CHECK(day_of_week >= 0 AND day_of_week <= 6),
+      hour_of_day INTEGER NOT NULL CHECK(hour_of_day >= 0 AND hour_of_day <= 23),
+      time_of_day TEXT NOT NULL CHECK(time_of_day IN ('morning', 'afternoon', 'evening', 'night')),
+      relative_period TEXT NOT NULL CHECK(relative_period IN ('weekday', 'weekend')),
+      session_phase TEXT NOT NULL DEFAULT 'unknown'
+        CHECK(session_phase IN ('beginning', 'middle', 'end', 'unknown')),
+      metadata TEXT NOT NULL DEFAULT '{}',
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(entity_type, entity_id)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_temporal_metadata_entity
+      ON temporal_metadata(entity_type, entity_id);
+    CREATE INDEX IF NOT EXISTS idx_temporal_metadata_time
+      ON temporal_metadata(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_temporal_metadata_day_hour
+      ON temporal_metadata(day_of_week, hour_of_day);
+    CREATE INDEX IF NOT EXISTS idx_temporal_metadata_markers
+      ON temporal_metadata(time_of_day, relative_period);
+
+    CREATE TABLE IF NOT EXISTS time_patterns (
+      id TEXT PRIMARY KEY,
+      pattern_type TEXT NOT NULL CHECK(pattern_type IN ('daily', 'weekly', 'recurring', 'seasonal', 'custom')),
+      description TEXT NOT NULL,
+      schedule_cron TEXT,
+      confidence REAL NOT NULL DEFAULT 0 CHECK(confidence >= 0 AND confidence <= 1),
+      frequency INTEGER NOT NULL DEFAULT 1,
+      last_seen INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+      metadata TEXT NOT NULL DEFAULT '{}'
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_time_patterns_type
+      ON time_patterns(pattern_type, confidence DESC, frequency DESC);
+    CREATE INDEX IF NOT EXISTS idx_time_patterns_last_seen
+      ON time_patterns(last_seen DESC);
+    CREATE INDEX IF NOT EXISTS idx_time_patterns_enabled
+      ON time_patterns(enabled, confidence DESC) WHERE enabled = 1;
+
     -- Archived knowledge rows retained after cleanup removes them from active search.
     CREATE TABLE IF NOT EXISTS memory_archive (
       archive_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -781,7 +829,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.31.0";
+export const CURRENT_SCHEMA_VERSION = "1.32.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1673,7 +1721,65 @@ export function runMigrations(db: Database.Database): void {
   }
 
   if (!currentVersion || versionLessThan(currentVersion, "1.31.0")) {
-    log.info("Running migration 1.31.0: Add unified integration registry tables");
+    log.info("Running migration 1.31.0: Add temporal context tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS temporal_metadata (
+          id TEXT PRIMARY KEY,
+          entity_type TEXT NOT NULL CHECK(entity_type IN ('knowledge', 'message', 'session', 'task', 'behavior', 'request', 'tool')),
+          entity_id TEXT NOT NULL,
+          timestamp INTEGER NOT NULL,
+          timezone TEXT NOT NULL DEFAULT 'UTC',
+          day_of_week INTEGER NOT NULL CHECK(day_of_week >= 0 AND day_of_week <= 6),
+          hour_of_day INTEGER NOT NULL CHECK(hour_of_day >= 0 AND hour_of_day <= 23),
+          time_of_day TEXT NOT NULL CHECK(time_of_day IN ('morning', 'afternoon', 'evening', 'night')),
+          relative_period TEXT NOT NULL CHECK(relative_period IN ('weekday', 'weekend')),
+          session_phase TEXT NOT NULL DEFAULT 'unknown'
+            CHECK(session_phase IN ('beginning', 'middle', 'end', 'unknown')),
+          metadata TEXT NOT NULL DEFAULT '{}',
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          UNIQUE(entity_type, entity_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_temporal_metadata_entity
+          ON temporal_metadata(entity_type, entity_id);
+        CREATE INDEX IF NOT EXISTS idx_temporal_metadata_time
+          ON temporal_metadata(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_temporal_metadata_day_hour
+          ON temporal_metadata(day_of_week, hour_of_day);
+        CREATE INDEX IF NOT EXISTS idx_temporal_metadata_markers
+          ON temporal_metadata(time_of_day, relative_period);
+
+        CREATE TABLE IF NOT EXISTS time_patterns (
+          id TEXT PRIMARY KEY,
+          pattern_type TEXT NOT NULL CHECK(pattern_type IN ('daily', 'weekly', 'recurring', 'seasonal', 'custom')),
+          description TEXT NOT NULL,
+          schedule_cron TEXT,
+          confidence REAL NOT NULL DEFAULT 0 CHECK(confidence >= 0 AND confidence <= 1),
+          frequency INTEGER NOT NULL DEFAULT 1,
+          last_seen INTEGER NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+          metadata TEXT NOT NULL DEFAULT '{}'
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_time_patterns_type
+          ON time_patterns(pattern_type, confidence DESC, frequency DESC);
+        CREATE INDEX IF NOT EXISTS idx_time_patterns_last_seen
+          ON time_patterns(last_seen DESC);
+        CREATE INDEX IF NOT EXISTS idx_time_patterns_enabled
+          ON time_patterns(enabled, confidence DESC) WHERE enabled = 1;
+      `);
+      log.info("Migration 1.31.0 complete: temporal context tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.31.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.32.0")) {
+    log.info("Running migration 1.32.0: Add unified integration registry tables");
     try {
       db.exec(`
         CREATE TABLE IF NOT EXISTS integrations (
@@ -1731,9 +1837,9 @@ export function runMigrations(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_integration_usage_action
           ON integration_usage(action);
       `);
-      log.info("Migration 1.31.0 complete: integration tables created");
+      log.info("Migration 1.32.0 complete: integration tables created");
     } catch (error) {
-      log.error({ err: error }, "Migration 1.31.0 failed");
+      log.error({ err: error }, "Migration 1.32.0 failed");
       throw error;
     }
   }
