@@ -728,6 +728,37 @@ const _PredictionsObject = z.object({
 });
 export const PredictionsConfigSchema = _PredictionsObject.default(_PredictionsObject.parse({}));
 
+const _FeedbackObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable feedback capture and analytics"),
+  implicit_signals: z
+    .boolean()
+    .default(true)
+    .describe("Infer feedback from corrections, rephrasing, and delayed follow-ups"),
+  prompt_adjustments: z
+    .boolean()
+    .default(true)
+    .describe("Inject conservative learned preferences into future prompts"),
+  min_feedback_for_prompt: z
+    .number()
+    .int()
+    .min(1)
+    .default(2)
+    .describe("Minimum repeated feedback theme count before prompt adjustments use it"),
+  correction_window_seconds: z
+    .number()
+    .int()
+    .min(10)
+    .default(600)
+    .describe("Window for treating a follow-up correction as negative implicit feedback"),
+  acceptance_delay_seconds: z
+    .number()
+    .int()
+    .min(10)
+    .default(300)
+    .describe("Delay before a non-corrective follow-up is treated as accepted output"),
+});
+export const FeedbackConfigSchema = _FeedbackObject.default(_FeedbackObject.parse({}));
+
 const _AnomalyAlertingObject = z.object({
   in_app: z.boolean().default(true).describe("Create in-app notifications for anomalies"),
   telegram: z.boolean().default(false).describe("Send anomaly alerts to Telegram admin chat IDs"),
@@ -811,6 +842,7 @@ export const ConfigSchema = z.object({
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
+  feedback: FeedbackConfigSchema,
   anomaly_detection: AnomalyDetectionConfigSchema,
   mtproto: MtprotoConfigSchema,
   mcp: McpConfigSchema,

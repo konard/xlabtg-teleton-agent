@@ -21,6 +21,7 @@ import { Config } from "./pages/Config";
 import { Hooks } from "./pages/Hooks";
 import { Sessions } from "./pages/Sessions";
 import { Analytics } from "./pages/Analytics";
+import { Feedback } from "./pages/Feedback";
 import { Security } from "./pages/Security";
 import { SelfImprove } from "./pages/SelfImprove";
 import { Autonomous } from "./pages/Autonomous";
@@ -158,6 +159,7 @@ function AuthenticatedApp() {
               <Route path="hooks" element={<Hooks />} />
               <Route path="sessions" element={<Sessions />} />
               <Route path="analytics" element={<Analytics />} />
+              <Route path="feedback" element={<Feedback />} />
               <Route path="security" element={<Security />} />
               <Route path="self-improve" element={<SelfImprove />} />
               <Route path="autonomous" element={<Autonomous />} />
