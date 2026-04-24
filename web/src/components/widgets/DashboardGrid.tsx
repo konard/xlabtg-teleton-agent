@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useCallback, useRef } from 'react';
+import { lazy, Suspense, useState, useCallback, useEffect, useRef } from 'react';
 import { ResponsiveGridLayout, Layout, LayoutItem, ResponsiveLayouts, useContainerWidth } from 'react-grid-layout';
 import 'react-grid-layout/css/styles.css';
 import 'react-resizable/css/styles.css';
@@ -10,9 +10,11 @@ import { TelegramSettingsWidget } from './TelegramSettingsWidget';
 import { ExecSettingsWidget } from './ExecSettingsWidget';
 import { PredictionsWidget } from './PredictionsWidget';
 import { CacheWidget } from './CacheWidget';
+import { GeneratedWidgetRenderer } from './GeneratedWidgetRenderer';
+import { WidgetGeneratorPanel } from './WidgetGeneratorPanel';
 import { QuickActions } from '../QuickActions';
 import { HealthCheck } from '../HealthCheck';
-import { StatusData } from '../../lib/api';
+import { GeneratedWidgetDefinition, StatusData } from '../../lib/api';
 import { ProviderMeta } from '../../hooks/useConfigState';
 
 const TokenUsageChart = lazy(() =>
@@ -26,9 +28,12 @@ const ActivityHeatmap = lazy(() =>
 );
 
 const STORAGE_KEY = 'dashboard-layout';
+const GENERATED_WIDGETS_STORAGE_KEY = 'dashboard-generated-widgets';
+const OPEN_WIDGET_GENERATOR_EVENT = 'teleton:open-widget-generator';
+const OPEN_WIDGET_GENERATOR_STORAGE_KEY = 'teleton:open-widget-generator';
 
 // Widget IDs
-export type WidgetId =
+export type BuiltInWidgetId =
   | 'stats'
   | 'logs'
   | 'agent'
@@ -42,8 +47,10 @@ export type WidgetId =
   | 'activity-heatmap'
   | 'health-check';
 
+export type WidgetId = BuiltInWidgetId | string;
+
 interface WidgetMeta {
-  id: WidgetId;
+  id: BuiltInWidgetId;
   title: string;
   defaultItem: { lg: LayoutItem; md: LayoutItem };
 }
@@ -182,6 +189,45 @@ function saveSaved(state: SavedState) {
   }
 }
 
+function loadGeneratedWidgets(): GeneratedWidgetDefinition[] {
+  try {
+    const raw = localStorage.getItem(GENERATED_WIDGETS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveGeneratedWidgets(widgets: GeneratedWidgetDefinition[]) {
+  try {
+    localStorage.setItem(GENERATED_WIDGETS_STORAGE_KEY, JSON.stringify(widgets));
+  } catch {
+    // ignore
+  }
+}
+
+function isBuiltInWidgetId(id: WidgetId): id is BuiltInWidgetId {
+  return WIDGET_REGISTRY.some((meta) => meta.id === id);
+}
+
+function nextGeneratedLayoutItem(definition: GeneratedWidgetDefinition, layouts: ResponsiveLayouts, width: 'lg' | 'md'): LayoutItem {
+  const cols = width === 'lg' ? 12 : 10;
+  const current = layouts[width] ?? [];
+  const y = current.reduce((max, item) => Math.max(max, item.y + item.h), 0);
+  const w = Math.min(definition.defaultSize.w, cols);
+  return {
+    i: definition.id,
+    x: 0,
+    y,
+    w,
+    h: definition.defaultSize.h,
+    minH: 3,
+    minW: Math.min(3, cols),
+  };
+}
+
 // ── Props ────────────────────────────────────────────────────────────────────
 
 interface DashboardGridProps {
@@ -211,7 +257,7 @@ interface DashboardGridProps {
 function InnerGrid(props: DashboardGridProps & { width: number }) {
   const { showExec, width } = props;
 
-  const ALL_VISIBLE: WidgetId[] = showExec
+  const ALL_VISIBLE: BuiltInWidgetId[] = showExec
     ? [
         'stats',
         'agent',
@@ -241,19 +287,50 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
       ];
 
   const saved = loadSaved();
-  const [layouts, setLayouts] = useState<ResponsiveLayouts>(
-    saved?.layouts ?? buildDefaultLayouts(ALL_VISIBLE)
-  );
-  const [visible, setVisible] = useState<WidgetId[]>(
-    saved?.visible ?? ALL_VISIBLE
-  );
+  const loadedGeneratedWidgets = loadGeneratedWidgets();
+  const initialVisible = [
+    ...(saved?.visible ?? ALL_VISIBLE),
+    ...loadedGeneratedWidgets
+      .map((widget) => widget.id)
+      .filter((id) => !(saved?.visible ?? ALL_VISIBLE).includes(id)),
+  ];
+  const initialLayouts =
+    saved?.layouts ??
+    loadedGeneratedWidgets.reduce(
+      (acc, widget) => ({
+        ...acc,
+        lg: [...(acc.lg ?? []), nextGeneratedLayoutItem(widget, acc, 'lg')],
+        md: [...(acc.md ?? []), nextGeneratedLayoutItem(widget, acc, 'md')],
+      }),
+      buildDefaultLayouts(ALL_VISIBLE)
+    );
+  const [layouts, setLayouts] = useState<ResponsiveLayouts>(initialLayouts);
+  const [visible, setVisible] = useState<WidgetId[]>(initialVisible);
+  const [generatedWidgets, setGeneratedWidgets] = useState<GeneratedWidgetDefinition[]>(loadedGeneratedWidgets);
   const [editMode, setEditMode] = useState(false);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
 
   // Keep visible ref in sync for callbacks
   const visibleRef = useRef(visible);
   visibleRef.current = visible;
   const layoutsRef = useRef(layouts);
   layoutsRef.current = layouts;
+  const generatedWidgetsRef = useRef(generatedWidgets);
+  generatedWidgetsRef.current = generatedWidgets;
+
+  useEffect(() => {
+    const openGenerator = () => setGeneratorOpen(true);
+    try {
+      if (sessionStorage.getItem(OPEN_WIDGET_GENERATOR_STORAGE_KEY) === '1') {
+        sessionStorage.removeItem(OPEN_WIDGET_GENERATOR_STORAGE_KEY);
+        setGeneratorOpen(true);
+      }
+    } catch {
+      // ignore storage errors
+    }
+    window.addEventListener(OPEN_WIDGET_GENERATOR_EVENT, openGenerator);
+    return () => window.removeEventListener(OPEN_WIDGET_GENERATOR_EVENT, openGenerator);
+  }, []);
 
   const handleLayoutChange = useCallback((_layout: Layout, allLayouts: ResponsiveLayouts) => {
     setLayouts(allLayouts);
@@ -262,8 +339,20 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
 
   const removeWidget = useCallback((id: WidgetId) => {
     const nextVisible = visibleRef.current.filter((v) => v !== id);
+    let nextLayouts = layoutsRef.current;
+    if (!isBuiltInWidgetId(id)) {
+      const nextGenerated = generatedWidgetsRef.current.filter((widget) => widget.id !== id);
+      setGeneratedWidgets(nextGenerated);
+      saveGeneratedWidgets(nextGenerated);
+      nextLayouts = {
+        ...nextLayouts,
+        lg: (nextLayouts.lg ?? []).filter((item) => item.i !== id),
+        md: (nextLayouts.md ?? []).filter((item) => item.i !== id),
+      };
+      setLayouts(nextLayouts);
+    }
     setVisible(nextVisible);
-    saveSaved({ layouts: layoutsRef.current, visible: nextVisible });
+    saveSaved({ layouts: nextLayouts, visible: nextVisible });
   }, []);
 
   const addWidget = useCallback((id: WidgetId) => {
@@ -283,7 +372,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
   }, []);
 
   const resetLayout = useCallback(() => {
-    const next = showExec
+    const builtIns = showExec
       ? ([
           'stats',
           'agent',
@@ -311,66 +400,67 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
           'health-check',
           'logs',
         ] as WidgetId[]);
-    const nextLayouts = buildDefaultLayouts(next);
+    const next = [...builtIns, ...generatedWidgetsRef.current.map((widget) => widget.id)];
+    const nextLayouts = generatedWidgetsRef.current.reduce(
+      (acc, widget) => ({
+        ...acc,
+        lg: [...(acc.lg ?? []), nextGeneratedLayoutItem(widget, acc, 'lg')],
+        md: [...(acc.md ?? []), nextGeneratedLayoutItem(widget, acc, 'md')],
+      }),
+      buildDefaultLayouts(builtIns)
+    );
     setVisible(next);
     setLayouts(nextLayouts);
     saveSaved({ layouts: nextLayouts, visible: next });
   }, [showExec]);
 
-  const hidden = WIDGET_REGISTRY
-    .map((m) => m.id)
+  const hidden = WIDGET_REGISTRY.map((m) => m.id)
     .filter((id) => !visible.includes(id))
     .filter((id) => id !== 'exec' || showExec) as WidgetId[];
 
+  const handleGeneratedWidgetSave = useCallback((definition: GeneratedWidgetDefinition) => {
+    const nextGenerated = [definition, ...generatedWidgetsRef.current.filter((widget) => widget.id !== definition.id)];
+    setGeneratedWidgets(nextGenerated);
+    saveGeneratedWidgets(nextGenerated);
+
+    const alreadyVisible = visibleRef.current.includes(definition.id);
+    const currentLayouts = layoutsRef.current;
+    const nextLayouts: ResponsiveLayouts = alreadyVisible
+      ? currentLayouts
+      : {
+          ...currentLayouts,
+          lg: [...(currentLayouts.lg ?? []).filter((item) => item.i !== definition.id), nextGeneratedLayoutItem(definition, currentLayouts, 'lg')],
+          md: [...(currentLayouts.md ?? []).filter((item) => item.i !== definition.id), nextGeneratedLayoutItem(definition, currentLayouts, 'md')],
+        };
+    const nextVisible = alreadyVisible ? visibleRef.current : [...visibleRef.current, definition.id];
+
+    setVisible(nextVisible);
+    setLayouts(nextLayouts);
+    saveSaved({ layouts: nextLayouts, visible: nextVisible });
+  }, []);
+
   function renderWidget(id: WidgetId) {
+    if (!isBuiltInWidgetId(id)) {
+      const generated = generatedWidgets.find((widget) => widget.id === id);
+      if (!generated) return null;
+      return (
+        <div key={id} style={{ overflow: 'hidden' }}>
+          <WidgetWrapper title={generated.title} editMode={editMode} onRemove={() => removeWidget(id)} className="widget-generated">
+            <GeneratedWidgetRenderer definition={generated} />
+          </WidgetWrapper>
+        </div>
+      );
+    }
+
     const meta = WIDGET_REGISTRY.find((m) => m.id === id)!;
     return (
       <div key={id} style={{ overflow: 'hidden' }}>
-        <WidgetWrapper
-          title={meta.title}
-          editMode={editMode}
-          onRemove={() => removeWidget(id)}
-          className={id === 'logs' ? 'widget-logs' : id === 'stats' ? 'widget-stats' : ''}
-        >
-          {id === 'stats' && (
-            <StatsWidget status={props.status} stats={props.stats} />
-          )}
+        <WidgetWrapper title={meta.title} editMode={editMode} onRemove={() => removeWidget(id)} className={id === 'logs' ? 'widget-logs' : id === 'stats' ? 'widget-stats' : ''}>
+          {id === 'stats' && <StatsWidget status={props.status} stats={props.stats} />}
           {id === 'logs' && <LogsWidget />}
-          {id === 'agent' && (
-            <AgentSettingsWidget
-              getLocal={props.getLocal}
-              getServer={props.getServer}
-              setLocal={props.setLocal}
-              saveConfig={props.saveConfig}
-              cancelLocal={props.cancelLocal}
-              modelOptions={props.modelOptions}
-              pendingProvider={props.pendingProvider}
-              pendingMeta={props.pendingMeta}
-              pendingApiKey={props.pendingApiKey}
-              setPendingApiKey={props.setPendingApiKey}
-              pendingValidating={props.pendingValidating}
-              pendingError={props.pendingError}
-              setPendingError={props.setPendingError}
-              handleProviderChange={props.handleProviderChange}
-              handleProviderConfirm={props.handleProviderConfirm}
-              handleProviderCancel={props.handleProviderCancel}
-            />
-          )}
-          {id === 'telegram' && (
-            <TelegramSettingsWidget
-              getLocal={props.getLocal}
-              getServer={props.getServer}
-              setLocal={props.setLocal}
-              saveConfig={props.saveConfig}
-              cancelLocal={props.cancelLocal}
-            />
-          )}
-          {id === 'exec' && showExec && (
-            <ExecSettingsWidget
-              getLocal={props.getLocal}
-              saveConfig={props.saveConfig}
-            />
-          )}
+          {id === 'agent' && <AgentSettingsWidget getLocal={props.getLocal} getServer={props.getServer} setLocal={props.setLocal} saveConfig={props.saveConfig} cancelLocal={props.cancelLocal} modelOptions={props.modelOptions} pendingProvider={props.pendingProvider} pendingMeta={props.pendingMeta} pendingApiKey={props.pendingApiKey} setPendingApiKey={props.setPendingApiKey} pendingValidating={props.pendingValidating} pendingError={props.pendingError} setPendingError={props.setPendingError} handleProviderChange={props.handleProviderChange} handleProviderConfirm={props.handleProviderConfirm} handleProviderCancel={props.handleProviderCancel} />}
+          {id === 'telegram' && <TelegramSettingsWidget getLocal={props.getLocal} getServer={props.getServer} setLocal={props.setLocal} saveConfig={props.saveConfig} cancelLocal={props.cancelLocal} />}
+          {id === 'exec' && showExec && <ExecSettingsWidget getLocal={props.getLocal} saveConfig={props.saveConfig} />}
           {id === 'quick-actions' && <QuickActions />}
           {id === 'predictions' && <PredictionsWidget />}
           {id === 'cache' && <CacheWidget />}
@@ -399,10 +489,10 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
     <div className="dashboard-grid-root">
       {/* ── Toolbar ── */}
       <div className="dashboard-toolbar">
-        <button
-          className={`btn-ghost btn-sm${editMode ? ' active' : ''}`}
-          onClick={() => setEditMode((v) => !v)}
-        >
+        <button className="btn-ghost btn-sm" onClick={() => setGeneratorOpen(true)} type="button">
+          Generate Widget
+        </button>
+        <button className={`btn-ghost btn-sm${editMode ? ' active' : ''}`} onClick={() => setEditMode((v) => !v)}>
           {editMode ? 'Done' : 'Edit Layout'}
         </button>
 
@@ -410,15 +500,13 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
           <>
             {hidden.length > 0 && (
               <div className="widget-add-dropdown">
-                <span className="text-muted" style={{ fontSize: 12 }}>Add:</span>
+                <span className="text-muted" style={{ fontSize: 12 }}>
+                  Add:
+                </span>
                 {hidden.map((id) => {
                   const meta = WIDGET_REGISTRY.find((m) => m.id === id)!;
                   return (
-                    <button
-                      key={id}
-                      className="btn-ghost btn-sm"
-                      onClick={() => addWidget(id)}
-                    >
+                    <button key={id} className="btn-ghost btn-sm" onClick={() => addWidget(id)}>
                       + {meta.title}
                     </button>
                   );
@@ -433,20 +521,11 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
       </div>
 
       {/* ── Grid ── */}
-      <ResponsiveGridLayout
-        width={width}
-        layouts={layouts}
-        breakpoints={{ lg: 1200, md: 768, sm: 480, xs: 320, xxs: 0 }}
-        cols={{ lg: 12, md: 10, sm: 4, xs: 2, xxs: 2 }}
-        rowHeight={60}
-        dragConfig={{ enabled: editMode, handle: '.widget-drag-handle' }}
-        resizeConfig={{ enabled: editMode }}
-        onLayoutChange={handleLayoutChange}
-        margin={[12, 12]}
-        containerPadding={[0, 0]}
-      >
+      <ResponsiveGridLayout width={width} layouts={layouts} breakpoints={{ lg: 1200, md: 768, sm: 480, xs: 320, xxs: 0 }} cols={{ lg: 12, md: 10, sm: 4, xs: 2, xxs: 2 }} rowHeight={60} dragConfig={{ enabled: editMode, handle: '.widget-drag-handle' }} resizeConfig={{ enabled: editMode }} onLayoutChange={handleLayoutChange} margin={[12, 12]} containerPadding={[0, 0]}>
         {visible.map(renderWidget)}
       </ResponsiveGridLayout>
+
+      <WidgetGeneratorPanel open={generatorOpen} onClose={() => setGeneratorOpen(false)} onSave={handleGeneratedWidgetSave} />
     </div>
   );
 }

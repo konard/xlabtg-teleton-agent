@@ -859,6 +859,100 @@ export interface ActivityEntry {
 
 export type MetricsPeriod = "24h" | "7d" | "30d";
 
+// ── AI Widget Generator types ───────────────────────────────────────
+
+export type GeneratedWidgetRenderer = "chart" | "table" | "kpi" | "list" | "markdown";
+export type GeneratedWidgetChartType = "line" | "bar" | "pie";
+export type GeneratedWidgetPalette = "default" | "blue" | "green" | "purple" | "orange" | "red";
+
+export interface WidgetDataSourceField {
+  key: string;
+  label: string;
+  type: "string" | "number" | "timestamp" | "boolean" | "object";
+  description?: string;
+}
+
+export interface WidgetDataSourceDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: "metrics" | "status" | "memory" | "analytics" | "tasks" | "predictions";
+  endpoint: string;
+  method: "GET";
+  fields: WidgetDataSourceField[];
+  params?: Array<{
+    key: string;
+    label: string;
+    defaultValue: string;
+    values: string[];
+  }>;
+  rendererHints: Array<"line" | "bar" | "pie" | "table" | "kpi" | "list">;
+  keywords: string[];
+}
+
+export interface WidgetGenerationTemplate {
+  id: string;
+  label: string;
+  prompt: string;
+  renderer: GeneratedWidgetRenderer;
+  chartType?: GeneratedWidgetChartType;
+}
+
+export interface GeneratedWidgetDefinition {
+  id: string;
+  title: string;
+  description: string;
+  renderer: GeneratedWidgetRenderer;
+  dataSource: {
+    id: string;
+    endpoint: string;
+    method: "GET";
+    params?: Record<string, string>;
+    refreshInterval: number;
+  };
+  config: {
+    chartType?: GeneratedWidgetChartType;
+    xKey?: string;
+    yKey?: string;
+    categoryKey?: string;
+    valueKey?: string;
+    labelKey?: string;
+    columns?: string[];
+    markdown?: string;
+    aggregate?: "first" | "sum" | "average";
+  };
+  style: {
+    palette: GeneratedWidgetPalette;
+  };
+  defaultSize: {
+    w: number;
+    h: number;
+  };
+  generatedFrom: string;
+  refinementHistory: Array<{
+    prompt: string;
+    appliedAt: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WidgetGenerationResult {
+  definition: GeneratedWidgetDefinition;
+  validation: {
+    valid: boolean;
+    issues: string[];
+  };
+  suggestions: string[];
+}
+
+export interface WidgetPreviewResult {
+  definition: GeneratedWidgetDefinition;
+  data: Array<Record<string, unknown>>;
+  fields: WidgetDataSourceField[];
+  generatedAt: string;
+}
+
 // ── Analytics types ──────────────────────────────────────────────────
 
 export interface PerformanceSummary {
@@ -2338,6 +2432,37 @@ export const api = {
 
   async getActivityMetrics(period: MetricsPeriod = "30d") {
     return fetchAPI<APIResponse<ActivityEntry[]>>(`/metrics/activity?period=${period}`);
+  },
+
+  // ── AI Widget Generator ──────────────────────────────────────────
+
+  async getWidgetTemplates() {
+    return fetchAPI<APIResponse<WidgetGenerationTemplate[]>>("/widgets/templates");
+  },
+
+  async getWidgetDataSources() {
+    return fetchAPI<APIResponse<WidgetDataSourceDefinition[]>>("/widgets/data-sources");
+  },
+
+  async generateWidget(prompt: string) {
+    return fetchAPI<APIResponse<WidgetGenerationResult>>("/widgets/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    });
+  },
+
+  async refineWidget(prompt: string, widget: GeneratedWidgetDefinition) {
+    return fetchAPI<APIResponse<WidgetGenerationResult>>("/widgets/refine", {
+      method: "POST",
+      body: JSON.stringify({ prompt, widget }),
+    });
+  },
+
+  async previewWidget(definition: GeneratedWidgetDefinition) {
+    return fetchAPI<APIResponse<WidgetPreviewResult>>("/widgets/preview", {
+      method: "POST",
+      body: JSON.stringify({ definition }),
+    });
   },
 
   // ── Analytics ────────────────────────────────────────────────────
