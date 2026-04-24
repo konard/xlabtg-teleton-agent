@@ -97,6 +97,14 @@ import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
 import { getFeedback } from "../services/feedback/capture.js";
 import { FeedbackLearner } from "../services/feedback/learner.js";
+import {
+  PROMPT_SECTION_IDS,
+  PromptABTesting,
+  PromptVariantManager,
+  renderPromptSelections,
+  type PromptSectionId,
+  type PromptVariantSelection,
+} from "../services/prompts/index.js";
 import { getPreloader } from "../services/preloader.js";
 import { getEventBus, type EventType, type EventPayload } from "../services/event-bus.js";
 import {
@@ -147,6 +155,11 @@ interface UsageAccumulator {
   cacheRead: number;
   cacheWrite: number;
   totalCost: number;
+}
+
+interface AdaptivePromptBuildResult {
+  sections: Partial<Record<PromptSectionId, string>>;
+  selections: PromptVariantSelection[];
 }
 
 function addUsage(accumulator: UsageAccumulator, usage?: SelfCorrectionUsage): void {
@@ -362,6 +375,7 @@ export class AgentRuntime {
     const effectiveIsGroup = isGroup ?? false;
     const processStartTime = Date.now();
     let sessionLifecycleEventId: string | null = null;
+    let adaptivePromptSelections: PromptVariantSelection[] = [];
 
     try {
       // User hooks: keyword blocklist + context injection (hot-reloadable, no restart)
@@ -640,11 +654,20 @@ export class AgentRuntime {
         .filter(Boolean)
         .join("\n\n");
       const finalContext = additionalContext + (allHookContext ? `\n\n${allHookContext}` : "");
+      const adaptivePrompt = this.buildAdaptivePromptSections({
+        subjectKey: `${chatId}:${toolContext?.senderId ?? "unknown"}`,
+        currentContext: finalContext,
+        feedbackPreferences: feedbackContext,
+        activeTools: this.getPredictedToolNames(effectiveMessage),
+        timestamp: now,
+      });
+      adaptivePromptSelections = adaptivePrompt.selections;
 
       const chatType: "private" | "group" | "channel" = effectiveIsGroup ? "group" : "private";
 
       const systemPrompt = buildSystemPrompt({
         soul: this.soul,
+        adaptiveSections: adaptivePrompt.sections,
         userName,
         senderUsername,
         senderId: toolContext?.senderId,
@@ -1550,6 +1573,13 @@ export class AgentRuntime {
           accumulatedUsage.cacheWrite,
         success: true,
       });
+      this.recordAdaptivePromptMetrics(adaptivePromptSelections, {
+        inputTokens:
+          accumulatedUsage.input + accumulatedUsage.cacheRead + accumulatedUsage.cacheWrite,
+        outputTokens: accumulatedUsage.output,
+        taskSuccess: true,
+        error: false,
+      });
       this.detectAnomalies();
 
       await this.indexMemoryGraphTurn({
@@ -1601,6 +1631,10 @@ export class AgentRuntime {
         durationMs: Date.now() - processStartTime,
         success: false,
         errorMessage: error instanceof Error ? error.message : String(error),
+      });
+      this.recordAdaptivePromptMetrics(adaptivePromptSelections, {
+        taskSuccess: false,
+        error: true,
       });
       this.detectAnomalies();
       log.error({ err: error }, "Agent error");
@@ -2033,6 +2067,100 @@ export class AgentRuntime {
     } catch (error) {
       log.warn({ err: error }, "Feedback prompt context build failed");
       return "";
+    }
+  }
+
+  private buildAdaptivePromptSections(opts: {
+    subjectKey: string;
+    currentContext: string;
+    feedbackPreferences: string;
+    activeTools: string[];
+    timestamp: number;
+  }): AdaptivePromptBuildResult {
+    if (this.config.adaptive_prompting?.enabled !== true) {
+      return { sections: {}, selections: [] };
+    }
+
+    try {
+      const db = getDatabase().getDb();
+      const variants = new PromptVariantManager(db);
+      const testing = new PromptABTesting(db, variants);
+      const selections: PromptVariantSelection[] = [];
+
+      for (const section of PROMPT_SECTION_IDS) {
+        const active = variants.getActiveVariant(section);
+        if (!active) continue;
+        try {
+          const selection = testing.selectVariant({ section, subjectKey: opts.subjectKey });
+          selections.push(selection);
+        } catch {
+          selections.push({ section, variant: active, experiment: null });
+        }
+      }
+
+      const date = new Date(
+        opts.timestamp > 10_000_000_000 ? opts.timestamp : opts.timestamp * 1000
+      );
+      const hour = date.getUTCHours();
+      const timeOfDay =
+        hour >= 5 && hour < 12
+          ? "morning"
+          : hour >= 12 && hour < 17
+            ? "afternoon"
+            : hour >= 17 && hour < 21
+              ? "evening"
+              : "night";
+
+      return {
+        selections,
+        sections: renderPromptSelections(selections, {
+          currentContext: opts.currentContext,
+          feedbackPreferences: opts.feedbackPreferences,
+          userPreferenceStyle: opts.feedbackPreferences,
+          activeTools: opts.activeTools,
+          timeOfDay,
+        }),
+      };
+    } catch (error) {
+      log.warn({ err: error }, "Adaptive prompt section build failed");
+      return { sections: {}, selections: [] };
+    }
+  }
+
+  private recordAdaptivePromptMetrics(
+    selections: PromptVariantSelection[],
+    metrics: {
+      inputTokens?: number;
+      outputTokens?: number;
+      taskSuccess: boolean;
+      error: boolean;
+    }
+  ): void {
+    if (this.config.adaptive_prompting?.enabled !== true || selections.length === 0) return;
+
+    try {
+      const db = getDatabase().getDb();
+      const variants = new PromptVariantManager(db);
+      const testing = new PromptABTesting(db, variants);
+      for (const selection of selections) {
+        const input = {
+          inputTokens: metrics.inputTokens,
+          outputTokens: metrics.outputTokens,
+          taskSuccess: metrics.taskSuccess,
+          error: metrics.error,
+        };
+        if (selection.experiment) {
+          testing.recordOutcome({
+            experimentId: selection.experiment.id,
+            variantId: selection.variant.id,
+            ...input,
+          });
+        } else {
+          variants.recordMetrics(selection.variant.id, input);
+        }
+      }
+    } catch (error) {
+      log.warn({ err: error }, "Adaptive prompt metrics update failed");
     }
   }
 

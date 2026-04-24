@@ -50,6 +50,7 @@ import {
   TemporalContextConfigSchema,
   SelfCorrectionConfigSchema,
   AnomalyDetectionConfigSchema,
+  AdaptivePromptingConfigSchema,
   VectorMemoryConfigSchema,
   EventBusConfigSchema,
   NetworkConfigSchema,
@@ -1033,6 +1034,7 @@ async function runInteractiveOnboarding(
     },
     predictions: PredictionsConfigSchema.parse({}),
     feedback: FeedbackConfigSchema.parse({}),
+    adaptive_prompting: AdaptivePromptingConfigSchema.parse({}),
     anomaly_detection: AnomalyDetectionConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {
@@ -1245,6 +1247,7 @@ async function runNonInteractiveOnboarding(
     },
     predictions: PredictionsConfigSchema.parse({}),
     feedback: FeedbackConfigSchema.parse({}),
+    adaptive_prompting: AdaptivePromptingConfigSchema.parse({}),
     anomaly_detection: AnomalyDetectionConfigSchema.parse({}),
     dev: { hot_reload: false },
     tool_rag: {

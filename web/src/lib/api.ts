@@ -960,6 +960,87 @@ export interface SoulVersion {
   created_at: string;
 }
 
+export type PromptSectionId =
+  | "persona"
+  | "instructions"
+  | "tool_usage"
+  | "response_format"
+  | "safety";
+
+export interface PromptMetrics {
+  interactions: number;
+  positive: number;
+  negative: number;
+  averageRating: number | null;
+  taskSuccessRate: number | null;
+  responseQualityScore: number | null;
+  averageTokenUsage: number | null;
+  errorRate: number | null;
+  lastUpdated: number | null;
+}
+
+export interface PromptVariant {
+  id: number;
+  section: PromptSectionId;
+  version: number;
+  content: string;
+  active: boolean;
+  source: "manual" | "optimizer";
+  metrics: PromptMetrics;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PromptSectionState {
+  id: PromptSectionId;
+  label: string;
+  description: string;
+  defaultHeading: string;
+  activeVariant: PromptVariant | null;
+  variantCount: number;
+}
+
+export type PromptExperimentStatus = "draft" | "running" | "completed" | "cancelled";
+
+export interface PromptExperiment {
+  id: number;
+  section: PromptSectionId;
+  name: string;
+  controlVariantId: number;
+  candidateVariantId: number;
+  trafficPercentage: number;
+  minSamples: number;
+  autoPromote: boolean;
+  status: PromptExperimentStatus;
+  winnerVariantId: number | null;
+  metrics: {
+    variants: Record<string, PromptMetrics>;
+    scores: Record<string, number>;
+    sampleCounts: Record<string, number>;
+    significance: number | null;
+    lastUpdated: number | null;
+  };
+  createdAt: number;
+  updatedAt: number;
+  completedAt: number | null;
+}
+
+export interface PromptOptimizationSuggestion {
+  section: PromptSectionId;
+  baseVariant: PromptVariant | null;
+  content: string;
+  rationale: string[];
+  validation: { passed: boolean; issues: string[] };
+  createdVariant: PromptVariant | null;
+}
+
+export interface PromptPerformanceData {
+  sections: PromptSectionState[];
+  totalVariants: number;
+  bestVariants: PromptVariant[];
+  experiments: PromptExperiment[];
+}
+
 export interface FileEntry {
   name: string;
   path: string;
@@ -2407,6 +2488,70 @@ export const api = {
     return fetchAPI<APIResponse<{ message: string }>>(`/soul/${filename}/versions/${id}`, {
       method: "DELETE",
     });
+  },
+
+  async getPromptSections() {
+    return fetchAPI<APIResponse<PromptSectionState[]>>("/prompts/sections");
+  },
+
+  async listPromptVariants(section: PromptSectionId) {
+    return fetchAPI<APIResponse<PromptVariant[]>>(
+      `/prompts/sections/${encodeURIComponent(section)}/variants`
+    );
+  },
+
+  async createPromptVariant(section: PromptSectionId, content: string, activate = false) {
+    return fetchAPI<APIResponse<PromptVariant>>(
+      `/prompts/sections/${encodeURIComponent(section)}/variants`,
+      {
+        method: "POST",
+        body: JSON.stringify({ content, activate }),
+      }
+    );
+  },
+
+  async activatePromptVariant(section: PromptSectionId, id: number) {
+    return fetchAPI<APIResponse<PromptVariant>>(
+      `/prompts/sections/${encodeURIComponent(section)}/variants/${id}/activate`,
+      { method: "PUT" }
+    );
+  },
+
+  async getPromptExperiments(section?: PromptSectionId) {
+    const suffix = section ? `?section=${encodeURIComponent(section)}` : "";
+    return fetchAPI<APIResponse<PromptExperiment[]>>(`/prompts/experiments${suffix}`);
+  },
+
+  async createPromptExperiment(input: {
+    section: PromptSectionId;
+    name?: string;
+    controlVariantId: number;
+    candidateVariantId: number;
+    trafficPercentage?: number;
+    minSamples?: number;
+    autoPromote?: boolean;
+    start?: boolean;
+  }) {
+    return fetchAPI<APIResponse<PromptExperiment>>("/prompts/experiments", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async optimizePrompt(input: {
+    section: PromptSectionId;
+    variantId?: number;
+    createVariant?: boolean;
+    evaluationIssues?: string[];
+  }) {
+    return fetchAPI<APIResponse<PromptOptimizationSuggestion>>("/prompts/optimize", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getPromptPerformance() {
+    return fetchAPI<APIResponse<PromptPerformanceData>>("/prompts/performance");
   },
 
   async getPlugins() {
