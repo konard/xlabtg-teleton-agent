@@ -161,6 +161,17 @@ webui:
 #   # key_hash: "..."                 # SHA-256 of API key (auto-generated if omitted)
 #   allowed_ips: []                   # IP whitelist (empty = all authenticated requests)
 
+# Internal event bus and webhook delivery.
+event_bus:
+  enabled: true                       # Store recent internal events for stream/replay/debugging
+  max_log_entries: 1000               # Recent events retained in SQLite
+
+webhooks:
+  enabled: true                       # Subscribe outgoing webhooks to internal events
+  default_max_retries: 5              # Delivery attempts before marking failed
+  delivery_timeout_ms: 5000           # Timeout for each outgoing webhook POST
+  # Secrets are stored encrypted with TELETON_WEBHOOK_KEY or generated ~/.teleton/.webhook-secret-key.
+
 # Autonomous task engine settings.
 autonomous:
   pause_timeout_hours: 24              # Hours a paused task may wait before being auto-cancelled (AUDIT-M5)

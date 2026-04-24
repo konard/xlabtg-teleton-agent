@@ -480,6 +480,37 @@ const _ApiObject = z.object({
 });
 export const ApiConfigSchema = _ApiObject.default(_ApiObject.parse({}));
 
+const _EventBusObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable internal event bus logging and dispatch"),
+  max_log_entries: z
+    .number()
+    .int()
+    .min(100)
+    .max(100_000)
+    .default(1_000)
+    .describe("Maximum recent events retained in SQLite for query and replay"),
+});
+export const EventBusConfigSchema = _EventBusObject.default(_EventBusObject.parse({}));
+
+const _WebhooksObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable outgoing and incoming webhook routes"),
+  default_max_retries: z
+    .number()
+    .int()
+    .min(1)
+    .max(10)
+    .default(5)
+    .describe("Default webhook delivery attempts before a delivery is marked failed"),
+  delivery_timeout_ms: z
+    .number()
+    .int()
+    .min(1_000)
+    .max(60_000)
+    .default(5_000)
+    .describe("HTTP timeout for each outgoing webhook delivery attempt"),
+});
+export const WebhooksConfigSchema = _WebhooksObject.default(_WebhooksObject.parse({}));
+
 const McpServerSchema = z
   .object({
     command: z
@@ -766,6 +797,8 @@ export const ConfigSchema = z.object({
   cache: CacheConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
+  event_bus: EventBusConfigSchema,
+  webhooks: WebhooksConfigSchema,
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
@@ -884,6 +917,8 @@ export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
 export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;
 export type ApiConfig = z.infer<typeof _ApiObject>;
+export type EventBusConfig = z.infer<typeof _EventBusObject>;
+export type WebhooksConfig = z.infer<typeof _WebhooksObject>;
 export type ExecConfig = z.infer<typeof _ExecObject>;
 export type GroqConfig = NonNullable<z.infer<typeof ConfigSchema>["groq"]>;
 export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;

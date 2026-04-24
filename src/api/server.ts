@@ -42,6 +42,8 @@ import { createHooksRoutes } from "../webui/routes/hooks.js";
 import { createTonProxyRoutes } from "../webui/routes/ton-proxy.js";
 import { createSetupRoutes } from "../webui/routes/setup.js";
 import { createAgentsRoutes } from "../webui/routes/agents.js";
+import { createEventsRoutes } from "../webui/routes/events.js";
+import { createWebhooksRoutes } from "../webui/routes/webhooks.js";
 
 // New API routes
 import { createAgentRoutes } from "./routes/agent.js";
@@ -86,7 +88,7 @@ function getSetupStatus(): Record<string, boolean> {
 }
 
 /** SSE path patterns that must be excluded from timeout middleware */
-const SSE_PATHS = ["/v1/agent/events", "/v1/logs/stream"];
+const SSE_PATHS = ["/v1/agent/events", "/v1/logs/stream", "/v1/events/stream"];
 
 export interface ApiCredentials {
   apiKey: string;
@@ -240,6 +242,8 @@ export class ApiServer {
     this.app.route("/v1/hooks", createHooksRoutes(adaptedDeps));
     this.app.route("/v1/ton-proxy", createTonProxyRoutes(adaptedDeps));
     this.app.route("/v1/agents", createAgentsRoutes(adaptedDeps));
+    this.app.route("/v1/events", createEventsRoutes(adaptedDeps));
+    this.app.route("/v1/webhooks", createWebhooksRoutes(adaptedDeps));
 
     // Setup routes (no agent deps needed, keyHash for config persistence)
     this.app.route("/v1/setup", createSetupRoutes({ keyHash: this.keyHash }));

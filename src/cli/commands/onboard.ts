@@ -48,6 +48,8 @@ import {
   SelfCorrectionConfigSchema,
   AnomalyDetectionConfigSchema,
   VectorMemoryConfigSchema,
+  EventBusConfigSchema,
+  WebhooksConfigSchema,
 } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
 import {
@@ -1013,6 +1015,8 @@ async function runInteractiveOnboarding(
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
     cache: CacheConfigSchema.parse({}),
+    event_bus: EventBusConfigSchema.parse({}),
+    webhooks: WebhooksConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,
@@ -1218,6 +1222,8 @@ async function runNonInteractiveOnboarding(
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
     cache: CacheConfigSchema.parse({}),
+    event_bus: EventBusConfigSchema.parse({}),
+    webhooks: WebhooksConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,
