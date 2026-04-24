@@ -814,6 +814,30 @@ const _FeedbackObject = z.object({
 });
 export const FeedbackConfigSchema = _FeedbackObject.default(_FeedbackObject.parse({}));
 
+const _AdaptivePromptingObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable adaptive prompt variants and experiments"),
+  default_traffic_percentage: z
+    .number()
+    .int()
+    .min(1)
+    .max(99)
+    .default(20)
+    .describe("Default candidate traffic percentage for prompt A/B tests"),
+  min_samples: z
+    .number()
+    .int()
+    .min(2)
+    .default(30)
+    .describe("Minimum samples per variant before an experiment can auto-promote a winner"),
+  auto_promote: z
+    .boolean()
+    .default(true)
+    .describe("Automatically activate statistically better prompt variants"),
+});
+export const AdaptivePromptingConfigSchema = _AdaptivePromptingObject.default(
+  _AdaptivePromptingObject.parse({})
+);
+
 const _AnomalyAlertingObject = z.object({
   in_app: z.boolean().default(true).describe("Create in-app notifications for anomalies"),
   telegram: z.boolean().default(false).describe("Send anomaly alerts to Telegram admin chat IDs"),
@@ -901,6 +925,7 @@ export const ConfigSchema = z.object({
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
   feedback: FeedbackConfigSchema,
+  adaptive_prompting: AdaptivePromptingConfigSchema,
   anomaly_detection: AnomalyDetectionConfigSchema,
   mtproto: MtprotoConfigSchema,
   mcp: McpConfigSchema,
