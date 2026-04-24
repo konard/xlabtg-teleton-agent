@@ -49,9 +49,6 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("task_dependencies");
       expect(tableNames).toContain("task_subtasks");
       expect(tableNames).toContain("task_subtask_dependencies");
-      expect(tableNames).toContain("pipelines");
-      expect(tableNames).toContain("pipeline_runs");
-      expect(tableNames).toContain("pipeline_run_steps");
       expect(tableNames).toContain("graph_nodes");
       expect(tableNames).toContain("graph_edges");
       expect(tableNames).toContain("tg_chats");
@@ -61,6 +58,8 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("agent_registry");
       expect(tableNames).toContain("audit_events");
       expect(tableNames).toContain("journal");
+      expect(tableNames).toContain("temporal_metadata");
+      expect(tableNames).toContain("time_patterns");
       expect(tableNames).toContain("knowledge_fts");
       expect(tableNames).toContain("knowledge_fts_data");
       expect(tableNames).toContain("tg_messages_fts");
@@ -156,6 +155,44 @@ describe("Memory Schema", () => {
       expect(columnNames).toContain("payload");
       expect(columnNames).toContain("reason");
       expect(columnNames).toContain("scheduled_message_id");
+    });
+
+    it("creates temporal context tables with metadata and pattern columns", () => {
+      ensureSchema(db);
+
+      const metadataInfo = db.prepare("PRAGMA table_info(temporal_metadata)").all() as Array<{
+        name: string;
+      }>;
+      const patternInfo = db.prepare("PRAGMA table_info(time_patterns)").all() as Array<{
+        name: string;
+      }>;
+
+      const metadataColumns = metadataInfo.map((c) => c.name);
+      expect(metadataColumns).toEqual(
+        expect.arrayContaining([
+          "entity_type",
+          "entity_id",
+          "timestamp",
+          "day_of_week",
+          "hour_of_day",
+          "time_of_day",
+          "relative_period",
+          "session_phase",
+        ])
+      );
+
+      const patternColumns = patternInfo.map((c) => c.name);
+      expect(patternColumns).toEqual(
+        expect.arrayContaining([
+          "pattern_type",
+          "description",
+          "schedule_cron",
+          "confidence",
+          "frequency",
+          "last_seen",
+          "enabled",
+        ])
+      );
     });
 
     it("creates agent_registry table with registry columns", () => {
@@ -1204,7 +1241,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.30.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.32.0");
     });
   });
 

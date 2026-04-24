@@ -17,6 +17,17 @@ agent:
     idle_expiry_enabled: true
     idle_expiry_minutes: 1440        # 24 hours
 
+# Optional self-correction loop.
+# LLM evaluation/regeneration is off by default because it adds extra model calls.
+self_correction:
+  enabled: false                      # Generate -> evaluate -> reflect -> regenerate
+  threshold: 0.7                      # Minimum quality score to accept a response
+  max_iterations: 3                   # Prevent infinite correction loops
+  min_input_chars: 40                 # Skip short/simple messages
+  skip_simple_messages: true
+  # model: "claude-3-5-haiku-20241022" # Optional override; defaults to agent.utility_model
+  tool_recovery_enabled: true         # Add retry guidance after failed tool calls
+
 # Optional: managed-agent registry defaults.
 # The WebUI Agents page can create agents from ResearchAgent, CodeAgent,
 # ContentAgent, OrchestratorAgent, MonitorAgent, or custom definitions.
@@ -114,6 +125,20 @@ memory:
     max_entries: 10000
     archive_days: 30
     auto_cleanup: false # Set true to let the scheduler archive candidates automatically
+
+# Temporal context engine.
+# Timezone can also be overridden with TELETON_TIMEZONE.
+temporal_context:
+  enabled: true
+  timezone: "UTC"                    # IANA timezone, e.g. "America/New_York"
+  pattern_min_frequency: 2
+  pattern_confidence_threshold: 0.5
+  context_patterns_limit: 5
+  weighting:
+    enabled: true
+    decay_curve: "exponential"       # exponential | linear | step
+    recency_half_life_days: 30
+    temporal_relevance_weight: 0.2
 
 # Optional: WebUI dashboard (disabled by default for security)
 webui:

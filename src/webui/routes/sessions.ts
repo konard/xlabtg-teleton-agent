@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { CorrectionLogger } from "../../agent/self-correction/logger.js";
 
 export function createSessionsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -191,6 +192,35 @@ export function createSessionsRoutes(deps: WebUIServerDeps) {
       }));
 
       const response: APIResponse<typeof results> = { success: true, data: results };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Get correction cycles for a session — must be before /:id
+  app.get("/:id/corrections", (c) => {
+    try {
+      const sessionId = c.req.param("id");
+      const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10)));
+
+      const row = deps.memory.db.prepare("SELECT id FROM sessions WHERE id = ?").get(sessionId) as
+        | { id: string }
+        | undefined;
+      if (!row) {
+        const response: APIResponse = { success: false, error: "Session not found" };
+        return c.json(response, 404);
+      }
+
+      const corrections = new CorrectionLogger(deps.memory.db).listForSession(sessionId, limit);
+      const response: APIResponse<{ corrections: typeof corrections }> = {
+        success: true,
+        data: { corrections },
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {

@@ -28,6 +28,7 @@ import { MemoryScorer } from "./scoring.js";
 import { MemoryRetentionService } from "./retention.js";
 import { MemoryPrioritizationScheduler } from "./scheduler.js";
 import type { AutonomousConfig, MemoryConfig, VectorMemoryConfig } from "../config/schema.js";
+import type { TemporalContextConfig } from "../services/temporal-context.js";
 
 export interface MemorySystem {
   db: Database.Database;
@@ -46,6 +47,7 @@ export function initializeMemory(config: {
   embeddings: EmbeddingProviderConfig;
   vectorMemory?: VectorMemoryConfig;
   memory?: MemoryConfig;
+  temporalContext?: TemporalContextConfig;
   autonomous?: AutonomousConfig;
   workspaceDir: string;
 }): MemorySystem {
@@ -54,6 +56,7 @@ export function initializeMemory(config: {
   const vectorEnabled = db.isVectorSearchReady();
   const database: Database.Database = db.getDb();
   const vectorStore = createSemanticVectorStoreFromConfig(config.vectorMemory);
+  const temporalWeighting = config.temporalContext?.weighting;
   const embedder =
     rawEmbedder.id === "noop" ? rawEmbedder : new CachedEmbeddingProvider(rawEmbedder, database);
   const scorer = new MemoryScorer(database, {
@@ -90,10 +93,16 @@ export function initializeMemory(config: {
       config.workspaceDir,
       embedder,
       vectorEnabled,
-      vectorStore
+      vectorStore,
+      config.temporalContext
     ),
-    messages: new MessageStore(database, embedder, vectorEnabled),
-    context: new ContextBuilder(database, embedder, vectorEnabled, vectorStore),
+    messages: new MessageStore(database, embedder, vectorEnabled, config.temporalContext),
+    context: new ContextBuilder(database, embedder, vectorEnabled, vectorStore, {
+      ...temporalWeighting,
+      enabled:
+        config.temporalContext?.enabled === false ? false : (temporalWeighting?.enabled ?? true),
+      timezone: config.temporalContext?.timezone,
+    }),
     vectorStore,
     scorer,
     retention,

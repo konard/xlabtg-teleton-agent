@@ -111,6 +111,47 @@ export const AgentConfigSchema = z.object({
   ),
 });
 
+const _SelfCorrectionObject = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe("Enable LLM self-evaluation and regeneration before responding"),
+  threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.7)
+    .describe("Minimum quality score required to accept the generated response"),
+  max_iterations: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .default(3)
+    .describe("Maximum evaluate/reflect/regenerate cycles per response"),
+  min_input_chars: z
+    .number()
+    .int()
+    .min(0)
+    .default(40)
+    .describe("Skip LLM self-correction for shorter user messages"),
+  skip_simple_messages: z
+    .boolean()
+    .default(true)
+    .describe("Skip LLM self-correction for trivial acknowledgements and short replies"),
+  model: z
+    .string()
+    .optional()
+    .describe("Optional model override for self-correction calls; defaults to agent.utility_model"),
+  tool_recovery_enabled: z
+    .boolean()
+    .default(true)
+    .describe("Add deterministic recovery guidance after failed tool calls"),
+});
+export const SelfCorrectionConfigSchema = _SelfCorrectionObject.default(
+  _SelfCorrectionObject.parse({})
+);
+
 export const CommandAccessSchema = z.object({
   commands_enabled: z
     .boolean()
@@ -318,6 +359,56 @@ const _MemoryObject = z.object({
   retention: _MemoryRetentionObject.default(_MemoryRetentionObject.parse({})),
 });
 export const MemoryConfigSchema = _MemoryObject.default(_MemoryObject.parse({}));
+
+const _TemporalWeightingObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable temporal relevance weighting for RAG"),
+  decay_curve: z
+    .enum(["exponential", "linear", "step"])
+    .default("exponential")
+    .describe("Freshness decay curve used by temporal retrieval scoring"),
+  recency_half_life_days: z
+    .number()
+    .min(1)
+    .default(30)
+    .describe("Age, in days, where exponential temporal freshness decays to 0.5"),
+  temporal_relevance_weight: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.2)
+    .describe("Blend weight for temporal relevance in retrieval result scores"),
+});
+
+const _TemporalContextObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable time-aware context and pattern analysis"),
+  timezone: z
+    .string()
+    .default("UTC")
+    .describe("IANA timezone used for local day, hour, and greeting context"),
+  pattern_min_frequency: z
+    .number()
+    .int()
+    .min(1)
+    .default(2)
+    .describe("Minimum observations required before storing a temporal pattern"),
+  pattern_confidence_threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.5)
+    .describe("Minimum pattern confidence before it is surfaced"),
+  context_patterns_limit: z
+    .number()
+    .int()
+    .min(1)
+    .max(20)
+    .default(5)
+    .describe("Maximum active temporal patterns injected into prompt context"),
+  weighting: _TemporalWeightingObject.default(_TemporalWeightingObject.parse({})),
+});
+export const TemporalContextConfigSchema = _TemporalContextObject.default(
+  _TemporalContextObject.parse({})
+);
 
 const _LoggingObject = z.object({
   level: z
@@ -688,6 +779,8 @@ export const ConfigSchema = z.object({
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
   audit_trail: AuditTrailConfigSchema,
+  temporal_context: TemporalContextConfigSchema,
+  self_correction: SelfCorrectionConfigSchema,
   autonomous: AutonomousConfigSchema,
   deals: DealsConfigSchema,
   webui: WebUIConfigSchema,
@@ -803,8 +896,11 @@ export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
 export type AuditTrailConfig = z.infer<typeof _AuditTrailObject>;
+export type SelfCorrectionConfig = z.infer<typeof _SelfCorrectionObject>;
 export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;
 export type MemoryRetentionConfig = z.infer<typeof _MemoryRetentionObject>;
+export type TemporalContextConfig = z.infer<typeof _TemporalContextObject>;
+export type TemporalWeightingConfig = z.infer<typeof _TemporalWeightingObject>;
 export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;

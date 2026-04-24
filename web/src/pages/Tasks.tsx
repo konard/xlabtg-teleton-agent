@@ -1,5 +1,11 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { api, type AgentOverview, type TaskData, type TaskDelegationTreeData } from '../lib/api';
+import {
+  api,
+  type AgentOverview,
+  type CorrectionLogEntry,
+  type TaskData,
+  type TaskDelegationTreeData,
+} from '../lib/api';
 import { useConfirm } from '../components/ConfirmDialog';
 import { TaskDelegationPanel } from '../components/TaskDelegationPanel';
 
@@ -68,6 +74,101 @@ function truncate(s: string | null | undefined, max: number): string {
   return s.length > max ? s.slice(0, max) + '...' : s;
 }
 
+function scoreLabel(score: number | null | undefined): string {
+  return score == null ? '—' : `${Math.round(score * 100)}%`;
+}
+
+function CorrectionTimeline({ corrections }: { corrections: CorrectionLogEntry[] }) {
+  if (corrections.length === 0) return null;
+
+  return (
+    <details
+      style={{
+        marginTop: '12px',
+        border: '1px solid var(--separator)',
+        borderRadius: '6px',
+        overflow: 'hidden',
+      }}
+    >
+      <summary
+        style={{
+          cursor: 'pointer',
+          padding: '8px 10px',
+          fontSize: '12px',
+          fontWeight: 600,
+          backgroundColor: 'var(--surface)',
+        }}
+      >
+        Corrections ({corrections.length})
+      </summary>
+      <div style={{ padding: '10px', display: 'grid', gap: '10px' }}>
+        {corrections.map((entry) => (
+          <div key={entry.id} style={{ fontSize: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+              <strong>Attempt {entry.iteration}</strong>
+              <span style={{ color: 'var(--text-secondary)' }}>
+                {scoreLabel(entry.score)} → {scoreLabel(entry.correctedScore)}
+              </span>
+              {entry.escalated && <span style={{ color: '#d9534f' }}>Human review</span>}
+            </div>
+            <div style={{ color: 'var(--text-secondary)' }}>{entry.feedback}</div>
+            {entry.correctedOutput ? (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: '8px',
+                  marginTop: '8px',
+                }}
+              >
+                {[
+                  ['Original', entry.originalOutput],
+                  ['Corrected', entry.correctedOutput],
+                ].map(([label, text]) => (
+                  <div key={label}>
+                    <div
+                      style={{
+                        fontSize: '11px',
+                        color: 'var(--text-secondary)',
+                        marginBottom: '3px',
+                      }}
+                    >
+                      {label}
+                    </div>
+                    <pre
+                      style={{
+                        margin: 0,
+                        padding: '6px',
+                        maxHeight: '120px',
+                        overflow: 'auto',
+                        borderRadius: '4px',
+                        backgroundColor: 'rgba(0,0,0,0.18)',
+                        whiteSpace: 'pre-wrap',
+                        wordBreak: 'break-word',
+                      }}
+                    >
+                      {text}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+            ) : null}
+            {entry.toolRecoveries.length > 0 ? (
+              <div style={{ marginTop: '8px', color: 'var(--text-secondary)' }}>
+                {entry.toolRecoveries.map((recovery, idx) => (
+                  <div key={`${recovery.toolName}-${idx}`}>
+                    {recovery.toolName}: {recovery.kind}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function Tasks() {
   const { confirm } = useConfirm();
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -80,6 +181,7 @@ export function Tasks() {
   const [selected, setSelected] = useState<Task | null>(null);
   const [agents, setAgents] = useState<AgentOverview[]>([]);
   const [delegationTree, setDelegationTree] = useState<TaskDelegationTreeData | null>(null);
+  const [corrections, setCorrections] = useState<CorrectionLogEntry[]>([]);
   const [delegationLoading, setDelegationLoading] = useState(false);
   const [manualSubtask, setManualSubtask] = useState('');
   const [manualAgentId, setManualAgentId] = useState('primary');
@@ -138,14 +240,25 @@ export function Tasks() {
     }
   }, []);
 
+  const loadCorrections = useCallback(async (taskId: string) => {
+    try {
+      const res = await api.tasksCorrections(taskId);
+      setCorrections(res.data?.corrections ?? []);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, []);
+
   useEffect(() => {
     if (!selected) {
       setDelegationTree(null);
+      setCorrections([]);
       return;
     }
     loadAgents();
     loadDelegation(selected.id);
-  }, [loadAgents, loadDelegation, selected]);
+    loadCorrections(selected.id);
+  }, [loadAgents, loadDelegation, loadCorrections, selected]);
 
   // Close clean dropdown on click outside
   useEffect(() => {
@@ -576,6 +689,18 @@ export function Tasks() {
                             {truncate(task.reason, 60)}
                           </div>
                         )}
+                        {task.correctionCount ? (
+                          <div
+                            style={{
+                              fontSize: '11px',
+                              color: '#f0ad4e',
+                              marginTop: '2px',
+                              paddingLeft: '14px',
+                            }}
+                          >
+                            {task.correctionCount} correction{task.correctionCount === 1 ? '' : 's'}
+                          </div>
+                        ) : null}
                       </td>
                       <td style={{ textAlign: 'center', padding: '8px 10px' }}>
                         <StatusBadge status={task.status} />
@@ -695,7 +820,16 @@ export function Tasks() {
                                 </span>
                               </>
                             )}
+
+                            {selected.correctionCount ? (
+                              <>
+                                <span style={{ color: 'var(--text-secondary)' }}>Corrections</span>
+                                <span>{selected.correctionCount}</span>
+                              </>
+                            ) : null}
                           </div>
+
+                          <CorrectionTimeline corrections={corrections} />
 
                           <TaskDelegationPanel
                             task={selected}

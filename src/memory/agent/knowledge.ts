@@ -7,6 +7,10 @@ import { createLogger } from "../../utils/logger.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { hashText, serializeEmbedding } from "../embeddings/index.js";
 import type { SemanticMemoryVector, SemanticVectorStore } from "../vector-store.js";
+import {
+  upsertTemporalMetadata,
+  type TemporalContextConfig,
+} from "../../services/temporal-context.js";
 
 const log = createLogger("Memory");
 const SEMANTIC_MIGRATION_META_PREFIX = "semantic_vector_migrated:";
@@ -67,7 +71,8 @@ export class KnowledgeIndexer {
     private workspaceDir: string,
     private embedder: EmbeddingProvider,
     private vectorEnabled: boolean,
-    private semanticVectorStore?: SemanticVectorStore
+    private semanticVectorStore?: SemanticVectorStore,
+    private temporalConfig?: TemporalContextConfig
   ) {}
 
   async indexAll(options?: { force?: boolean }): Promise<KnowledgeIndexResult> {
@@ -121,6 +126,7 @@ export class KnowledgeIndexer {
     const chunks = this.chunkMarkdown(content, relPath);
     const texts = chunks.map((c) => c.text);
     const embeddings = await this.embedder.embedBatch(texts);
+    const indexedAt = Math.floor(Date.now() / 1000);
 
     this.db.transaction(() => {
       if (this.vectorEnabled) {
@@ -135,8 +141,10 @@ export class KnowledgeIndexer {
       this.db.prepare(`DELETE FROM knowledge WHERE path = ? AND source = 'memory'`).run(relPath);
 
       const insert = this.db.prepare(`
-        INSERT INTO knowledge (id, source, path, text, embedding, start_line, end_line, hash)
-        VALUES (?, 'memory', ?, ?, ?, ?, ?, ?)
+        INSERT INTO knowledge (
+          id, source, path, text, embedding, start_line, end_line, hash, created_at, updated_at
+        )
+        VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const insertVec = this.vectorEnabled
@@ -154,7 +162,9 @@ export class KnowledgeIndexer {
           serializeEmbedding(embedding),
           chunk.startLine,
           chunk.endLine,
-          fileHash
+          fileHash,
+          indexedAt,
+          indexedAt
         );
 
         if (insertVec && embedding.length > 0) {
@@ -162,6 +172,22 @@ export class KnowledgeIndexer {
         }
       }
     })();
+
+    for (const chunk of chunks) {
+      try {
+        upsertTemporalMetadata(this.db, "knowledge", chunk.id, indexedAt, {
+          timezone: this.temporalConfig?.timezone,
+          metadata: {
+            source: chunk.source,
+            path: chunk.path,
+            startLine: chunk.startLine,
+            endLine: chunk.endLine,
+          },
+        });
+      } catch (error) {
+        log.warn({ err: error, chunkId: chunk.id }, "Temporal metadata indexing failed");
+      }
+    }
 
     const resolvedIndexDimension = indexDimension ?? (await this.resolveIndexDimension());
 

@@ -1,5 +1,6 @@
 import { createHash } from "crypto";
 import type { Database } from "better-sqlite3";
+import { upsertTemporalMetadata } from "./temporal-context.js";
 
 export type BehaviorActionType = "message" | "tool";
 export type BehaviorPatternType = "sequential" | "temporal" | "contextual";
@@ -335,6 +336,14 @@ export class BehaviorTracker {
     if (previous) {
       this.observeSequential(previous, event);
     }
+    upsertTemporalMetadata(this.db, "behavior", String(event.id), createdAt, {
+      metadata: {
+        sessionId: event.sessionId,
+        chatId: event.chatId,
+        actionType: event.actionType,
+        action: event.action,
+      },
+    });
     this.observeTemporal(event);
     if (event.actionType === "tool") {
       this.observeContextualTool(event);
