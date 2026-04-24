@@ -57,6 +57,7 @@ import { createSelfImprovementRoutes } from "./routes/self-improvement.js";
 import { createAutonomousRoutes } from "./routes/autonomous.js";
 import { createPredictionsRoutes } from "./routes/predictions.js";
 import { createAgentsRoutes } from "./routes/agents.js";
+import { createIntegrationsRoutes } from "./routes/integrations.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -291,6 +292,7 @@ export class WebUIServer {
     this.app.route("/api/autonomous", createAutonomousRoutes(this.deps));
     this.app.route("/api/predictions", createPredictionsRoutes(this.deps));
     this.app.route("/api/agents", createAgentsRoutes(this.deps));
+    this.app.route("/api/integrations", createIntegrationsRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {
