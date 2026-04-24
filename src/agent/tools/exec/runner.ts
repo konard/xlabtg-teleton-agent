@@ -2,21 +2,38 @@ import { spawn, type SpawnOptions } from "child_process";
 import type { ExecResult, RunOptions } from "./types.js";
 import { createLogger } from "../../../utils/logger.js";
 import { tokenizeCommand } from "./allowlist.js";
+import { createSandboxProfile } from "../../../services/sandbox.js";
 
 const log = createLogger("Exec");
 
 const KILL_GRACE_MS = 5000;
 
 export function runCommand(command: string, options: RunOptions): Promise<ExecResult> {
-  const { timeout, maxOutput, useShell = true } = options;
+  const { timeout, maxOutput, useShell = true, sandboxMode = "unrestricted" } = options;
   const startTime = Date.now();
 
   return new Promise((resolve) => {
+    if (sandboxMode === "dry-run") {
+      resolve({
+        stdout: "",
+        stderr: "",
+        exitCode: 0,
+        signal: null,
+        duration: Date.now() - startTime,
+        truncated: false,
+        timedOut: false,
+        dryRun: true,
+        sandboxMode,
+      });
+      return;
+    }
+
     let stdout = "";
     let stderr = "";
     let truncated = false;
     let timedOut = false;
     let resolved = false;
+    const sandbox = createSandboxProfile(sandboxMode);
 
     // In no-shell mode, tokenize and exec directly so the OS never sees a shell.
     const [spawnCmd, spawnArgs] = useShell
@@ -30,6 +47,7 @@ export function runCommand(command: string, options: RunOptions): Promise<ExecRe
       detached: true,
       stdio: ["ignore", "pipe", "pipe"],
       encoding: "utf8",
+      ...sandbox.spawnOptions,
     } as SpawnOptions & { encoding: string });
 
     const finish = (exitCode: number | null, signal: string | null) => {
@@ -37,6 +55,7 @@ export function runCommand(command: string, options: RunOptions): Promise<ExecRe
       resolved = true;
       clearTimeout(timeoutTimer);
       clearTimeout(killTimer);
+      sandbox.cleanup();
       resolve({
         stdout,
         stderr,
@@ -45,6 +64,7 @@ export function runCommand(command: string, options: RunOptions): Promise<ExecRe
         duration: Date.now() - startTime,
         truncated,
         timedOut,
+        sandboxMode,
       });
     };
 

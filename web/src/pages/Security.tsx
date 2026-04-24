@@ -9,7 +9,11 @@ import {
   type AuditVerifyResult,
   type AuditLogEntry,
   type AuditLogPage,
+  type PolicyEvaluationResult,
+  type SecurityApproval,
+  type SecurityPolicy,
   type SecuritySettings,
+  type SecurityValidationLogEntry,
 } from "../lib/api";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -625,6 +629,458 @@ function AuditTrailSection() {
   );
 }
 
+const POLICY_ACTION_COLORS = {
+  allow: "#16a34a",
+  deny: "#dc2626",
+  require_approval: "#d97706",
+};
+
+function PolicyActionBadge({ action }: { action: "allow" | "deny" | "require_approval" }) {
+  const color = POLICY_ACTION_COLORS[action];
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "2px 8px",
+        borderRadius: 4,
+        fontSize: "11px",
+        fontWeight: 600,
+        backgroundColor: `${color}22`,
+        color,
+        whiteSpace: "nowrap",
+      }}
+    >
+      {action === "require_approval" ? "Approval" : action}
+    </span>
+  );
+}
+
+function compactJson(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return "{}";
+  }
+}
+
+function policyToYaml(policy: SecurityPolicy): string {
+  return JSON.stringify(
+    {
+      policies: [
+        {
+          name: policy.name,
+          match: policy.match,
+          action: policy.action,
+          reason: policy.reason ?? undefined,
+          enabled: policy.enabled,
+          priority: policy.priority,
+        },
+      ],
+    },
+    null,
+    2
+  );
+}
+
+const DEFAULT_POLICY_YAML = `policies:
+  - name: no-destructive-file-ops
+    match:
+      tool: exec_run
+      params:
+        command:
+          pattern: "rm -rf|dd if=|mkfs"
+    action: deny
+    reason: Destructive file operations are blocked
+    priority: 100
+`;
+
+// ── Zero-Trust Section ───────────────────────────────────────────────────────
+
+function ZeroTrustSection() {
+  const [policies, setPolicies] = useState<SecurityPolicy[]>([]);
+  const [approvals, setApprovals] = useState<SecurityApproval[]>([]);
+  const [validationLog, setValidationLog] = useState<SecurityValidationLogEntry[]>([]);
+  const [policyYaml, setPolicyYaml] = useState(DEFAULT_POLICY_YAML);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [testTool, setTestTool] = useState("exec_run");
+  const [testParams, setTestParams] = useState('{"command":"rm -rf /tmp/example"}');
+  const [evaluation, setEvaluation] = useState<PolicyEvaluationResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [policyRes, approvalRes, logRes] = await Promise.all([
+        api.getSecurityPolicies(),
+        api.getSecurityApprovals("pending"),
+        api.getSecurityValidationLog(25),
+      ]);
+      setPolicies(policyRes.data ?? []);
+      setApprovals(approvalRes.data ?? []);
+      setValidationLog(logRes.data ?? []);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load zero-trust controls");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const savePolicy = async () => {
+    setSaving(true);
+    setError(null);
+    try {
+      if (editingId === null) {
+        await api.createSecurityPolicy({ yaml: policyYaml });
+      } else {
+        await api.updateSecurityPolicy(editingId, { yaml: policyYaml });
+      }
+      setEditingId(null);
+      setPolicyYaml(DEFAULT_POLICY_YAML);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save policy");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const deletePolicy = async (id: number) => {
+    setError(null);
+    try {
+      await api.deleteSecurityPolicy(id);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete policy");
+    }
+  };
+
+  const togglePolicy = async (policy: SecurityPolicy) => {
+    setError(null);
+    try {
+      await api.updateSecurityPolicy(policy.id, { enabled: !policy.enabled });
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update policy");
+    }
+  };
+
+  const evaluate = async () => {
+    setError(null);
+    try {
+      const params = testParams.trim() ? JSON.parse(testParams) : {};
+      const res = await api.evaluateSecurityPolicy({ tool: testTool.trim(), params });
+      setEvaluation(res.data ?? null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to evaluate policy");
+    }
+  };
+
+  const resolveApproval = async (id: string, decision: "approve" | "reject") => {
+    setError(null);
+    try {
+      if (decision === "approve") await api.approveSecurityApproval(id);
+      else await api.rejectSecurityApproval(id);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to update approval");
+    }
+  };
+
+  return (
+    <section style={{ marginBottom: "32px" }}>
+      <h2 style={{ margin: "0 0 16px", fontSize: "16px" }}>Zero-Trust Execution</h2>
+
+      {error && (
+        <div className="alert error" style={{ marginBottom: "12px" }}>
+          {error}
+        </div>
+      )}
+
+      {loading ? (
+        <div style={{ color: "var(--text-secondary)" }}>Loading…</div>
+      ) : (
+        <div style={{ display: "grid", gap: "16px" }}>
+          <div className="card" style={{ padding: "20px" }}>
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 320px), 1fr))",
+                gap: "20px",
+                alignItems: "start",
+              }}
+            >
+              <div>
+                <div
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    marginBottom: "12px",
+                  }}
+                >
+                  <h3 style={{ margin: 0, fontSize: "14px" }}>Policies</h3>
+                  <button
+                    className="btn-ghost"
+                    style={{ fontSize: "12px", padding: "4px 10px" }}
+                    onClick={() => {
+                      setEditingId(null);
+                      setPolicyYaml(DEFAULT_POLICY_YAML);
+                    }}
+                  >
+                    New
+                  </button>
+                </div>
+                {policies.length === 0 ? (
+                  <div style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
+                    No policies configured
+                  </div>
+                ) : (
+                  <div style={{ overflowX: "auto" }}>
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                      <thead>
+                        <tr style={{ borderBottom: "1px solid var(--separator)" }}>
+                          <th style={{ padding: "8px", textAlign: "left" }}>Name</th>
+                          <th style={{ padding: "8px", textAlign: "left" }}>Action</th>
+                          <th style={{ padding: "8px", textAlign: "right" }}>Priority</th>
+                          <th style={{ padding: "8px", textAlign: "right" }}>Controls</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {policies.map((policy) => (
+                          <tr
+                            key={policy.id}
+                            style={{ borderBottom: "1px solid var(--separator)" }}
+                          >
+                            <td style={{ padding: "8px" }}>
+                              <div style={{ fontWeight: 600 }}>{policy.name}</div>
+                              <div style={{ color: "var(--text-secondary)" }}>
+                                {policy.enabled ? "enabled" : "disabled"}
+                              </div>
+                            </td>
+                            <td style={{ padding: "8px" }}>
+                              <PolicyActionBadge action={policy.action} />
+                            </td>
+                            <td style={{ padding: "8px", textAlign: "right" }}>
+                              {policy.priority}
+                            </td>
+                            <td
+                              style={{ padding: "8px", textAlign: "right", whiteSpace: "nowrap" }}
+                            >
+                              <button
+                                className="btn-ghost"
+                                style={{ fontSize: "12px", padding: "4px 8px", marginRight: 4 }}
+                                onClick={() => togglePolicy(policy)}
+                              >
+                                {policy.enabled ? "Disable" : "Enable"}
+                              </button>
+                              <button
+                                className="btn-ghost"
+                                style={{ fontSize: "12px", padding: "4px 8px", marginRight: 4 }}
+                                onClick={() => {
+                                  setEditingId(policy.id);
+                                  setPolicyYaml(policyToYaml(policy));
+                                }}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                className="btn-ghost"
+                                style={{ fontSize: "12px", padding: "4px 8px" }}
+                                onClick={() => deletePolicy(policy.id)}
+                              >
+                                Delete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <h3 style={{ margin: "0 0 12px", fontSize: "14px" }}>
+                  {editingId === null ? "Policy YAML" : `Editing Policy #${editingId}`}
+                </h3>
+                <textarea
+                  value={policyYaml}
+                  onChange={(e) => setPolicyYaml(e.target.value)}
+                  rows={13}
+                  spellCheck={false}
+                  style={{
+                    width: "100%",
+                    fontFamily: "monospace",
+                    fontSize: "12px",
+                    minHeight: 260,
+                    resize: "vertical",
+                  }}
+                />
+                <button onClick={savePolicy} disabled={saving} style={{ marginTop: "10px" }}>
+                  {saving ? "Saving…" : editingId === null ? "Create Policy" : "Update Policy"}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit, minmax(min(100%, 300px), 1fr))",
+              gap: "16px",
+            }}
+          >
+            <div className="card" style={{ padding: "20px" }}>
+              <h3 style={{ margin: "0 0 12px", fontSize: "14px" }}>Policy Test</h3>
+              <label style={{ display: "block", marginBottom: "6px", fontWeight: 500 }}>Tool</label>
+              <input
+                value={testTool}
+                onChange={(e) => setTestTool(e.target.value)}
+                style={{ width: "100%", marginBottom: "12px" }}
+              />
+              <label style={{ display: "block", marginBottom: "6px", fontWeight: 500 }}>
+                Params JSON
+              </label>
+              <textarea
+                value={testParams}
+                onChange={(e) => setTestParams(e.target.value)}
+                rows={5}
+                spellCheck={false}
+                style={{
+                  width: "100%",
+                  fontFamily: "monospace",
+                  fontSize: "12px",
+                  minHeight: 120,
+                }}
+              />
+              <button onClick={evaluate} style={{ marginTop: "10px" }}>
+                Evaluate
+              </button>
+              {evaluation && (
+                <div
+                  style={{
+                    marginTop: "12px",
+                    padding: "10px",
+                    borderRadius: 6,
+                    backgroundColor: "var(--surface)",
+                    fontSize: "12px",
+                  }}
+                >
+                  <PolicyActionBadge action={evaluation.action} />{" "}
+                  <span style={{ color: "var(--text-secondary)" }}>{evaluation.reason}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="card" style={{ padding: "20px" }}>
+              <h3 style={{ margin: "0 0 12px", fontSize: "14px" }}>Approval Queue</h3>
+              {approvals.length === 0 ? (
+                <div style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
+                  No pending approvals
+                </div>
+              ) : (
+                <div style={{ display: "grid", gap: "8px" }}>
+                  {approvals.map((approval) => (
+                    <div
+                      key={approval.id}
+                      style={{
+                        border: "1px solid var(--separator)",
+                        borderRadius: 6,
+                        padding: "10px",
+                        fontSize: "12px",
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                        <strong>{approval.tool}</strong>
+                        <span style={{ color: "var(--text-secondary)" }}>
+                          {fmtTs(approval.created_at)}
+                        </span>
+                      </div>
+                      <div style={{ marginTop: 4, color: "var(--text-secondary)" }}>
+                        {approval.reason}
+                      </div>
+                      <pre
+                        style={{
+                          margin: "8px 0",
+                          whiteSpace: "pre-wrap",
+                          wordBreak: "break-word",
+                          fontSize: "11px",
+                        }}
+                      >
+                        {compactJson(JSON.parse(approval.params))}
+                      </pre>
+                      <button
+                        onClick={() => resolveApproval(approval.id, "approve")}
+                        style={{ fontSize: "12px", padding: "4px 10px", marginRight: 6 }}
+                      >
+                        Approve
+                      </button>
+                      <button
+                        className="btn-ghost"
+                        onClick={() => resolveApproval(approval.id, "reject")}
+                        style={{ fontSize: "12px", padding: "4px 10px" }}
+                      >
+                        Reject
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="card" style={{ padding: "20px" }}>
+            <h3 style={{ margin: "0 0 12px", fontSize: "14px" }}>Validation Log</h3>
+            {validationLog.length === 0 ? (
+              <div style={{ color: "var(--text-secondary)", fontSize: "13px" }}>
+                No validation decisions yet
+              </div>
+            ) : (
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid var(--separator)" }}>
+                      <th style={{ padding: "8px", textAlign: "left" }}>Time</th>
+                      <th style={{ padding: "8px", textAlign: "left" }}>Tool</th>
+                      <th style={{ padding: "8px", textAlign: "left" }}>Decision</th>
+                      <th style={{ padding: "8px", textAlign: "left" }}>Reason</th>
+                      <th style={{ padding: "8px", textAlign: "left" }}>Policy</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {validationLog.map((entry) => (
+                      <tr key={entry.id} style={{ borderBottom: "1px solid var(--separator)" }}>
+                        <td style={{ padding: "8px", whiteSpace: "nowrap" }}>
+                          {fmtTs(entry.created_at)}
+                        </td>
+                        <td style={{ padding: "8px", fontFamily: "monospace" }}>{entry.tool}</td>
+                        <td style={{ padding: "8px" }}>
+                          <PolicyActionBadge action={entry.action} />
+                        </td>
+                        <td style={{ padding: "8px" }}>{entry.reason}</td>
+                        <td style={{ padding: "8px", color: "var(--text-secondary)" }}>
+                          {entry.policy_name ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 // ── Audit Log Section ─────────────────────────────────────────────────────────
 
 function AuditLogSection() {
@@ -1166,9 +1622,11 @@ function SecretsSection() {
 // ── Main Security Page ────────────────────────────────────────────────────────
 
 export function Security() {
-  const [tab, setTab] = useState<"trail" | "log" | "settings" | "secrets">("trail");
-  const tabs: Array<{ id: typeof tab; label: string }> = [
+  type SecurityTab = "trail" | "zero_trust" | "log" | "settings" | "secrets";
+  const [tab, setTab] = useState<SecurityTab>("trail");
+  const tabs: Array<{ id: SecurityTab; label: string }> = [
     { id: "trail", label: "Audit Trail" },
+    { id: "zero_trust", label: "Zero Trust" },
     { id: "log", label: "Admin Log" },
     { id: "settings", label: "Settings" },
     { id: "secrets", label: "Secrets" },
@@ -1178,7 +1636,7 @@ export function Security() {
     <div className="dashboard-root">
       <div className="header">
         <h1>Security Center</h1>
-        <p>Audit trail, security settings, and secrets management</p>
+        <p>Audit trail, zero-trust policies, security settings, and secrets management</p>
       </div>
 
       <div
@@ -1189,6 +1647,7 @@ export function Security() {
           background: "var(--surface)",
           borderRadius: 8,
           marginBottom: "20px",
+          flexWrap: "wrap",
         }}
       >
         {tabs.map((item) => (
@@ -1204,6 +1663,7 @@ export function Security() {
       </div>
 
       {tab === "trail" && <AuditTrailSection />}
+      {tab === "zero_trust" && <ZeroTrustSection />}
       {tab === "log" && <AuditLogSection />}
       {tab === "settings" && <SecuritySettingsSection />}
       {tab === "secrets" && <SecretsSection />}

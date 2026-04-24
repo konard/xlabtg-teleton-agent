@@ -48,6 +48,7 @@ export function createExecStatusExecutor(
       const result = await runCommand(command, {
         timeout: 10000,
         maxOutput: max_output,
+        sandboxMode: execConfig.sandbox_mode,
       });
       results[key] =
         result.exitCode === 0 ? result.stdout.trim() : `(failed: ${result.stderr.trim()})`;
