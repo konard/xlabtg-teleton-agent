@@ -59,6 +59,64 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_agent_registry_updated ON agent_registry(updated_at DESC);
 
     -- ============================================
+    -- UNIFIED INTEGRATIONS
+    -- ============================================
+    CREATE TABLE IF NOT EXISTS integrations (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL CHECK(type IN ('api', 'webhook', 'oauth', 'mcp')),
+      provider TEXT NOT NULL DEFAULT 'custom-http',
+      config TEXT NOT NULL DEFAULT '{}',
+      auth TEXT NOT NULL DEFAULT '{"type":"none"}',
+      auth_id TEXT,
+      status TEXT NOT NULL DEFAULT 'unconfigured'
+        CHECK(status IN ('unknown', 'healthy', 'degraded', 'unhealthy', 'unconfigured')),
+      health_check_url TEXT,
+      last_health_at INTEGER,
+      last_health_message TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_integrations_type ON integrations(type);
+    CREATE INDEX IF NOT EXISTS idx_integrations_provider ON integrations(provider);
+    CREATE INDEX IF NOT EXISTS idx_integrations_status ON integrations(status);
+    CREATE INDEX IF NOT EXISTS idx_integrations_updated ON integrations(updated_at DESC);
+
+    CREATE TABLE IF NOT EXISTS integration_credentials (
+      id TEXT PRIMARY KEY,
+      integration_id TEXT NOT NULL,
+      auth_type TEXT NOT NULL
+        CHECK(auth_type IN ('none', 'api_key', 'oauth2', 'jwt', 'basic', 'custom_header')),
+      credentials_encrypted TEXT NOT NULL,
+      expires_at INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_integration_credentials_integration
+      ON integration_credentials(integration_id);
+    CREATE INDEX IF NOT EXISTS idx_integration_credentials_expires
+      ON integration_credentials(expires_at) WHERE expires_at IS NOT NULL;
+
+    CREATE TABLE IF NOT EXISTS integration_usage (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      integration_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      success INTEGER NOT NULL CHECK(success IN (0, 1)),
+      latency_ms INTEGER,
+      error TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_integration_usage_integration
+      ON integration_usage(integration_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_integration_usage_action
+      ON integration_usage(action);
+
+    -- ============================================
     -- AGENT MEMORY (Knowledge Base)
     -- ============================================
 
@@ -657,6 +715,31 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_request_metrics_tool ON request_metrics(tool_name) WHERE tool_name IS NOT NULL;
 
     -- =====================================================
+    -- AUDIT TRAIL (Tamper-evident agent and API events)
+    -- =====================================================
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      sequence INTEGER NOT NULL UNIQUE,
+      event_type TEXT NOT NULL,
+      actor TEXT NOT NULL DEFAULT 'system',
+      session_id TEXT,
+      payload TEXT NOT NULL DEFAULT '{}',
+      parent_event_id TEXT,
+      previous_checksum TEXT,
+      checksum TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (parent_event_id) REFERENCES audit_events(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_session ON audit_events(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_parent ON audit_events(parent_event_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);
+
+    -- =====================================================
     -- ANALYTICS: Cost Records (daily aggregation)
     -- =====================================================
 
@@ -806,7 +889,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.32.0";
+export const CURRENT_SCHEMA_VERSION = "1.34.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1756,7 +1839,105 @@ export function runMigrations(db: Database.Database): void {
   }
 
   if (!currentVersion || versionLessThan(currentVersion, "1.32.0")) {
-    log.info("Running migration 1.32.0: Add dynamic dashboard tables");
+    log.info("Running migration 1.32.0: Add unified integration registry tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS integrations (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL CHECK(type IN ('api', 'webhook', 'oauth', 'mcp')),
+          provider TEXT NOT NULL DEFAULT 'custom-http',
+          config TEXT NOT NULL DEFAULT '{}',
+          auth TEXT NOT NULL DEFAULT '{"type":"none"}',
+          auth_id TEXT,
+          status TEXT NOT NULL DEFAULT 'unconfigured'
+            CHECK(status IN ('unknown', 'healthy', 'degraded', 'unhealthy', 'unconfigured')),
+          health_check_url TEXT,
+          last_health_at INTEGER,
+          last_health_message TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_integrations_type ON integrations(type);
+        CREATE INDEX IF NOT EXISTS idx_integrations_provider ON integrations(provider);
+        CREATE INDEX IF NOT EXISTS idx_integrations_status ON integrations(status);
+        CREATE INDEX IF NOT EXISTS idx_integrations_updated ON integrations(updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS integration_credentials (
+          id TEXT PRIMARY KEY,
+          integration_id TEXT NOT NULL,
+          auth_type TEXT NOT NULL
+            CHECK(auth_type IN ('none', 'api_key', 'oauth2', 'jwt', 'basic', 'custom_header')),
+          credentials_encrypted TEXT NOT NULL,
+          expires_at INTEGER,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_integration_credentials_integration
+          ON integration_credentials(integration_id);
+        CREATE INDEX IF NOT EXISTS idx_integration_credentials_expires
+          ON integration_credentials(expires_at) WHERE expires_at IS NOT NULL;
+
+        CREATE TABLE IF NOT EXISTS integration_usage (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          integration_id TEXT NOT NULL,
+          action TEXT NOT NULL,
+          success INTEGER NOT NULL CHECK(success IN (0, 1)),
+          latency_ms INTEGER,
+          error TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (integration_id) REFERENCES integrations(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_integration_usage_integration
+          ON integration_usage(integration_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_integration_usage_action
+          ON integration_usage(action);
+      `);
+      log.info("Migration 1.32.0 complete: integration tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.32.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.33.0")) {
+    log.info("Running migration 1.33.0: Add tamper-evident audit_events table");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_events (
+          id TEXT PRIMARY KEY,
+          sequence INTEGER NOT NULL UNIQUE,
+          event_type TEXT NOT NULL,
+          actor TEXT NOT NULL DEFAULT 'system',
+          session_id TEXT,
+          payload TEXT NOT NULL DEFAULT '{}',
+          parent_event_id TEXT,
+          previous_checksum TEXT,
+          checksum TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (parent_event_id) REFERENCES audit_events(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_session ON audit_events(session_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_parent ON audit_events(parent_event_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);
+      `);
+      log.info("Migration 1.33.0 complete: audit_events table created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.33.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.34.0")) {
+    log.info("Running migration 1.34.0: Add dynamic dashboard tables");
     try {
       db.exec(`
         CREATE TABLE IF NOT EXISTS widget_definitions (
@@ -1790,9 +1971,9 @@ export function runMigrations(db: Database.Database): void {
         CREATE INDEX IF NOT EXISTS idx_dashboards_default ON dashboards(is_default) WHERE is_default = 1;
         CREATE INDEX IF NOT EXISTS idx_dashboards_created ON dashboards(created_at DESC);
       `);
-      log.info("Migration 1.32.0 complete: dynamic dashboard tables created");
+      log.info("Migration 1.34.0 complete: dynamic dashboard tables created");
     } catch (error) {
-      log.error({ err: error }, "Migration 1.32.0 failed");
+      log.error({ err: error }, "Migration 1.34.0 failed");
       throw error;
     }
   }

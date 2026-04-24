@@ -5,6 +5,7 @@ import { registerAllTools } from "../register-all.js";
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolContext, ToolScope } from "../types.js";
 import type { ToolCall } from "@mariozechner/pi-ai";
+import { PolicyEngine } from "../../../services/policy-engine.js";
 
 // Mock modules
 vi.mock("@mariozechner/pi-ai", () => ({
@@ -492,6 +493,31 @@ describe("ToolRegistry", () => {
       const result = await registry.execute(toolCall, adminContext);
 
       expect(result.success).toBe(true);
+    });
+
+    it("should block execution when a zero-trust policy denies the tool call", async () => {
+      const tool = createMockTool("workspace_write");
+      const executor = createMockExecutor({ success: true });
+      registry.register(tool, executor);
+      new PolicyEngine(db).createPolicy({
+        name: "block-workspace-write",
+        match: { tool: "workspace_write" },
+        action: "deny",
+        reason: "workspace writes are blocked",
+      });
+
+      const toolCall: ToolCall = {
+        type: "toolCall",
+        id: "call-1",
+        name: "workspace_write",
+        arguments: { message: "test" },
+      };
+
+      const result = await registry.execute(toolCall, mockContext);
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe("workspace writes are blocked");
+      expect(executor).not.toHaveBeenCalled();
     });
 
     it("should catch and return errors from executor", async () => {

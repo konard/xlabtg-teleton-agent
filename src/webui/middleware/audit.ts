@@ -5,6 +5,7 @@
 import type { MiddlewareHandler } from "hono";
 import type { WebUIServerDeps } from "../types.js";
 import { initAudit, type AuditActionType } from "../../services/audit.js";
+import { initAuditTrail, type AuditEventType } from "../../services/audit-trail.js";
 
 /** Map a request path to a meaningful audit action type. */
 function inferActionType(method: string, path: string): AuditActionType {
@@ -20,6 +21,7 @@ function inferActionType(method: string, path: string): AuditActionType {
     return method === "DELETE" ? "plugin_remove" : "plugin_install";
   if (lower.includes("/api/hooks")) return "hook_change";
   if (lower.includes("/api/mcp")) return "mcp_change";
+  if (lower.includes("/api/integrations")) return "integration_change";
   if (lower.includes("/api/memory")) return "memory_delete";
   if (lower.includes("/api/workspace")) return "workspace_change";
   if (lower.includes("/api/sessions")) return "session_delete";
@@ -45,12 +47,22 @@ function extractIp(req: Request): string | null {
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
+function inferEventType(action: AuditActionType, path: string): AuditEventType {
+  const lower = path.toLowerCase();
+  if (action === "config_change" || lower.includes("/api/security/settings")) {
+    return "config.change";
+  }
+  if (action === "security_change") return "security.validation";
+  return "user.action";
+}
+
 /**
  * Returns a Hono middleware that logs all mutating requests to the audit table.
  * Should be applied after the auth middleware.
  */
 export function createAuditMiddleware(deps: WebUIServerDeps): MiddlewareHandler {
   const audit = initAudit(deps.memory.db);
+  const auditTrail = initAuditTrail(deps.memory.db);
 
   return async (c, next) => {
     const method = c.req.method.toUpperCase();
@@ -72,5 +84,21 @@ export function createAuditMiddleware(deps: WebUIServerDeps): MiddlewareHandler 
     const status = c.res.status;
     const fullDetails = status >= 400 ? JSON.stringify({ request: details, status }) : details;
     audit.log(action, fullDetails, { ip, userAgent });
+    try {
+      auditTrail.recordEvent({
+        eventType: inferEventType(action, c.req.path),
+        actor: "webui",
+        payload: {
+          method,
+          path: c.req.path,
+          action,
+          status,
+          ip,
+          userAgent,
+        },
+      });
+    } catch {
+      // Best-effort audit trail capture must not change the API response.
+    }
   };
 }

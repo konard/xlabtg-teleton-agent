@@ -22,6 +22,7 @@ import type { ToolIndex } from "./tool-index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
 import { getCache } from "../../services/cache.js";
+import { validateToolExecution } from "./validation.js";
 
 const log = createLogger("Registry");
 
@@ -156,6 +157,34 @@ export class ToolRegistry {
 
       let timeoutHandle: ReturnType<typeof setTimeout>;
       const startMs = Date.now();
+      const validationDb = this.db ?? context.db;
+      if (validationDb) {
+        const validation = await validateToolExecution({
+          db: validationDb,
+          tool: toolCall.name,
+          params: validatedArgs,
+          context,
+          module: this.toolModules.get(toolCall.name) ?? null,
+        });
+
+        if (validation.decision !== "allow") {
+          if (this.db) {
+            recordToolUsage(this.db, toolCall.name, false, Date.now() - startMs);
+          }
+          return {
+            success: false,
+            error:
+              validation.decision === "require_approval"
+                ? `Tool "${toolCall.name}" requires approval (${validation.approvalId}): ${validation.reason}`
+                : validation.reason,
+            data:
+              validation.decision === "require_approval"
+                ? { approvalId: validation.approvalId, decision: validation.decision }
+                : { decision: validation.decision },
+          };
+        }
+      }
+
       const result = await Promise.race([
         registered.executor(validatedArgs, context),
         new Promise<never>((_, reject) => {

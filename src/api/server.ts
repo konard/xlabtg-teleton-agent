@@ -42,6 +42,7 @@ import { createHooksRoutes } from "../webui/routes/hooks.js";
 import { createTonProxyRoutes } from "../webui/routes/ton-proxy.js";
 import { createSetupRoutes } from "../webui/routes/setup.js";
 import { createAgentsRoutes } from "../webui/routes/agents.js";
+import { createIntegrationsRoutes } from "../webui/routes/integrations.js";
 
 // New API routes
 import { createAgentRoutes } from "./routes/agent.js";
@@ -238,6 +239,7 @@ export class ApiServer {
     this.app.route("/v1/config", createConfigRoutes(adaptedDeps));
     this.app.route("/v1/marketplace", createMarketplaceRoutes(adaptedDeps));
     this.app.route("/v1/hooks", createHooksRoutes(adaptedDeps));
+    this.app.route("/v1/integrations", createIntegrationsRoutes(adaptedDeps));
     this.app.route("/v1/ton-proxy", createTonProxyRoutes(adaptedDeps));
     this.app.route("/v1/agents", createAgentsRoutes(adaptedDeps));
 
