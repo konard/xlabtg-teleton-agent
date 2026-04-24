@@ -158,6 +158,13 @@ export type ManagedAgentMemoryPolicy = "isolated" | "shared-read" | "shared-writ
 export type ManagedAgentState = "stopped" | "starting" | "running" | "stopping" | "error";
 export type ManagedAgentTransport = "mtproto" | "bot-api";
 export type ManagedAgentHealth = "stopped" | "starting" | "healthy" | "degraded" | "error";
+export type BuiltInAgentType =
+  | "ResearchAgent"
+  | "CodeAgent"
+  | "ContentAgent"
+  | "OrchestratorAgent"
+  | "MonitorAgent";
+export type ManagedAgentType = BuiltInAgentType | "CustomAgent" | (string & {});
 
 export interface AgentResourcePolicy {
   maxMemoryMb: number;
@@ -183,11 +190,37 @@ export interface AgentConnectionSettings {
   botUsername: string | null;
 }
 
+export interface AgentRegistryConfig {
+  hookRules: string[];
+  provider: string | null;
+  model: string | null;
+  temperature: number | null;
+  maxTokens: number | null;
+  maxToolCallsPerTurn: number | null;
+}
+
+export interface AgentArchetype {
+  type: BuiltInAgentType;
+  name: string;
+  description: string;
+  soulTemplate: string;
+  tools: string[];
+  config: AgentRegistryConfig;
+  resources?: Partial<AgentResourcePolicy>;
+  messaging?: Partial<AgentMessagingPolicy>;
+  memoryPolicy?: ManagedAgentMemoryPolicy;
+}
+
 export interface AgentOverview {
   id: string;
   name: string;
   kind: ManagedAgentKind;
+  type: ManagedAgentType;
+  description: string;
   mode: ManagedAgentMode;
+  soulTemplate: string;
+  tools: string[];
+  config: AgentRegistryConfig;
   memoryPolicy: ManagedAgentMemoryPolicy;
   resources: AgentResourcePolicy;
   messaging: AgentMessagingPolicy;
@@ -209,6 +242,7 @@ export interface AgentOverview {
   hasPersonalSession: boolean;
   personalPhoneMasked: string | null;
   state: ManagedAgentState;
+  status: ManagedAgentState;
   pid: number | null;
   startedAt: string | null;
   uptimeMs: number | null;
@@ -244,6 +278,11 @@ export interface AgentMessage {
 export interface CreateAgentInput {
   name: string;
   id?: string;
+  type?: ManagedAgentType;
+  description?: string;
+  soulTemplate?: string;
+  tools?: string[];
+  config?: Partial<AgentRegistryConfig>;
   cloneFromId?: string;
   mode?: ManagedAgentMode;
   botToken?: string;
@@ -261,6 +300,11 @@ export interface CreateAgentInput {
 
 export interface UpdateAgentInput {
   name?: string;
+  type?: ManagedAgentType;
+  description?: string;
+  soulTemplate?: string;
+  tools?: string[];
+  config?: Partial<AgentRegistryConfig>;
   botToken?: string | null;
   botUsername?: string | null;
   personalConnection?: {
@@ -2389,6 +2433,14 @@ export const api = {
     return fetchAPI<APIResponse<{ agents: AgentOverview[] }>>("/agents");
   },
 
+  async listAgentArchetypes() {
+    return fetchAPI<APIResponse<{ archetypes: AgentArchetype[] }>>("/agents/archetypes");
+  },
+
+  async getAgent(id: string) {
+    return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}`);
+  },
+
   async createAgent(data: CreateAgentInput) {
     return fetchAPI<APIResponse<AgentOverview>>("/agents", {
       method: "POST",
@@ -2494,6 +2546,13 @@ export const api = {
   async updateAgent(id: string, data: UpdateAgentInput) {
     return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}`, {
       method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async replaceAgent(id: string, data: UpdateAgentInput) {
+    return fetchAPI<APIResponse<AgentOverview>>(`/agents/${encodeURIComponent(id)}`, {
+      method: "PUT",
       body: JSON.stringify(data),
     });
   },

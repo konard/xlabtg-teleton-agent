@@ -39,6 +39,26 @@ export function ensureSchema(db: Database.Database): void {
     );
 
     -- ============================================
+    -- AGENT REGISTRY
+    -- ============================================
+    CREATE TABLE IF NOT EXISTS agent_registry (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      type TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      config TEXT NOT NULL DEFAULT '{}',
+      soul_template TEXT NOT NULL DEFAULT '',
+      tools TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'stopped',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_agent_registry_type ON agent_registry(type);
+    CREATE INDEX IF NOT EXISTS idx_agent_registry_status ON agent_registry(status);
+    CREATE INDEX IF NOT EXISTS idx_agent_registry_updated ON agent_registry(updated_at DESC);
+
+    -- ============================================
     -- AGENT MEMORY (Knowledge Base)
     -- ============================================
 
@@ -575,7 +595,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.26.0";
+export const CURRENT_SCHEMA_VERSION = "1.27.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1279,6 +1299,34 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.26.0 complete: last_fired_bucket column added");
     } catch (error) {
       log.error({ err: error }, "Migration 1.26.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.27.0")) {
+    log.info("Running migration 1.27.0: Add agent_registry table");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_registry (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          type TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          config TEXT NOT NULL DEFAULT '{}',
+          soul_template TEXT NOT NULL DEFAULT '',
+          tools TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'stopped',
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_agent_registry_type ON agent_registry(type);
+        CREATE INDEX IF NOT EXISTS idx_agent_registry_status ON agent_registry(status);
+        CREATE INDEX IF NOT EXISTS idx_agent_registry_updated ON agent_registry(updated_at DESC);
+      `);
+      log.info("Migration 1.27.0 complete: agent_registry table created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.27.0 failed");
       throw error;
     }
   }

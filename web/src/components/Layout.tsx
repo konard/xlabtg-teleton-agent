@@ -1,6 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { Shell } from "./Shell";
 import { AgentControl } from "./AgentControl";
+import { AgentSwitcher } from "./AgentSwitcher";
 import { NotificationBell } from "./NotificationBell";
 import { logout } from "../lib/api";
 import { useTheme } from "../hooks/useTheme";
@@ -85,6 +86,7 @@ function DashboardNav() {
         </Link>
       </nav>
       <div style={{ marginTop: "auto" }}>
+        <AgentSwitcher />
         <AgentControl />
         <div style={{ padding: "0 12px 14px" }}>
           <button

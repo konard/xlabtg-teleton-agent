@@ -372,4 +372,77 @@ describe("ManagedAgentService", () => {
       `Managed agent "primary" is not allowed to message "${target.id}"`
     );
   });
+
+  it("exposes built-in archetypes and creates registry entries from them", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const archetypes = service.listArchetypes();
+    expect(archetypes.map((archetype) => archetype.type)).toEqual([
+      "ResearchAgent",
+      "CodeAgent",
+      "ContentAgent",
+      "OrchestratorAgent",
+      "MonitorAgent",
+    ]);
+
+    const snapshot = service.createAgent({
+      name: "Research Desk",
+      type: "ResearchAgent",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+    const clonedConfig = loadConfig(snapshot.configPath);
+    const soul = readFileSync(join(snapshot.workspacePath, "SOUL.md"), "utf-8");
+
+    expect(snapshot.type).toBe("ResearchAgent");
+    expect(snapshot.description).toContain("Research");
+    expect(snapshot.tools).toContain("web_search");
+    expect(snapshot.config.maxToolCallsPerTurn).toBe(8);
+    expect(clonedConfig.agent.system_prompt).toContain("research agent");
+    expect(clonedConfig.agent.max_agentic_iterations).toBe(8);
+    expect(soul).toContain("research agent");
+  });
+
+  it("stores custom registry config and applies LLM overrides", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Briefing Writer",
+      type: "CustomAgent",
+      description: "Writes concise stakeholder briefings",
+      tools: ["memory_search", "telegram_send_message"],
+      soulTemplate: "You are a briefing agent. Keep updates concise.",
+      config: {
+        provider: "openai",
+        model: "gpt-5",
+        temperature: 0.2,
+        maxTokens: 2048,
+        maxToolCallsPerTurn: 3,
+        hookRules: ["beforeSend:require-citations"],
+      },
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+    const clonedConfig = loadConfig(snapshot.configPath);
+
+    expect(snapshot.description).toBe("Writes concise stakeholder briefings");
+    expect(snapshot.tools).toEqual(["memory_search", "telegram_send_message"]);
+    expect(snapshot.config.hookRules).toEqual(["beforeSend:require-citations"]);
+    expect(clonedConfig.agent.provider).toBe("openai");
+    expect(clonedConfig.agent.model).toBe("gpt-5");
+    expect(clonedConfig.agent.temperature).toBe(0.2);
+    expect(clonedConfig.agent.max_tokens).toBe(2048);
+    expect(clonedConfig.agent.max_agentic_iterations).toBe(3);
+    expect(clonedConfig.agent.system_prompt).toBe(
+      "You are a briefing agent. Keep updates concise."
+    );
+  });
 });

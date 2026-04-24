@@ -39,7 +39,19 @@ function managedSnapshot(overrides: Record<string, unknown> = {}) {
   return {
     id: "support-copy",
     name: "Support Copy",
+    type: "ResearchAgent",
+    description: "Research and summarize information",
     mode: "personal",
+    soulTemplate: "You are a research agent.",
+    tools: ["web_search", "web_extract"],
+    config: {
+      hookRules: [],
+      provider: "anthropic",
+      model: "claude-opus-4-6",
+      temperature: 0.4,
+      maxTokens: 4096,
+      maxToolCallsPerTurn: 8,
+    },
     memoryPolicy: "isolated",
     resources: {
       maxMemoryMb: 512,
@@ -137,10 +149,39 @@ function buildDeps(): WebUIServerDeps {
       updateAgent: vi.fn(() =>
         managedSnapshot({ id: "support-copy", name: "Support Copy Updated" })
       ),
-      getAgentSnapshot: vi.fn(() => ({
-        id: "support-copy",
-        name: "Support Copy",
-      })),
+      getAgentSnapshot: vi.fn(() => managedSnapshot()),
+      listArchetypes: vi.fn(() => [
+        {
+          type: "ResearchAgent",
+          name: "Research Agent",
+          description: "Research and summarize information",
+          soulTemplate: "You are a research agent.",
+          tools: ["web_search", "web_extract"],
+          config: {
+            hookRules: [],
+            provider: null,
+            model: null,
+            temperature: 0.4,
+            maxTokens: 4096,
+            maxToolCallsPerTurn: 8,
+          },
+        },
+        {
+          type: "CodeAgent",
+          name: "Code Agent",
+          description: "Generate and review code",
+          soulTemplate: "You are a code agent.",
+          tools: ["workspace_read_file"],
+          config: {
+            hookRules: [],
+            provider: null,
+            model: null,
+            temperature: 0.2,
+            maxTokens: 4096,
+            maxToolCallsPerTurn: 10,
+          },
+        },
+      ]),
       resolvePersonalAuthTarget: vi.fn(() => ({
         configPath: "/tmp/teleton/agents/support-copy/config.yaml",
         sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
@@ -244,6 +285,27 @@ describe("Agents routes", () => {
     expect(body.success).toBe(true);
     expect(body.data.agents[0].id).toBe("primary");
     expect(body.data.agents[1].id).toBe("support-copy");
+  });
+
+  it("lists built-in agent archetypes", async () => {
+    const res = await app.request("/api/agents/archetypes");
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.archetypes.map((archetype: { type: string }) => archetype.type)).toContain(
+      "ResearchAgent"
+    );
+  });
+
+  it("returns one managed agent by id", async () => {
+    const res = await app.request("/api/agents/support-copy");
+    expect(res.status).toBe(200);
+
+    const body = await res.json();
+    expect(body.success).toBe(true);
+    expect(body.data.id).toBe("support-copy");
+    expect(body.data.type).toBe("ResearchAgent");
   });
 
   it("creates a managed agent with mode-aware payload", async () => {
@@ -358,6 +420,27 @@ describe("Agents routes", () => {
     ).toHaveBeenCalledWith("support-copy", {
       name: "Support Copy Updated",
       messaging: { enabled: true, allowlist: ["primary", "lab-copy"] },
+    });
+  });
+
+  it("updates a managed agent through the registry PUT endpoint", async () => {
+    const res = await app.request("/api/agents/support-copy", {
+      method: "PUT",
+      body: JSON.stringify({
+        type: "CodeAgent",
+        description: "Handles implementation work",
+        tools: ["workspace_read_file", "workspace_write_file"],
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(
+      (deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>).updateAgent
+    ).toHaveBeenCalledWith("support-copy", {
+      type: "CodeAgent",
+      description: "Handles implementation work",
+      tools: ["workspace_read_file", "workspace_write_file"],
     });
   });
 
