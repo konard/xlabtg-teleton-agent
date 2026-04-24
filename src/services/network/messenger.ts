@@ -170,6 +170,12 @@ export class NetworkMessenger {
   }
 
   receiveMessage(message: NetworkMessageEnvelope): NetworkMessageRecord {
+    if (message.to !== this.localAgentId) {
+      throw new Error(
+        `Network message ${message.correlationId} is not addressed to local agent ${this.localAgentId}`
+      );
+    }
+
     const sender = this.store.getAgent(message.from);
     if (!sender) {
       throw new Error(`Unknown network sender: ${message.from}`);

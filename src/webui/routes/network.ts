@@ -4,6 +4,7 @@ import { AuditTrailService } from "../../services/audit-trail.js";
 import { NetworkTaskCoordinator } from "../../services/network/coordinator.js";
 import { getAgentNetworkStore } from "../../services/network/discovery.js";
 import { NetworkMessenger } from "../../services/network/messenger.js";
+import { NetworkTrustService } from "../../services/network/trust.js";
 import {
   NETWORK_AGENT_STATUSES,
   NETWORK_TRUST_LEVELS,
@@ -94,6 +95,10 @@ function createMessenger(deps: WebUIServerDeps): NetworkMessenger {
     timeoutMs: deps.networkConfig?.message_timeout_ms,
     maxClockSkewSeconds: deps.networkConfig?.max_clock_skew_seconds,
     auditTrail: new AuditTrailService(deps.memory.db),
+    trustService: new NetworkTrustService({
+      allowlist: deps.networkConfig?.allowlist,
+      blocklist: deps.networkConfig?.blocklist,
+    }),
   });
 }
 

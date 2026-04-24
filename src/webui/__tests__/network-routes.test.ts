@@ -197,6 +197,47 @@ describe("network routes", () => {
     expect(unsignedRes.status).toBe(400);
   });
 
+  it("rejects signed ingress from agents outside the configured allowlist", async () => {
+    const allowlistApp = new Hono();
+    const deps = buildDeps(db, { allowlist: ["allowed-agent"] });
+    allowlistApp.route("/api/network", createNetworkRoutes(deps));
+    allowlistApp.route("/api/agent-network", createAgentNetworkIngressRoutes(deps));
+
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    await allowlistApp.request("/api/network/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: "blocked-by-allowlist",
+        name: "Blocked Worker",
+        endpoint: "https://blocked.example.com/api/agent-network",
+        capabilities: ["task-delegation"],
+        status: "available",
+        load: 0.2,
+        trustLevel: "verified",
+        publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+    const message = {
+      type: "task_request" as const,
+      from: "blocked-by-allowlist",
+      to: "primary",
+      correlationId: "route-corr-allowlist",
+      timestamp: new Date().toISOString(),
+      payload: { description: "Handle delegated work", payload: { source: "test" } },
+    };
+
+    const res = await allowlistApp.request("/api/agent-network", {
+      method: "POST",
+      body: JSON.stringify(signNetworkMessage(message, privateKey)),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toContain("not allowlisted");
+  });
+
   it("rejects remote ingress when the network is disabled", async () => {
     const disabledApp = new Hono();
     const deps = buildDeps(db, { enabled: false });
