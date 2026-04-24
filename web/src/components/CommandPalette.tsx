@@ -29,6 +29,9 @@ const NAV_ITEMS: SearchItem[] = [
   { id: 'nav-config', label: 'Config', category: 'Pages', path: '/config', keywords: 'settings configuration api keys' },
 ];
 
+const OPEN_WIDGET_GENERATOR_EVENT = 'teleton:open-widget-generator';
+const OPEN_WIDGET_GENERATOR_STORAGE_KEY = 'teleton:open-widget-generator';
+
 function fuzzyMatch(query: string, target: string): boolean {
   const q = query.toLowerCase();
   const t = target.toLowerCase();
@@ -102,7 +105,26 @@ export function CommandPalette() {
     }
   }, [open]);
 
-  const allItems = NAV_ITEMS;
+  const commandItems: SearchItem[] = [
+    {
+      id: 'cmd-generate-widget',
+      label: 'Generate Widget',
+      category: 'Commands',
+      keywords: 'dashboard ai chart table custom visualization',
+      action: () => {
+        try {
+          sessionStorage.setItem(OPEN_WIDGET_GENERATOR_STORAGE_KEY, '1');
+        } catch {
+          // ignore storage errors
+        }
+        navigate('/');
+        window.setTimeout(() => {
+          window.dispatchEvent(new CustomEvent(OPEN_WIDGET_GENERATOR_EVENT));
+        }, 50);
+      },
+    },
+  ];
+  const allItems = [...NAV_ITEMS, ...commandItems];
   const filtered = filterItems(allItems, query);
   const grouped = groupByCategory(filtered);
   const flatFiltered = filtered;
