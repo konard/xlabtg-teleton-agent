@@ -37,6 +37,7 @@ import { TelegramUserClient } from "../../telegram/client.js";
 import YAML from "yaml";
 import {
   type Config,
+  AuditTrailConfigSchema,
   AutonomousConfigSchema,
   CacheConfigSchema,
   CommandAccessSchema,
@@ -1006,6 +1007,7 @@ async function runInteractiveOnboarding(
     embedding: { provider: "local" },
     vector_memory: VectorMemoryConfigSchema.parse({}),
     memory: MemoryConfigSchema.parse({}),
+    audit_trail: AuditTrailConfigSchema.parse({}),
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
     cache: CacheConfigSchema.parse({}),
@@ -1209,6 +1211,7 @@ async function runNonInteractiveOnboarding(
     embedding: { provider: "local" },
     vector_memory: VectorMemoryConfigSchema.parse({}),
     memory: MemoryConfigSchema.parse({}),
+    audit_trail: AuditTrailConfigSchema.parse({}),
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
     cache: CacheConfigSchema.parse({}),

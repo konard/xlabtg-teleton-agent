@@ -96,6 +96,11 @@ import { getAnomalyDetector } from "../services/anomaly-detector.js";
 import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
 import { getPreloader } from "../services/preloader.js";
+import {
+  getAuditTrailInstance,
+  initAuditTrail,
+  type AuditEventType,
+} from "../services/audit-trail.js";
 
 export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
@@ -237,6 +242,27 @@ export class AgentRuntime {
     this.onToolCompleteCallback = cb;
   }
 
+  private recordAuditEvent(
+    eventType: AuditEventType,
+    payload: Record<string, unknown>,
+    opts: { actor?: string; sessionId?: string | null; parentEventId?: string | null } = {}
+  ): string | null {
+    if (this.config.audit_trail.enabled === false) return null;
+    try {
+      const audit = getAuditTrailInstance() ?? initAuditTrail(getDatabase().getDb());
+      return audit.recordEvent({
+        eventType,
+        actor: opts.actor ?? "agent",
+        sessionId: opts.sessionId ?? null,
+        parentEventId: opts.parentEventId ?? null,
+        payload,
+      }).id;
+    } catch (error) {
+      log.warn({ err: error }, "Audit trail event capture failed");
+      return null;
+    }
+  }
+
   setUserHookEvaluator(evaluator: UserHookEvaluator): void {
     this.userHookEvaluator = evaluator;
   }
@@ -275,6 +301,7 @@ export class AgentRuntime {
 
     const effectiveIsGroup = isGroup ?? false;
     const processStartTime = Date.now();
+    let sessionLifecycleEventId: string | null = null;
 
     try {
       // User hooks: keyword blocklist + context injection (hot-reloadable, no restart)
@@ -325,6 +352,16 @@ export class AgentRuntime {
       const resetPolicy = this.config.agent.session_reset_policy;
       if (shouldResetSession(session, resetPolicy)) {
         log.info(`🔄 Auto-resetting session based on policy`);
+        this.recordAuditEvent(
+          "session.lifecycle",
+          {
+            phase: "end",
+            reason: "reset_policy",
+            chatId,
+            messageCount: session.messageCount,
+          },
+          { sessionId: session.sessionId }
+        );
 
         // Hook: session:end (before reset)
         if (this.hookRunner) {
@@ -366,6 +403,17 @@ export class AgentRuntime {
       } else {
         log.info(`🆕 Starting new session: ${session.sessionId}`);
       }
+      sessionLifecycleEventId = this.recordAuditEvent(
+        "session.lifecycle",
+        {
+          phase: isNewSession ? "start" : "resume",
+          chatId,
+          isGroup: effectiveIsGroup,
+          messageId: messageId ?? null,
+          senderId: toolContext?.senderId ?? null,
+        },
+        { sessionId: session.sessionId }
+      );
 
       this.recordBehaviorMessage({
         sessionId: session.sessionId,
@@ -563,14 +611,32 @@ export class AgentRuntime {
         });
       }
 
-      const tools = await this.selectTools({
-        effectiveMessage,
-        effectiveIsGroup,
-        chatId,
-        isAdmin,
-        queryEmbedding,
-        providerMeta,
-      });
+      const tools =
+        (await this.selectTools({
+          effectiveMessage,
+          effectiveIsGroup,
+          chatId,
+          isAdmin,
+          queryEmbedding,
+          providerMeta,
+        })) ?? [];
+      const toolSelectionEventId = this.recordAuditEvent(
+        "agent.decision",
+        {
+          decision: "select_tools",
+          reasoning: this.config.tool_rag.enabled
+            ? "Selected available tools for the message using configured Tool RAG and scope filters."
+            : "Selected available tools for the message using provider and scope filters.",
+          provider,
+          model: this.config.agent.model,
+          toolCount: tools.length,
+          tools: tools.map((tool) => tool.name),
+        },
+        {
+          sessionId: session.sessionId,
+          parentEventId: sessionLifecycleEventId,
+        }
+      );
 
       const maxIterations = this.config.agent.max_agentic_iterations || 5;
       let iteration = 0;
@@ -595,11 +661,14 @@ export class AgentRuntime {
         blocked: boolean;
         blockReason: string;
         params: Record<string, unknown>;
+        auditDecisionEventId: string | null;
+        auditValidationEventId: string | null;
       }
       interface ToolExecResult {
         result: { success: boolean; data?: unknown; error?: string };
         durationMs: number;
         execError?: { message: string; stack?: string };
+        auditInvokeEventId?: string | null;
       }
 
       while (iteration < maxIterations) {
@@ -632,6 +701,23 @@ export class AgentRuntime {
         }
 
         let response: ChatResponse;
+        const llmRequestEventId = this.recordAuditEvent(
+          "llm.request",
+          {
+            provider,
+            model: this.config.agent.model,
+            iteration,
+            maxIterations,
+            messageCount: maskedContext.messages.length,
+            toolCount: tools.length,
+            promptLength: effectiveSystemPrompt.length,
+          },
+          {
+            sessionId: session.sessionId,
+            parentEventId: toolSelectionEventId ?? sessionLifecycleEventId,
+          }
+        );
+        let llmResponseEventId: string | null = null;
         try {
           response = await chatWithContext(this.config.agent, {
             systemPrompt: effectiveSystemPrompt,
@@ -641,6 +727,20 @@ export class AgentRuntime {
             tools,
           });
         } catch (err) {
+          this.recordAuditEvent(
+            "llm.response",
+            {
+              success: false,
+              provider,
+              model: this.config.agent.model,
+              iteration,
+              error: err instanceof Error ? err.message : String(err),
+            },
+            {
+              sessionId: session.sessionId,
+              parentEventId: llmRequestEventId,
+            }
+          );
           if (isNetworkError(err)) {
             networkErrorRetries++;
             if (networkErrorRetries <= NETWORK_ERROR_MAX_RETRIES) {
@@ -663,6 +763,38 @@ export class AgentRuntime {
         }
 
         const assistantMsg = response.message;
+        const responseUsage = assistantMsg.usage;
+        llmResponseEventId = this.recordAuditEvent(
+          "llm.response",
+          {
+            success: assistantMsg.stopReason !== "error",
+            provider,
+            model: this.config.agent.model,
+            iteration,
+            stopReason: assistantMsg.stopReason,
+            textPreview: response.text ? response.text.slice(0, 1000) : "",
+            contentBlocks: assistantMsg.content.map((block) => block.type),
+            toolCallCount: assistantMsg.content.filter((block) => block.type === "toolCall").length,
+            usage: responseUsage
+              ? {
+                  input: responseUsage.input,
+                  output: responseUsage.output,
+                  cacheRead: responseUsage.cacheRead ?? 0,
+                  cacheWrite: responseUsage.cacheWrite ?? 0,
+                  totalTokens:
+                    responseUsage.input +
+                    responseUsage.output +
+                    (responseUsage.cacheRead ?? 0) +
+                    (responseUsage.cacheWrite ?? 0),
+                  costUsd: responseUsage.cost?.total ?? 0,
+                }
+              : null,
+          },
+          {
+            sessionId: session.sessionId,
+            parentEventId: llmRequestEventId,
+          }
+        );
         if (assistantMsg.stopReason === "error") {
           const errorMsg = assistantMsg.errorMessage || "";
 
@@ -864,7 +996,44 @@ export class AgentRuntime {
             }
           }
 
-          toolPlans.push({ block, blocked, blockReason, params: toolParams });
+          const auditDecisionEventId = this.recordAuditEvent(
+            "agent.decision",
+            {
+              decision: "invoke_tool",
+              reasoning: "The LLM response emitted a tool call and pre-tool hooks were evaluated.",
+              toolName: block.name,
+              params: toolParams,
+              blocked,
+              blockReason: blockReason || null,
+            },
+            {
+              sessionId: session.sessionId,
+              parentEventId: llmResponseEventId ?? toolSelectionEventId ?? sessionLifecycleEventId,
+            }
+          );
+          const auditValidationEventId = this.recordAuditEvent(
+            "security.validation",
+            {
+              scope: "tool:before",
+              toolName: block.name,
+              allowed: !blocked,
+              reason: blockReason || null,
+            },
+            {
+              actor: "system",
+              sessionId: session.sessionId,
+              parentEventId: auditDecisionEventId,
+            }
+          );
+
+          toolPlans.push({
+            block,
+            blocked,
+            blockReason,
+            params: toolParams,
+            auditDecisionEventId,
+            auditValidationEventId,
+          });
         }
 
         // Phase 2: Execute tools with concurrency limit (blocked tools resolve instantly)
@@ -877,21 +1046,50 @@ export class AgentRuntime {
               const plan = toolPlans[idx];
 
               if (plan.blocked) {
+                const auditInvokeEventId = this.recordAuditEvent(
+                  "tool.invoke",
+                  {
+                    toolName: plan.block.name,
+                    params: plan.params,
+                    blocked: true,
+                    blockReason: plan.blockReason,
+                  },
+                  {
+                    sessionId: session.sessionId,
+                    parentEventId: plan.auditValidationEventId ?? plan.auditDecisionEventId,
+                  }
+                );
                 execResults[idx] = {
                   result: { success: false, error: plan.blockReason },
                   durationMs: 0,
+                  auditInvokeEventId,
                 };
                 continue;
               }
 
               const startTime = Date.now();
+              const auditInvokeEventId = this.recordAuditEvent(
+                "tool.invoke",
+                {
+                  toolName: plan.block.name,
+                  params: plan.params,
+                },
+                {
+                  sessionId: session.sessionId,
+                  parentEventId: plan.auditValidationEventId ?? plan.auditDecisionEventId,
+                }
+              );
               try {
                 // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- registry checked at line 687
                 const result = await this.toolRegistry!.execute(
                   { ...plan.block, arguments: plan.params },
                   fullContext
                 );
-                execResults[idx] = { result, durationMs: Date.now() - startTime };
+                execResults[idx] = {
+                  result,
+                  durationMs: Date.now() - startTime,
+                  auditInvokeEventId,
+                };
               } catch (execErr) {
                 const errMsg = execErr instanceof Error ? execErr.message : String(execErr);
                 const errStack = execErr instanceof Error ? execErr.stack : undefined;
@@ -899,6 +1097,7 @@ export class AgentRuntime {
                   result: { success: false, error: errMsg },
                   durationMs: Date.now() - startTime,
                   execError: { message: errMsg, stack: errStack },
+                  auditInvokeEventId,
                 };
               }
             }
@@ -915,6 +1114,22 @@ export class AgentRuntime {
           const plan = toolPlans[i];
           const { block } = plan;
           const exec = execResults[i];
+          this.recordAuditEvent(
+            "tool.result",
+            {
+              toolName: block.name,
+              success: exec.result.success,
+              durationMs: exec.durationMs,
+              error: exec.result.error ?? null,
+              blocked: plan.blocked,
+              result: exec.result.data ?? null,
+            },
+            {
+              sessionId: session.sessionId,
+              parentEventId:
+                exec.auditInvokeEventId ?? plan.auditValidationEventId ?? plan.auditDecisionEventId,
+            }
+          );
 
           // Hook: tool:error (if execution threw) — fire concurrently
           if (exec.execError && this.hookRunner) {
