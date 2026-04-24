@@ -1,5 +1,89 @@
 const API_BASE = "/api";
 
+// ── Dynamic Dashboard types ──────────────────────────────────────────────────
+
+export type WidgetCategory = "metrics" | "status" | "content" | "action" | "custom";
+export type WidgetRenderer = "chart" | "table" | "text" | "markdown" | "custom" | "kpi" | "list";
+export type WidgetDataSourceType = "api" | "websocket" | "static";
+
+export interface WidgetDataSource {
+  type: WidgetDataSourceType;
+  endpoint?: string;
+  refreshInterval?: number;
+}
+
+export interface WidgetDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: WidgetCategory;
+  dataSource: WidgetDataSource;
+  renderer: WidgetRenderer;
+  defaultSize: { w: number; h: number };
+  configSchema: Record<string, unknown>;
+  builtIn?: boolean;
+  createdAt?: number;
+  updatedAt?: number;
+}
+
+export interface DashboardWidgetData {
+  id: string;
+  definitionId: string;
+  title: string | null;
+  config: Record<string, unknown>;
+  data: unknown;
+  pinned: boolean;
+  temporary: boolean;
+  sessionId: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DashboardLayoutItem {
+  i: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  minW?: number;
+  maxW?: number;
+  minH?: number;
+  maxH?: number;
+}
+
+export type DashboardLayout = Record<string, DashboardLayoutItem[]>;
+
+export interface DashboardProfileData {
+  id: string;
+  name: string;
+  description: string | null;
+  widgets: DashboardWidgetData[];
+  layout: DashboardLayout;
+  isDefault: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface DashboardTemplateData {
+  id: string;
+  name: string;
+  description: string;
+  widgets: Array<{
+    id?: string;
+    definitionId: string;
+    title?: string | null;
+    config?: Record<string, unknown>;
+    data?: unknown;
+  }>;
+}
+
+export interface DashboardExportBundle {
+  version: "1.0";
+  exportedAt: string;
+  dashboard: DashboardProfileData;
+  definitions: WidgetDefinition[];
+}
+
 // ── Workflow Automation types ─────────────────────────────────────────────────
 
 export interface CronTrigger {
@@ -1882,6 +1966,135 @@ export async function logout(): Promise<void> {
 export const api = {
   async getStatus() {
     return fetchAPI<APIResponse<StatusData>>("/status");
+  },
+
+  async getDashboards() {
+    return fetchAPI<APIResponse<DashboardProfileData[]>>("/dashboards");
+  },
+
+  async getDashboard(id: string) {
+    return fetchAPI<APIResponse<DashboardProfileData>>(`/dashboards/${encodeURIComponent(id)}`);
+  },
+
+  async getDashboardTemplates() {
+    return fetchAPI<APIResponse<DashboardTemplateData[]>>("/dashboards/templates");
+  },
+
+  async createDashboard(data: {
+    name?: string;
+    description?: string | null;
+    widgets?: DashboardWidgetData[];
+    layout?: DashboardLayout;
+    isDefault?: boolean;
+    templateId?: string;
+  }) {
+    return fetchAPI<APIResponse<DashboardProfileData>>("/dashboards", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateDashboard(
+    id: string,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      widgets: DashboardWidgetData[];
+      layout: DashboardLayout;
+      isDefault: boolean;
+    }>
+  ) {
+    return fetchAPI<APIResponse<DashboardProfileData>>(`/dashboards/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteDashboard(id: string) {
+    return fetchAPI<APIResponse<null>>(`/dashboards/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async getWidgetCatalog() {
+    return fetchAPI<APIResponse<WidgetDefinition[]>>("/dashboards/widgets/catalog");
+  },
+
+  async registerWidgetDefinition(definition: WidgetDefinition) {
+    return fetchAPI<APIResponse<WidgetDefinition>>("/dashboards/widgets/catalog", {
+      method: "POST",
+      body: JSON.stringify(definition),
+    });
+  },
+
+  async addDashboardWidget(
+    dashboardId: string,
+    data: {
+      definitionId?: string;
+      definition?: WidgetDefinition;
+      title?: string | null;
+      config?: Record<string, unknown>;
+      data?: unknown;
+      pinned?: boolean;
+      temporary?: boolean;
+      sessionId?: string | null;
+    }
+  ) {
+    return fetchAPI<APIResponse<DashboardWidgetData>>(
+      `/dashboards/${encodeURIComponent(dashboardId)}/widgets`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async updateDashboardWidget(
+    dashboardId: string,
+    widgetId: string,
+    data: Partial<{
+      definitionId: string;
+      definition: WidgetDefinition;
+      title: string | null;
+      config: Record<string, unknown>;
+      data: unknown;
+      pinned: boolean;
+      temporary: boolean;
+      sessionId: string | null;
+    }>
+  ) {
+    return fetchAPI<APIResponse<DashboardWidgetData>>(
+      `/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(widgetId)}`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async deleteDashboardWidget(dashboardId: string, widgetId: string) {
+    return fetchAPI<APIResponse<null>>(
+      `/dashboards/${encodeURIComponent(dashboardId)}/widgets/${encodeURIComponent(widgetId)}`,
+      {
+        method: "DELETE",
+      }
+    );
+  },
+
+  async exportDashboard(id: string) {
+    return fetchAPI<APIResponse<DashboardExportBundle>>(
+      `/dashboards/${encodeURIComponent(id)}/export`,
+      {
+        method: "POST",
+      }
+    );
+  },
+
+  async importDashboard(bundle: DashboardExportBundle, options?: { name?: string }) {
+    return fetchAPI<APIResponse<DashboardProfileData>>("/dashboards/import", {
+      method: "POST",
+      body: JSON.stringify({ bundle, options }),
+    });
   },
 
   async getTools() {

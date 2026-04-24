@@ -10,7 +10,7 @@ import { GeneratedWidgetRenderer } from './GeneratedWidgetRenderer';
 interface WidgetGeneratorPanelProps {
   open: boolean;
   onClose: () => void;
-  onSave: (definition: GeneratedWidgetDefinition) => void;
+  onSave: (definition: GeneratedWidgetDefinition) => void | Promise<void>;
 }
 
 const RECENT_KEY = 'dashboard-generated-widget-recent';
@@ -104,12 +104,21 @@ export function WidgetGeneratorPanel({ open, onClose, onSave }: WidgetGeneratorP
     }
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (!definition) return;
-    onSave(definition);
-    saveRecent(definition);
-    setRecent(loadRecent());
-    setStatus('Saved');
+    setLoading(true);
+    setError(null);
+    setStatus(null);
+    try {
+      await onSave(definition);
+      saveRecent(definition);
+      setRecent(loadRecent());
+      setStatus('Saved');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Save failed');
+    } finally {
+      setLoading(false);
+    }
   }
 
   const source = definition ? sources.find((entry) => entry.id === definition.dataSource.id) : null;
@@ -195,8 +204,8 @@ export function WidgetGeneratorPanel({ open, onClose, onSave }: WidgetGeneratorP
                 <div className="widget-generator-section-title">Preview</div>
                 {source && <span>{source.name}</span>}
               </div>
-              <button type="button" onClick={handleSave} disabled={!definition}>
-                Save to Dashboard
+              <button type="button" onClick={handleSave} disabled={!definition || loading}>
+                {loading ? 'Working...' : 'Save to Dashboard'}
               </button>
             </div>
 
