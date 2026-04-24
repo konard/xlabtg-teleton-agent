@@ -3244,6 +3244,17 @@ export const api = {
         connected: boolean;
         enabled: boolean;
         activeProxy: { server: string; port: number; index: number } | null;
+        proxies: Array<{
+          index: number;
+          server: string;
+          port: number;
+          active: boolean;
+          status: "available" | "unavailable" | "unchecked";
+          available: boolean | null;
+          latencyMs: number | null;
+          error: string | null;
+          checkedAt: string | null;
+        }>;
       }>
     >("/mtproto/status");
   },

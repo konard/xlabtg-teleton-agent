@@ -470,11 +470,55 @@ describe("Agents routes", () => {
       apiHash: "personal-hash",
       phone: "+15551234567",
     });
-    expect(telegramAuthMocks.sendCode).toHaveBeenCalledWith(12345, "abcdef", "+1234567890", {
+    expect(telegramAuthMocks.sendCode).toHaveBeenCalledWith(
+      12345,
+      "abcdef",
+      "+1234567890",
+      {
+        configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+        sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+        replaceTelegramIdentity: true,
+      },
+      undefined
+    );
+  });
+
+  it("passes managed MTProto proxies into personal auth", async () => {
+    const manager = deps.agentManager as NonNullable<WebUIServerDeps["agentManager"]>;
+    const mtprotoProxies = [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }];
+    vi.mocked(manager.resolvePersonalAuthTarget).mockReturnValueOnce({
       configPath: "/tmp/teleton/agents/support-copy/config.yaml",
       sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
-      replaceTelegramIdentity: true,
+      apiId: 12345,
+      apiHash: "abcdef",
+      phone: "+1234567890",
+      mtprotoProxies,
     });
+    telegramAuthMocks.sendCode.mockResolvedValueOnce({
+      authSessionId: "auth-1",
+      codeDelivery: "app",
+      codeLength: 5,
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await app.request("/api/agents/support-copy/personal-auth/send-code", {
+      method: "POST",
+      body: JSON.stringify({}),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(telegramAuthMocks.sendCode).toHaveBeenCalledWith(
+      12345,
+      "abcdef",
+      "+1234567890",
+      {
+        configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+        sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+        replaceTelegramIdentity: true,
+      },
+      mtprotoProxies
+    );
   });
 
   it("records successful managed personal auth verification", async () => {
@@ -522,11 +566,16 @@ describe("Agents routes", () => {
       apiHash: "personal-hash",
       phone: "+15551234567",
     });
-    expect(telegramAuthMocks.startQrSession).toHaveBeenCalledWith(12345, "abcdef", {
-      configPath: "/tmp/teleton/agents/support-copy/config.yaml",
-      sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
-      replaceTelegramIdentity: true,
-    });
+    expect(telegramAuthMocks.startQrSession).toHaveBeenCalledWith(
+      12345,
+      "abcdef",
+      {
+        configPath: "/tmp/teleton/agents/support-copy/config.yaml",
+        sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+        replaceTelegramIdentity: true,
+      },
+      undefined
+    );
   });
 
   it("records successful managed personal QR authentication", async () => {

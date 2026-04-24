@@ -29,6 +29,7 @@ const mockAuthManager = {
   verifyCode: vi.fn(),
   verifyPassword: vi.fn(),
   resendCode: vi.fn(),
+  startQrSession: vi.fn(),
   cancelSession: vi.fn(),
 };
 
@@ -38,6 +39,7 @@ vi.mock("../setup-auth.js", () => ({
     verifyCode = mockAuthManager.verifyCode;
     verifyPassword = mockAuthManager.verifyPassword;
     resendCode = mockAuthManager.resendCode;
+    startQrSession = mockAuthManager.startQrSession;
     cancelSession = mockAuthManager.cancelSession;
   },
 }));
@@ -203,6 +205,7 @@ describe("Setup API Routes", () => {
     mockAuthManager.verifyCode.mockReset();
     mockAuthManager.verifyPassword.mockReset();
     mockAuthManager.resendCode.mockReset();
+    mockAuthManager.startQrSession.mockReset();
     mockAuthManager.cancelSession.mockReset();
     // Reset env vars
     delete process.env.TELETON_API_KEY;
@@ -574,6 +577,39 @@ describe("Setup API Routes", () => {
       expect(data.success).toBe(true);
       expect(data.data.authSessionId).toBe("sess-123");
       expect(data.data.codeViaApp).toBe(true);
+    });
+
+    it("passes configured MTProto proxies to setup auth", async () => {
+      const mtprotoProxies = [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }];
+      (existsSync as Mock).mockImplementation((path: string) => path.endsWith("config.yaml"));
+      (readFileSync as Mock).mockReturnValueOnce(`
+mtproto:
+  enabled: true
+  proxies:
+    - server: proxy1.example.com
+      port: 443
+      secret: ${"a".repeat(32)}
+`);
+      mockAuthManager.sendCode.mockResolvedValue({
+        authSessionId: "sess-123",
+        codeDelivery: "app",
+        expiresAt: Date.now() + 300000,
+      });
+
+      const res = await post(app, "/telegram/send-code", {
+        apiId: 12345,
+        apiHash: "abcdef",
+        phone: "+1234567890",
+      });
+
+      expect(res.status).toBe(200);
+      expect(mockAuthManager.sendCode).toHaveBeenCalledWith(
+        12345,
+        "abcdef",
+        "+1234567890",
+        undefined,
+        mtprotoProxies
+      );
     });
 
     it("returns 400 when missing required fields", async () => {

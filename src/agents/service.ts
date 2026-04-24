@@ -875,6 +875,10 @@ export class ManagedAgentService {
       this.invalidatePersonalAuth(config);
     }
     saveConfig(config, definition.configPath);
+    const mtprotoProxies =
+      config.mtproto?.enabled && config.mtproto.proxies.length > 0
+        ? config.mtproto.proxies
+        : undefined;
 
     return {
       configPath: definition.configPath,
@@ -882,6 +886,7 @@ export class ManagedAgentService {
       apiId: config.telegram.api_id,
       apiHash: config.telegram.api_hash,
       phone: config.telegram.phone,
+      mtprotoProxies,
     };
   }
 

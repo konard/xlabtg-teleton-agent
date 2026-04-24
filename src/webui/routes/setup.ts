@@ -20,7 +20,7 @@ import {
   getClaudeCodeApiKey,
   isClaudeCodeTokenValid,
 } from "../../providers/claude-code-credentials.js";
-import { ConfigSchema, DealsConfigSchema } from "../../config/schema.js";
+import { ConfigSchema, DealsConfigSchema, type MtprotoProxyEntry } from "../../config/schema.js";
 import { ensureWorkspace, isNewWorkspace } from "../../workspace/manager.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import {
@@ -44,6 +44,22 @@ import { getModelsForProvider } from "../../config/model-catalog.js";
 function maskKey(key: string): string {
   if (key.length <= 10) return "***";
   return key.slice(0, 6) + "..." + key.slice(-4);
+}
+
+function getConfiguredMtprotoProxies(): MtprotoProxyEntry[] | undefined {
+  const configPath = join(TELETON_ROOT, "config.yaml");
+  if (!existsSync(configPath)) return undefined;
+
+  try {
+    const raw = YAML.parse(readFileSync(configPath, "utf-8")) as {
+      mtproto?: { enabled?: boolean; proxies?: MtprotoProxyEntry[] };
+    } | null;
+    const proxies = raw?.mtproto?.enabled ? raw.mtproto.proxies : undefined;
+    return Array.isArray(proxies) && proxies.length > 0 ? proxies : undefined;
+  } catch (error) {
+    log.warn({ err: error }, "Failed to read MTProto proxy config for setup auth");
+    return undefined;
+  }
 }
 
 // ── Route factory ─────────────────────────────────────────────────────
@@ -261,7 +277,13 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         return c.json({ success: false, error: "Missing apiId, apiHash, or phone" }, 400);
       }
 
-      const result = await authManager.sendCode(body.apiId, body.apiHash, body.phone);
+      const result = await authManager.sendCode(
+        body.apiId,
+        body.apiHash,
+        body.phone,
+        undefined,
+        getConfiguredMtprotoProxies()
+      );
       return c.json({ success: true, data: result });
     } catch (err: unknown) {
       const error = err as { errorMessage?: string; seconds?: number; message?: string };
@@ -376,7 +398,12 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         return c.json({ success: false, error: "Missing apiId or apiHash" }, 400);
       }
 
-      const result = await authManager.startQrSession(body.apiId, body.apiHash);
+      const result = await authManager.startQrSession(
+        body.apiId,
+        body.apiHash,
+        undefined,
+        getConfiguredMtprotoProxies()
+      );
       return c.json({ success: true, data: result });
     } catch (err: unknown) {
       const error = err as { errorMessage?: string; seconds?: number; message?: string };

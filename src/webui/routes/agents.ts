@@ -570,7 +570,8 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
           configPath: authTarget.configPath,
           sessionPath: authTarget.sessionPath,
           replaceTelegramIdentity: true,
-        }
+        },
+        authTarget.mtprotoProxies
       );
       logAgentAudit(deps, `agent:personal-auth:send-code:${id}`);
       return c.json({ success: true, data } as APIResponse<typeof data>);
@@ -709,11 +710,16 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         apiHash: body.apiHash?.trim() || undefined,
         phone: body.phone?.trim() || undefined,
       });
-      const data = await personalAuthManager.startQrSession(authTarget.apiId, authTarget.apiHash, {
-        configPath: authTarget.configPath,
-        sessionPath: authTarget.sessionPath,
-        replaceTelegramIdentity: true,
-      });
+      const data = await personalAuthManager.startQrSession(
+        authTarget.apiId,
+        authTarget.apiHash,
+        {
+          configPath: authTarget.configPath,
+          sessionPath: authTarget.sessionPath,
+          replaceTelegramIdentity: true,
+        },
+        authTarget.mtprotoProxies
+      );
       logAgentAudit(deps, `agent:personal-auth:qr-start:${id}`);
       return c.json({ success: true, data } as APIResponse<typeof data>);
     } catch (error: unknown) {
