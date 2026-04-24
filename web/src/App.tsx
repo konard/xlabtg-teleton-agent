@@ -14,6 +14,7 @@ import { Memory } from "./pages/Memory";
 import { Workspace } from "./pages/Workspace";
 import { Tasks } from "./pages/Tasks";
 import { Workflows } from "./pages/Workflows";
+import { Pipelines } from "./pages/Pipelines";
 import { Mcp } from "./pages/Mcp";
 import { Config } from "./pages/Config";
 import { Hooks } from "./pages/Hooks";
@@ -149,6 +150,7 @@ function AuthenticatedApp() {
               <Route path="workspace" element={<Workspace />} />
               <Route path="tasks" element={<Tasks />} />
               <Route path="workflows" element={<Workflows />} />
+              <Route path="pipelines" element={<Pipelines />} />
               <Route path="mcp" element={<Mcp />} />
               <Route path="config" element={<Config />} />
               <Route path="hooks" element={<Hooks />} />

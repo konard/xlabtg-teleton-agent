@@ -263,6 +263,72 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_subtask_deps_parent ON task_subtask_dependencies(depends_on_subtask_id);
 
     -- ============================================
+    -- PIPELINE EXECUTION
+    -- ============================================
+
+    CREATE TABLE IF NOT EXISTS pipelines (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      steps TEXT NOT NULL DEFAULT '[]',
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+      error_strategy TEXT NOT NULL DEFAULT 'fail_fast'
+        CHECK(error_strategy IN ('fail_fast', 'continue', 'retry')),
+      max_retries INTEGER NOT NULL DEFAULT 0 CHECK(max_retries >= 0),
+      timeout_seconds INTEGER,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pipelines_enabled ON pipelines(enabled);
+    CREATE INDEX IF NOT EXISTS idx_pipelines_created ON pipelines(created_at DESC);
+
+    CREATE TABLE IF NOT EXISTS pipeline_runs (
+      id TEXT PRIMARY KEY,
+      pipeline_id TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+      error_strategy TEXT NOT NULL DEFAULT 'fail_fast'
+        CHECK(error_strategy IN ('fail_fast', 'continue', 'retry')),
+      input_context TEXT NOT NULL DEFAULT '{}',
+      context TEXT NOT NULL DEFAULT '{}',
+      error TEXT,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      started_at INTEGER,
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline ON pipeline_runs(pipeline_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);
+
+    CREATE TABLE IF NOT EXISTS pipeline_run_steps (
+      run_id TEXT NOT NULL,
+      pipeline_id TEXT NOT NULL,
+      step_id TEXT NOT NULL,
+      agent TEXT NOT NULL,
+      action TEXT NOT NULL,
+      output_name TEXT NOT NULL,
+      depends_on TEXT NOT NULL DEFAULT '[]',
+      status TEXT NOT NULL DEFAULT 'pending'
+        CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped', 'cancelled')),
+      input_context TEXT,
+      output_value TEXT,
+      error TEXT,
+      attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+      started_at INTEGER,
+      completed_at INTEGER,
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (run_id, step_id),
+      FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+      FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_pipeline_run_steps_run ON pipeline_run_steps(run_id, status);
+    CREATE INDEX IF NOT EXISTS idx_pipeline_run_steps_pipeline ON pipeline_run_steps(pipeline_id);
+
+    -- ============================================
     -- ASSOCIATIVE MEMORY GRAPH
     -- ============================================
 
@@ -633,7 +699,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.28.0";
+export const CURRENT_SCHEMA_VERSION = "1.29.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1413,6 +1479,79 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.28.0 complete: task delegation tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.28.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.29.0")) {
+    log.info("Running migration 1.29.0: Add pipeline execution tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pipelines (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          steps TEXT NOT NULL DEFAULT '[]',
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+          error_strategy TEXT NOT NULL DEFAULT 'fail_fast'
+            CHECK(error_strategy IN ('fail_fast', 'continue', 'retry')),
+          max_retries INTEGER NOT NULL DEFAULT 0 CHECK(max_retries >= 0),
+          timeout_seconds INTEGER,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pipelines_enabled ON pipelines(enabled);
+        CREATE INDEX IF NOT EXISTS idx_pipelines_created ON pipelines(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS pipeline_runs (
+          id TEXT PRIMARY KEY,
+          pipeline_id TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'running', 'completed', 'failed', 'cancelled')),
+          error_strategy TEXT NOT NULL DEFAULT 'fail_fast'
+            CHECK(error_strategy IN ('fail_fast', 'continue', 'retry')),
+          input_context TEXT NOT NULL DEFAULT '{}',
+          context TEXT NOT NULL DEFAULT '{}',
+          error TEXT,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          started_at INTEGER,
+          completed_at INTEGER,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pipeline_runs_pipeline ON pipeline_runs(pipeline_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON pipeline_runs(status);
+
+        CREATE TABLE IF NOT EXISTS pipeline_run_steps (
+          run_id TEXT NOT NULL,
+          pipeline_id TEXT NOT NULL,
+          step_id TEXT NOT NULL,
+          agent TEXT NOT NULL,
+          action TEXT NOT NULL,
+          output_name TEXT NOT NULL,
+          depends_on TEXT NOT NULL DEFAULT '[]',
+          status TEXT NOT NULL DEFAULT 'pending'
+            CHECK(status IN ('pending', 'running', 'completed', 'failed', 'skipped', 'cancelled')),
+          input_context TEXT,
+          output_value TEXT,
+          error TEXT,
+          attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+          started_at INTEGER,
+          completed_at INTEGER,
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          PRIMARY KEY (run_id, step_id),
+          FOREIGN KEY (run_id) REFERENCES pipeline_runs(id) ON DELETE CASCADE,
+          FOREIGN KEY (pipeline_id) REFERENCES pipelines(id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pipeline_run_steps_run ON pipeline_run_steps(run_id, status);
+        CREATE INDEX IF NOT EXISTS idx_pipeline_run_steps_pipeline ON pipeline_run_steps(pipeline_id);
+      `);
+      log.info("Migration 1.29.0 complete: pipeline execution tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.29.0 failed");
       throw error;
     }
   }

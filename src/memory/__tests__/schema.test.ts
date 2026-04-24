@@ -49,6 +49,9 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("task_dependencies");
       expect(tableNames).toContain("task_subtasks");
       expect(tableNames).toContain("task_subtask_dependencies");
+      expect(tableNames).toContain("pipelines");
+      expect(tableNames).toContain("pipeline_runs");
+      expect(tableNames).toContain("pipeline_run_steps");
       expect(tableNames).toContain("graph_nodes");
       expect(tableNames).toContain("graph_edges");
       expect(tableNames).toContain("tg_chats");
@@ -1176,7 +1179,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.28.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.29.0");
     });
   });
 

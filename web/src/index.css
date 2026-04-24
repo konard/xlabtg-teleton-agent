@@ -251,6 +251,24 @@ body {
   width: 100%;
 }
 
+.pipeline-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.pipeline-run-grid {
+  display: grid;
+  grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .pipeline-layout,
+  .pipeline-run-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ---- Page header ---- */
 
 .header {
