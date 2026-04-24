@@ -49,6 +49,8 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("task_dependencies");
       expect(tableNames).toContain("task_subtasks");
       expect(tableNames).toContain("task_subtask_dependencies");
+      expect(tableNames).toContain("network_agents");
+      expect(tableNames).toContain("network_messages");
       expect(tableNames).toContain("graph_nodes");
       expect(tableNames).toContain("graph_edges");
       expect(tableNames).toContain("tg_chats");
@@ -312,6 +314,44 @@ describe("Memory Schema", () => {
         expect.arrayContaining([
           expect.objectContaining({ name: "subtask_id", pk: 1 }),
           expect.objectContaining({ name: "depends_on_subtask_id", pk: 2 }),
+        ])
+      );
+    });
+
+    it("creates agent network tables with protocol columns", () => {
+      ensureSchema(db);
+
+      const agentInfo = db.prepare("PRAGMA table_info(network_agents)").all() as Array<{
+        name: string;
+      }>;
+      const messageInfo = db.prepare("PRAGMA table_info(network_messages)").all() as Array<{
+        name: string;
+      }>;
+
+      expect(agentInfo.map((c) => c.name)).toEqual(
+        expect.arrayContaining([
+          "id",
+          "endpoint",
+          "capabilities",
+          "status",
+          "load",
+          "public_key",
+          "trust_level",
+          "blocked",
+          "last_seen_at",
+        ])
+      );
+      expect(messageInfo.map((c) => c.name)).toEqual(
+        expect.arrayContaining([
+          "id",
+          "type",
+          "from_agent_id",
+          "to_agent_id",
+          "correlation_id",
+          "payload",
+          "signature",
+          "timestamp",
+          "status",
         ])
       );
     });
@@ -1286,7 +1326,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.34.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.35.0");
     });
   });
 

@@ -2,7 +2,7 @@ import type { AgentRuntime } from "../agent/runtime.js";
 import type { TelegramBridge } from "../telegram/bridge.js";
 import type { MemorySystem } from "../memory/index.js";
 import type { ToolRegistry } from "../agent/tools/registry.js";
-import type { WebUIConfig, Config } from "../config/schema.js";
+import type { WebUIConfig, Config, NetworkConfig } from "../config/schema.js";
 import type { Database } from "better-sqlite3";
 import type { PluginModule, PluginContext } from "../agent/tools/types.js";
 import type { SDKDependencies } from "../sdk/index.js";
@@ -44,6 +44,7 @@ export interface WebUIServerDeps {
   plugins: LoadedPlugin[];
   mcpServers: McpServerInfo[] | (() => McpServerInfo[]);
   config: WebUIConfig;
+  networkConfig?: NetworkConfig;
   configPath: string;
   lifecycle?: AgentLifecycle;
   marketplace?: MarketplaceDeps;

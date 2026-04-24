@@ -52,6 +52,7 @@ import {
   AnomalyDetectionConfigSchema,
   VectorMemoryConfigSchema,
   EventBusConfigSchema,
+  NetworkConfigSchema,
   WebhooksConfigSchema,
 } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
@@ -1022,6 +1023,7 @@ async function runInteractiveOnboarding(
     integrations: IntegrationsConfigSchema.parse({}),
     event_bus: EventBusConfigSchema.parse({}),
     webhooks: WebhooksConfigSchema.parse({}),
+    network: NetworkConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,
@@ -1233,6 +1235,7 @@ async function runNonInteractiveOnboarding(
     integrations: IntegrationsConfigSchema.parse({}),
     event_bus: EventBusConfigSchema.parse({}),
     webhooks: WebhooksConfigSchema.parse({}),
+    network: NetworkConfigSchema.parse({}),
     webui: {
       enabled: false,
       port: 7777,

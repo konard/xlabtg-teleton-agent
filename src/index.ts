@@ -435,6 +435,7 @@ ${blue}  ┌──────────────────────�
           plugins: this.getPlugins(),
           mcpServers,
           config: this.config.webui,
+          networkConfig: this.config.network,
           configPath: this.configPath,
           lifecycle: this.lifecycle,
           marketplace: {

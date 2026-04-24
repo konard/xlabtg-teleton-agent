@@ -198,6 +198,82 @@ export interface WebhookInputData {
   maxRetries?: number;
 }
 
+// ── Agent Network types ──────────────────────────────────────────────────────
+
+export type NetworkAgentStatus = "available" | "busy" | "offline" | "degraded";
+export type NetworkTrustLevel = "trusted" | "verified" | "untrusted";
+export type NetworkMessageType =
+  | "capability_query"
+  | "heartbeat"
+  | "negotiation"
+  | "task_request"
+  | "task_response";
+export type NetworkMessageStatus = "queued" | "sent" | "received" | "failed";
+
+export interface NetworkAgentData {
+  id: string;
+  name: string;
+  endpoint: string;
+  capabilities: string[];
+  status: NetworkAgentStatus;
+  load: number;
+  publicKey: string | null;
+  trustLevel: NetworkTrustLevel;
+  blocked: boolean;
+  latencyMs: number | null;
+  errorRate: number;
+  metadata: Record<string, unknown>;
+  lastSeenAt: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface NetworkStatusData {
+  totalAgents: number;
+  availableAgents: number;
+  degradedAgents: number;
+  offlineAgents: number;
+  trustedAgents: number;
+  blockedAgents: number;
+  averageLoad: number;
+  messagesLastHour: number;
+  errorsLastHour: number;
+}
+
+export interface NetworkMessageData {
+  id: string;
+  type: NetworkMessageType;
+  from: string;
+  to: string;
+  correlationId: string;
+  payload: Record<string, unknown>;
+  signature?: string | null;
+  timestamp: string;
+  status: NetworkMessageStatus;
+  error: string | null;
+  createdAt: number;
+  sentAt: number | null;
+  receivedAt: number | null;
+}
+
+export interface NetworkAgentInput {
+  agentId: string;
+  name: string;
+  endpoint: string;
+  capabilities: string[];
+  status?: NetworkAgentStatus;
+  load?: number;
+  publicKey?: string | null;
+  trustLevel?: NetworkTrustLevel;
+}
+
+export interface NetworkTaskInput {
+  description: string;
+  requiredCapabilities?: string[];
+  payload?: Record<string, unknown>;
+  timeoutMs?: number;
+}
+
 // ── Pipeline Execution types ─────────────────────────────────────────────────
 
 export type PipelineErrorStrategy = "fail_fast" | "continue" | "retry";
@@ -2447,6 +2523,66 @@ export const api = {
         body: JSON.stringify({ action, params }),
       }
     );
+  },
+
+  async getNetworkAgents() {
+    return fetchAPI<APIResponse<{ agents: NetworkAgentData[] }>>("/network/agents");
+  },
+
+  async registerNetworkAgent(data: NetworkAgentInput) {
+    return fetchAPI<APIResponse<{ agent: NetworkAgentData }>>("/network/agents", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async removeNetworkAgent(id: string) {
+    return fetchAPI<APIResponse<null>>(`/network/agents/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async updateNetworkAgentTrust(
+    id: string,
+    data: { trustLevel?: NetworkTrustLevel; blocked?: boolean }
+  ) {
+    return fetchAPI<APIResponse<{ agent: NetworkAgentData }>>(
+      `/network/agents/${encodeURIComponent(id)}/trust`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
+  },
+
+  async delegateNetworkTask(agentId: string, data: NetworkTaskInput) {
+    return fetchAPI<
+      APIResponse<{
+        agent: NetworkAgentData;
+        message: NetworkMessageData;
+        remoteStatus: number;
+        remoteResponse: unknown;
+      }>
+    >(`/network/agents/${encodeURIComponent(agentId)}/tasks`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getNetworkStatus() {
+    return fetchAPI<APIResponse<NetworkStatusData>>("/network/status");
+  },
+
+  async getNetworkMessages(
+    params: { from?: string; to?: string; type?: string; limit?: number } = {}
+  ) {
+    const search = new URLSearchParams();
+    if (params.from) search.set("from", params.from);
+    if (params.to) search.set("to", params.to);
+    if (params.type) search.set("type", params.type);
+    if (params.limit) search.set("limit", String(params.limit));
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return fetchAPI<APIResponse<{ messages: NetworkMessageData[] }>>(`/network/messages${suffix}`);
   },
 
   async getIntegrationCredentials(id: string) {

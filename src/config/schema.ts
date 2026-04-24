@@ -535,6 +535,68 @@ const _WebhooksObject = z.object({
 });
 export const WebhooksConfigSchema = _WebhooksObject.default(_WebhooksObject.parse({}));
 
+const _NetworkObject = z.object({
+  enabled: z.boolean().default(false).describe("Enable signed inter-agent network protocol"),
+  agent_id: z.string().default("primary").describe("Local agent id advertised to remote agents"),
+  agent_name: z.string().default("Primary Agent").describe("Local agent name for discovery"),
+  endpoint: z
+    .string()
+    .url()
+    .nullable()
+    .default(null)
+    .describe("Public HTTPS endpoint for this agent's /api/agent-network ingress route"),
+  discovery_mode: z
+    .enum(["central", "peer-to-peer", "dns"])
+    .default("central")
+    .describe("Agent discovery mode used by the network layer"),
+  registry_url: z
+    .string()
+    .url()
+    .nullable()
+    .default(null)
+    .describe("Central registry endpoint for network discovery"),
+  known_peers: z
+    .array(z.string().url())
+    .default([])
+    .describe("Peer endpoints for manual discovery"),
+  public_key: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe("PEM encoded Ed25519 public key advertised to remote agents"),
+  private_key: z
+    .string()
+    .nullable()
+    .default(null)
+    .describe("PEM encoded Ed25519 private key used to sign outbound network messages"),
+  allowlist: z
+    .array(z.string())
+    .default([])
+    .describe(
+      "Agent ids allowed to send privileged network messages; empty allows any registered agent"
+    ),
+  blocklist: z.array(z.string()).default([]).describe("Agent ids blocked from network messaging"),
+  default_trust_level: z
+    .enum(["trusted", "verified", "untrusted"])
+    .default("untrusted")
+    .describe("Trust level assigned to newly registered remote agents"),
+  message_timeout_ms: z
+    .number()
+    .int()
+    .min(1000)
+    .max(120000)
+    .default(15000)
+    .describe("Timeout for outbound network messages"),
+  max_clock_skew_seconds: z
+    .number()
+    .int()
+    .min(30)
+    .max(3600)
+    .default(300)
+    .describe("Allowed timestamp skew for signed inbound network messages"),
+});
+export const NetworkConfigSchema = _NetworkObject.default(_NetworkObject.parse({}));
+
 const _IntegrationsRateLimitObject = z.object({
   requests_per_minute: z
     .number()
@@ -897,6 +959,7 @@ export const ConfigSchema = z.object({
   integrations: IntegrationsConfigSchema,
   event_bus: EventBusConfigSchema,
   webhooks: WebhooksConfigSchema,
+  network: NetworkConfigSchema,
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
@@ -1019,6 +1082,7 @@ export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;
 export type ApiConfig = z.infer<typeof _ApiObject>;
 export type EventBusConfig = z.infer<typeof _EventBusObject>;
 export type WebhooksConfig = z.infer<typeof _WebhooksObject>;
+export type NetworkConfig = z.infer<typeof _NetworkObject>;
 export type ExecConfig = z.infer<typeof _ExecObject>;
 export type GroqConfig = NonNullable<z.infer<typeof ConfigSchema>["groq"]>;
 export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;
