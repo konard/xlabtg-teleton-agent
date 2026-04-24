@@ -2,6 +2,10 @@ import { Hono } from "hono";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { readRawConfig, writeRawConfig, setNestedValue } from "../../config/configurable-keys.js";
 import type { MtprotoProxyEntry } from "../../config/schema.js";
+import {
+  checkMtprotoProxies,
+  uncheckedMtprotoProxyStatuses,
+} from "../../telegram/mtproto-proxy-health.js";
 
 export function createMtprotoRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -15,7 +19,7 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
   });
 
   // GET /api/mtproto/status — runtime connection status
-  app.get("/status", (c) => {
+  app.get("/status", async (c) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
     const config = deps.agent.getConfig() as Record<string, any>;
     const mtproto = config.mtproto ?? { enabled: false, proxies: [] };
@@ -30,6 +34,18 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
             index: activeProxyIndex,
           }
         : null;
+    const apiId = Number(config.telegram?.api_id);
+    const apiHash = typeof config.telegram?.api_hash === "string" ? config.telegram.api_hash : "";
+    const proxyStatuses =
+      proxies.length === 0
+        ? []
+        : Number.isFinite(apiId) && apiId > 0 && apiHash
+          ? await checkMtprotoProxies({ apiId, apiHash, proxies, activeProxyIndex })
+          : uncheckedMtprotoProxyStatuses(
+              proxies,
+              "Telegram API ID and hash are required before proxy checks can run",
+              activeProxyIndex
+            );
 
     return c.json({
       success: true,
@@ -38,6 +54,7 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
         enabled: mtproto.enabled ?? false,
         /** null means connected directly (no proxy active) */
         activeProxy,
+        proxies: proxyStatuses,
       },
     } as APIResponse);
   });

@@ -2,6 +2,8 @@
 export const TTS_TIMEOUT_MS = 30_000;
 /** MTProto proxy connection attempt timeout — prevents indefinite hangs when a proxy drops packets */
 export const MTPROTO_PROXY_CONNECT_TIMEOUT_MS = 15_000;
+/** MTProto proxy status check timeout — keeps WebUI health refreshes responsive */
+export const MTPROTO_PROXY_STATUS_TIMEOUT_MS = 5_000;
 export const ONBOARDING_PROMPT_TIMEOUT_MS = 120_000;
 export const BATCH_TRIGGER_DELAY_MS = 500;
 export const DEFAULT_FETCH_TIMEOUT_MS = 15_000;
