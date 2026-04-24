@@ -193,6 +193,13 @@ feedback:
   correction_window_seconds: 600      # Follow-up correction window
   acceptance_delay_seconds: 300       # Delay before treating no correction as accepted output
 
+# Adaptive prompting: section variants, A/B tests, and conservative optimizer suggestions.
+adaptive_prompting:
+  enabled: true
+  default_traffic_percentage: 20      # Candidate traffic share for new A/B tests
+  min_samples: 30                     # Samples per variant before auto-promotion
+  auto_promote: true                  # Activate winning variants automatically
+
 # Anomaly detection: rolling baselines for volume, errors, latency, tool usage, and cost.
 anomaly_detection:
   enabled: true                       # Enable automated anomaly detection

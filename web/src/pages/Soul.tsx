@@ -1,5 +1,12 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { api } from '../lib/api';
+import {
+  api,
+  type PromptExperiment,
+  type PromptOptimizationSuggestion,
+  type PromptSectionId,
+  type PromptSectionState,
+  type PromptVariant,
+} from '../lib/api';
 import { useConfirm } from '../components/ConfirmDialog';
 import { toast } from '../lib/toast-store';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -76,6 +83,284 @@ function SaveVersionDialog({ onSave, onCancel }: SaveVersionDialogProps) {
   );
 }
 
+function metricPercent(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '-';
+  return `${Math.round(value * 100)}%`;
+}
+
+function ratingText(value: number | null | undefined): string {
+  if (value === null || value === undefined) return '-';
+  return value.toFixed(1);
+}
+
+function variantLabel(variant: PromptVariant): string {
+  return `v${variant.version}${variant.active ? ' active' : ''}`;
+}
+
+interface AdaptivePromptPanelProps {
+  editorContent: string;
+  onDiff: (oldContent: string, label: string) => void;
+}
+
+function AdaptivePromptPanel({ editorContent, onDiff }: AdaptivePromptPanelProps) {
+  const [sections, setSections] = useState<PromptSectionState[]>([]);
+  const [activeSection, setActiveSection] = useState<PromptSectionId>('persona');
+  const [variants, setVariants] = useState<PromptVariant[]>([]);
+  const [experiments, setExperiments] = useState<PromptExperiment[]>([]);
+  const [draft, setDraft] = useState('');
+  const [suggestion, setSuggestion] = useState<PromptOptimizationSuggestion | null>(null);
+  const [candidateId, setCandidateId] = useState<number | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeVariant = variants.find((variant) => variant.active) ?? null;
+  const candidate = variants.find((variant) => variant.id === candidateId) ?? null;
+
+  const load = useCallback(async (section: PromptSectionId = activeSection) => {
+    setError(null);
+    try {
+      const [sectionsRes, variantsRes, experimentsRes] = await Promise.all([
+        api.getPromptSections(),
+        api.listPromptVariants(section),
+        api.getPromptExperiments(section),
+      ]);
+      setSections(sectionsRes.data ?? []);
+      const loadedVariants = variantsRes.data ?? [];
+      setVariants(loadedVariants);
+      setExperiments(experimentsRes.data ?? []);
+      const firstCandidate = loadedVariants.find((variant) => !variant.active) ?? loadedVariants[0] ?? null;
+      setCandidateId(firstCandidate?.id ?? null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [activeSection]);
+
+  useEffect(() => {
+    void load(activeSection);
+  }, [activeSection, load]);
+
+  const createVariant = async (activate: boolean) => {
+    const content = draft.trim() || editorContent.trim();
+    if (!content) {
+      setError('Variant content is required');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.createPromptVariant(activeSection, content, activate);
+      setDraft('');
+      setSuggestion(null);
+      toast.success(activate ? 'Variant created and activated' : 'Variant created');
+      await load(activeSection);
+      if (res.data) setCandidateId(res.data.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const activateVariant = async (variant: PromptVariant) => {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.activatePromptVariant(activeSection, variant.id);
+      toast.success(`Activated ${variantLabel(variant)}`);
+      await load(activeSection);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const suggestImprovement = async (createVariantAfterSuggest: boolean) => {
+    setBusy(true);
+    setError(null);
+    try {
+      const res = await api.optimizePrompt({
+        section: activeSection,
+        variantId: activeVariant?.id,
+        createVariant: createVariantAfterSuggest,
+      });
+      setSuggestion(res.data ?? null);
+      if (res.data?.content) setDraft(res.data.content);
+      if (res.data?.createdVariant) {
+        toast.success('Optimizer variant created');
+        await load(activeSection);
+        setCandidateId(res.data.createdVariant.id);
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const createExperiment = async () => {
+    if (!activeVariant || !candidate || activeVariant.id === candidate.id) {
+      setError('Select an active control variant and a different candidate');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.createPromptExperiment({
+        section: activeSection,
+        name: `${sections.find((section) => section.id === activeSection)?.label ?? activeSection} test`,
+        controlVariantId: activeVariant.id,
+        candidateVariantId: candidate.id,
+        trafficPercentage: 20,
+        minSamples: 30,
+        autoPromote: true,
+        start: true,
+      });
+      toast.success('Experiment started');
+      await load(activeSection);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div
+      style={{
+        borderTop: '1px solid var(--separator)',
+        marginTop: '10px',
+        paddingTop: '12px',
+        display: 'grid',
+        gridTemplateColumns: 'minmax(170px, 220px) minmax(0, 1fr)',
+        gap: '12px',
+        minHeight: '240px',
+      }}
+    >
+      <div style={{ display: 'grid', gap: '6px', alignContent: 'start' }}>
+        {sections.map((section) => (
+          <button
+            key={section.id}
+            className={activeSection === section.id ? '' : 'btn-ghost'}
+            onClick={() => setActiveSection(section.id)}
+            style={{ justifyContent: 'space-between', textAlign: 'left', fontSize: '12px' }}
+          >
+            <span>{section.label}</span>
+            <span style={{ opacity: 0.65 }}>{section.variantCount}</span>
+          </button>
+        ))}
+      </div>
+
+      <div style={{ display: 'grid', gap: '10px', minWidth: 0 }}>
+        {error && <div className="alert error">{error}</div>}
+
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(220px, 280px)', gap: '12px' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+              <h3 style={{ fontSize: '14px', margin: 0 }}>Variants</h3>
+              <button className="btn-ghost" onClick={() => void load(activeSection)} disabled={busy}>
+                Refresh
+              </button>
+            </div>
+            <div style={{ display: 'grid', gap: '6px', maxHeight: '190px', overflow: 'auto' }}>
+              {variants.length === 0 ? (
+                <div style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>No variants</div>
+              ) : (
+                variants.map((variant) => (
+                  <div
+                    key={variant.id}
+                    style={{
+                      border: '1px solid var(--separator)',
+                      borderRadius: '8px',
+                      padding: '8px',
+                      display: 'grid',
+                      gap: '6px',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', justifyContent: 'space-between' }}>
+                      <strong style={{ fontSize: '12px' }}>{variantLabel(variant)}</strong>
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <button className="btn-ghost" onClick={() => onDiff(variant.content, `Prompt ${variantLabel(variant)}`)}>
+                          Diff
+                        </button>
+                        <button disabled={busy || variant.active} onClick={() => void activateVariant(variant)}>
+                          Activate
+                        </button>
+                      </div>
+                    </div>
+                    <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                      rating {ratingText(variant.metrics.averageRating)} · success {metricPercent(variant.metrics.taskSuccessRate)} · quality {metricPercent(variant.metrics.responseQualityScore)} · n={variant.metrics.interactions}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div style={{ minWidth: 0 }}>
+            <h3 style={{ fontSize: '14px', margin: '0 0 8px' }}>Create</h3>
+            <textarea
+              value={draft}
+              onChange={(event) => setDraft(event.target.value)}
+              placeholder="Variant content, or leave blank to use the current editor content"
+              style={{ width: '100%', minHeight: '126px', resize: 'vertical', fontFamily: 'var(--font-mono)' }}
+            />
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '8px' }}>
+              <button onClick={() => void createVariant(false)} disabled={busy}>Create</button>
+              <button onClick={() => void createVariant(true)} disabled={busy}>Create + Activate</button>
+              <button className="btn-ghost" onClick={() => void suggestImprovement(false)} disabled={busy}>
+                Suggest
+              </button>
+              <button className="btn-ghost" onClick={() => void suggestImprovement(true)} disabled={busy}>
+                Suggest + Save
+              </button>
+            </div>
+            {suggestion && (
+              <div style={{ color: 'var(--text-secondary)', fontSize: '11px', marginTop: '8px' }}>
+                {suggestion.validation.passed ? 'Validation passed' : suggestion.validation.issues.join(', ')}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ borderTop: '1px solid var(--separator)', paddingTop: '10px', display: 'grid', gap: '8px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+            <h3 style={{ fontSize: '14px', margin: 0 }}>A/B Tests</h3>
+            <select
+              value={candidateId ?? ''}
+              onChange={(event) => setCandidateId(Number(event.target.value) || null)}
+              style={{ minWidth: '180px' }}
+            >
+              {variants.filter((variant) => !variant.active).map((variant) => (
+                <option key={variant.id} value={variant.id}>
+                  Candidate v{variant.version}
+                </option>
+              ))}
+            </select>
+            <button onClick={() => void createExperiment()} disabled={busy || !activeVariant || !candidate}>
+              Start 80/20
+            </button>
+          </div>
+          <div style={{ display: 'flex', gap: '8px', overflowX: 'auto' }}>
+            {experiments.length === 0 ? (
+              <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>No experiments</span>
+            ) : (
+              experiments.map((experiment) => (
+                <div key={experiment.id} style={{ border: '1px solid var(--separator)', borderRadius: '8px', padding: '8px', minWidth: '190px' }}>
+                  <strong style={{ fontSize: '12px' }}>{experiment.name}</strong>
+                  <div style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>
+                    {experiment.status} · {experiment.trafficPercentage}% candidate · n {experiment.metrics.sampleCounts[String(experiment.controlVariantId)] ?? 0}/{experiment.metrics.sampleCounts[String(experiment.candidateVariantId)] ?? 0}
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function Soul() {
   const { confirm } = useConfirm();
   const [activeTab, setActiveTab] = useState<string>(SOUL_FILES[0]);
@@ -92,6 +377,7 @@ export function Soul() {
   const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [showSaveVersionDialog, setShowSaveVersionDialog] = useState(false);
   const [savingVersion, setSavingVersion] = useState(false);
+  const [showAdaptivePrompting, setShowAdaptivePrompting] = useState(false);
 
   // Diff view state
   const [diffState, setDiffState] = useState<{ versionContent: string; label: string } | null>(null);
@@ -256,7 +542,16 @@ export function Soul() {
         <div className={`alert ${message.type}`} style={{ marginBottom: '8px' }}>{message.text}</div>
       )}
 
-      <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px' }}>
+      <div
+        className="card"
+        style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: showAdaptivePrompting ? 'auto' : 'hidden',
+          padding: '12px',
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
           <div className="tabs" style={{ flex: 1, marginBottom: 0 }}>
             {SOUL_FILES.map((file) => (
@@ -321,8 +616,23 @@ export function Soul() {
                 History
               </button>
 
+              <button
+                onClick={() => setShowAdaptivePrompting((v) => !v)}
+                className={showAdaptivePrompting ? 'active' : ''}
+                title="Manage adaptive prompt variants and experiments"
+              >
+                Adaptive
+              </button>
+
               {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Unsaved changes</span>}
             </div>
+
+            {showAdaptivePrompting && (
+              <AdaptivePromptPanel
+                editorContent={content}
+                onDiff={(versionContent, label) => setDiffState({ versionContent, label })}
+              />
+            )}
           </>
         )}
       </div>

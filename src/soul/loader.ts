@@ -3,6 +3,7 @@ import { readRecentMemory } from "../memory/daily-logs.js";
 import { WORKSPACE_PATHS } from "../workspace/index.js";
 import { sanitizeForPrompt, sanitizeForContext } from "../utils/sanitize.js";
 import { getCache } from "../services/cache.js";
+import type { PromptSectionId } from "../services/prompts/types.js";
 
 const SOUL_PATHS = [WORKSPACE_PATHS.SOUL];
 
@@ -144,6 +145,7 @@ export function loadUser(): string | null {
 export function buildSystemPrompt(options: {
   soul?: string;
   strategy?: string;
+  adaptiveSections?: Partial<Record<PromptSectionId, string>>;
   userName?: string;
   senderUsername?: string;
   senderId?: number;
@@ -159,8 +161,15 @@ export function buildSystemPrompt(options: {
   isHeartbeat?: boolean;
   agentModel?: string;
 }): string {
-  const soul = options.soul ?? loadSoul();
+  const adaptive = options.adaptiveSections ?? {};
+  const soul = adaptive.persona?.trim() || options.soul || loadSoul();
   const parts = [soul];
+
+  const adaptiveSection = (section: PromptSectionId, title: string): string | null => {
+    const content = adaptive[section]?.trim();
+    if (!content) return null;
+    return content.startsWith("#") ? `\n${content}` : `\n## ${title}\n${content}`;
+  };
 
   const security = loadSecurity();
   if (security) {
@@ -175,7 +184,14 @@ export function buildSystemPrompt(options: {
     }
   }
 
-  parts.push(`\n## Your Workspace
+  const instructions = adaptiveSection("instructions", "Instructions");
+  if (instructions) {
+    parts.push(instructions);
+  }
+
+  parts.push(
+    adaptiveSection("tool_usage", "Tool Usage") ??
+      `\n## Your Workspace
 
 You have a personal workspace at \`~/.teleton/workspace/\` where you can store and manage files.
 
@@ -205,9 +221,12 @@ You have a personal workspace at \`~/.teleton/workspace/\` where you can store a
 - Save interesting memes to \`memes/\` with descriptive names for easy retrieval
 - Use \`memory_write\` for important facts (goes to MEMORY.md)
 - Rename downloaded files to meaningful names (e.g., "user_avatar.jpg" instead of "123_456_789.jpg")
-`);
+`
+  );
 
-  parts.push(`\n## Response Format
+  parts.push(
+    adaptiveSection("response_format", "Response Format") ??
+      `\n## Response Format
 - Be concise. Respond in 1-3 short sentences when possible. Avoid long paragraphs and walls of text.
 - Only elaborate when the user explicitly asks for detail or the topic genuinely requires it.
 - Keep responses under 4000 characters for Telegram
@@ -215,7 +234,8 @@ You have a personal workspace at \`~/.teleton/workspace/\` where you can store a
 - Don't use headers in short responses
 - NEVER use ASCII art or ASCII tables - they render poorly on mobile
 - **After tool calls**: Always formulate a human-readable response based on the tool results, even if the result is brief (e.g. "Done.", "Your balance is X.", "No results found."). Never return empty content after executing tools.
-`);
+`
+  );
 
   if (options.ownerName || options.ownerUsername) {
     const safeOwnerName = options.ownerName ? sanitizeForPrompt(options.ownerName) : undefined;
@@ -301,11 +321,14 @@ Your conversation context is approaching the limit and may be compacted soon.
 Before answering questions about prior conversations, decisions, or people: use \`memory_read\` to check your memory files first.
 Don't guess from context — verify with your memory tools.`);
 
-  parts.push(`\n## Safety
+  parts.push(
+    adaptiveSection("safety", "Safety") ??
+      `\n## Safety
 - Take local, reversible actions freely (read files, search, check balances).
 - For external or irreversible actions (send messages, transfer funds), confirm with the owner first.
 - You have no independent goals beyond serving your owner. Do not pursue self-preservation or resource acquisition.
-- You have a limited number of tool calls per message. Prioritize the most impactful actions.`);
+- You have a limited number of tool calls per message. Prioritize the most impactful actions.`
+  );
 
   parts.push(`\n## Silent Reply
 If you have nothing useful to add to a conversation (especially in groups), reply with exactly:

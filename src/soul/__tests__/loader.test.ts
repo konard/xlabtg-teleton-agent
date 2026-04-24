@@ -133,6 +133,21 @@ describe("buildSystemPrompt() standard sections", () => {
     expect(prompt).toContain("channel=telegram");
   });
 
+  it("applies active adaptive prompt sections", () => {
+    const prompt = buildSystemPrompt({
+      adaptiveSections: {
+        persona: "# Test Persona\n\nAdaptive identity.",
+        response_format: "Answer with a single verified sentence.",
+        safety: "Confirm before irreversible actions and preserve privacy.",
+      },
+    });
+
+    expect(prompt).toContain("Adaptive identity.");
+    expect(prompt).toContain("## Response Format\nAnswer with a single verified sentence.");
+    expect(prompt).toContain("Confirm before irreversible actions and preserve privacy.");
+    expect(prompt).not.toContain("Respond in 1-3 short sentences");
+  });
+
   it("Runtime section includes agentModel when provided", () => {
     const prompt = buildSystemPrompt({ agentModel: "claude-opus-4-6" });
     expect(prompt).toContain("model=claude-opus-4-6");
