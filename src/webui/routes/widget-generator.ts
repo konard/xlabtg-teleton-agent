@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getTokenUsage } from "../../agent/token-usage.js";
 import { createDataSourceCatalog } from "../../services/data-source-catalog.js";
+import { initAnalytics } from "../../services/analytics.js";
 import {
   type GeneratedWidgetDefinition,
   type GenerateWidgetInput,
@@ -9,6 +10,7 @@ import {
   WidgetGeneratorService,
 } from "../../services/widget-generator.js";
 import { initMetrics } from "../../services/metrics.js";
+import { initPredictions } from "../../services/predictions.js";
 import { getErrorMessage } from "../../utils/errors.js";
 
 type PreviewRow = Record<string, unknown>;
@@ -60,6 +62,18 @@ function readPreviewData(
       return initMetrics(deps.memory.db).getTokenUsage(periodHours) as unknown as PreviewRow[];
     case "metrics.activity":
       return initMetrics(deps.memory.db).getActivity(periodHours) as unknown as PreviewRow[];
+    case "analytics.performance": {
+      const summary = initAnalytics(deps.memory.db).getPerformanceSummary(periodHours);
+      return [
+        {
+          totalRequests: summary.totalRequests,
+          errorCount: summary.errorCount,
+          successRate: summary.successRate,
+          avgResponseMs: summary.avgResponseMs,
+          p95Ms: summary.p95Ms,
+        },
+      ];
+    }
     case "memory.stats":
       return [
         {
@@ -96,6 +110,11 @@ function readPreviewData(
       } catch {
         return [];
       }
+    case "predictions.next":
+      return initPredictions(deps.memory.db).getNextActions({
+        confidenceThreshold: 0,
+        limit: 5,
+      }) as unknown as PreviewRow[];
     default:
       return [];
   }

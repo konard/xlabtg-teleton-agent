@@ -348,12 +348,27 @@ describe("Memory Schema", () => {
           "from_agent_id",
           "to_agent_id",
           "correlation_id",
+          "replay_key",
           "payload",
           "signature",
           "timestamp",
           "status",
         ])
       );
+
+      const messageIndexes = db
+        .prepare(
+          `
+            SELECT name, sql
+            FROM sqlite_master
+            WHERE type='index' AND tbl_name='network_messages'
+          `
+        )
+        .all() as Array<{ name: string; sql: string | null }>;
+      const replayIndex = messageIndexes.find(
+        (index) => index.name === "idx_network_messages_replay_key"
+      );
+      expect(replayIndex?.sql).toMatch(/CREATE UNIQUE INDEX/i);
     });
 
     it("creates memory graph tables with correct schema", () => {
@@ -1326,7 +1341,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.35.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.36.0");
     });
   });
 

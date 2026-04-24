@@ -272,7 +272,7 @@ Useful for testing connectivity and key validity without side effects.
 
 ### Reused WebUI Routes
 
-The API mounts all existing WebUI route factories under `/v1/`, giving you full access to every dashboard feature via HTTP:
+The API mounts stable WebUI route factories under `/v1/`, giving remote management clients access to dashboard features via HTTP:
 
 | Prefix | Description |
 |--------|-------------|
@@ -289,7 +289,35 @@ The API mounts all existing WebUI route factories under `/v1/`, giving you full 
 | `/v1/marketplace` | Plugin marketplace |
 | `/v1/hooks` | Hook management |
 | `/v1/ton-proxy` | TON Proxy control |
+| `/v1/notifications` | In-app notifications and unread counts |
+| `/v1/cache` | Predictive cache inspection and controls |
+| `/v1/metrics` | Operational metrics |
+| `/v1/sessions` | Chat session search and inspection |
+| `/v1/analytics` | Usage analytics |
+| `/v1/anomalies` | Anomaly detection data |
+| `/v1/security` | Security status and zero-trust policy data |
+| `/v1/audit` | Audit trail search and stream |
+| `/v1/health-check` | Composite application health checks |
+| `/v1/export` | Safe configuration and prompt export/import |
+| `/v1/workflows` | Workflow definitions and scheduling |
+| `/v1/pipelines` | Pipeline definitions and execution |
+| `/v1/self-improvement` | Self-improvement run history and controls |
+| `/v1/autonomous` | Autonomous task queue and policy routes |
+| `/v1/predictions` | Prediction service data |
+| `/v1/context` | Temporal context analytics |
+| `/v1/dashboards` | Dynamic dashboard layout and widgets |
+| `/v1/widgets` | Widget generator routes |
+| `/v1/network` | Agent network registry and delegation routes |
 | `/v1/setup` | Setup wizard (works without agent) |
+
+WebUI route groups intentionally not mirrored in the Management API:
+
+| WebUI Prefix | Reason |
+|--------------|--------|
+| `/api/agent-network` | Signed inter-agent ingress with protocol authentication, not API key authentication |
+| `/api/agent-actions` | Browser-specific control helper; management clients use `/v1/agent` |
+| `/api/groq` | WebUI provider configuration helper |
+| `/api/mtproto` | WebUI setup/configuration helper |
 
 > Routes that require agent subsystems (memory, bridge, etc.) return `503` with an RFC 9457 error if the agent is not running.
 

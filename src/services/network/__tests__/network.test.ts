@@ -5,6 +5,7 @@ import { ensureSchema } from "../../../memory/schema.js";
 import { NetworkTaskCoordinator } from "../coordinator.js";
 import { getAgentNetworkStore } from "../discovery.js";
 import { NetworkMessenger, signNetworkMessage, verifyNetworkMessage } from "../messenger.js";
+import { NetworkTrustService } from "../trust.js";
 import type { AgentNetworkAdvertisement } from "../types.js";
 
 describe("agent network services", () => {
@@ -130,7 +131,7 @@ describe("agent network services", () => {
     const message = {
       type: "task_request" as const,
       from: "research-remote",
-      to: "other-agent",
+      to: "other-local-agent",
       correlationId: "corr-wrong-recipient",
       timestamp: new Date().toISOString(),
       payload: { description: "Summarize this document" },
@@ -139,7 +140,42 @@ describe("agent network services", () => {
     expect(() => messenger.receiveMessage(signNetworkMessage(message, privateKey))).toThrow(
       "not addressed to local agent"
     );
-    expect(store.listMessages()).toHaveLength(0);
+    expect(store.listMessages({ from: "research-remote" })).toHaveLength(0);
+  });
+
+  it("applies configured inbound trust policy before logging received messages", () => {
+    const { publicKey, privateKey } = generateKeyPairSync("ed25519");
+    const store = getAgentNetworkStore(db);
+    store.registerAgent(
+      {
+        agentId: "research-remote",
+        name: "Remote Research",
+        endpoint: "https://remote.example.com/api/agent-network",
+        capabilities: ["summarization"],
+        status: "available",
+        load: 0.2,
+        publicKey: publicKey.export({ format: "pem", type: "spki" }).toString(),
+      },
+      { trustLevel: "verified" }
+    );
+    const messenger = new NetworkMessenger({
+      store,
+      localAgentId: "primary",
+      trustService: new NetworkTrustService({ allowlist: ["other-agent"] }),
+    });
+    const message = {
+      type: "task_request" as const,
+      from: "research-remote",
+      to: "primary",
+      correlationId: "corr-not-allowlisted",
+      timestamp: new Date().toISOString(),
+      payload: { description: "Summarize this document" },
+    };
+
+    expect(() => messenger.receiveMessage(signNetworkMessage(message, privateKey))).toThrow(
+      "not allowlisted"
+    );
+    expect(store.listMessages({ from: "research-remote" })).toHaveLength(0);
   });
 
   it("delegates work to the least-loaded verified capable agent and logs the message", async () => {

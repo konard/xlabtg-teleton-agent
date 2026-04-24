@@ -69,4 +69,6 @@ Signed remote ingress:
 
 - `POST /api/agent-network`
 
-Inbound `task_request` messages create a local pending task with `created_by` set to `network:<agentId>`. Network messages are recorded in `network_messages` and mirrored into the tamper-evident audit trail as `network.message` events.
+Inbound `task_request` messages are submitted to the autonomous task manager when it is available, and the ingress response includes `taskRuntime: "autonomous"` plus an `execution` state of `dispatched` or `queued`. The autonomous task context stores the source agent, network message id, correlation id, requested capabilities, and nested task payload.
+
+If the autonomous manager is not configured, ingress still records the request as an explicit manual inbox item in the scheduled-task table with `created_by` set to `network:<agentId>`. In that fallback case the response includes `taskRuntime: "manual_inbox"` and `execution.state: "queued"` so callers can distinguish accepted-but-manual work from dispatched work. Network messages are recorded in `network_messages` and mirrored into the tamper-evident audit trail as `network.message` events.

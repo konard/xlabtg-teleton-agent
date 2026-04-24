@@ -39,6 +39,7 @@ interface NetworkMessageRow {
   from_agent_id: string;
   to_agent_id: string;
   correlation_id: string;
+  replay_key: string | null;
   payload: string;
   signature: string | null;
   timestamp: string;
@@ -139,6 +140,10 @@ function normalizeMessageStatus(value: string): NetworkMessageStatus {
   return NETWORK_MESSAGE_STATUSES.includes(value as NetworkMessageStatus)
     ? (value as NetworkMessageStatus)
     : "queued";
+}
+
+function messageReplayKey(envelope: NetworkMessageEnvelope): string {
+  return JSON.stringify([envelope.from, envelope.to, envelope.correlationId]);
 }
 
 function rowToAgent(row: NetworkAgentRow): NetworkAgentRecord {
@@ -339,15 +344,16 @@ export class AgentNetworkStore {
     const sentAt = options.sentAt === undefined && status === "sent" ? now : options.sentAt;
     const receivedAt =
       options.receivedAt === undefined && status === "received" ? now : options.receivedAt;
+    const replayKey = status === "received" ? messageReplayKey(envelope) : null;
 
     this.db
       .prepare(
         `
           INSERT INTO network_messages (
-            id, type, from_agent_id, to_agent_id, correlation_id, payload,
+            id, type, from_agent_id, to_agent_id, correlation_id, replay_key, payload,
             signature, timestamp, status, error, created_at, sent_at, received_at
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `
       )
       .run(
@@ -356,6 +362,7 @@ export class AgentNetworkStore {
         envelope.from,
         envelope.to,
         envelope.correlationId,
+        replayKey,
         JSON.stringify(envelope.payload ?? {}),
         envelope.signature ?? null,
         envelope.timestamp,
@@ -371,6 +378,24 @@ export class AgentNetworkStore {
       | undefined;
     if (!row) throw new Error(`Network message log failed: ${id}`);
     return rowToMessage(row);
+  }
+
+  findReceivedMessage(envelope: NetworkMessageEnvelope): NetworkMessageRecord | null {
+    const row = this.db
+      .prepare(
+        `
+          SELECT *
+          FROM network_messages
+          WHERE status = 'received'
+            AND from_agent_id = ?
+            AND to_agent_id = ?
+            AND correlation_id = ?
+          ORDER BY created_at ASC, rowid ASC
+          LIMIT 1
+        `
+      )
+      .get(envelope.from, envelope.to, envelope.correlationId) as NetworkMessageRow | undefined;
+    return row ? rowToMessage(row) : null;
   }
 
   listMessages(filter: MessageListFilter = {}): NetworkMessageRecord[] {

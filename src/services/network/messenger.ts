@@ -62,6 +62,14 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "SQLITE_CONSTRAINT_UNIQUE"
+  );
+}
+
 export function signNetworkMessage(
   message: Omit<NetworkMessageEnvelope, "signature">,
   privateKey: KeyLike | string
@@ -89,6 +97,13 @@ export function verifyNetworkMessage(
   }
 }
 
+export class NetworkMessageReplayError extends Error {
+  constructor(readonly existingMessage: NetworkMessageRecord) {
+    super(`Network message replay detected for correlation id ${existingMessage.correlationId}`);
+    this.name = "NetworkMessageReplayError";
+  }
+}
+
 export class NetworkMessenger {
   private readonly store: AgentNetworkStore;
   private readonly localAgentId: string;
@@ -101,7 +116,7 @@ export class NetworkMessenger {
 
   constructor(options: NetworkMessengerOptions) {
     this.store = options.store;
-    this.localAgentId = options.localAgentId ?? "primary";
+    this.localAgentId = options.localAgentId?.trim() || "primary";
     this.privateKey = options.privateKey ?? null;
     this.fetcher = options.fetcher ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 15_000;
@@ -172,7 +187,7 @@ export class NetworkMessenger {
   receiveMessage(message: NetworkMessageEnvelope): NetworkMessageRecord {
     if (message.to !== this.localAgentId) {
       throw new Error(
-        `Network message ${message.correlationId} is not addressed to local agent ${this.localAgentId}`
+        `Network message to ${message.to} is not addressed to local agent ${this.localAgentId}`
       );
     }
 
@@ -202,7 +217,23 @@ export class NetworkMessenger {
       throw new Error(authorization.reason ?? "Network sender is not authorized");
     }
 
-    const record = this.store.logMessage(message, "received");
+    const existing = this.store.findReceivedMessage(message);
+    if (existing) {
+      throw new NetworkMessageReplayError(existing);
+    }
+
+    let record: NetworkMessageRecord;
+    try {
+      record = this.store.logMessage(message, "received");
+    } catch (error) {
+      if (isUniqueConstraintError(error)) {
+        const replayed = this.store.findReceivedMessage(message);
+        if (replayed) {
+          throw new NetworkMessageReplayError(replayed);
+        }
+      }
+      throw error;
+    }
     this.auditMessage(record);
     return record;
   }
