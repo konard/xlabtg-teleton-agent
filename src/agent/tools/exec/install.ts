@@ -65,6 +65,7 @@ export function createExecInstallExecutor(
     const result = await runCommand(command, {
       timeout: timeout * 1000,
       maxOutput: max_output,
+      sandboxMode: execConfig.sandbox_mode,
     });
 
     const status = result.timedOut ? "timeout" : result.exitCode === 0 ? "success" : "failed";
@@ -92,6 +93,8 @@ export function createExecInstallExecutor(
         duration: result.duration,
         truncated: result.truncated,
         timedOut: result.timedOut,
+        dryRun: result.dryRun ?? false,
+        sandboxMode: result.sandboxMode ?? execConfig.sandbox_mode,
       },
       ...(result.timedOut
         ? { error: `Install timed out after ${timeout}s` }

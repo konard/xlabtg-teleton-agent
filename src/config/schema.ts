@@ -610,6 +610,12 @@ const _ExecObject = z.object({
         "Shell operators (pipes, &&, redirects, command substitution) are always rejected in allowlist mode. " +
         "Empty list blocks all commands."
     ),
+  sandbox_mode: z
+    .enum(["unrestricted", "sandboxed", "dry-run"])
+    .default("unrestricted")
+    .describe(
+      "Execution isolation for exec tools: unrestricted (current behavior), sandboxed (temporary cwd and minimal env), or dry-run (validate/audit without spawning)."
+    ),
   limits: _ExecLimitsObject.default(_ExecLimitsObject.parse({})),
   audit: _ExecAuditObject.default(_ExecAuditObject.parse({})),
 });

@@ -1,3 +1,5 @@
+import type { SandboxMode } from "../../../services/sandbox.js";
+
 export interface ExecResult {
   stdout: string;
   stderr: string;
@@ -6,6 +8,8 @@ export interface ExecResult {
   duration: number; // ms
   truncated: boolean;
   timedOut: boolean;
+  dryRun?: boolean;
+  sandboxMode?: SandboxMode;
 }
 
 export interface ExecAuditEntry {
@@ -27,4 +31,5 @@ export interface RunOptions {
   maxOutput: number; // chars
   /** When false, execute via spawn(argv[0], argv.slice(1)) without a shell. Default: true. */
   useShell?: boolean;
+  sandboxMode?: SandboxMode;
 }
