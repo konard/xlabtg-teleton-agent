@@ -69,6 +69,28 @@ vi.mock("telegram", () => {
           this.expires = args.expires;
         }
       },
+      LoginTokenSuccess: class LoginTokenSuccess {
+        authorization: unknown;
+        constructor(args: { authorization: unknown }) {
+          this.authorization = args.authorization;
+        }
+      },
+      Authorization: class Authorization {
+        user: unknown;
+        constructor(args: { user: unknown }) {
+          this.user = args.user;
+        }
+      },
+    },
+    User: class User {
+      id: bigint;
+      firstName: string;
+      username?: string;
+      constructor(args: { id: bigint; firstName: string; username?: string }) {
+        this.id = args.id;
+        this.firstName = args.firstName;
+        this.username = args.username;
+      }
     },
     CodeSettings: class {
       constructor(_args?: unknown) {}
@@ -122,6 +144,8 @@ vi.mock("../../utils/logger.js", () => ({
 import { Api } from "telegram";
 import { TelegramAuthManager } from "../setup-auth.js";
 import type { MtprotoProxyEntry } from "../../config/schema.js";
+import { readRawConfig, writeRawConfig } from "../../config/configurable-keys.js";
+import { writeFileSync } from "fs";
 
 function makeSentCode() {
   return new Api.auth.SentCode({
@@ -207,5 +231,38 @@ describe("TelegramAuthManager — MTProto proxy support", () => {
         MTProxy: true,
       },
     });
+  });
+
+  it("returns authenticated from QR refresh when setup config has not been saved yet", async () => {
+    mockInvoke.mockResolvedValueOnce(
+      new Api.auth.LoginToken({
+        token: Buffer.from("qr-token"),
+        expires: 1_800_000_000,
+      })
+    );
+    const start = await manager.startQrSession(12345, "abcdef");
+    vi.mocked(readRawConfig).mockImplementationOnce(() => {
+      throw new Error(
+        "Config file not found: /tmp/teleton-test/config.yaml\nRun 'teleton setup' to create one."
+      );
+    });
+    mockInvoke.mockResolvedValueOnce(
+      new Api.auth.LoginTokenSuccess({
+        authorization: new Api.auth.Authorization({
+          user: new Api.User({ id: BigInt(123), firstName: "Setup", username: "setupuser" }),
+        }),
+      })
+    );
+
+    const result = await manager.refreshQrToken(start.authSessionId);
+
+    expect(result.status).toBe("authenticated");
+    expect(result.user).toEqual({ id: 123, firstName: "Setup", username: "setupuser" });
+    expect(writeFileSync).toHaveBeenCalledWith(
+      "/tmp/teleton-test/telegram_session.txt",
+      "session-string",
+      { mode: 0o600 }
+    );
+    expect(writeRawConfig).not.toHaveBeenCalled();
   });
 });

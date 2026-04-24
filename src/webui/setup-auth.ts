@@ -25,6 +25,10 @@ const SESSION_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_CODE_ATTEMPTS = 5;
 const MAX_PASSWORD_ATTEMPTS = 3;
 
+function isConfigNotFoundError(error: unknown): boolean {
+  return error instanceof Error && error.message.startsWith("Config file not found:");
+}
+
 export interface TelegramAuthSaveTarget {
   rootDir?: string;
   configPath?: string;
@@ -577,36 +581,50 @@ export class TelegramAuthManager {
 
     writeFileSync(sessionPath, sessionString, { mode: 0o600 });
 
-    // Persist telegram credentials to config.yaml
+    // Persist telegram credentials to config.yaml when it already exists. During
+    // the primary setup wizard, authentication happens before /config/save.
     const configPath = session.saveTarget?.configPath ?? join(rootDir, "config.yaml");
-    const raw = readRawConfig(configPath);
-    raw.telegram = raw.telegram ?? {};
-    raw.telegram.api_id = session.apiId;
-    raw.telegram.api_hash = session.apiHash;
-    raw.telegram.session_path = sessionPath;
-    if (session.type === "phone") {
-      raw.telegram.phone = session.phone;
-    }
-    if (user) {
-      if (session.saveTarget?.replaceTelegramIdentity) {
-        raw.telegram.owner_id = user.id;
-        raw.telegram.owner_name = user.firstName;
-        if (user.username) {
-          raw.telegram.owner_username = user.username;
-        } else {
-          delete raw.telegram.owner_username;
-        }
-        raw.telegram.admin_ids = [user.id];
-      } else {
-        raw.telegram.owner_id = raw.telegram.owner_id ?? user.id;
-        raw.telegram.owner_name = raw.telegram.owner_name ?? user.firstName;
-        raw.telegram.owner_username = raw.telegram.owner_username ?? user.username;
-        const adminIds = Array.isArray(raw.telegram.admin_ids) ? raw.telegram.admin_ids : [];
-        raw.telegram.admin_ids = [...new Set([...adminIds, user.id])];
+    let configSaved = false;
+    try {
+      const raw = readRawConfig(configPath);
+      raw.telegram = raw.telegram ?? {};
+      raw.telegram.api_id = session.apiId;
+      raw.telegram.api_hash = session.apiHash;
+      raw.telegram.session_path = sessionPath;
+      if (session.type === "phone") {
+        raw.telegram.phone = session.phone;
       }
+      if (user) {
+        if (session.saveTarget?.replaceTelegramIdentity) {
+          raw.telegram.owner_id = user.id;
+          raw.telegram.owner_name = user.firstName;
+          if (user.username) {
+            raw.telegram.owner_username = user.username;
+          } else {
+            delete raw.telegram.owner_username;
+          }
+          raw.telegram.admin_ids = [user.id];
+        } else {
+          raw.telegram.owner_id = raw.telegram.owner_id ?? user.id;
+          raw.telegram.owner_name = raw.telegram.owner_name ?? user.firstName;
+          raw.telegram.owner_username = raw.telegram.owner_username ?? user.username;
+          const adminIds = Array.isArray(raw.telegram.admin_ids) ? raw.telegram.admin_ids : [];
+          raw.telegram.admin_ids = [...new Set([...adminIds, user.id])];
+        }
+      }
+      writeRawConfig(raw, configPath);
+      configSaved = true;
+    } catch (err) {
+      if (session.saveTarget?.configPath || !isConfigNotFoundError(err)) {
+        throw err;
+      }
+      log.info({ configPath }, "Config file not created yet; setup will save it later");
     }
-    writeRawConfig(raw, configPath);
 
-    log.info("Telegram session and credentials saved");
+    log.info(
+      configSaved
+        ? "Telegram session and credentials saved"
+        : "Telegram session saved; credentials pending setup config save"
+    );
   }
 }
