@@ -187,6 +187,30 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_started ON sessions(started_at DESC);
     CREATE INDEX IF NOT EXISTS idx_sessions_updated ON sessions(updated_at DESC);
 
+    -- Correction loop logs
+    CREATE TABLE IF NOT EXISTS correction_logs (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      task_id TEXT,
+      chat_id TEXT NOT NULL,
+      iteration INTEGER NOT NULL,
+      original_output TEXT NOT NULL,
+      evaluation TEXT NOT NULL,
+      reflection TEXT,
+      corrected_output TEXT,
+      score REAL NOT NULL CHECK(score >= 0 AND score <= 1),
+      corrected_score REAL CHECK(corrected_score IS NULL OR (corrected_score >= 0 AND corrected_score <= 1)),
+      score_delta REAL NOT NULL DEFAULT 0,
+      threshold REAL NOT NULL DEFAULT 0.7,
+      escalated INTEGER NOT NULL DEFAULT 0 CHECK(escalated IN (0, 1)),
+      tool_recovery TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_correction_logs_session ON correction_logs(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_correction_logs_task ON correction_logs(task_id, created_at DESC) WHERE task_id IS NOT NULL;
+    CREATE INDEX IF NOT EXISTS idx_correction_logs_created ON correction_logs(created_at DESC);
+
     -- Tasks
     CREATE TABLE IF NOT EXISTS tasks (
       id TEXT PRIMARY KEY,
@@ -699,7 +723,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.29.0";
+export const CURRENT_SCHEMA_VERSION = "1.30.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1552,6 +1576,40 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.29.0 complete: pipeline execution tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.29.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.30.0")) {
+    log.info("Running migration 1.30.0: Add correction_logs table");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS correction_logs (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          task_id TEXT,
+          chat_id TEXT NOT NULL,
+          iteration INTEGER NOT NULL,
+          original_output TEXT NOT NULL,
+          evaluation TEXT NOT NULL,
+          reflection TEXT,
+          corrected_output TEXT,
+          score REAL NOT NULL CHECK(score >= 0 AND score <= 1),
+          corrected_score REAL CHECK(corrected_score IS NULL OR (corrected_score >= 0 AND corrected_score <= 1)),
+          score_delta REAL NOT NULL DEFAULT 0,
+          threshold REAL NOT NULL DEFAULT 0.7,
+          escalated INTEGER NOT NULL DEFAULT 0 CHECK(escalated IN (0, 1)),
+          tool_recovery TEXT NOT NULL DEFAULT '[]',
+          created_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_correction_logs_session ON correction_logs(session_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_correction_logs_task ON correction_logs(task_id, created_at DESC) WHERE task_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_correction_logs_created ON correction_logs(created_at DESC);
+      `);
+      log.info("Migration 1.30.0 complete: correction_logs table created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.30.0 failed");
       throw error;
     }
   }

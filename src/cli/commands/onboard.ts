@@ -44,6 +44,7 @@ import {
   MarketplaceConfigSchema,
   MemoryConfigSchema,
   PredictionsConfigSchema,
+  SelfCorrectionConfigSchema,
   AnomalyDetectionConfigSchema,
   VectorMemoryConfigSchema,
 } from "../../config/schema.js";
@@ -1006,6 +1007,7 @@ async function runInteractiveOnboarding(
     embedding: { provider: "local" },
     vector_memory: VectorMemoryConfigSchema.parse({}),
     memory: MemoryConfigSchema.parse({}),
+    self_correction: SelfCorrectionConfigSchema.parse({}),
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
     cache: CacheConfigSchema.parse({}),
@@ -1209,6 +1211,7 @@ async function runNonInteractiveOnboarding(
     embedding: { provider: "local" },
     vector_memory: VectorMemoryConfigSchema.parse({}),
     memory: MemoryConfigSchema.parse({}),
+    self_correction: SelfCorrectionConfigSchema.parse({}),
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
     cache: CacheConfigSchema.parse({}),

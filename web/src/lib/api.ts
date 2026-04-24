@@ -670,6 +670,7 @@ export interface TaskData {
   error?: string | null;
   dependencies: string[];
   dependents: string[];
+  correctionCount?: number;
 }
 
 export type TaskSubtaskStatus =
@@ -1171,6 +1172,50 @@ export interface SessionSearchResult {
   chatType: string | null;
   chatTitle: string | null;
   score: number;
+}
+
+export interface CorrectionEvaluation {
+  score: number;
+  feedback: string;
+  criteria: {
+    completeness: number;
+    correctness: number;
+    toolUsage: number;
+    formatting: number;
+  };
+  issues: string[];
+  needsCorrection: boolean;
+}
+
+export interface CorrectionLogEntry {
+  id: string;
+  sessionId: string;
+  taskId: string | null;
+  chatId: string;
+  iteration: number;
+  originalOutput: string;
+  evaluation: CorrectionEvaluation;
+  reflection: {
+    summary: string;
+    instructions: string[];
+    focusAreas: string[];
+  } | null;
+  correctedOutput: string | null;
+  score: number;
+  correctedScore: number | null;
+  scoreDelta: number;
+  threshold: number;
+  escalated: boolean;
+  toolRecoveries: Array<{
+    toolName: string;
+    error: string;
+    kind: string;
+    retryable: boolean;
+    guidance: string;
+    adaptedParams?: Record<string, unknown>;
+  }>;
+  feedback: string;
+  createdAt: number;
 }
 
 // ── Autonomous Task types ───────────────────────────────────────────
@@ -1732,6 +1777,12 @@ export const api = {
 
   async tasksGet(id: string) {
     return fetchAPI<APIResponse<TaskData>>(`/tasks/${id}`);
+  },
+
+  async tasksCorrections(id: string) {
+    return fetchAPI<APIResponse<{ corrections: CorrectionLogEntry[] }>>(
+      `/tasks/${encodeURIComponent(id)}/corrections`
+    );
   },
 
   async tasksDelete(_id: string) {
@@ -2449,6 +2500,12 @@ export const api = {
     return fetchAPI<
       APIResponse<{ messages: SessionMessage[]; total: number; page: number; limit: number }>
     >(`/sessions/${encodeURIComponent(sessionId)}/messages?${params}`);
+  },
+
+  async getSessionCorrections(sessionId: string) {
+    return fetchAPI<APIResponse<{ corrections: CorrectionLogEntry[] }>>(
+      `/sessions/${encodeURIComponent(sessionId)}/corrections`
+    );
   },
 
   async deleteSession(sessionId: string) {
