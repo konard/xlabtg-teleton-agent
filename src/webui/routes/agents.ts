@@ -484,6 +484,7 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
         {
           configPath: authTarget.configPath,
           sessionPath: authTarget.sessionPath,
+          replaceTelegramIdentity: true,
         }
       );
       logAgentAudit(deps, `agent:personal-auth:send-code:${id}`);
@@ -626,6 +627,7 @@ export function createAgentsRoutes(deps: WebUIServerDeps) {
       const data = await personalAuthManager.startQrSession(authTarget.apiId, authTarget.apiHash, {
         configPath: authTarget.configPath,
         sessionPath: authTarget.sessionPath,
+        replaceTelegramIdentity: true,
       });
       logAgentAudit(deps, `agent:personal-auth:qr-start:${id}`);
       return c.json({ success: true, data } as APIResponse<typeof data>);

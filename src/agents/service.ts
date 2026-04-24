@@ -639,8 +639,14 @@ export class ManagedAgentService {
     }
     const personalConnection = normalizePersonalConnection(input.personalConnection);
     if (nextDefinition.mode === "personal") {
-      this.applyPersonalConnectionToConfig(config, personalConnection);
+      const personalConnectionChanged = this.applyPersonalConnectionToConfig(
+        config,
+        personalConnection
+      );
       this.validatePersonalConnectionConfig(config);
+      if (personalConnectionChanged) {
+        this.invalidatePersonalAuth(config);
+      }
     }
 
     saveConfig(config, definition.configPath);
@@ -722,8 +728,11 @@ export class ManagedAgentService {
 
     const config = loadConfig(definition.configPath);
     const overrides = normalizePersonalConnection(input);
-    this.applyPersonalConnectionToConfig(config, overrides);
+    const personalConnectionChanged = this.applyPersonalConnectionToConfig(config, overrides);
     this.validatePersonalConnectionConfig(config);
+    if (personalConnectionChanged) {
+      this.invalidatePersonalAuth(config);
+    }
     saveConfig(config, definition.configPath);
 
     return {
@@ -890,17 +899,32 @@ export class ManagedAgentService {
   private applyPersonalConnectionToConfig(
     config: Config,
     input?: ManagedAgentPersonalConnectionInput
-  ): void {
-    if (!input) return;
-    if (input.apiId !== undefined) {
+  ): boolean {
+    if (!input) return false;
+    let changed = false;
+    if (input.apiId !== undefined && config.telegram.api_id !== input.apiId) {
       config.telegram.api_id = input.apiId;
+      changed = true;
     }
-    if (input.apiHash !== undefined) {
+    if (input.apiHash !== undefined && config.telegram.api_hash !== input.apiHash) {
       config.telegram.api_hash = input.apiHash;
+      changed = true;
     }
-    if (input.phone !== undefined) {
+    if (input.phone !== undefined && config.telegram.phone !== input.phone) {
       config.telegram.phone = input.phone;
+      changed = true;
     }
+    return changed;
+  }
+
+  private invalidatePersonalAuth(config: Config): void {
+    if (config.telegram.session_path) {
+      rmSync(config.telegram.session_path, { force: true });
+    }
+    delete config.telegram.owner_id;
+    delete config.telegram.owner_name;
+    delete config.telegram.owner_username;
+    config.telegram.admin_ids = [];
   }
 
   private validatePersonalConnectionConfig(config: Config): void {

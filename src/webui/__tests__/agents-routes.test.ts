@@ -390,6 +390,7 @@ describe("Agents routes", () => {
     expect(telegramAuthMocks.sendCode).toHaveBeenCalledWith(12345, "abcdef", "+1234567890", {
       configPath: "/tmp/teleton/agents/support-copy/config.yaml",
       sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+      replaceTelegramIdentity: true,
     });
   });
 
@@ -441,6 +442,7 @@ describe("Agents routes", () => {
     expect(telegramAuthMocks.startQrSession).toHaveBeenCalledWith(12345, "abcdef", {
       configPath: "/tmp/teleton/agents/support-copy/config.yaml",
       sessionPath: "/tmp/teleton/agents/support-copy/telegram_session.txt",
+      replaceTelegramIdentity: true,
     });
   });
 

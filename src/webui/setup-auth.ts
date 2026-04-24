@@ -26,6 +26,7 @@ export interface TelegramAuthSaveTarget {
   rootDir?: string;
   configPath?: string;
   sessionPath?: string;
+  replaceTelegramIdentity?: boolean;
 }
 
 interface AuthenticatedUser {
@@ -520,11 +521,22 @@ export class TelegramAuthManager {
       raw.telegram.phone = session.phone;
     }
     if (user) {
-      raw.telegram.owner_id = raw.telegram.owner_id ?? user.id;
-      raw.telegram.owner_name = raw.telegram.owner_name ?? user.firstName;
-      raw.telegram.owner_username = raw.telegram.owner_username ?? user.username;
-      const adminIds = Array.isArray(raw.telegram.admin_ids) ? raw.telegram.admin_ids : [];
-      raw.telegram.admin_ids = [...new Set([...adminIds, user.id])];
+      if (session.saveTarget?.replaceTelegramIdentity) {
+        raw.telegram.owner_id = user.id;
+        raw.telegram.owner_name = user.firstName;
+        if (user.username) {
+          raw.telegram.owner_username = user.username;
+        } else {
+          delete raw.telegram.owner_username;
+        }
+        raw.telegram.admin_ids = [user.id];
+      } else {
+        raw.telegram.owner_id = raw.telegram.owner_id ?? user.id;
+        raw.telegram.owner_name = raw.telegram.owner_name ?? user.firstName;
+        raw.telegram.owner_username = raw.telegram.owner_username ?? user.username;
+        const adminIds = Array.isArray(raw.telegram.admin_ids) ? raw.telegram.admin_ids : [];
+        raw.telegram.admin_ids = [...new Set([...adminIds, user.id])];
+      }
     }
     writeRawConfig(raw, configPath);
 

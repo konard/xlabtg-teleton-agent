@@ -155,6 +155,68 @@ describe("ManagedAgentService", () => {
     expect(service.getRuntimeStatus(snapshot.id).transport).toBe("mtproto");
   });
 
+  it("invalidates the isolated personal session when credentials are updated", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Standalone Personal",
+      mode: "personal",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+    const authTarget = service.resolvePersonalAuthTarget(snapshot.id);
+    writeFileSync(authTarget.sessionPath, "session-string", "utf-8");
+    service.recordPersonalAuth(snapshot.id);
+
+    expect(service.getAgentSnapshot(snapshot.id).hasPersonalSession).toBe(true);
+
+    const updated = service.updateAgent(snapshot.id, {
+      personalConnection: { phone: "+15557654321" },
+    });
+    const updatedConfig = loadConfig(updated.configPath);
+
+    expect(updated.hasPersonalSession).toBe(false);
+    expect(existsSync(authTarget.sessionPath)).toBe(false);
+    expect(updatedConfig.telegram.phone).toBe("+15557654321");
+    expect(updatedConfig.telegram.owner_id).toBeUndefined();
+    expect(updatedConfig.telegram.admin_ids).toEqual([]);
+    expect(() => service?.startAgent(snapshot.id)).toThrow(
+      "verified Telegram auth session before they can start"
+    );
+  });
+
+  it("invalidates the isolated personal session when auth starts with new credentials", () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const snapshot = service.createAgent({
+      name: "Standalone Personal",
+      mode: "personal",
+      personalConnection: {
+        apiId: 98765,
+        apiHash: "managedhash123",
+        phone: "+15551234567",
+      },
+      acknowledgePersonalAccountAccess: true,
+    });
+    const initialAuthTarget = service.resolvePersonalAuthTarget(snapshot.id);
+    writeFileSync(initialAuthTarget.sessionPath, "session-string", "utf-8");
+    service.recordPersonalAuth(snapshot.id);
+
+    const nextAuthTarget = service.resolvePersonalAuthTarget(snapshot.id, {
+      apiHash: "newmanagedhash456",
+    });
+    const updatedConfig = loadConfig(snapshot.configPath);
+
+    expect(nextAuthTarget.apiHash).toBe("newmanagedhash456");
+    expect(existsSync(initialAuthTarget.sessionPath)).toBe(false);
+    expect(updatedConfig.telegram.owner_id).toBeUndefined();
+    expect(service.getAgentSnapshot(snapshot.id).hasPersonalSession).toBe(false);
+  });
+
   it("allocates unique ids when the same name is cloned twice", () => {
     service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
 
