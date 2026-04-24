@@ -422,6 +422,30 @@ const _LoggingObject = z.object({
 });
 export const LoggingConfigSchema = _LoggingObject.default(_LoggingObject.parse({}));
 
+const _AuditTrailObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable comprehensive tamper-evident audit events"),
+  retention_days: z
+    .number()
+    .int()
+    .min(1)
+    .default(90)
+    .describe("Default audit event retention period in days"),
+  compliance_retention_days: z
+    .number()
+    .int()
+    .min(1)
+    .default(2555)
+    .describe("Long retention period for compliance mode, defaulting to seven years"),
+  payload_max_bytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(1_000_000)
+    .default(16 * 1024)
+    .describe("Maximum serialized payload size stored per audit event before truncation"),
+});
+export const AuditTrailConfigSchema = _AuditTrailObject.default(_AuditTrailObject.parse({}));
+
 const _TonProxyObject = z.object({
   enabled: z
     .boolean()
@@ -479,6 +503,41 @@ const _ApiObject = z.object({
     .describe("IP whitelist (empty = allow all authenticated requests)"),
 });
 export const ApiConfigSchema = _ApiObject.default(_ApiObject.parse({}));
+
+const _IntegrationsRateLimitObject = z.object({
+  requests_per_minute: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Global outbound integration requests per minute"),
+  requests_per_hour: z
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .describe("Global outbound integration requests per hour"),
+});
+
+const _IntegrationsObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable the unified integration registry"),
+  credential_key: z
+    .string()
+    .optional()
+    .describe(
+      "Optional key material for encrypting integration credentials. " +
+        "If omitted, Teleton generates a local key in the security settings table."
+    ),
+  health_check_interval_minutes: z
+    .number()
+    .int()
+    .min(1)
+    .default(5)
+    .describe("Default interval for future background integration health checks"),
+  global_rate_limit: _IntegrationsRateLimitObject.default(_IntegrationsRateLimitObject.parse({})),
+});
+export const IntegrationsConfigSchema = _IntegrationsObject.default(_IntegrationsObject.parse({}));
+export type IntegrationsConfig = z.infer<typeof _IntegrationsObject>;
 
 const McpServerSchema = z
   .object({
@@ -609,6 +668,12 @@ const _ExecObject = z.object({
         "A command is permitted when its first token (the program name) exactly matches an entry. " +
         "Shell operators (pipes, &&, redirects, command substitution) are always rejected in allowlist mode. " +
         "Empty list blocks all commands."
+    ),
+  sandbox_mode: z
+    .enum(["unrestricted", "sandboxed", "dry-run"])
+    .default("unrestricted")
+    .describe(
+      "Execution isolation for exec tools: unrestricted (current behavior), sandboxed (temporary cwd and minimal env), or dry-run (validate/audit without spawning)."
     ),
   limits: _ExecLimitsObject.default(_ExecLimitsObject.parse({})),
   audit: _ExecAuditObject.default(_ExecAuditObject.parse({})),
@@ -754,6 +819,7 @@ export const ConfigSchema = z.object({
   embedding: EmbeddingConfigSchema,
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
+  audit_trail: AuditTrailConfigSchema,
   temporal_context: TemporalContextConfigSchema,
   self_correction: SelfCorrectionConfigSchema,
   autonomous: AutonomousConfigSchema,
@@ -766,6 +832,7 @@ export const ConfigSchema = z.object({
   cache: CacheConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
+  integrations: IntegrationsConfigSchema,
   ton_proxy: TonProxyConfigSchema,
   heartbeat: HeartbeatConfigSchema,
   predictions: PredictionsConfigSchema,
@@ -870,6 +937,7 @@ export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
+export type AuditTrailConfig = z.infer<typeof _AuditTrailObject>;
 export type SelfCorrectionConfig = z.infer<typeof _SelfCorrectionObject>;
 export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;
 export type MemoryRetentionConfig = z.infer<typeof _MemoryRetentionObject>;

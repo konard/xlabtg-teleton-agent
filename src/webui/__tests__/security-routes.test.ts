@@ -91,6 +91,14 @@ function clearSecuritySettings(db: Database.Database): void {
   db.prepare("DELETE FROM security_settings").run();
 }
 
+function clearZeroTrustTables(db: Database.Database): void {
+  db.prepare("DELETE FROM security_policies").run();
+  db.prepare("DELETE FROM security_validation_log").run();
+  db.prepare("DELETE FROM security_approvals").run();
+  db.prepare("DELETE FROM security_tool_rate_limits").run();
+  db.prepare("DELETE FROM security_tool_rate_counters").run();
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("GET /security/audit", () => {
@@ -478,5 +486,102 @@ describe("PUT /security/settings", () => {
     const json = await res.json();
     expect(json.data.session_timeout_minutes).toBe(45);
     expect(json.data.rate_limit_rpm).toBe(30);
+  });
+});
+
+describe("zero-trust policy routes", () => {
+  beforeEach(() => {
+    clearZeroTrustTables(sharedDb);
+  });
+
+  it("creates and lists policies", async () => {
+    const res = await sharedApp.request("/security/policies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "block-exec",
+        match: { tool: "exec_run" },
+        action: "deny",
+        reason: "exec disabled",
+        priority: 5,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const created = await res.json();
+    expect(created.success).toBe(true);
+    expect(created.data.name).toBe("block-exec");
+
+    const list = await sharedApp.request("/security/policies");
+    const json = await list.json();
+    expect(json.data).toHaveLength(1);
+    expect(json.data[0].name).toBe("block-exec");
+  });
+
+  it("evaluates hypothetical actions without executing them", async () => {
+    await sharedApp.request("/security/policies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: "block-destructive",
+        match: { tool: "exec_run", params: { command: { pattern: "rm\\s+-rf" } } },
+        action: "deny",
+        reason: "destructive command",
+      }),
+    });
+
+    const res = await sharedApp.request("/security/policies/evaluate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tool: "exec_run", params: { command: "rm -rf /tmp/test" } }),
+    });
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.action).toBe("deny");
+    expect(json.data.reason).toBe("destructive command");
+  });
+
+  it("accepts YAML policies", async () => {
+    const res = await sharedApp.request("/security/policies", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        yaml: `
+policies:
+  - name: approve-web-fetch
+    match:
+      tool: web_fetch
+    action: require_approval
+`,
+      }),
+    });
+
+    expect(res.status).toBe(201);
+    const json = await res.json();
+    expect(json.data[0].name).toBe("approve-web-fetch");
+  });
+
+  it("approves and rejects queued approvals", async () => {
+    sharedDb.exec(`
+      INSERT INTO security_approvals (
+        id, tool, params, params_hash, requester_id, chat_id, status, reason
+      )
+      VALUES ('approval-1', 'workspace_write', '{}', 'hash', 123, 'dm', 'pending', 'test')
+    `);
+
+    const approve = await sharedApp.request("/security/approvals/approval-1/approve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ resolvedBy: 999 }),
+    });
+    expect(approve.status).toBe(200);
+    const approveJson = await approve.json();
+    expect(approveJson.data.status).toBe("approved");
+
+    const queue = await sharedApp.request("/security/approvals?status=pending");
+    const queueJson = await queue.json();
+    expect(queueJson.data).toEqual([]);
   });
 });

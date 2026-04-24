@@ -13,6 +13,7 @@ export type AuditActionType =
   | "plugin_remove"
   | "hook_change"
   | "mcp_change"
+  | "integration_change"
   | "memory_delete"
   | "workspace_change"
   | "session_delete"

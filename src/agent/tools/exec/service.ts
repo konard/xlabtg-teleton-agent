@@ -56,6 +56,7 @@ export function createExecServiceExecutor(
     const result = await runCommand(command, {
       timeout: timeout * 1000,
       maxOutput: max_output,
+      sandboxMode: execConfig.sandbox_mode,
     });
 
     const status = result.timedOut ? "timeout" : result.exitCode === 0 ? "success" : "failed";
@@ -81,6 +82,8 @@ export function createExecServiceExecutor(
         stderr: result.stderr,
         exitCode: result.exitCode,
         duration: result.duration,
+        dryRun: result.dryRun ?? false,
+        sandboxMode: result.sandboxMode ?? execConfig.sandbox_mode,
       },
       ...(result.timedOut
         ? { error: `Service command timed out after ${timeout}s` }

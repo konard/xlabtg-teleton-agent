@@ -806,6 +806,105 @@ export interface McpServerInfo {
   envKeys: string[];
 }
 
+export type IntegrationType = "api" | "webhook" | "oauth" | "mcp";
+export type IntegrationAuthType =
+  | "none"
+  | "api_key"
+  | "oauth2"
+  | "jwt"
+  | "basic"
+  | "custom_header";
+export type IntegrationStatus =
+  | "unknown"
+  | "healthy"
+  | "degraded"
+  | "unhealthy"
+  | "unconfigured";
+
+export interface IntegrationAuthConfig {
+  type: IntegrationAuthType;
+  credentialId?: string | null;
+  headerName?: string;
+  prefix?: string;
+}
+
+export interface IntegrationConfig {
+  baseUrl?: string;
+  healthCheckUrl?: string;
+  timeoutMs?: number;
+  headers?: Record<string, string>;
+  actions?: Record<string, unknown>;
+  rateLimit?: {
+    requestsPerMinute?: number;
+    requestsPerHour?: number;
+    queue?: boolean;
+    maxQueueSize?: number;
+  };
+  [key: string]: unknown;
+}
+
+export interface IntegrationStats {
+  requestCount: number;
+  successCount: number;
+  failureCount: number;
+  lastExecutedAt: number | null;
+  avgLatencyMs: number | null;
+}
+
+export interface IntegrationEntity {
+  id: string;
+  name: string;
+  type: IntegrationType;
+  provider: string;
+  auth: IntegrationAuthConfig;
+  authId: string | null;
+  config: IntegrationConfig;
+  status: IntegrationStatus;
+  healthCheckUrl: string | null;
+  lastHealthAt: number | null;
+  lastHealthMessage: string | null;
+  createdAt: number;
+  updatedAt: number;
+  stats: IntegrationStats;
+}
+
+export interface IntegrationCatalogEntry {
+  id: string;
+  name: string;
+  type: IntegrationType;
+  provider: string;
+  description: string;
+  authTypes: IntegrationAuthType[];
+  defaultConfig: IntegrationConfig;
+  actions: Array<{ id: string; name: string; description: string }>;
+}
+
+export interface IntegrationCredential {
+  id: string;
+  integrationId: string;
+  authType: IntegrationAuthType;
+  credentials: Record<string, unknown>;
+  expiresAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface IntegrationHealth {
+  status: Exclude<IntegrationStatus, "unknown">;
+  checkedAt: string;
+  latencyMs?: number;
+  message?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface IntegrationResult {
+  success: boolean;
+  status?: number;
+  data?: unknown;
+  error?: string;
+  latencyMs?: number;
+}
+
 export interface ConfigKeyData {
   key: string;
   label: string;
@@ -1197,11 +1296,13 @@ export type AuditActionType =
   | "plugin_remove"
   | "hook_change"
   | "mcp_change"
+  | "integration_change"
   | "memory_delete"
   | "workspace_change"
   | "session_delete"
   | "secret_change"
   | "security_change"
+  | "financial_operation"
   | "login"
   | "logout"
   | "other";
@@ -1222,10 +1323,120 @@ export interface AuditLogPage {
   limit: number;
 }
 
+export type AuditTrailEventType =
+  | "agent.decision"
+  | "tool.invoke"
+  | "tool.result"
+  | "llm.request"
+  | "llm.response"
+  | "config.change"
+  | "security.validation"
+  | "user.action"
+  | "session.lifecycle";
+
+export type AuditReportType = "daily_activity" | "security_events" | "cost_resource" | "tool_usage";
+
+export interface AuditTrailEvent {
+  id: string;
+  sequence: number;
+  event_type: AuditTrailEventType;
+  actor: string;
+  session_id: string | null;
+  payload: Record<string, unknown>;
+  parent_event_id: string | null;
+  previous_checksum: string | null;
+  checksum: string;
+  created_at: number;
+}
+
+export interface AuditTrailPage {
+  entries: AuditTrailEvent[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+export interface AuditVerifyResult {
+  valid: boolean;
+  checked: number;
+  from: number | null;
+  to: number | null;
+  brokenAtEventId: string | null;
+  expectedChecksum: string | null;
+  actualChecksum: string | null;
+  errors: string[];
+}
+
+export interface AuditChain {
+  targetEventId: string;
+  events: AuditTrailEvent[];
+}
+
+export interface AuditReport {
+  type: AuditReportType;
+  generatedAt: string;
+  periodHours: number;
+  rows: Array<Record<string, unknown>>;
+  summary: Record<string, unknown>;
+}
+
 export interface SecuritySettings {
   session_timeout_minutes: number | null;
   ip_allowlist: string[];
   rate_limit_rpm: number | null;
+}
+
+export type PolicyAction = "allow" | "deny" | "require_approval";
+
+export interface PolicyMatch {
+  tool?: string | string[];
+  module?: string | string[];
+  params?: Record<string, unknown>;
+}
+
+export interface SecurityPolicy {
+  id: number;
+  name: string;
+  match: PolicyMatch;
+  action: PolicyAction;
+  reason: string | null;
+  enabled: boolean;
+  priority: number;
+  created_at: number;
+}
+
+export interface SecurityApproval {
+  id: string;
+  tool: string;
+  params: string;
+  requester_id: number | null;
+  chat_id: string | null;
+  status: "pending" | "approved" | "rejected";
+  reason: string;
+  policy_id: number | null;
+  policy_name: string | null;
+  created_at: number;
+  resolved_at: number | null;
+  resolved_by: number | null;
+  consumed_at: number | null;
+}
+
+export interface SecurityValidationLogEntry {
+  id: number;
+  tool: string;
+  params: string;
+  action: PolicyAction;
+  reason: string;
+  policy_id: number | null;
+  policy_name: string | null;
+  approval_id: string | null;
+  created_at: number;
+}
+
+export interface PolicyEvaluationResult {
+  action: PolicyAction;
+  reason: string;
+  policy: SecurityPolicy | null;
 }
 
 export interface MarketplacePlugin {
@@ -1834,6 +2045,81 @@ export const api = {
       `/mcp/${encodeURIComponent(name)}`,
       {
         method: "DELETE",
+      }
+    );
+  },
+
+  async getIntegrations() {
+    return fetchAPI<APIResponse<IntegrationEntity[]>>("/integrations");
+  },
+
+  async getIntegrationCatalog() {
+    return fetchAPI<APIResponse<IntegrationCatalogEntry[]>>("/integrations/catalog");
+  },
+
+  async createIntegration(data: {
+    id?: string;
+    name: string;
+    type: IntegrationType;
+    provider: string;
+    auth?: IntegrationAuthConfig;
+    config?: IntegrationConfig;
+    healthCheckUrl?: string | null;
+  }) {
+    return fetchAPI<APIResponse<IntegrationEntity>>("/integrations", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async updateIntegration(id: string, data: Partial<IntegrationEntity>) {
+    return fetchAPI<APIResponse<IntegrationEntity>>(`/integrations/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async deleteIntegration(id: string) {
+    return fetchAPI<APIResponse<null>>(`/integrations/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    });
+  },
+
+  async checkIntegrationHealth(id: string) {
+    return fetchAPI<APIResponse<IntegrationHealth>>(
+      `/integrations/${encodeURIComponent(id)}/health`
+    );
+  },
+
+  async executeIntegration(id: string, action: string, params: Record<string, unknown>) {
+    return fetchAPI<APIResponse<IntegrationResult>>(
+      `/integrations/${encodeURIComponent(id)}/execute`,
+      {
+        method: "POST",
+        body: JSON.stringify({ action, params }),
+      }
+    );
+  },
+
+  async getIntegrationCredentials(id: string) {
+    return fetchAPI<APIResponse<IntegrationCredential[]>>(
+      `/integrations/${encodeURIComponent(id)}/credentials`
+    );
+  },
+
+  async createIntegrationCredential(
+    id: string,
+    data: {
+      authType: IntegrationAuthType;
+      credentials: Record<string, unknown>;
+      expiresAt?: number | null;
+    }
+  ) {
+    return fetchAPI<APIResponse<IntegrationCredential>>(
+      `/integrations/${encodeURIComponent(id)}/credentials`,
+      {
+        method: "POST",
+        body: JSON.stringify(data),
       }
     );
   },
@@ -2651,6 +2937,78 @@ export const api = {
     return `${API_BASE}/security/audit/export?${params}`;
   },
 
+  async getAuditEvents(
+    opts: {
+      page?: number;
+      limit?: number;
+      type?: AuditTrailEventType | null;
+      session?: string | null;
+      actor?: string | null;
+      from?: number | null;
+      to?: number | null;
+    } = {}
+  ) {
+    const params = new URLSearchParams();
+    if (opts.page) params.set("page", String(opts.page));
+    if (opts.limit) params.set("limit", String(opts.limit));
+    if (opts.type) params.set("type", opts.type);
+    if (opts.session) params.set("session", opts.session);
+    if (opts.actor) params.set("actor", opts.actor);
+    if (opts.from != null) params.set("from", String(opts.from));
+    if (opts.to != null) params.set("to", String(opts.to));
+    return fetchAPI<APIResponse<AuditTrailPage>>(`/audit/events?${params}`);
+  },
+
+  async getAuditChain(eventId: string) {
+    return fetchAPI<APIResponse<AuditChain>>(`/audit/chain/${encodeURIComponent(eventId)}`);
+  },
+
+  async verifyAuditTrail(opts: { from?: number | null; to?: number | null } = {}) {
+    const params = new URLSearchParams();
+    if (opts.from != null) params.set("from", String(opts.from));
+    if (opts.to != null) params.set("to", String(opts.to));
+    return fetchAPI<APIResponse<AuditVerifyResult>>(`/audit/verify?${params}`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    });
+  },
+
+  async getAuditReport(type: AuditReportType, periodHours = 24) {
+    const params = new URLSearchParams({ period: String(periodHours) });
+    return fetchAPI<APIResponse<AuditReport>>(`/audit/reports/${type}?${params}`);
+  },
+
+  async exportAuditTrail(opts: {
+    format?: "json" | "csv";
+    type?: AuditTrailEventType | null;
+    session?: string | null;
+    actor?: string | null;
+    from?: number | null;
+    to?: number | null;
+  }) {
+    const csrfToken = getCookieValue("teleton_csrf");
+    const res = await fetch(`${API_BASE}/audit/export`, {
+      method: "POST",
+      credentials: "include",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
+      },
+      body: JSON.stringify(opts),
+    });
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(error.error || `HTTP ${res.status}`);
+    }
+    return {
+      blob: await res.blob(),
+      filename:
+        res.headers.get("Content-Disposition")?.match(/filename="([^"]+)"/)?.[1] ??
+        `audit-events.${opts.format ?? "json"}`,
+      signature: res.headers.get("X-Audit-Signature") ?? "",
+    };
+  },
+
   async getSecuritySettings() {
     return fetchAPI<APIResponse<SecuritySettings>>("/security/settings");
   },
@@ -2660,6 +3018,87 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(patch),
     });
+  },
+
+  async getSecurityPolicies() {
+    return fetchAPI<APIResponse<SecurityPolicy[]>>("/security/policies");
+  },
+
+  async createSecurityPolicy(input: {
+    name?: string;
+    match?: PolicyMatch;
+    action?: PolicyAction;
+    reason?: string;
+    enabled?: boolean;
+    priority?: number;
+    yaml?: string;
+  }) {
+    return fetchAPI<APIResponse<SecurityPolicy | SecurityPolicy[]>>("/security/policies", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async updateSecurityPolicy(
+    id: number,
+    input: {
+      name?: string;
+      match?: PolicyMatch;
+      action?: PolicyAction;
+      reason?: string | null;
+      enabled?: boolean;
+      priority?: number;
+      yaml?: string;
+    }
+  ) {
+    return fetchAPI<APIResponse<SecurityPolicy>>(`/security/policies/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async deleteSecurityPolicy(id: number) {
+    return fetchAPI<APIResponse<null>>(`/security/policies/${id}`, {
+      method: "DELETE",
+    });
+  },
+
+  async evaluateSecurityPolicy(input: {
+    tool: string;
+    params?: unknown;
+    senderId?: number;
+    chatId?: string;
+    module?: string | null;
+  }) {
+    return fetchAPI<APIResponse<PolicyEvaluationResult>>("/security/policies/evaluate", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  async getSecurityApprovals(status?: SecurityApproval["status"]) {
+    const qs = status ? `?status=${encodeURIComponent(status)}` : "";
+    return fetchAPI<APIResponse<SecurityApproval[]>>(`/security/approvals${qs}`);
+  },
+
+  async approveSecurityApproval(id: string) {
+    return fetchAPI<APIResponse<SecurityApproval>>(
+      `/security/approvals/${encodeURIComponent(id)}/approve`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  },
+
+  async rejectSecurityApproval(id: string) {
+    return fetchAPI<APIResponse<SecurityApproval>>(
+      `/security/approvals/${encodeURIComponent(id)}/reject`,
+      { method: "POST", body: JSON.stringify({}) }
+    );
+  },
+
+  async getSecurityValidationLog(limit = 100) {
+    return fetchAPI<APIResponse<SecurityValidationLogEntry[]>>(
+      `/security/validation-log?limit=${limit}`
+    );
   },
 
   connectLogs(onLog: (entry: LogEntry) => void, onError?: (error: Event) => void) {

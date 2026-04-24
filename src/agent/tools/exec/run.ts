@@ -60,6 +60,7 @@ export function createExecRunExecutor(
       timeout: timeout * 1000,
       maxOutput: max_output,
       useShell,
+      sandboxMode: execConfig.sandbox_mode,
     });
 
     const status = result.timedOut ? "timeout" : result.exitCode === 0 ? "success" : "failed";
@@ -85,6 +86,8 @@ export function createExecRunExecutor(
         duration: result.duration,
         truncated: result.truncated,
         timedOut: result.timedOut,
+        dryRun: result.dryRun ?? false,
+        sandboxMode: result.sandboxMode ?? execConfig.sandbox_mode,
       },
       ...(result.timedOut
         ? { error: `Command timed out after ${timeout}s` }
