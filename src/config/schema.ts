@@ -422,6 +422,30 @@ const _LoggingObject = z.object({
 });
 export const LoggingConfigSchema = _LoggingObject.default(_LoggingObject.parse({}));
 
+const _AuditTrailObject = z.object({
+  enabled: z.boolean().default(true).describe("Enable comprehensive tamper-evident audit events"),
+  retention_days: z
+    .number()
+    .int()
+    .min(1)
+    .default(90)
+    .describe("Default audit event retention period in days"),
+  compliance_retention_days: z
+    .number()
+    .int()
+    .min(1)
+    .default(2555)
+    .describe("Long retention period for compliance mode, defaulting to seven years"),
+  payload_max_bytes: z
+    .number()
+    .int()
+    .min(1024)
+    .max(1_000_000)
+    .default(16 * 1024)
+    .describe("Maximum serialized payload size stored per audit event before truncation"),
+});
+export const AuditTrailConfigSchema = _AuditTrailObject.default(_AuditTrailObject.parse({}));
+
 const _TonProxyObject = z.object({
   enabled: z
     .boolean()
@@ -826,6 +850,7 @@ export const ConfigSchema = z.object({
   embedding: EmbeddingConfigSchema,
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
+  audit_trail: AuditTrailConfigSchema,
   temporal_context: TemporalContextConfigSchema,
   self_correction: SelfCorrectionConfigSchema,
   autonomous: AutonomousConfigSchema,
@@ -945,6 +970,7 @@ export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
+export type AuditTrailConfig = z.infer<typeof _AuditTrailObject>;
 export type SelfCorrectionConfig = z.infer<typeof _SelfCorrectionObject>;
 export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;
 export type MemoryRetentionConfig = z.infer<typeof _MemoryRetentionObject>;
