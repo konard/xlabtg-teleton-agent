@@ -26,7 +26,7 @@ describe("Memory Schema", () => {
   // ============================================
 
   describe("Table Creation", () => {
-    it("creates all 15 core tables after initialization", () => {
+    it("creates core tables after initialization", () => {
       ensureSchema(db);
 
       const tables = db
@@ -41,7 +41,7 @@ describe("Memory Schema", () => {
 
       const tableNames = tables.map((t) => t.name);
 
-      // Core tables (14 total)
+      // Core tables
       expect(tableNames).toContain("meta");
       expect(tableNames).toContain("knowledge");
       expect(tableNames).toContain("sessions");
@@ -56,6 +56,7 @@ describe("Memory Schema", () => {
       expect(tableNames).toContain("tg_messages");
       expect(tableNames).toContain("embedding_cache");
       expect(tableNames).toContain("agent_registry");
+      expect(tableNames).toContain("audit_events");
       expect(tableNames).toContain("integrations");
       expect(tableNames).toContain("integration_credentials");
       expect(tableNames).toContain("integration_usage");
@@ -459,6 +460,30 @@ describe("Memory Schema", () => {
       expect(columnNames).toContain("user_id");
       expect(columnNames).toContain("closed_at");
       expect(columnNames).toContain("created_at");
+    });
+
+    it("creates audit_events table with hash-chain columns", () => {
+      ensureSchema(db);
+
+      const info = db.prepare("PRAGMA table_info(audit_events)").all() as Array<{
+        name: string;
+      }>;
+
+      const columnNames = info.map((c) => c.name);
+      expect(columnNames).toEqual(
+        expect.arrayContaining([
+          "id",
+          "sequence",
+          "event_type",
+          "actor",
+          "session_id",
+          "payload",
+          "parent_event_id",
+          "previous_checksum",
+          "checksum",
+          "created_at",
+        ])
+      );
     });
   });
 
@@ -1261,7 +1286,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.32.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.34.0");
     });
   });
 
@@ -1477,6 +1502,46 @@ describe("Memory Schema", () => {
           )
           .run(blob)
       ).toThrow();
+    });
+  });
+
+  // ============================================
+  // DYNAMIC DASHBOARDS
+  // ============================================
+
+  describe("Dynamic Dashboard Tables", () => {
+    it("creates dashboards and widget_definitions tables", () => {
+      ensureSchema(db);
+
+      const dashboards = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='dashboards'`)
+        .get() as { name: string } | undefined;
+      const definitions = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='widget_definitions'`)
+        .get() as { name: string } | undefined;
+
+      expect(dashboards).toBeDefined();
+      expect(definitions).toBeDefined();
+    });
+
+    it("migrates dynamic dashboard tables from the previous schema version", () => {
+      ensureSchema(db);
+      db.exec("DROP TABLE dashboards");
+      db.exec("DROP TABLE widget_definitions");
+      setSchemaVersion(db, "1.33.0");
+
+      runMigrations(db);
+
+      const dashboards = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='dashboards'`)
+        .get() as { name: string } | undefined;
+      const definitions = db
+        .prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='widget_definitions'`)
+        .get() as { name: string } | undefined;
+
+      expect(dashboards).toBeDefined();
+      expect(definitions).toBeDefined();
+      expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
     });
   });
 

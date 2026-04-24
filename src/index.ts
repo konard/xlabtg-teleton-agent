@@ -53,6 +53,7 @@ import type { ApiServer } from "./api/server.js";
 import type { AutonomousTaskManager } from "./autonomous/manager.js";
 import { initMetrics } from "./services/metrics.js";
 import { initAnalytics } from "./services/analytics.js";
+import { initAuditTrail } from "./services/audit-trail.js";
 import { initBehaviorTracker } from "./services/behavior-tracker.js";
 import { initPredictions } from "./services/predictions.js";
 import { initFeedback } from "./services/feedback/capture.js";
@@ -185,6 +186,7 @@ export class TeletonApp {
     // Initialize analytics and metrics singletons early so agent runtime can record data
     initMetrics(db);
     initAnalytics(db);
+    initAuditTrail(db, { maxPayloadBytes: this.config.audit_trail.payload_max_bytes });
     initBehaviorTracker(db, { historyLimit: this.config.predictions.history_limit });
     initPredictions(db);
     initFeedback(db, {

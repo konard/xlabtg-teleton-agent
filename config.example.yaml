@@ -231,6 +231,15 @@ cache:
     embeddings_ms: 1800000
     api_responses_ms: 300000
 
+# Comprehensive audit trail: tamper-evident agent decisions, tool calls, LLM calls,
+# WebUI mutations, and security validations. Payloads above payload_max_bytes are
+# truncated before storage to keep the database bounded.
+audit_trail:
+  enabled: true
+  retention_days: 90
+  compliance_retention_days: 2555   # 7 years
+  payload_max_bytes: 16384
+
 # Deals / OTC trading module
 # deals:
 #   enabled: true

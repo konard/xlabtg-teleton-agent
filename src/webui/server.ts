@@ -48,6 +48,7 @@ import { createSessionsRoutes } from "./routes/sessions.js";
 import { createAnalyticsRoutes } from "./routes/analytics.js";
 import { createAnomaliesRoutes } from "./routes/anomalies.js";
 import { createSecurityRoutes } from "./routes/security.js";
+import { createAuditRoutes } from "./routes/audit.js";
 import { createAuditMiddleware } from "./middleware/audit.js";
 import { createHealthRoutes } from "./routes/health.js";
 import { createExportImportRoutes } from "./routes/export-import.js";
@@ -60,6 +61,7 @@ import { createAgentsRoutes } from "./routes/agents.js";
 import { createIntegrationsRoutes } from "./routes/integrations.js";
 import { createTemporalRoutes } from "./routes/temporal.js";
 import { createFeedbackRoutes } from "./routes/feedback.js";
+import { createDashboardsRoutes } from "./routes/dashboards.js";
 
 function findWebDist(): string | null {
   // Try common locations relative to CWD (where teleton is launched from)
@@ -286,6 +288,7 @@ export class WebUIServer {
     this.app.route("/api/analytics", createAnalyticsRoutes(this.deps));
     this.app.route("/api/anomalies", createAnomaliesRoutes(this.deps));
     this.app.route("/api/security", createSecurityRoutes(this.deps));
+    this.app.route("/api/audit", createAuditRoutes(this.deps));
     this.app.route("/api/health-check", createHealthRoutes(this.deps));
     this.app.route("/api/export", createExportImportRoutes(this.deps));
     this.app.route("/api/workflows", createWorkflowsRoutes(this.deps));
@@ -297,6 +300,7 @@ export class WebUIServer {
     this.app.route("/api/integrations", createIntegrationsRoutes(this.deps));
     this.app.route("/api/context", createTemporalRoutes(this.deps));
     this.app.route("/api/feedback", createFeedbackRoutes(this.deps));
+    this.app.route("/api/dashboards", createDashboardsRoutes(this.deps));
 
     // Debug endpoint — returns build metadata (which dist folder is served and its version)
     this.app.get("/api/debug/ui-version", (c) => {

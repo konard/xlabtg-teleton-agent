@@ -459,6 +459,41 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_pipeline_run_steps_pipeline ON pipeline_run_steps(pipeline_id);
 
     -- ============================================
+    -- DYNAMIC DASHBOARDS
+    -- ============================================
+
+    CREATE TABLE IF NOT EXISTS widget_definitions (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL CHECK(category IN ('metrics', 'status', 'content', 'action', 'custom')),
+      data_source TEXT NOT NULL DEFAULT '{"type":"static"}',
+      renderer TEXT NOT NULL CHECK(renderer IN ('chart', 'table', 'text', 'markdown', 'custom', 'kpi', 'list')),
+      default_size TEXT NOT NULL DEFAULT '{"w":6,"h":4}',
+      config_schema TEXT NOT NULL DEFAULT '{}',
+      built_in INTEGER NOT NULL DEFAULT 0 CHECK(built_in IN (0, 1)),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_widget_definitions_category ON widget_definitions(category);
+    CREATE INDEX IF NOT EXISTS idx_widget_definitions_renderer ON widget_definitions(renderer);
+
+    CREATE TABLE IF NOT EXISTS dashboards (
+      id TEXT PRIMARY KEY,
+      name TEXT NOT NULL,
+      description TEXT,
+      widgets TEXT NOT NULL DEFAULT '[]',
+      layout TEXT NOT NULL DEFAULT '{}',
+      is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_dashboards_default ON dashboards(is_default) WHERE is_default = 1;
+    CREATE INDEX IF NOT EXISTS idx_dashboards_created ON dashboards(created_at DESC);
+
+    -- ============================================
     -- ASSOCIATIVE MEMORY GRAPH
     -- ============================================
 
@@ -680,6 +715,31 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_request_metrics_tool ON request_metrics(tool_name) WHERE tool_name IS NOT NULL;
 
     -- =====================================================
+    -- AUDIT TRAIL (Tamper-evident agent and API events)
+    -- =====================================================
+
+    CREATE TABLE IF NOT EXISTS audit_events (
+      id TEXT PRIMARY KEY,
+      sequence INTEGER NOT NULL UNIQUE,
+      event_type TEXT NOT NULL,
+      actor TEXT NOT NULL DEFAULT 'system',
+      session_id TEXT,
+      payload TEXT NOT NULL DEFAULT '{}',
+      parent_event_id TEXT,
+      previous_checksum TEXT,
+      checksum TEXT NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      FOREIGN KEY (parent_event_id) REFERENCES audit_events(id) ON DELETE SET NULL
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_session ON audit_events(session_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_parent ON audit_events(parent_event_id);
+    CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);
+
+    -- =====================================================
     -- ANALYTICS: Cost Records (daily aggregation)
     -- =====================================================
 
@@ -829,7 +889,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.32.0";
+export const CURRENT_SCHEMA_VERSION = "1.34.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1840,6 +1900,80 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.32.0 complete: integration tables created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.32.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.33.0")) {
+    log.info("Running migration 1.33.0: Add tamper-evident audit_events table");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_events (
+          id TEXT PRIMARY KEY,
+          sequence INTEGER NOT NULL UNIQUE,
+          event_type TEXT NOT NULL,
+          actor TEXT NOT NULL DEFAULT 'system',
+          session_id TEXT,
+          payload TEXT NOT NULL DEFAULT '{}',
+          parent_event_id TEXT,
+          previous_checksum TEXT,
+          checksum TEXT NOT NULL,
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          FOREIGN KEY (parent_event_id) REFERENCES audit_events(id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_audit_events_created ON audit_events(created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_type ON audit_events(event_type, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_session ON audit_events(session_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_actor ON audit_events(actor, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_parent ON audit_events(parent_event_id);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_sequence ON audit_events(sequence);
+      `);
+      log.info("Migration 1.33.0 complete: audit_events table created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.33.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.34.0")) {
+    log.info("Running migration 1.34.0: Add dynamic dashboard tables");
+    try {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS widget_definitions (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL DEFAULT '',
+          category TEXT NOT NULL CHECK(category IN ('metrics', 'status', 'content', 'action', 'custom')),
+          data_source TEXT NOT NULL DEFAULT '{"type":"static"}',
+          renderer TEXT NOT NULL CHECK(renderer IN ('chart', 'table', 'text', 'markdown', 'custom', 'kpi', 'list')),
+          default_size TEXT NOT NULL DEFAULT '{"w":6,"h":4}',
+          config_schema TEXT NOT NULL DEFAULT '{}',
+          built_in INTEGER NOT NULL DEFAULT 0 CHECK(built_in IN (0, 1)),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_widget_definitions_category ON widget_definitions(category);
+        CREATE INDEX IF NOT EXISTS idx_widget_definitions_renderer ON widget_definitions(renderer);
+
+        CREATE TABLE IF NOT EXISTS dashboards (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          description TEXT,
+          widgets TEXT NOT NULL DEFAULT '[]',
+          layout TEXT NOT NULL DEFAULT '{}',
+          is_default INTEGER NOT NULL DEFAULT 0 CHECK(is_default IN (0, 1)),
+          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_dashboards_default ON dashboards(is_default) WHERE is_default = 1;
+        CREATE INDEX IF NOT EXISTS idx_dashboards_created ON dashboards(created_at DESC);
+      `);
+      log.info("Migration 1.34.0 complete: dynamic dashboard tables created");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.34.0 failed");
       throw error;
     }
   }
