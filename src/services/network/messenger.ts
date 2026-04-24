@@ -62,6 +62,14 @@ function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function isUniqueConstraintError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "SQLITE_CONSTRAINT_UNIQUE"
+  );
+}
+
 export function signNetworkMessage(
   message: Omit<NetworkMessageEnvelope, "signature">,
   privateKey: KeyLike | string
@@ -108,7 +116,7 @@ export class NetworkMessenger {
 
   constructor(options: NetworkMessengerOptions) {
     this.store = options.store;
-    this.localAgentId = options.localAgentId ?? "primary";
+    this.localAgentId = options.localAgentId?.trim() || "primary";
     this.privateKey = options.privateKey ?? null;
     this.fetcher = options.fetcher ?? fetch;
     this.timeoutMs = options.timeoutMs ?? 15_000;
@@ -177,6 +185,12 @@ export class NetworkMessenger {
   }
 
   receiveMessage(message: NetworkMessageEnvelope): NetworkMessageRecord {
+    if (message.to !== this.localAgentId) {
+      throw new Error(
+        `Network message to ${message.to} is not addressed to local agent ${this.localAgentId}`
+      );
+    }
+
     const sender = this.store.getAgent(message.from);
     if (!sender) {
       throw new Error(`Unknown network sender: ${message.from}`);
@@ -212,9 +226,11 @@ export class NetworkMessenger {
     try {
       record = this.store.logMessage(message, "received");
     } catch (error) {
-      const replayed = this.store.findReceivedMessage(message);
-      if (replayed) {
-        throw new NetworkMessageReplayError(replayed);
+      if (isUniqueConstraintError(error)) {
+        const replayed = this.store.findReceivedMessage(message);
+        if (replayed) {
+          throw new NetworkMessageReplayError(replayed);
+        }
       }
       throw error;
     }

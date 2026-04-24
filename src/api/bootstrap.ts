@@ -73,6 +73,7 @@ export async function startApiOnly(options: { config?: string; apiPort?: string 
         toolRegistry: appInstance.getToolRegistry(),
         plugins: appInstance.getPlugins(),
         config: appInstance.getWebuiConfig(),
+        networkConfig: appInstance.getNetworkConfig(),
       });
     },
     // stopFn — called when POST /v1/agent/stop fires
@@ -88,6 +89,7 @@ export async function startApiOnly(options: { config?: string; apiPort?: string 
           memory: null,
           toolRegistry: null,
           plugins: null,
+          networkConfig: undefined,
         });
       }
     }

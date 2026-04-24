@@ -4,6 +4,7 @@ import { AuditTrailService } from "../../services/audit-trail.js";
 import { NetworkTaskCoordinator } from "../../services/network/coordinator.js";
 import { getAgentNetworkStore } from "../../services/network/discovery.js";
 import { NetworkMessageReplayError, NetworkMessenger } from "../../services/network/messenger.js";
+import { NetworkTrustService } from "../../services/network/trust.js";
 import {
   NETWORK_AGENT_STATUSES,
   NETWORK_TRUST_LEVELS,
@@ -94,6 +95,10 @@ function createMessenger(deps: WebUIServerDeps): NetworkMessenger {
     timeoutMs: deps.networkConfig?.message_timeout_ms,
     maxClockSkewSeconds: deps.networkConfig?.max_clock_skew_seconds,
     auditTrail: new AuditTrailService(deps.memory.db),
+    trustService: new NetworkTrustService({
+      allowlist: deps.networkConfig?.allowlist,
+      blocklist: deps.networkConfig?.blocklist,
+    }),
   });
 }
 
@@ -256,10 +261,49 @@ export function createAgentNetworkIngressRoutes(deps: WebUIServerDeps) {
           typeof payload.description === "string" && payload.description.trim()
             ? payload.description.trim()
             : `Network task from ${message.from}`;
+        const taskPayload = normalizePayload(payload.payload);
+        const requiredCapabilities = normalizeStringArray(payload.requiredCapabilities);
+        const networkContext = {
+          network: {
+            messageId: record.id,
+            from: message.from,
+            to: message.to,
+            correlationId: message.correlationId,
+            requiredCapabilities,
+            receivedAt: record.receivedAt,
+          },
+          payload: taskPayload,
+        };
+
+        if (deps.autonomousManager) {
+          const task = await deps.autonomousManager.startTask({
+            goal: description,
+            context: networkContext,
+          });
+          const currentTask = deps.autonomousManager.getStore().getTask(task.id) ?? task;
+          return c.json(
+            {
+              success: true,
+              data: {
+                accepted: true,
+                message: record,
+                taskId: task.id,
+                taskRuntime: "autonomous",
+                taskStatus: currentTask.status,
+                execution: {
+                  mode: "autonomous",
+                  state: currentTask.status === "queued" ? "queued" : "dispatched",
+                },
+              },
+            } as APIResponse,
+            202
+          );
+        }
+
         const task = getTaskStore(deps.memory.db).createTask({
           description,
           createdBy: `network:${message.from}`,
-          payload: JSON.stringify(payload.payload ?? {}),
+          payload: JSON.stringify(taskPayload),
           reason: `Remote network task ${message.correlationId}`,
         });
         return c.json(
@@ -269,6 +313,14 @@ export function createAgentNetworkIngressRoutes(deps: WebUIServerDeps) {
               accepted: true,
               message: record,
               taskId: task.id,
+              taskRuntime: "manual_inbox",
+              taskStatus: task.status,
+              execution: {
+                mode: "manual_inbox",
+                state: "queued",
+                reason:
+                  "Autonomous manager is unavailable; operator action is required to run this task.",
+              },
             },
           } as APIResponse,
           202

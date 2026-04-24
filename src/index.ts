@@ -300,6 +300,10 @@ export class TeletonApp {
     return this.config.webui;
   }
 
+  getNetworkConfig() {
+    return this.config.network;
+  }
+
   getConfigPath(): string {
     return this.configPath;
   }
@@ -475,6 +479,7 @@ ${blue}  ┌──────────────────────�
             plugins: this.getPlugins(),
             mcpServers,
             config: this.config.webui,
+            networkConfig: this.config.network,
             configPath: this.configPath,
             lifecycle: this.lifecycle,
             marketplace: {
