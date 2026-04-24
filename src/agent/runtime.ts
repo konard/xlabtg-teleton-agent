@@ -100,11 +100,38 @@ import {
   TemporalContextService,
   formatTemporalContextForPrompt,
 } from "../services/temporal-context.js";
+import {
+  buildCorrectionPrompt,
+  buildToolRecoveryMessage,
+  CorrectionLogger,
+  createToolRecovery,
+  evaluateOutput,
+  reflectOnOutput,
+  type SelfCorrectionUsage,
+  type ToolRecovery,
+} from "./self-correction/index.js";
 
 export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
 
 const log = createLogger("Agent");
+
+interface UsageAccumulator {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalCost: number;
+}
+
+function addUsage(accumulator: UsageAccumulator, usage?: SelfCorrectionUsage): void {
+  if (!usage) return;
+  accumulator.input += usage.input;
+  accumulator.output += usage.output;
+  accumulator.cacheRead += usage.cacheRead ?? 0;
+  accumulator.cacheWrite += usage.cacheWrite ?? 0;
+  accumulator.totalCost += usage.cost?.total ?? 0;
+}
 
 export interface ProcessMessageOptions {
   chatId: string;
@@ -121,6 +148,7 @@ export interface ProcessMessageOptions {
   messageId?: number;
   replyContext?: { senderName?: string; text: string; isAgent?: boolean };
   isHeartbeat?: boolean;
+  taskId?: string;
 }
 
 export interface AgentResponse {
@@ -282,6 +310,7 @@ export class AgentRuntime {
       messageId,
       replyContext,
       isHeartbeat,
+      taskId,
     } = opts;
 
     const effectiveIsGroup = isGroup ?? false;
@@ -601,8 +630,15 @@ export class AgentRuntime {
         toolName: string;
         result: { success: boolean; data?: unknown; error?: string };
       }> = [];
+      const allToolRecoveries: ToolRecovery[] = [];
       const accumulatedTexts: string[] = [];
-      const accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalCost: 0 };
+      const accumulatedUsage: UsageAccumulator = {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalCost: 0,
+      };
       const loopStallDetector = new LoopStallDetector(LOOP_STALL_CONSECUTIVE_THRESHOLD);
 
       interface ToolPlan {
@@ -801,13 +837,7 @@ export class AgentRuntime {
 
         // Accumulate usage across all iterations
         const iterUsage = response.message.usage;
-        if (iterUsage) {
-          accumulatedUsage.input += iterUsage.input;
-          accumulatedUsage.output += iterUsage.output;
-          accumulatedUsage.cacheRead += iterUsage.cacheRead ?? 0;
-          accumulatedUsage.cacheWrite += iterUsage.cacheWrite ?? 0;
-          accumulatedUsage.totalCost += iterUsage.cost?.total ?? 0;
-        }
+        addUsage(accumulatedUsage, iterUsage);
 
         if (response.text) {
           accumulatedTexts.push(response.text);
@@ -925,6 +955,7 @@ export class AgentRuntime {
         // Phase 3: Process results in original order (hooks, context, transcript)
         // Collect observing hook promises to fire concurrently via Promise.allSettled
         const observingHookPromises: Promise<void>[] = [];
+        const iterationRecoveries: ToolRecovery[] = [];
 
         for (let i = 0; i < toolPlans.length; i++) {
           const plan = toolPlans[i];
@@ -1002,9 +1033,19 @@ export class AgentRuntime {
 
           totalToolCalls.push({
             name: block.name,
-            input: block.arguments,
+            input: plan.params,
           });
           allToolExecResults.push({ toolName: block.name, result: exec.result });
+
+          if (!exec.result.success && this.config.self_correction.tool_recovery_enabled) {
+            const recovery = createToolRecovery({
+              toolName: block.name,
+              params: plan.params,
+              error: exec.result.error,
+            });
+            iterationRecoveries.push(recovery);
+            allToolRecoveries.push(recovery);
+          }
 
           const resultText = truncateToolResult(exec.result, MAX_TOOL_RESULT_SIZE);
           if (resultText.includes('"_truncated":true')) {
@@ -1046,6 +1087,21 @@ export class AgentRuntime {
 
         // Await all observing hooks concurrently
         await Promise.allSettled(observingHookPromises);
+
+        if (
+          iterationRecoveries.length > 0 &&
+          this.config.self_correction.tool_recovery_enabled &&
+          iteration < maxIterations
+        ) {
+          const recoveryMessage = buildToolRecoveryMessage(iterationRecoveries);
+          const recoveryUserMsg: UserMessage = {
+            role: "user",
+            content: recoveryMessage,
+            timestamp: Date.now(),
+          };
+          context.messages.push(recoveryUserMsg);
+          appendToTranscript(session.sessionId, recoveryUserMsg);
+        }
 
         log.info(`🔄 ${iteration}/${maxIterations} → ${iterationToolNames.join(", ")}`);
 
@@ -1131,6 +1187,23 @@ export class AgentRuntime {
         content = generateToolSummary(allToolExecResults);
         log.info(`✅ Generated fallback summary from ${allToolExecResults.length} tool result(s)`);
       }
+
+      const correctionResult = await this.maybeSelfCorrectResponse({
+        content,
+        userMessage: effectiveMessage,
+        sessionId: session.sessionId,
+        chatId,
+        taskId,
+        context,
+        systemPrompt,
+        toolCalls: totalToolCalls,
+        toolResults: allToolExecResults,
+        toolRecoveries: allToolRecoveries,
+        accumulatedUsage,
+        skipBecauseTelegramSend: usedTelegramSendTool,
+      });
+      content = correctionResult.content;
+      context = correctionResult.context;
 
       content = this.appendProactiveSuggestions(content, session.sessionId, chatId);
 
@@ -1222,6 +1295,159 @@ export class AgentRuntime {
       log.error({ err: error }, "Agent error");
       throw error;
     }
+  }
+
+  private async maybeSelfCorrectResponse(opts: {
+    content: string;
+    userMessage: string;
+    sessionId: string;
+    chatId: string;
+    taskId?: string;
+    context: Context;
+    systemPrompt: string;
+    toolCalls: Array<{ name: string; input: Record<string, unknown> }>;
+    toolResults: Array<{
+      toolName: string;
+      result: { success: boolean; data?: unknown; error?: string };
+    }>;
+    toolRecoveries: ToolRecovery[];
+    accumulatedUsage: UsageAccumulator;
+    skipBecauseTelegramSend: boolean;
+  }): Promise<{ content: string; context: Context }> {
+    const cfg = this.config.self_correction;
+    if (!cfg.enabled) return { content: opts.content, context: opts.context };
+
+    const trimmedContent = opts.content.trim();
+    const trimmedUserMessage = opts.userMessage.trim();
+    if (!trimmedContent || opts.skipBecauseTelegramSend) {
+      return { content: opts.content, context: opts.context };
+    }
+    if (cfg.skip_simple_messages && isTrivialMessage(trimmedUserMessage)) {
+      return { content: opts.content, context: opts.context };
+    }
+    if (trimmedUserMessage.length < cfg.min_input_chars) {
+      return { content: opts.content, context: opts.context };
+    }
+
+    let candidate = trimmedContent;
+    let context = opts.context;
+    let pendingEvaluation: Awaited<ReturnType<typeof evaluateOutput>> | null = null;
+    const logger = new CorrectionLogger(getDatabase().getDb());
+    const logChatId = opts.chatId.startsWith("telegram:") ? opts.chatId : `telegram:${opts.chatId}`;
+
+    try {
+      for (
+        let correctionIteration = 1;
+        correctionIteration <= cfg.max_iterations;
+        correctionIteration++
+      ) {
+        pendingEvaluation ??= await evaluateOutput({
+          config: this.config,
+          userMessage: trimmedUserMessage,
+          output: candidate,
+          toolCalls: opts.toolCalls,
+          toolResults: opts.toolResults,
+        });
+        addUsage(opts.accumulatedUsage, pendingEvaluation.usage);
+
+        const evaluation = pendingEvaluation.evaluation;
+        if (evaluation.score >= cfg.threshold && !evaluation.needsCorrection) {
+          break;
+        }
+
+        const reflectionResult = await reflectOnOutput({
+          config: this.config,
+          userMessage: trimmedUserMessage,
+          output: candidate,
+          evaluation,
+        });
+        addUsage(opts.accumulatedUsage, reflectionResult.usage);
+
+        const correctionPrompt = buildCorrectionPrompt({
+          userMessage: trimmedUserMessage,
+          originalOutput: candidate,
+          evaluation,
+          reflection: reflectionResult.reflection,
+        });
+        const correctionMessage: UserMessage = {
+          role: "user",
+          content: correctionPrompt,
+          timestamp: Date.now(),
+        };
+        context.messages.push(correctionMessage);
+        appendToTranscript(opts.sessionId, correctionMessage);
+
+        const correctionResponse = await chatWithContext(this.config.agent, {
+          systemPrompt: opts.systemPrompt,
+          context,
+          sessionId: opts.sessionId,
+          persistTranscript: true,
+          temperature: Math.min(this.config.agent.temperature, 0.3),
+        });
+        addUsage(opts.accumulatedUsage, correctionResponse.message.usage);
+
+        const corrected = correctionResponse.text.trim();
+        if (!corrected) {
+          logger.record({
+            sessionId: opts.sessionId,
+            taskId: opts.taskId ?? null,
+            chatId: logChatId,
+            iteration: correctionIteration,
+            originalOutput: candidate,
+            evaluation,
+            reflection: reflectionResult.reflection,
+            correctedOutput: null,
+            correctedScore: null,
+            threshold: cfg.threshold,
+            escalated: correctionIteration >= cfg.max_iterations,
+            toolRecoveries: opts.toolRecoveries,
+          });
+          break;
+        }
+
+        context = correctionResponse.context;
+        const correctedEvaluation = await evaluateOutput({
+          config: this.config,
+          userMessage: trimmedUserMessage,
+          output: corrected,
+          toolCalls: opts.toolCalls,
+          toolResults: opts.toolResults,
+        });
+        addUsage(opts.accumulatedUsage, correctedEvaluation.usage);
+
+        const accepted =
+          correctedEvaluation.evaluation.score >= cfg.threshold &&
+          !correctedEvaluation.evaluation.needsCorrection;
+        logger.record({
+          sessionId: opts.sessionId,
+          taskId: opts.taskId ?? null,
+          chatId: logChatId,
+          iteration: correctionIteration,
+          originalOutput: candidate,
+          evaluation,
+          reflection: reflectionResult.reflection,
+          correctedOutput: corrected,
+          correctedScore: correctedEvaluation.evaluation.score,
+          threshold: cfg.threshold,
+          escalated: !accepted && correctionIteration >= cfg.max_iterations,
+          toolRecoveries: opts.toolRecoveries,
+        });
+
+        candidate = corrected;
+        pendingEvaluation = correctedEvaluation;
+
+        if (accepted) {
+          log.info(
+            `Self-correction accepted response after ${correctionIteration} iteration(s): ${evaluation.score.toFixed(2)} → ${correctedEvaluation.evaluation.score.toFixed(2)}`
+          );
+          break;
+        }
+      }
+    } catch (error) {
+      log.warn({ err: error }, "Self-correction failed; using latest available response");
+    }
+
+    return { content: candidate, context };
   }
 
   /**

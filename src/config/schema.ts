@@ -111,6 +111,47 @@ export const AgentConfigSchema = z.object({
   ),
 });
 
+const _SelfCorrectionObject = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe("Enable LLM self-evaluation and regeneration before responding"),
+  threshold: z
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.7)
+    .describe("Minimum quality score required to accept the generated response"),
+  max_iterations: z
+    .number()
+    .int()
+    .min(1)
+    .max(5)
+    .default(3)
+    .describe("Maximum evaluate/reflect/regenerate cycles per response"),
+  min_input_chars: z
+    .number()
+    .int()
+    .min(0)
+    .default(40)
+    .describe("Skip LLM self-correction for shorter user messages"),
+  skip_simple_messages: z
+    .boolean()
+    .default(true)
+    .describe("Skip LLM self-correction for trivial acknowledgements and short replies"),
+  model: z
+    .string()
+    .optional()
+    .describe("Optional model override for self-correction calls; defaults to agent.utility_model"),
+  tool_recovery_enabled: z
+    .boolean()
+    .default(true)
+    .describe("Add deterministic recovery guidance after failed tool calls"),
+});
+export const SelfCorrectionConfigSchema = _SelfCorrectionObject.default(
+  _SelfCorrectionObject.parse({})
+);
+
 export const CommandAccessSchema = z.object({
   commands_enabled: z
     .boolean()
@@ -714,6 +755,7 @@ export const ConfigSchema = z.object({
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
   temporal_context: TemporalContextConfigSchema,
+  self_correction: SelfCorrectionConfigSchema,
   autonomous: AutonomousConfigSchema,
   deals: DealsConfigSchema,
   webui: WebUIConfigSchema,
@@ -828,6 +870,7 @@ export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
+export type SelfCorrectionConfig = z.infer<typeof _SelfCorrectionObject>;
 export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;
 export type MemoryRetentionConfig = z.infer<typeof _MemoryRetentionObject>;
 export type TemporalContextConfig = z.infer<typeof _TemporalContextObject>;

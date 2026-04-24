@@ -1214,6 +1214,7 @@ ${blue}  ┌──────────────────────�
         isGroup: false,
         toolContext,
         messageId: message.id,
+        taskId,
       });
 
       // Send agent response

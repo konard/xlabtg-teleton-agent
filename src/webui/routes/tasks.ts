@@ -3,6 +3,7 @@ import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getTaskStore, type TaskStatus } from "../../memory/agent/tasks.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createTaskDelegationRoutes } from "./delegation.js";
+import { CorrectionLogger } from "../../agent/self-correction/logger.js";
 
 const VALID_STATUSES: TaskStatus[] = ["pending", "in_progress", "done", "failed", "cancelled"];
 const TERMINAL_STATUSES: TaskStatus[] = ["done", "failed", "cancelled"];
@@ -12,6 +13,10 @@ export function createTasksRoutes(deps: WebUIServerDeps) {
 
   function store() {
     return getTaskStore(deps.memory.db);
+  }
+
+  function correctionLogger() {
+    return new CorrectionLogger(deps.memory.db);
   }
 
   app.route("/", createTaskDelegationRoutes(deps));
@@ -33,6 +38,7 @@ export function createTasksRoutes(deps: WebUIServerDeps) {
         scheduledFor: t.scheduledFor?.toISOString() ?? null,
         dependencies: store().getDependencies(t.id),
         dependents: store().getDependents(t.id),
+        correctionCount: correctionLogger().countForTask(t.id),
       }));
 
       const response: APIResponse = { success: true, data: enriched };
@@ -63,9 +69,36 @@ export function createTasksRoutes(deps: WebUIServerDeps) {
         scheduledFor: task.scheduledFor?.toISOString() ?? null,
         dependencies: store().getDependencies(task.id),
         dependents: store().getDependents(task.id),
+        correctionCount: correctionLogger().countForTask(task.id),
       };
 
       const response: APIResponse = { success: true, data: enriched };
+      return c.json(response);
+    } catch (error) {
+      const response: APIResponse = {
+        success: false,
+        error: getErrorMessage(error),
+      };
+      return c.json(response, 500);
+    }
+  });
+
+  // Get correction cycles for a task
+  app.get("/:id/corrections", (c) => {
+    try {
+      const taskId = c.req.param("id");
+      const task = store().getTask(taskId);
+      if (!task) {
+        const response: APIResponse = { success: false, error: "Task not found" };
+        return c.json(response, 404);
+      }
+
+      const limit = Math.min(100, Math.max(1, parseInt(c.req.query("limit") || "50", 10)));
+      const corrections = correctionLogger().listForTask(taskId, limit);
+      const response: APIResponse<{ corrections: typeof corrections }> = {
+        success: true,
+        data: { corrections },
+      };
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {

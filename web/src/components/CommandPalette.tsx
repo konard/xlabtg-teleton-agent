@@ -18,6 +18,7 @@ const NAV_ITEMS: SearchItem[] = [
   { id: 'nav-memory', label: 'Memory', category: 'Pages', path: '/memory', keywords: 'knowledge rag embeddings' },
   { id: 'nav-workspace', label: 'Workspace', category: 'Pages', path: '/workspace', keywords: 'files editor' },
   { id: 'nav-tasks', label: 'Tasks', category: 'Pages', path: '/tasks', keywords: 'queue jobs background' },
+  { id: 'nav-pipelines', label: 'Pipelines', category: 'Pages', path: '/pipelines', keywords: 'dag workflow automation runs agent chain' },
   { id: 'nav-mcp', label: 'MCP', category: 'Pages', path: '/mcp', keywords: 'model context protocol servers' },
   { id: 'nav-hooks', label: 'Hooks', category: 'Pages', path: '/hooks', keywords: 'rules blocklist triggers' },
   { id: 'nav-sessions', label: 'Sessions', category: 'Pages', path: '/sessions', keywords: 'conversations chats history' },

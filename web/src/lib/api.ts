@@ -60,6 +60,79 @@ export interface WorkflowData {
   lastError: string | null;
 }
 
+// ── Pipeline Execution types ─────────────────────────────────────────────────
+
+export type PipelineErrorStrategy = "fail_fast" | "continue" | "retry";
+export type PipelineStatus = "pending" | "running" | "completed" | "failed" | "cancelled";
+export type PipelineStepStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "cancelled";
+
+export interface PipelineStepData {
+  id: string;
+  agent: string;
+  action: string;
+  output: string;
+  dependsOn: string[];
+  errorStrategy?: PipelineErrorStrategy;
+  retryCount?: number;
+  timeoutSeconds?: number;
+}
+
+export interface PipelineData {
+  id: string;
+  name: string;
+  description: string | null;
+  enabled: boolean;
+  steps: PipelineStepData[];
+  errorStrategy: PipelineErrorStrategy;
+  maxRetries: number;
+  timeoutSeconds: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PipelineRunData {
+  id: string;
+  pipelineId: string;
+  status: PipelineStatus;
+  errorStrategy: PipelineErrorStrategy;
+  inputContext: Record<string, unknown>;
+  context: Record<string, unknown>;
+  error: string | null;
+  createdAt: number;
+  startedAt: number | null;
+  completedAt: number | null;
+  updatedAt: number;
+}
+
+export interface PipelineRunStepData {
+  runId: string;
+  pipelineId: string;
+  stepId: string;
+  agent: string;
+  action: string;
+  output: string;
+  dependsOn: string[];
+  status: PipelineStepStatus;
+  inputContext: Record<string, unknown> | null;
+  outputValue: unknown;
+  error: string | null;
+  attempts: number;
+  startedAt: number | null;
+  completedAt: number | null;
+  updatedAt: number;
+}
+
+export interface PipelineRunDetailData {
+  run: PipelineRunData;
+  steps: PipelineRunStepData[];
+}
+
 // ── Structured Rule types (Visual Rule Builder) ───────────────────────────────
 
 export type RuleType = "block" | "inject" | "transform" | "notify";
@@ -597,6 +670,7 @@ export interface TaskData {
   error?: string | null;
   dependencies: string[];
   dependents: string[];
+  correctionCount?: number;
 }
 
 export type TaskSubtaskStatus =
@@ -1152,6 +1226,50 @@ export interface SessionSearchResult {
   chatType: string | null;
   chatTitle: string | null;
   score: number;
+}
+
+export interface CorrectionEvaluation {
+  score: number;
+  feedback: string;
+  criteria: {
+    completeness: number;
+    correctness: number;
+    toolUsage: number;
+    formatting: number;
+  };
+  issues: string[];
+  needsCorrection: boolean;
+}
+
+export interface CorrectionLogEntry {
+  id: string;
+  sessionId: string;
+  taskId: string | null;
+  chatId: string;
+  iteration: number;
+  originalOutput: string;
+  evaluation: CorrectionEvaluation;
+  reflection: {
+    summary: string;
+    instructions: string[];
+    focusAreas: string[];
+  } | null;
+  correctedOutput: string | null;
+  score: number;
+  correctedScore: number | null;
+  scoreDelta: number;
+  threshold: number;
+  escalated: boolean;
+  toolRecoveries: Array<{
+    toolName: string;
+    error: string;
+    kind: string;
+    retryable: boolean;
+    guidance: string;
+    adaptedParams?: Record<string, unknown>;
+  }>;
+  feedback: string;
+  createdAt: number;
 }
 
 // ── Autonomous Task types ───────────────────────────────────────────
@@ -1713,6 +1831,12 @@ export const api = {
 
   async tasksGet(id: string) {
     return fetchAPI<APIResponse<TaskData>>(`/tasks/${id}`);
+  },
+
+  async tasksCorrections(id: string) {
+    return fetchAPI<APIResponse<{ corrections: CorrectionLogEntry[] }>>(
+      `/tasks/${encodeURIComponent(id)}/corrections`
+    );
   },
 
   async tasksDelete(_id: string) {
@@ -2455,6 +2579,12 @@ export const api = {
     >(`/sessions/${encodeURIComponent(sessionId)}/messages?${params}`);
   },
 
+  async getSessionCorrections(sessionId: string) {
+    return fetchAPI<APIResponse<{ corrections: CorrectionLogEntry[] }>>(
+      `/sessions/${encodeURIComponent(sessionId)}/corrections`
+    );
+  },
+
   async deleteSession(sessionId: string) {
     return fetchAPI<APIResponse<{ message: string }>>(
       `/sessions/${encodeURIComponent(sessionId)}`,
@@ -2607,6 +2737,77 @@ export const api = {
 
   async workflowsDelete(id: string) {
     return fetchAPI<APIResponse<null>>(`/workflows/${id}`, { method: "DELETE" });
+  },
+
+  // ── Pipelines ─────────────────────────────────────────────────────
+
+  async pipelinesList() {
+    return fetchAPI<APIResponse<PipelineData[]>>("/pipelines");
+  },
+
+  async pipelinesGet(id: string) {
+    return fetchAPI<APIResponse<PipelineData>>(`/pipelines/${id}`);
+  },
+
+  async pipelinesCreate(data: {
+    name: string;
+    description?: string | null;
+    enabled?: boolean;
+    steps: PipelineStepData[];
+    errorStrategy?: PipelineErrorStrategy;
+    maxRetries?: number;
+    timeoutSeconds?: number | null;
+  }) {
+    return fetchAPI<APIResponse<PipelineData>>("/pipelines", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async pipelinesUpdate(
+    id: string,
+    data: Partial<{
+      name: string;
+      description: string | null;
+      enabled: boolean;
+      steps: PipelineStepData[];
+      errorStrategy: PipelineErrorStrategy;
+      maxRetries: number;
+      timeoutSeconds: number | null;
+    }>
+  ) {
+    return fetchAPI<APIResponse<PipelineData>>(`/pipelines/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async pipelinesDelete(id: string) {
+    return fetchAPI<APIResponse<null>>(`/pipelines/${id}`, { method: "DELETE" });
+  },
+
+  async pipelinesRun(
+    id: string,
+    data: { inputContext?: Record<string, unknown>; errorStrategy?: PipelineErrorStrategy } = {}
+  ) {
+    return fetchAPI<APIResponse<PipelineRunData>>(`/pipelines/${id}/run`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async pipelineRunsList(id: string, limit = 50) {
+    return fetchAPI<APIResponse<PipelineRunData[]>>(`/pipelines/${id}/runs?limit=${limit}`);
+  },
+
+  async pipelineRunDetail(id: string, runId: string) {
+    return fetchAPI<APIResponse<PipelineRunDetailData>>(`/pipelines/${id}/runs/${runId}`);
+  },
+
+  async pipelineRunCancel(id: string, runId: string) {
+    return fetchAPI<APIResponse<PipelineRunData>>(`/pipelines/${id}/runs/${runId}/cancel`, {
+      method: "POST",
+    });
   },
 
   async agentStart() {

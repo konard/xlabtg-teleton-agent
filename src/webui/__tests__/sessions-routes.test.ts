@@ -83,6 +83,27 @@ function createTestDb() {
       indexed_at INTEGER NOT NULL DEFAULT (unixepoch())
     );
 
+    CREATE TABLE IF NOT EXISTS correction_logs (
+      id TEXT PRIMARY KEY,
+      session_id TEXT NOT NULL,
+      task_id TEXT,
+      chat_id TEXT NOT NULL,
+      iteration INTEGER NOT NULL,
+      original_output TEXT NOT NULL,
+      evaluation TEXT NOT NULL,
+      reflection TEXT,
+      corrected_output TEXT,
+      score REAL NOT NULL,
+      corrected_score REAL,
+      score_delta REAL NOT NULL DEFAULT 0,
+      threshold REAL NOT NULL DEFAULT 0.7,
+      escalated INTEGER NOT NULL DEFAULT 0 CHECK(escalated IN (0, 1)),
+      tool_recovery TEXT NOT NULL DEFAULT '[]',
+      created_at INTEGER NOT NULL DEFAULT (unixepoch())
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_correction_logs_session ON correction_logs(session_id, created_at DESC);
+
     CREATE VIRTUAL TABLE IF NOT EXISTS tg_messages_fts USING fts5(
       text,
       id UNINDEXED,
@@ -376,6 +397,54 @@ describe("GET /sessions/:id/messages", () => {
     const res2 = await app.request("/sessions/sess-paginate/messages?page=3&limit=4");
     const json2 = await res2.json();
     expect(json2.data.messages.length).toBe(2); // 10 total, page 3 = items 9-10
+  });
+});
+
+describe("GET /sessions/:id/corrections", () => {
+  let db: Database.Database;
+  let app: ReturnType<typeof buildApp>;
+
+  beforeEach(() => {
+    db = createTestDb();
+    app = buildApp(db);
+  });
+
+  it("returns 404 for unknown session", async () => {
+    const res = await app.request("/sessions/missing/corrections");
+    expect(res.status).toBe(404);
+  });
+
+  it("returns correction cycles for a session", async () => {
+    seedSession(db, { id: "sess-corrections", chatId: "telegram:999" });
+    db.prepare(
+      `INSERT INTO correction_logs (
+        id, session_id, chat_id, iteration, original_output, evaluation, reflection,
+        corrected_output, score, corrected_score, score_delta, threshold, escalated, tool_recovery
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(
+      "corr-1",
+      "sess-corrections",
+      "telegram:999",
+      1,
+      "short",
+      JSON.stringify({ score: 0.3, feedback: "Too short", criteria: {}, issues: [] }),
+      JSON.stringify({ summary: "Expand it", instructions: ["Add detail"], focusAreas: [] }),
+      "longer",
+      0.3,
+      0.8,
+      0.5,
+      0.7,
+      0,
+      "[]"
+    );
+
+    const res = await app.request("/sessions/sess-corrections/corrections");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.success).toBe(true);
+    expect(json.data.corrections).toHaveLength(1);
+    expect(json.data.corrections[0].feedback).toBe("Too short");
+    expect(json.data.corrections[0].correctedScore).toBe(0.8);
   });
 });
 

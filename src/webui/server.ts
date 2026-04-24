@@ -52,6 +52,7 @@ import { createAuditMiddleware } from "./middleware/audit.js";
 import { createHealthRoutes } from "./routes/health.js";
 import { createExportImportRoutes } from "./routes/export-import.js";
 import { createWorkflowsRoutes } from "./routes/workflows.js";
+import { createPipelinesRoutes } from "./routes/pipelines.js";
 import { createSelfImprovementRoutes } from "./routes/self-improvement.js";
 import { createAutonomousRoutes } from "./routes/autonomous.js";
 import { createPredictionsRoutes } from "./routes/predictions.js";
@@ -286,6 +287,7 @@ export class WebUIServer {
     this.app.route("/api/health-check", createHealthRoutes(this.deps));
     this.app.route("/api/export", createExportImportRoutes(this.deps));
     this.app.route("/api/workflows", createWorkflowsRoutes(this.deps));
+    this.app.route("/api/pipelines", createPipelinesRoutes(this.deps));
     this.app.route("/api/self-improvement", createSelfImprovementRoutes(this.deps));
     this.app.route("/api/autonomous", createAutonomousRoutes(this.deps));
     this.app.route("/api/predictions", createPredictionsRoutes(this.deps));
