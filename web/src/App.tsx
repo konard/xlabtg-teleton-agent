@@ -15,6 +15,7 @@ import { Workspace } from "./pages/Workspace";
 import { Tasks } from "./pages/Tasks";
 import { Workflows } from "./pages/Workflows";
 import { Pipelines } from "./pages/Pipelines";
+import { Events } from "./pages/Events";
 import { Mcp } from "./pages/Mcp";
 import { Integrations } from "./pages/Integrations";
 import { Config } from "./pages/Config";
@@ -152,6 +153,7 @@ function AuthenticatedApp() {
               <Route path="tasks" element={<Tasks />} />
               <Route path="workflows" element={<Workflows />} />
               <Route path="pipelines" element={<Pipelines />} />
+              <Route path="events" element={<Events />} />
               <Route path="mcp" element={<Mcp />} />
               <Route path="integrations" element={<Integrations />} />
               <Route path="config" element={<Config />} />

@@ -262,9 +262,17 @@ body {
   grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
 }
 
+.events-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+
 @media (max-width: 900px) {
   .pipeline-layout,
-  .pipeline-run-grid {
+  .pipeline-run-grid,
+  .events-layout {
     grid-template-columns: 1fr;
   }
 }

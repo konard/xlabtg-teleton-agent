@@ -96,6 +96,7 @@ import { getAnomalyDetector } from "../services/anomaly-detector.js";
 import { getBehaviorTracker } from "../services/behavior-tracker.js";
 import { getPredictions } from "../services/predictions.js";
 import { getPreloader } from "../services/preloader.js";
+import { getEventBus, type EventType, type EventPayload } from "../services/event-bus.js";
 import {
   getAuditTrailInstance,
   initAuditTrail,
@@ -120,6 +121,23 @@ export { isContextOverflowError, isTrivialMessage } from "./runtime-utils.js";
 export { getTokenUsage } from "./token-usage.js";
 
 const log = createLogger("Agent");
+
+function publishRuntimeEvent(type: EventType, payload: EventPayload, correlationId?: string): void {
+  try {
+    void getEventBus(getDatabase().getDb())
+      .publish({
+        type,
+        source: "agent-runtime",
+        correlationId,
+        payload,
+      })
+      .catch((err: unknown) => {
+        log.warn({ err, eventType: type }, "Runtime event publish failed");
+      });
+  } catch (error) {
+    log.debug({ err: error, eventType: type }, "Runtime event skipped");
+  }
+}
 
 interface UsageAccumulator {
   input: number;
@@ -411,6 +429,12 @@ export class AgentRuntime {
             messageCount: session.messageCount,
           });
         }
+        publishRuntimeEvent("session.ended", {
+          sessionId: session.sessionId,
+          chatId,
+          messageCount: session.messageCount,
+          reason: "reset_policy",
+        });
 
         if (transcriptExists(session.sessionId)) {
           try {
@@ -442,6 +466,11 @@ export class AgentRuntime {
         log.info(`📖 Loading existing session: ${session.sessionId}`);
       } else {
         log.info(`🆕 Starting new session: ${session.sessionId}`);
+        publishRuntimeEvent("session.started", {
+          sessionId: session.sessionId,
+          chatId,
+          isGroup: effectiveIsGroup,
+        });
       }
       sessionLifecycleEventId = this.recordAuditEvent(
         "session.lifecycle",
@@ -453,6 +482,23 @@ export class AgentRuntime {
           senderId: toolContext?.senderId ?? null,
         },
         { sessionId: session.sessionId }
+      );
+
+      publishRuntimeEvent(
+        "agent.message.received",
+        {
+          sessionId: session.sessionId,
+          chatId,
+          userName: userName ?? null,
+          senderUsername: senderUsername ?? null,
+          senderRank: senderRank ?? null,
+          isGroup: effectiveIsGroup,
+          messageId: messageId ?? null,
+          hasMedia: hasMedia ?? false,
+          mediaType: mediaType ?? null,
+          textLength: effectiveMessage.length,
+        },
+        session.sessionId
       );
 
       this.recordBehaviorMessage({
@@ -1226,6 +1272,20 @@ export class AgentRuntime {
             }
           }
 
+          publishRuntimeEvent(
+            exec.result.success ? "tool.executed" : "tool.failed",
+            {
+              sessionId: session.sessionId,
+              chatId,
+              toolName: block.name,
+              durationMs: exec.durationMs,
+              success: exec.result.success,
+              blocked: plan.blocked,
+              error: exec.result.error ?? null,
+            },
+            session.sessionId
+          );
+
           // Record tool invocation metric (skipped for blocked tools)
           if (!plan.blocked) {
             getMetrics()?.recordToolCall(block.name);
@@ -1495,6 +1555,19 @@ export class AgentRuntime {
         }
       }
 
+      publishRuntimeEvent(
+        "agent.message.sent",
+        {
+          sessionId: session.sessionId,
+          chatId,
+          isGroup: effectiveIsGroup,
+          textLength: content.length,
+          toolsUsed: totalToolCalls.map((tc) => tc.name),
+          durationMs: Date.now() - processStartTime,
+        },
+        session.sessionId
+      );
+
       return {
         content,
         toolCalls: totalToolCalls,
@@ -1508,6 +1581,11 @@ export class AgentRuntime {
       });
       this.detectAnomalies();
       log.error({ err: error }, "Agent error");
+      publishRuntimeEvent("agent.message.failed", {
+        chatId,
+        error: error instanceof Error ? error.message : String(error),
+        durationMs: Date.now() - processStartTime,
+      });
       throw error;
     }
   }
