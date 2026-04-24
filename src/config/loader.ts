@@ -227,6 +227,9 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
   if (process.env.UPSTASH_VECTOR_NAMESPACE) {
     config.vector_memory.namespace = process.env.UPSTASH_VECTOR_NAMESPACE;
   }
+  if (process.env.TELETON_TIMEZONE) {
+    config.temporal_context.timezone = process.env.TELETON_TIMEZONE;
+  }
 
   return config;
 }

@@ -174,6 +174,7 @@ export class TeletonApp {
       },
       vectorMemory: this.config.vector_memory,
       memory: this.config.memory,
+      temporalContext: this.config.temporal_context,
       autonomous: this.config.autonomous,
       workspaceDir: WORKSPACE_ROOT,
     });

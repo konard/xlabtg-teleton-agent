@@ -906,6 +906,60 @@ export interface BudgetStatus {
   projection_usd: number | null;
 }
 
+// ── Temporal context types ───────────────────────────────────────────
+
+export interface TemporalMetadata {
+  timestamp: number;
+  isoString: string;
+  timezone: string;
+  localDate: string;
+  localTime: string;
+  dayOfWeek: number;
+  dayName: string;
+  hourOfDay: number;
+  timeOfDay: "morning" | "afternoon" | "evening" | "night";
+  relativePeriod: "weekday" | "weekend";
+  relativeMarkers: string[];
+  sessionPhase: "beginning" | "middle" | "end" | "unknown";
+}
+
+export interface TemporalPattern {
+  id: string;
+  patternType: "daily" | "weekly" | "recurring" | "seasonal" | "custom";
+  description: string;
+  scheduleCron: string | null;
+  confidence: number;
+  frequency: number;
+  lastSeen: number;
+  createdAt: number;
+  updatedAt: number;
+  enabled: boolean;
+  metadata: Record<string, unknown>;
+  activeScore?: number;
+}
+
+export interface TemporalContextData {
+  timezone: string;
+  generatedAt: number;
+  metadata: TemporalMetadata;
+  activePatterns: TemporalPattern[];
+  suggestedGreeting: string;
+}
+
+export interface TemporalTimelineEntry {
+  id: string;
+  entityType: "knowledge" | "message" | "session" | "task" | "behavior" | "request" | "tool";
+  entityId: string;
+  timestamp: number;
+  timezone: string;
+  dayOfWeek: number;
+  hourOfDay: number;
+  timeOfDay: "morning" | "afternoon" | "evening" | "night";
+  relativePeriod: "weekday" | "weekend";
+  sessionPhase: "beginning" | "middle" | "end" | "unknown";
+  metadata: Record<string, unknown>;
+}
+
 // ── Cache types ─────────────────────────────────────────────────────
 
 export type CacheResourceType = "tools" | "prompts" | "embeddings" | "api_responses";
@@ -2319,6 +2373,29 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ monthly_limit_usd }),
     });
+  },
+
+  // ── Temporal Context ─────────────────────────────────────────────
+
+  async getTemporalContext() {
+    return fetchAPI<APIResponse<TemporalContextData>>("/context/temporal");
+  },
+
+  async getTemporalPatterns(includeDisabled = true) {
+    return fetchAPI<APIResponse<TemporalPattern[]>>(
+      `/context/patterns?includeDisabled=${includeDisabled ? "true" : "false"}`
+    );
+  },
+
+  async updateTemporalPattern(id: string, data: Partial<Pick<TemporalPattern, "enabled">>) {
+    return fetchAPI<APIResponse<TemporalPattern>>(`/context/patterns/${encodeURIComponent(id)}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getTemporalTimeline(limit = 20) {
+    return fetchAPI<APIResponse<TemporalTimelineEntry[]>>(`/context/timeline?limit=${limit}`);
   },
 
   // ── Cache ────────────────────────────────────────────────────────
