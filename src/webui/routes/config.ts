@@ -21,6 +21,22 @@ import { setTonapiKey } from "../../constants/api-endpoints.js";
 import { setToncenterApiKey, invalidateEndpointCache } from "../../ton/endpoint.js";
 import { invalidateTonClientCache } from "../../ton/wallet-service.js";
 import { DEFAULT_CACHE_CONFIG, getCache, type ResourceCacheConfig } from "../../services/cache.js";
+import { getEventBus } from "../../services/event-bus.js";
+
+function emitConfigChanged(deps: WebUIServerDeps, key: string, action: "set" | "unset"): void {
+  try {
+    void getEventBus(deps.memory.db)
+      .publish({
+        type: "config.changed",
+        source: "webui-config",
+        payload: { key, action },
+      })
+      .catch(() => {});
+  } catch {
+    // Config writes must not fail because event logging is unavailable.
+  }
+}
+
 /** Side-effects to run when specific config keys change at runtime. */
 const CONFIG_SIDE_EFFECTS: Record<string, (value: string | undefined) => void> = {
   tonapi_key: (v) => setTonapiKey(v),
@@ -232,6 +248,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
           hotReload: meta.hotReload,
           ...(meta.itemType ? { itemType: meta.itemType } : {}),
         };
+        emitConfigChanged(deps, key, "set");
         return c.json({ success: true, data: result } as APIResponse<ConfigKeyData>);
       } catch (err) {
         return c.json(
@@ -302,6 +319,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         hotReload: meta.hotReload,
         ...(meta.options ? { options: meta.options } : {}),
       };
+      emitConfigChanged(deps, key, "set");
       return c.json({ success: true, data: result } as APIResponse<ConfigKeyData>);
     } catch (err) {
       return c.json(
@@ -366,6 +384,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         ...(meta.options ? { options: meta.options } : {}),
         ...(meta.itemType ? { itemType: meta.itemType } : {}),
       };
+      emitConfigChanged(deps, key, "unset");
       return c.json({ success: true, data: result } as APIResponse<ConfigKeyData>);
     } catch (err) {
       return c.json(

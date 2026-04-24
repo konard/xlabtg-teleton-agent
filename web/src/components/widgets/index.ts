@@ -6,3 +6,5 @@ export { TelegramSettingsWidget } from './TelegramSettingsWidget';
 export { ExecSettingsWidget } from './ExecSettingsWidget';
 export { PredictionsWidget } from './PredictionsWidget';
 export { CacheWidget } from './CacheWidget';
+export { GeneratedWidgetRenderer } from './GeneratedWidgetRenderer';
+export { WidgetGeneratorPanel } from './WidgetGeneratorPanel';

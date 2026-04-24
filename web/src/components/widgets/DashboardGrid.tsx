@@ -25,6 +25,8 @@ import { ExecSettingsWidget } from "./ExecSettingsWidget";
 import { PredictionsWidget } from "./PredictionsWidget";
 import { CacheWidget } from "./CacheWidget";
 import { DynamicWidgetRenderer } from "./DynamicWidgetRenderer";
+import { GeneratedWidgetRenderer } from "./GeneratedWidgetRenderer";
+import { WidgetGeneratorPanel } from "./WidgetGeneratorPanel";
 import { QuickActions } from "../QuickActions";
 import { HealthCheck } from "../HealthCheck";
 import {
@@ -35,7 +37,9 @@ import {
   type DashboardProfileData,
   type DashboardTemplateData,
   type DashboardWidgetData,
+  type GeneratedWidgetDefinition,
   type StatusData,
+  type WidgetCategory,
   type WidgetDefinition,
 } from "../../lib/api";
 import { ProviderMeta } from "../../hooks/useConfigState";
@@ -115,6 +119,68 @@ const LEGACY_LAYOUTS: Record<string, { lg: DashboardLayoutItem; md: DashboardLay
     md: { i: "logs", x: 0, y: 43, w: 10, h: 8, minH: 4 },
   },
 };
+
+const OPEN_WIDGET_GENERATOR_EVENT = "teleton:open-widget-generator";
+const OPEN_WIDGET_GENERATOR_STORAGE_KEY = "teleton:open-widget-generator";
+const GENERATED_WIDGET_CONFIG_KEY = "generatedDefinition";
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isGeneratedWidgetDefinition(value: unknown): value is GeneratedWidgetDefinition {
+  if (!isRecord(value)) return false;
+  const dataSource = value.dataSource;
+  const style = value.style;
+  const config = value.config;
+  const defaultSize = value.defaultSize;
+  return (
+    typeof value.id === "string" &&
+    typeof value.title === "string" &&
+    typeof value.description === "string" &&
+    typeof value.renderer === "string" &&
+    isRecord(dataSource) &&
+    typeof dataSource.id === "string" &&
+    typeof dataSource.endpoint === "string" &&
+    isRecord(style) &&
+    typeof style.palette === "string" &&
+    isRecord(config) &&
+    isRecord(defaultSize) &&
+    typeof defaultSize.w === "number" &&
+    typeof defaultSize.h === "number"
+  );
+}
+
+function generatedWidgetFromConfig(widget: DashboardWidgetData): GeneratedWidgetDefinition | null {
+  const value = widget.config[GENERATED_WIDGET_CONFIG_KEY];
+  return isGeneratedWidgetDefinition(value) ? value : null;
+}
+
+function mapGeneratedCategory(definition: GeneratedWidgetDefinition): WidgetCategory {
+  const sourceId = definition.dataSource.id;
+  if (sourceId.startsWith("status.")) return "status";
+  if (sourceId.startsWith("tasks.") || sourceId.startsWith("predictions.")) return "action";
+  if (sourceId.startsWith("memory.")) return "content";
+  return "metrics";
+}
+
+function toDashboardDefinition(definition: GeneratedWidgetDefinition): WidgetDefinition {
+  return {
+    id: definition.id,
+    name: definition.title,
+    description: definition.description,
+    category: mapGeneratedCategory(definition),
+    dataSource: { type: "static" },
+    renderer: "custom",
+    defaultSize: definition.defaultSize,
+    configSchema: {
+      type: "object",
+      properties: {
+        [GENERATED_WIDGET_CONFIG_KEY]: { type: "object" },
+      },
+    },
+  };
+}
 
 interface DashboardGridProps {
   status: StatusData;
@@ -348,6 +414,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [configWidgetId, setConfigWidgetId] = useState<string | null>(null);
+  const [generatorOpen, setGeneratorOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const selectedDashboard = useMemo(
@@ -386,6 +453,21 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const openGenerator = () => setGeneratorOpen(true);
+    try {
+      if (sessionStorage.getItem(OPEN_WIDGET_GENERATOR_STORAGE_KEY) === "1") {
+        sessionStorage.removeItem(OPEN_WIDGET_GENERATOR_STORAGE_KEY);
+        setGeneratorOpen(true);
+      }
+    } catch {
+      // Ignore storage failures; the direct event still opens the panel.
+    }
+
+    window.addEventListener(OPEN_WIDGET_GENERATOR_EVENT, openGenerator);
+    return () => window.removeEventListener(OPEN_WIDGET_GENERATOR_EVENT, openGenerator);
   }, []);
 
   const visibleWidgets = useMemo(() => {
@@ -447,6 +529,35 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Widget add failed");
+      } finally {
+        setSaving(false);
+      }
+    },
+    [loadDashboards, selectedDashboard]
+  );
+
+  const handleGeneratedWidgetSave = useCallback(
+    async (definition: GeneratedWidgetDefinition) => {
+      if (!selectedDashboard) throw new Error("No dashboard selected");
+      setSaving(true);
+      try {
+        await api.addDashboardWidget(selectedDashboard.id, {
+          definition: toDashboardDefinition(definition),
+          title: definition.title,
+          config: { [GENERATED_WIDGET_CONFIG_KEY]: definition },
+          data: null,
+          pinned: false,
+        });
+        await loadDashboards(selectedDashboard.id);
+        const catalogRes = await api.getWidgetCatalog();
+        if (catalogRes.success && catalogRes.data) setCatalog(catalogRes.data);
+        setEditMode(true);
+        setGeneratorOpen(false);
+        setError(null);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "Generated widget save failed";
+        setError(message);
+        throw new Error(message);
       } finally {
         setSaving(false);
       }
@@ -618,6 +729,11 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
   );
 
   function renderCustomWidget(widget: DashboardWidgetData) {
+    const generatedDefinition = generatedWidgetFromConfig(widget);
+    if (generatedDefinition) {
+      return <GeneratedWidgetRenderer definition={generatedDefinition} />;
+    }
+
     const id = widget.definitionId;
     if (id === "stats") return <StatsWidget status={props.status} stats={props.stats} />;
     if (id === "logs") return <LogsWidget />;
@@ -687,6 +803,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
 
   function renderWidget(widget: DashboardWidgetData) {
     const definition = catalogById.get(widget.definitionId);
+    const generatedDefinition = generatedWidgetFromConfig(widget);
     const isCustom =
       definition?.renderer === "custom" || CUSTOM_RENDERER_IDS.has(widget.definitionId);
     const title = definitionTitle(widget, definition);
@@ -707,7 +824,9 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
             ) : null
           }
           className={
-            widget.definitionId === "logs"
+            generatedDefinition
+              ? "widget-generated"
+              : widget.definitionId === "logs"
               ? "widget-logs"
               : widget.definitionId === "stats"
                 ? "widget-stats"
@@ -757,6 +876,15 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
             </option>
           ))}
         </select>
+
+        <button
+          className="btn-ghost btn-sm"
+          disabled={saving || !selectedDashboard}
+          onClick={() => setGeneratorOpen(true)}
+          type="button"
+        >
+          Generate Widget
+        </button>
 
         <button
           className={`btn-ghost btn-sm${editMode ? " active" : ""}`}
@@ -883,6 +1011,12 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
           {visibleWidgets.map(renderWidget)}
         </ResponsiveGridLayout>
       )}
+
+      <WidgetGeneratorPanel
+        open={generatorOpen}
+        onClose={() => setGeneratorOpen(false)}
+        onSave={handleGeneratedWidgetSave}
+      />
     </div>
   );
 }

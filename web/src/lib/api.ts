@@ -144,6 +144,60 @@ export interface WorkflowData {
   lastError: string | null;
 }
 
+// ── Event Bus and Webhook types ───────────────────────────────────────────────
+
+export interface EventLogEntry {
+  id: string;
+  type: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+  source: string;
+  correlationId: string;
+}
+
+export interface EventListData {
+  events: EventLogEntry[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface WebhookRegistrationData {
+  id: string;
+  url: string;
+  events: string[];
+  active: boolean;
+  maxRetries: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export type WebhookDeliveryStatus = "pending" | "delivered" | "retrying" | "failed";
+
+export interface WebhookDeliveryData {
+  id: string;
+  webhookId: string;
+  eventId: string;
+  eventType: string;
+  payload: Record<string, unknown>;
+  status: WebhookDeliveryStatus;
+  attempts: number;
+  nextAttemptAt: number | null;
+  lastAttemptAt: number | null;
+  responseStatus: number | null;
+  error: string | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface WebhookInputData {
+  url: string;
+  events: string[];
+  secret?: string;
+  active?: boolean;
+  maxRetries?: number;
+}
+
 // ── Pipeline Execution types ─────────────────────────────────────────────────
 
 export type PipelineErrorStrategy = "fail_fast" | "continue" | "retry";
@@ -1041,6 +1095,100 @@ export interface ActivityEntry {
 }
 
 export type MetricsPeriod = "24h" | "7d" | "30d";
+
+// ── AI Widget Generator types ───────────────────────────────────────
+
+export type GeneratedWidgetRenderer = "chart" | "table" | "kpi" | "list" | "markdown";
+export type GeneratedWidgetChartType = "line" | "bar" | "pie";
+export type GeneratedWidgetPalette = "default" | "blue" | "green" | "purple" | "orange" | "red";
+
+export interface WidgetDataSourceField {
+  key: string;
+  label: string;
+  type: "string" | "number" | "timestamp" | "boolean" | "object";
+  description?: string;
+}
+
+export interface WidgetDataSourceDefinition {
+  id: string;
+  name: string;
+  description: string;
+  category: "metrics" | "status" | "memory" | "analytics" | "tasks" | "predictions";
+  endpoint: string;
+  method: "GET";
+  fields: WidgetDataSourceField[];
+  params?: Array<{
+    key: string;
+    label: string;
+    defaultValue: string;
+    values: string[];
+  }>;
+  rendererHints: Array<"line" | "bar" | "pie" | "table" | "kpi" | "list">;
+  keywords: string[];
+}
+
+export interface WidgetGenerationTemplate {
+  id: string;
+  label: string;
+  prompt: string;
+  renderer: GeneratedWidgetRenderer;
+  chartType?: GeneratedWidgetChartType;
+}
+
+export interface GeneratedWidgetDefinition {
+  id: string;
+  title: string;
+  description: string;
+  renderer: GeneratedWidgetRenderer;
+  dataSource: {
+    id: string;
+    endpoint: string;
+    method: "GET";
+    params?: Record<string, string>;
+    refreshInterval: number;
+  };
+  config: {
+    chartType?: GeneratedWidgetChartType;
+    xKey?: string;
+    yKey?: string;
+    categoryKey?: string;
+    valueKey?: string;
+    labelKey?: string;
+    columns?: string[];
+    markdown?: string;
+    aggregate?: "first" | "sum" | "average";
+  };
+  style: {
+    palette: GeneratedWidgetPalette;
+  };
+  defaultSize: {
+    w: number;
+    h: number;
+  };
+  generatedFrom: string;
+  refinementHistory: Array<{
+    prompt: string;
+    appliedAt: string;
+  }>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WidgetGenerationResult {
+  definition: GeneratedWidgetDefinition;
+  validation: {
+    valid: boolean;
+    issues: string[];
+  };
+  suggestions: string[];
+}
+
+export interface WidgetPreviewResult {
+  definition: GeneratedWidgetDefinition;
+  data: Array<Record<string, unknown>>;
+  fields: WidgetDataSourceField[];
+  generatedAt: string;
+}
 
 // ── Analytics types ──────────────────────────────────────────────────
 
@@ -2920,6 +3068,37 @@ export const api = {
     return fetchAPI<APIResponse<ActivityEntry[]>>(`/metrics/activity?period=${period}`);
   },
 
+  // ── AI Widget Generator ──────────────────────────────────────────
+
+  async getWidgetTemplates() {
+    return fetchAPI<APIResponse<WidgetGenerationTemplate[]>>("/widgets/templates");
+  },
+
+  async getWidgetDataSources() {
+    return fetchAPI<APIResponse<WidgetDataSourceDefinition[]>>("/widgets/data-sources");
+  },
+
+  async generateWidget(prompt: string) {
+    return fetchAPI<APIResponse<WidgetGenerationResult>>("/widgets/generate", {
+      method: "POST",
+      body: JSON.stringify({ prompt }),
+    });
+  },
+
+  async refineWidget(prompt: string, widget: GeneratedWidgetDefinition) {
+    return fetchAPI<APIResponse<WidgetGenerationResult>>("/widgets/refine", {
+      method: "POST",
+      body: JSON.stringify({ prompt, widget }),
+    });
+  },
+
+  async previewWidget(definition: GeneratedWidgetDefinition) {
+    return fetchAPI<APIResponse<WidgetPreviewResult>>("/widgets/preview", {
+      method: "POST",
+      body: JSON.stringify({ definition }),
+    });
+  },
+
   // ── Analytics ────────────────────────────────────────────────────
 
   async getAnalyticsUsage(period: MetricsPeriod = "7d") {
@@ -3521,6 +3700,83 @@ export const api = {
 
   async workflowsDelete(id: string) {
     return fetchAPI<APIResponse<null>>(`/workflows/${id}`, { method: "DELETE" });
+  },
+
+  // ── Events and Webhooks ───────────────────────────────────────────
+
+  async eventsList(params: {
+    type?: string;
+    from?: string;
+    to?: string;
+    limit?: number;
+    offset?: number;
+  } = {}) {
+    const qs = new URLSearchParams();
+    if (params.type) qs.set("type", params.type);
+    if (params.from) qs.set("from", params.from);
+    if (params.to) qs.set("to", params.to);
+    if (params.limit) qs.set("limit", String(params.limit));
+    if (params.offset) qs.set("offset", String(params.offset));
+    return fetchAPI<APIResponse<EventListData>>(`/events${qs.size ? `?${qs}` : ""}`);
+  },
+
+  async eventTypes() {
+    return fetchAPI<APIResponse<string[]>>("/events/types");
+  },
+
+  async eventReplay(id: string) {
+    return fetchAPI<APIResponse<EventLogEntry>>(`/events/${id}/replay`, { method: "POST" });
+  },
+
+  connectEvents(onEvent: (event: EventLogEntry) => void) {
+    const eventSource = new EventSource(`${API_BASE}/events/stream`);
+    eventSource.addEventListener("event", (message) => {
+      try {
+        onEvent(JSON.parse(message.data));
+      } catch {
+        // ignore parse errors
+      }
+    });
+    return () => eventSource.close();
+  },
+
+  async webhooksList() {
+    return fetchAPI<APIResponse<WebhookRegistrationData[]>>("/webhooks");
+  },
+
+  async webhooksCreate(data: WebhookInputData) {
+    return fetchAPI<APIResponse<WebhookRegistrationData>>("/webhooks", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async webhooksUpdate(id: string, data: Partial<WebhookInputData>) {
+    return fetchAPI<APIResponse<WebhookRegistrationData>>(`/webhooks/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  },
+
+  async webhooksDelete(id: string) {
+    return fetchAPI<APIResponse<null>>(`/webhooks/${id}`, { method: "DELETE" });
+  },
+
+  async webhookTest(id: string) {
+    return fetchAPI<APIResponse<WebhookDeliveryData>>(`/webhooks/${id}/test`, {
+      method: "POST",
+    });
+  },
+
+  async webhookDeliveries(id: string) {
+    return fetchAPI<APIResponse<WebhookDeliveryData[]>>(`/webhooks/${id}/deliveries`);
+  },
+
+  async webhookRetry(id: string, deliveryId: string) {
+    return fetchAPI<APIResponse<WebhookDeliveryData>>(
+      `/webhooks/${id}/deliveries/${deliveryId}/retry`,
+      { method: "POST" }
+    );
   },
 
   // ── Pipelines ─────────────────────────────────────────────────────

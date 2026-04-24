@@ -63,6 +63,9 @@ function DashboardNav() {
         <Link to="/pipelines" className={isActive("/pipelines") ? "active" : ""}>
           Pipelines
         </Link>
+        <Link to="/events" className={isActive("/events") ? "active" : ""}>
+          Events
+        </Link>
         <Link to="/mcp" className={isActive("/mcp") ? "active" : ""}>
           MCP
         </Link>
