@@ -1,4 +1,6 @@
 import { Hono } from "hono";
+import { existsSync, readFileSync, statSync } from "fs";
+import { join } from "path";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { readRawConfig, writeRawConfig, setNestedValue } from "../../config/configurable-keys.js";
 import type { MtprotoProxyEntry } from "../../config/schema.js";
@@ -6,6 +8,67 @@ import {
   checkMtprotoProxies,
   uncheckedMtprotoProxyStatuses,
 } from "../../telegram/mtproto-proxy-health.js";
+import { TELETON_ROOT } from "../../workspace/paths.js";
+
+function unique(values: Array<string | undefined>): string[] {
+  return [...new Set(values.filter((value): value is string => !!value))];
+}
+
+function readSessionCandidate(path: string): string | undefined {
+  try {
+    if (!existsSync(path) || statSync(path).isDirectory()) {
+      return undefined;
+    }
+    const sessionString = readFileSync(path, "utf-8").trim();
+    return sessionString || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function readTelegramSessionString(config: Record<string, unknown>): string | undefined {
+  const telegram = config.telegram as
+    | { session_path?: unknown; session_name?: unknown }
+    | undefined;
+  const configuredSessionPath =
+    typeof telegram?.session_path === "string" && telegram.session_path.trim()
+      ? telegram.session_path.trim()
+      : undefined;
+  const sessionName =
+    typeof telegram?.session_name === "string" && telegram.session_name.trim()
+      ? telegram.session_name.trim()
+      : "teleton_session";
+
+  const directCandidates = unique([
+    configuredSessionPath,
+    join(TELETON_ROOT, "telegram_session.txt"),
+  ]);
+  for (const candidate of directCandidates) {
+    const sessionString = readSessionCandidate(candidate);
+    if (sessionString) return sessionString;
+  }
+
+  const directoryCandidates = unique([configuredSessionPath, TELETON_ROOT]);
+  for (const candidate of directoryCandidates) {
+    try {
+      if (!existsSync(candidate) || !statSync(candidate).isDirectory()) {
+        continue;
+      }
+      for (const nested of [
+        join(candidate, "telegram_session.txt"),
+        join(candidate, sessionName),
+        join(candidate, `${sessionName}.session`),
+      ]) {
+        const sessionString = readSessionCandidate(nested);
+        if (sessionString) return sessionString;
+      }
+    } catch {
+      // Ignore unreadable legacy session locations and fall back to a transport-only check.
+    }
+  }
+
+  return undefined;
+}
 
 export function createMtprotoRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
@@ -36,11 +99,18 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
         : null;
     const apiId = Number(config.telegram?.api_id);
     const apiHash = typeof config.telegram?.api_hash === "string" ? config.telegram.api_hash : "";
+    const sessionString = readTelegramSessionString(config);
     const proxyStatuses =
       proxies.length === 0
         ? []
         : Number.isFinite(apiId) && apiId > 0 && apiHash
-          ? await checkMtprotoProxies({ apiId, apiHash, proxies, activeProxyIndex })
+          ? await checkMtprotoProxies({
+              apiId,
+              apiHash,
+              proxies,
+              activeProxyIndex,
+              ...(sessionString ? { sessionString } : {}),
+            })
           : uncheckedMtprotoProxyStatuses(
               proxies,
               "Telegram API ID and hash are required before proxy checks can run",
