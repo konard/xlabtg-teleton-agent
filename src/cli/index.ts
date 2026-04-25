@@ -11,7 +11,7 @@ import {
   getNormalDefaultConfigPath,
 } from "../config/loader.js";
 import { readFileSync, existsSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, isAbsolute, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { getErrorMessage } from "../utils/errors.js";
 
@@ -70,6 +70,24 @@ function printConfigNotFoundError(configPath: string): void {
   console.error("   PowerShell: $env:TELETON_HOME=$null");
   console.error("   macOS/Linux: unset TELETON_HOME");
   console.error("\n   Or use: teleton start --api (for API-only bootstrap)");
+}
+
+export function bindTeletonHomeToConfig(configPath: string, argv = process.argv): void {
+  const explicitConfigArg =
+    argv.includes("-c") ||
+    argv.includes("--config") ||
+    argv.some((arg) => arg.startsWith("--config="));
+
+  if (!explicitConfigArg) return;
+
+  const expandedConfigPath = configPath.startsWith("~")
+    ? join(process.env.HOME || process.env.USERPROFILE || "", configPath.slice(1))
+    : configPath;
+  const absoluteConfigPath = isAbsolute(expandedConfigPath)
+    ? expandedConfigPath
+    : resolve(process.cwd(), expandedConfigPath);
+
+  process.env.TELETON_HOME = dirname(absoluteConfigPath);
 }
 
 program
@@ -141,6 +159,8 @@ program
   .option("--json-credentials", "Output API credentials as JSON to stdout on start")
   .action(async (options) => {
     try {
+      bindTeletonHomeToConfig(options.config);
+
       // If --api flag and no config: start API-only bootstrap mode
       if (options.api && !configExists(options.config)) {
         if (options.apiPort) {
@@ -431,4 +451,6 @@ program.action(() => {
   program.help();
 });
 
-program.parse(process.argv);
+if (process.env.TELETON_CLI_SKIP_PARSE !== "true") {
+  program.parse(process.argv);
+}
