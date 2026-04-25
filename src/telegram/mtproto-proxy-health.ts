@@ -141,10 +141,14 @@ export async function checkMtprotoProxy(
 }
 
 export async function checkMtprotoProxies(options: CheckAllOptions): Promise<MtprotoProxyHealth[]> {
-  const { apiId, apiHash, proxies, activeProxyIndex, timeoutMs } = options;
+  const { apiId, apiHash, proxies, activeProxyIndex, timeoutMs, sessionString } = options;
   return Promise.all(
     proxies.map((entry, index) =>
-      checkMtprotoProxy(apiId, apiHash, entry, index, { activeProxyIndex, timeoutMs })
+      checkMtprotoProxy(apiId, apiHash, entry, index, {
+        activeProxyIndex,
+        timeoutMs,
+        sessionString,
+      })
     )
   );
 }
