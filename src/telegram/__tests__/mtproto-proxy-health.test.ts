@@ -44,7 +44,7 @@ vi.mock("../../constants/timeouts.js", () => ({
   MTPROTO_PROXY_STATUS_TIMEOUT_MS: 100,
 }));
 
-import { checkMtprotoProxy } from "../mtproto-proxy-health.js";
+import { checkMtprotoProxies, checkMtprotoProxy } from "../mtproto-proxy-health.js";
 
 const PROXY = { server: "proxy.example.com", port: 443, secret: "a".repeat(32) };
 
@@ -91,6 +91,21 @@ describe("MTProto proxy health checks", () => {
     expect(constructedSessions[0]).toBe("saved-session");
     expect(mockGetMe).toHaveBeenCalledTimes(1);
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("passes the saved session to every bulk proxy health check", async () => {
+    const statuses = await checkMtprotoProxies({
+      apiId: 12345,
+      apiHash: "hash",
+      proxies: [PROXY, { server: "proxy2.example.com", port: 8443, secret: "b".repeat(32) }],
+      activeProxyIndex: 1,
+      sessionString: "saved-session",
+    });
+
+    expect(statuses).toHaveLength(2);
+    expect(statuses.every((status) => status.status === "available")).toBe(true);
+    expect(constructedSessions).toEqual(["saved-session", "saved-session"]);
+    expect(mockGetMe).toHaveBeenCalledTimes(2);
   });
 
   it("reports an unavailable proxy when connection succeeds but authenticated validation fails", async () => {
