@@ -65,7 +65,10 @@ Plugins can be either a single file or a directory:
     node_modules/       # Auto-installed by the platform
 ```
 
-When a plugin has a `package.json` and `package-lock.json`, the platform automatically runs `npm ci --ignore-scripts` to install dependencies before loading.
+When a plugin has a `package.json` and `package-lock.json`, the platform automatically runs
+`npm ci --ignore-scripts` to install dependencies before loading. The loader resolves `npm` from
+the running Node.js installation as well as `PATH`, so service environments with a minimal `PATH`
+can still install plugin dependencies.
 
 ---
 
@@ -902,11 +905,12 @@ console.log(createHash('sha256').update(readFileSync(file)).digest('hex'));
 " ~/.teleton/plugins/my-plugin/index.js > ~/.teleton/plugins/my-plugin/.checksum
 ```
 
-Plugins without a checksum file are still allowed to load, but a warning is logged:
+Plugins without a checksum file are still allowed to load. To avoid noisy startup logs for legacy
+plugins, the missing-sidecar notice is emitted only at debug level:
 
 ```
 [my-plugin] No .checksum sidecar found — loading without integrity verification.
-Add a SHA-256 checksum file to suppress this warning.
+Add a SHA-256 checksum file to enable integrity verification.
 ```
 
 ### What plugins cannot access
