@@ -1,15 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const constructedOptions: Array<Record<string, unknown>> = [];
-const { mockConnect, mockDisconnect } = vi.hoisted(() => ({
+const constructedSessions: string[] = [];
+const { mockConnect, mockDisconnect, mockGetMe } = vi.hoisted(() => ({
   mockConnect: vi.fn(),
   mockDisconnect: vi.fn().mockResolvedValue(undefined),
+  mockGetMe: vi.fn(),
 }));
 
 vi.mock("telegram", () => {
   class TelegramClient {
     connect = mockConnect;
     disconnect = mockDisconnect;
+    getMe = mockGetMe;
 
     constructor(
       _session: unknown,
@@ -31,7 +34,9 @@ vi.mock("telegram/extensions/Logger.js", () => ({
 
 vi.mock("telegram/sessions/index.js", () => ({
   StringSession: class {
-    constructor(_value?: string) {}
+    constructor(value?: string) {
+      constructedSessions.push(value ?? "");
+    }
   },
 }));
 
@@ -46,8 +51,10 @@ const PROXY = { server: "proxy.example.com", port: 443, secret: "a".repeat(32) }
 describe("MTProto proxy health checks", () => {
   beforeEach(() => {
     constructedOptions.length = 0;
+    constructedSessions.length = 0;
     vi.clearAllMocks();
     mockConnect.mockResolvedValue(undefined);
+    mockGetMe.mockResolvedValue({ id: 12345 });
   });
 
   afterEach(() => {
@@ -70,6 +77,34 @@ describe("MTProto proxy health checks", () => {
       secret: PROXY.secret,
       MTProxy: true,
     });
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an authenticated proxy as available when getMe succeeds through the saved session", async () => {
+    const status = await checkMtprotoProxy(12345, "hash", PROXY, 0, {
+      activeProxyIndex: 0,
+      sessionString: "saved-session",
+    });
+
+    expect(status.status).toBe("available");
+    expect(status.available).toBe(true);
+    expect(constructedSessions[0]).toBe("saved-session");
+    expect(mockGetMe).toHaveBeenCalledTimes(1);
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports an unavailable proxy when connection succeeds but authenticated validation fails", async () => {
+    mockGetMe.mockRejectedValueOnce(new Error("getMe timed out"));
+
+    const status = await checkMtprotoProxy(12345, "hash", PROXY, 0, {
+      sessionString: "saved-session",
+    });
+
+    expect(status.status).toBe("unavailable");
+    expect(status.available).toBe(false);
+    expect(status.error).toContain("getMe timed out");
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+    expect(mockGetMe).toHaveBeenCalledTimes(1);
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 

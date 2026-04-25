@@ -23,6 +23,7 @@ export interface MtprotoProxyHealth {
 interface CheckOptions {
   activeProxyIndex?: number;
   timeoutMs?: number;
+  sessionString?: string;
 }
 
 interface CheckAllOptions extends CheckOptions {
@@ -79,28 +80,44 @@ export async function checkMtprotoProxy(
   const checkedAt = new Date().toISOString();
   const startedAt = Date.now();
   const logger = new Logger(LogLevel.NONE);
-  const client = new TelegramClient(new StringSession(""), apiId, apiHash, {
-    connectionRetries: 1,
-    retryDelay: 250,
-    autoReconnect: false,
-    floodSleepThreshold: 0,
-    baseLogger: logger,
-    proxy: buildProxy(entry),
-  });
+  const client = new TelegramClient(
+    new StringSession(options.sessionString ?? ""),
+    apiId,
+    apiHash,
+    {
+      connectionRetries: 1,
+      retryDelay: 250,
+      autoReconnect: false,
+      floodSleepThreshold: 0,
+      baseLogger: logger,
+      proxy: buildProxy(entry),
+    }
+  );
 
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    timeoutId = setTimeout(
-      () =>
-        reject(
-          new Error(`MTProto proxy status check timed out after ${Math.round(timeoutMs / 1000)}s`)
-        ),
-      timeoutMs
-    );
-  });
+  const withStatusTimeout = async <T>(operation: Promise<T>, action: string): Promise<T> => {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new Error(`MTProto proxy ${action} timed out after ${Math.round(timeoutMs / 1000)}s`)
+          ),
+        timeoutMs
+      );
+    });
+
+    try {
+      return await Promise.race([operation, timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  };
 
   try {
-    await Promise.race([client.connect(), timeoutPromise]);
+    await withStatusTimeout(client.connect(), "connection check");
+    if (options.sessionString) {
+      await withStatusTimeout(client.getMe(), "authenticated check");
+    }
     return {
       ...createStatusBase(entry, index, options.activeProxyIndex),
       status: "available",
@@ -119,7 +136,6 @@ export async function checkMtprotoProxy(
       checkedAt,
     };
   } finally {
-    clearTimeout(timeoutId);
     await Promise.resolve(client.disconnect()).catch(() => {});
   }
 }

@@ -2,6 +2,20 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Hono } from "hono";
 import type { WebUIServerDeps } from "../types.js";
 
+const { mockExistsSync, mockReadFileSync, mockStatSync, mockWriteFileSync } = vi.hoisted(() => ({
+  mockExistsSync: vi.fn(),
+  mockReadFileSync: vi.fn(),
+  mockStatSync: vi.fn(),
+  mockWriteFileSync: vi.fn(),
+}));
+
+vi.mock("fs", () => ({
+  existsSync: (...args: unknown[]) => mockExistsSync(...args),
+  readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
+  statSync: (...args: unknown[]) => mockStatSync(...args),
+  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
+}));
+
 vi.mock("../../telegram/mtproto-proxy-health.js", () => ({
   checkMtprotoProxies: vi.fn(),
   uncheckedMtprotoProxyStatuses: vi.fn((proxies, reason, activeProxyIndex) =>
@@ -49,6 +63,9 @@ function buildApp(config: Record<string, unknown>, bridgeOverrides: Record<strin
 describe("MTProto routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockExistsSync.mockReturnValue(false);
+    mockReadFileSync.mockReturnValue("");
+    mockStatSync.mockReturnValue({ isDirectory: () => false });
     vi.mocked(checkMtprotoProxies).mockResolvedValue([
       {
         index: 0,
@@ -106,6 +123,30 @@ describe("MTProto routes", () => {
       apiHash: "hash",
       proxies,
       activeProxyIndex: 1,
+    });
+  });
+
+  it("passes the saved Telegram session to proxy health checks for authenticated validation", async () => {
+    mockExistsSync.mockImplementation((path) => path === "/tmp/teleton-session.txt");
+    mockReadFileSync.mockReturnValue(" saved-session \n");
+    const app = buildApp({
+      telegram: {
+        api_id: 12345,
+        api_hash: "hash",
+        session_path: "/tmp/teleton-session.txt",
+      },
+      mtproto: { enabled: true, proxies },
+    });
+
+    const res = await app.request("/mtproto/status");
+
+    expect(res.status).toBe(200);
+    expect(checkMtprotoProxies).toHaveBeenCalledWith({
+      apiId: 12345,
+      apiHash: "hash",
+      proxies,
+      activeProxyIndex: 1,
+      sessionString: "saved-session",
     });
   });
 
