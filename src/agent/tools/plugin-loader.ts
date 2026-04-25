@@ -12,8 +12,17 @@
  * Each plugin is adapted into a PluginModule for unified lifecycle management.
  */
 
-import { readdirSync, readFileSync, existsSync, statSync, createReadStream } from "fs";
-import { join } from "path";
+import {
+  readdirSync,
+  readFileSync,
+  existsSync,
+  statSync,
+  createReadStream,
+  accessSync,
+  constants,
+  realpathSync,
+} from "fs";
+import { join, dirname, delimiter } from "path";
 import { pathToFileURL } from "url";
 import { execFile } from "child_process";
 import { createHash } from "crypto";
@@ -102,7 +111,9 @@ async function sha256File(filePath: string): Promise<string> {
  *   - single-file plugin:   pluginsDir/pluginName.checksum
  *   - directory plugin:     pluginsDir/pluginName/.checksum
  *
- * If no sidecar exists the plugin is allowed but a warning is emitted.
+ * If no sidecar exists the plugin is allowed. This is intentionally quiet at
+ * normal log levels because checksums are optional and many existing plugins
+ * do not ship sidecars yet.
  * If a sidecar exists and the digest does not match, an error is thrown.
  */
 export async function verifyPluginChecksum(
@@ -116,9 +127,9 @@ export async function verifyPluginChecksum(
     : join(pluginsDir, `${entryName.replace(/\.js$/, "")}.checksum`);
 
   if (!existsSync(checksumPath)) {
-    log.warn(
+    log.debug(
       `[${entryName}] No .checksum sidecar found — loading without integrity verification. ` +
-        `Add a SHA-256 checksum file to suppress this warning.`
+        `Add a SHA-256 checksum file to enable integrity verification.`
     );
     return;
   }
@@ -409,6 +420,98 @@ export function adaptPlugin(
 
 // ─── Plugin Dependency Installation ─────────────────────────────────
 
+interface NpmInvocation {
+  command: string;
+  argsPrefix: string[];
+  env: NodeJS.ProcessEnv;
+}
+
+function isExecutable(fsPath: string): boolean {
+  try {
+    accessSync(fsPath, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function pathEntries(): string[] {
+  return (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+}
+
+function uniquePaths(paths: string[]): string[] {
+  return Array.from(new Set(paths));
+}
+
+function tryRealpath(fsPath: string): string | null {
+  try {
+    return realpathSync(fsPath);
+  } catch {
+    return null;
+  }
+}
+
+function npmCliCandidates(): string[] {
+  const nodeDir = dirname(process.execPath);
+  const nodePrefix = dirname(nodeDir);
+
+  return uniquePaths(
+    [
+      process.env.npm_execpath,
+      join(nodePrefix, "lib", "node_modules", "npm", "bin", "npm-cli.js"),
+      join(nodeDir, "node_modules", "npm", "bin", "npm-cli.js"),
+    ].filter((candidate): candidate is string => Boolean(candidate))
+  );
+}
+
+function nodeEnvWithNodeOnPath(): NodeJS.ProcessEnv {
+  const nodeDir = dirname(process.execPath);
+  const currentPath = process.env.PATH ?? "";
+  const entries = currentPath.split(delimiter).filter(Boolean);
+  const nextPath = entries.includes(nodeDir) ? currentPath : [nodeDir, ...entries].join(delimiter);
+
+  return { ...process.env, PATH: nextPath, NODE_ENV: "production" };
+}
+
+function resolveNpmInvocation(): NpmInvocation | null {
+  const env = nodeEnvWithNodeOnPath();
+
+  for (const candidate of npmCliCandidates()) {
+    if (existsSync(candidate)) {
+      return { command: process.execPath, argsPrefix: [candidate], env };
+    }
+  }
+
+  const nodeDir = dirname(process.execPath);
+  const npmBins = process.platform === "win32" ? ["npm.cmd", "npm.exe", "npm"] : ["npm"];
+  const binDirs = uniquePaths([nodeDir, ...pathEntries()]);
+
+  for (const dir of binDirs) {
+    for (const bin of npmBins) {
+      const candidate = join(dir, bin);
+      if (!existsSync(candidate) || (!isExecutable(candidate) && process.platform !== "win32")) {
+        continue;
+      }
+
+      const realCandidate = tryRealpath(candidate);
+      if (!realCandidate) continue;
+
+      if (realCandidate.endsWith(".js")) {
+        return { command: process.execPath, argsPrefix: [realCandidate], env };
+      }
+
+      return { command: candidate, argsPrefix: [], env };
+    }
+  }
+
+  return null;
+}
+
+function dependencyInstallErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  return String(err);
+}
+
 /**
  * Install npm dependencies for a plugin that has a package.json + package-lock.json.
  * Skips if node_modules is already up-to-date (lockfile mtime check).
@@ -435,15 +538,37 @@ export async function ensurePluginDeps(pluginDir: string, pluginEntry: string): 
   }
 
   log.info(`[${pluginEntry}] Installing dependencies...`);
+  const npmInvocation = resolveNpmInvocation();
+  if (!npmInvocation) {
+    log.warn(
+      `[${pluginEntry}] package.json found but npm CLI is unavailable — skipping dependency installation. ` +
+        `Install dependencies manually or start Teleton with npm on PATH.`
+    );
+    return;
+  }
+
   try {
-    await execFileAsync("npm", ["ci", "--ignore-scripts", "--no-audit", "--no-fund"], {
-      cwd: pluginDir,
-      timeout: 60_000,
-      env: { ...process.env, NODE_ENV: "production" },
-    });
+    await execFileAsync(
+      npmInvocation.command,
+      [...npmInvocation.argsPrefix, "ci", "--ignore-scripts", "--no-audit", "--no-fund"],
+      {
+        cwd: pluginDir,
+        timeout: 60_000,
+        env: npmInvocation.env,
+      }
+    );
     log.info(`[${pluginEntry}] Dependencies installed`);
   } catch (err) {
-    log.error(`[${pluginEntry}] Failed to install deps: ${String(err).slice(0, 300)}`);
+    const message = dependencyInstallErrorMessage(err);
+    if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+      log.warn(
+        `[${pluginEntry}] npm CLI is unavailable — skipping dependency installation. ` +
+          `Install dependencies manually or start Teleton with npm on PATH.`
+      );
+      return;
+    }
+
+    log.error(`[${pluginEntry}] Failed to install deps: ${message.slice(0, 300)}`);
   }
 }
 

@@ -24,30 +24,35 @@ import { writeFileSync, mkdirSync, rmSync, chmodSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
-import { isGroupOrWorldWritable, verifyPluginChecksum } from "../plugin-loader.js";
+import {
+  isGroupOrWorldWritable,
+  verifyPluginChecksum,
+  ensurePluginDeps,
+} from "../plugin-loader.js";
 
 // ─── Hoisted values ──────────────────────────────────────────────
 //
 // vi.hoisted() runs before vi.mock() factory calls, so values computed here
 // are safe to reference inside vi.mock() factories.
 
-const { SECURITY_PLUGINS_DIR, mockWatchFn } = vi.hoisted(() => {
+const { SECURITY_PLUGINS_DIR, mockWatchFn, mockLogger } = vi.hoisted(() => {
   return {
     // Use a fixed path under /tmp so no runtime imports are needed here
     SECURITY_PLUGINS_DIR: `/tmp/teleton-security-test-${process.pid}`,
     mockWatchFn: vi.fn(() => ({ on: vi.fn() })),
+    mockLogger: {
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    },
   };
 });
 
 // ─── Top-level mocks ─────────────────────────────────────────────
 
 vi.mock("../../../utils/logger.js", () => ({
-  createLogger: () => ({
-    info: vi.fn(),
-    warn: vi.fn(),
-    error: vi.fn(),
-    debug: vi.fn(),
-  }),
+  createLogger: () => mockLogger,
 }));
 
 vi.mock("../../../utils/module-db.js", () => ({
@@ -151,7 +156,11 @@ describe("isGroupOrWorldWritable", () => {
 // ─── T6e-T6h: verifyPluginChecksum ─────────────────────────────
 
 describe("verifyPluginChecksum", () => {
-  it("T6e: resolves (with warning) when no .checksum sidecar exists", async () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("T6e: resolves without warning when no .checksum sidecar exists", async () => {
     const pluginsDir = tmpDir("t6e");
     const pluginFile = join(pluginsDir, "safe-plugin.js");
     writeFileSync(pluginFile, "export const tools = [];");
@@ -160,6 +169,7 @@ describe("verifyPluginChecksum", () => {
       verifyPluginChecksum(pluginFile, pluginsDir, "safe-plugin.js")
     ).resolves.toBeUndefined();
 
+    expect(mockLogger.warn).not.toHaveBeenCalledWith(expect.stringContaining("No .checksum"));
     rmSync(pluginsDir, { recursive: true, force: true });
   });
 
@@ -201,6 +211,48 @@ describe("verifyPluginChecksum", () => {
     );
 
     rmSync(pluginsDir, { recursive: true, force: true });
+  });
+});
+
+// ─── Dependency installer ───────────────────────────────────────
+
+describe("ensurePluginDeps", () => {
+  const originalPath = process.env.PATH;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  afterEach(() => {
+    process.env.PATH = originalPath;
+  });
+
+  it("finds npm next to process.execPath when npm is missing from PATH", async () => {
+    const pluginDir = tmpDir("deps-path");
+    writeFileSync(
+      join(pluginDir, "package.json"),
+      JSON.stringify({ name: "plugin-with-deps", version: "1.0.0", dependencies: {} })
+    );
+    writeFileSync(
+      join(pluginDir, "package-lock.json"),
+      JSON.stringify({
+        name: "plugin-with-deps",
+        version: "1.0.0",
+        lockfileVersion: 3,
+        requires: true,
+        packages: { "": { name: "plugin-with-deps", version: "1.0.0" } },
+      })
+    );
+
+    process.env.PATH = "";
+    await ensurePluginDeps(pluginDir, "plugin-with-deps");
+
+    expect(mockLogger.error).not.toHaveBeenCalledWith(expect.stringContaining("spawn npm ENOENT"));
+    expect(mockLogger.error).not.toHaveBeenCalledWith(
+      expect.stringContaining("Failed to install deps")
+    );
+
+    rmSync(pluginDir, { recursive: true, force: true });
   });
 });
 
