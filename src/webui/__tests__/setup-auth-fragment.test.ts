@@ -134,6 +134,7 @@ vi.mock("../../utils/logger.js", () => ({
 import { TelegramAuthManager } from "../setup-auth.js";
 import { Api } from "telegram";
 import { readRawConfig, writeRawConfig } from "../../config/configurable-keys.js";
+import { writeFileSync } from "fs";
 
 // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -243,6 +244,33 @@ describe("TelegramAuthManager — Fragment support", () => {
       expect(result.user).toBeDefined();
       expect(result.user!.firstName).toBe("Fragment");
       expect(result.user!.username).toBe("fraguser");
+    });
+
+    it("authenticates during initial setup before config.yaml exists", async () => {
+      vi.mocked(readRawConfig).mockImplementationOnce(() => {
+        throw new Error(
+          "Config file not found: /tmp/teleton-test/config.yaml\nRun 'teleton setup' to create one."
+        );
+      });
+      const smsType = new Api.auth.SentCodeTypeSms({ length: 5 });
+      mockInvoke.mockResolvedValueOnce(makeSentCode(smsType));
+      const sendResult = await manager.sendCode(12345, "abcdef", "+1234567890");
+      const mockUser = new Api.User({
+        id: BigInt(123),
+        firstName: "Setup",
+        username: "setupuser",
+      });
+      mockInvoke.mockResolvedValueOnce(new Api.auth.Authorization({ user: mockUser }));
+
+      const result = await manager.verifyCode(sendResult.authSessionId, "12345");
+
+      expect(result.status).toBe("authenticated");
+      expect(writeFileSync).toHaveBeenCalledWith(
+        "/tmp/teleton-test/telegram_session.txt",
+        "session-string",
+        { mode: 0o600 }
+      );
+      expect(writeRawConfig).not.toHaveBeenCalled();
     });
 
     it("overwrites cloned owner and admin metadata for managed-agent auth targets", async () => {

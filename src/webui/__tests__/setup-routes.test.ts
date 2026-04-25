@@ -30,6 +30,7 @@ const mockAuthManager = {
   verifyPassword: vi.fn(),
   resendCode: vi.fn(),
   startQrSession: vi.fn(),
+  refreshQrToken: vi.fn(),
   cancelSession: vi.fn(),
 };
 
@@ -40,6 +41,7 @@ vi.mock("../setup-auth.js", () => ({
     verifyPassword = mockAuthManager.verifyPassword;
     resendCode = mockAuthManager.resendCode;
     startQrSession = mockAuthManager.startQrSession;
+    refreshQrToken = mockAuthManager.refreshQrToken;
     cancelSession = mockAuthManager.cancelSession;
   },
 }));
@@ -206,6 +208,7 @@ describe("Setup API Routes", () => {
     mockAuthManager.verifyPassword.mockReset();
     mockAuthManager.resendCode.mockReset();
     mockAuthManager.startQrSession.mockReset();
+    mockAuthManager.refreshQrToken.mockReset();
     mockAuthManager.cancelSession.mockReset();
     // Reset env vars
     delete process.env.TELETON_API_KEY;
@@ -853,6 +856,70 @@ mtproto:
       expect(data.success).toBe(true);
       expect(data.data.codeDelivery).toBe("fragment");
       expect(data.data.fragmentUrl).toBe("https://fragment.com/number/88812345678");
+    });
+  });
+
+  // ── POST /telegram/qr-refresh ─────────────────────────────────────────────
+
+  describe("POST /telegram/qr-refresh", () => {
+    it("refreshes QR auth status successfully", async () => {
+      mockAuthManager.refreshQrToken.mockResolvedValue({
+        status: "waiting",
+        token: "fresh-token",
+        expires: 1_714_000_000,
+      });
+
+      const res = await post(app, "/telegram/qr-refresh", {
+        authSessionId: "qr-sess-123",
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.data).toEqual({
+        status: "waiting",
+        token: "fresh-token",
+        expires: 1_714_000_000,
+      });
+      expect(mockAuthManager.refreshQrToken).toHaveBeenCalledWith("qr-sess-123");
+    });
+
+    it("returns authenticated QR status without treating it as an error", async () => {
+      mockAuthManager.refreshQrToken.mockResolvedValue({
+        status: "authenticated",
+        user: { id: 123, firstName: "Setup", username: "setupuser" },
+      });
+
+      const res = await post(app, "/telegram/qr-refresh", {
+        authSessionId: "qr-sess-123",
+      });
+
+      expect(res.status).toBe(200);
+      const data = await res.json();
+      expect(data.success).toBe(true);
+      expect(data.data.status).toBe("authenticated");
+      expect(data.data.user.id).toBe(123);
+    });
+
+    it("returns 400 when missing authSessionId", async () => {
+      const res = await post(app, "/telegram/qr-refresh", {});
+
+      expect(res.status).toBe(400);
+      const data = await res.json();
+      expect(data.success).toBe(false);
+      expect(data.error).toContain("Missing");
+    });
+
+    it("returns 429 on rate limit", async () => {
+      mockAuthManager.refreshQrToken.mockRejectedValue({ seconds: 30 });
+
+      const res = await post(app, "/telegram/qr-refresh", {
+        authSessionId: "qr-sess-123",
+      });
+
+      expect(res.status).toBe(429);
+      const data = await res.json();
+      expect(data.error).toContain("30 seconds");
     });
   });
 
