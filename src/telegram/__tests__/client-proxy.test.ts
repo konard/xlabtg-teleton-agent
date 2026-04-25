@@ -169,6 +169,26 @@ describe("TelegramUserClient — proxy connection", () => {
       expect(client.isConnected()).toBe(true);
     });
 
+    it("falls back to second proxy when first connects but getMe fails", async () => {
+      mockGetMe.mockRejectedValueOnce(new Error("getMe timed out")).mockResolvedValueOnce(MOCK_ME);
+
+      const client = new TelegramUserClient({
+        ...BASE_CONFIG,
+        mtprotoProxies: [
+          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
+          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+        ],
+      });
+
+      await client.connect();
+
+      expect(mockConnect).toHaveBeenCalledTimes(2);
+      expect(mockGetMe).toHaveBeenCalledTimes(2);
+      expect(mockDisconnect).toHaveBeenCalledTimes(1);
+      expect(client.getActiveProxyIndex()).toBe(1);
+      expect(client.isConnected()).toBe(true);
+    });
+
     it("falls back to direct connection when all proxies fail (session present)", async () => {
       mockConnect
         .mockRejectedValueOnce(new Error("proxy1 unreachable"))
