@@ -1,9 +1,9 @@
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAgentStatus, AgentState } from '../hooks/useAgentStatus';
+import { api } from '../lib/api';
 import { toast } from '../lib/toast-store';
 
-const API_BASE = '/api';
 const MAX_START_RETRIES = 3;
 const RETRY_DELAYS = [1000, 2000, 4000];
 
@@ -45,16 +45,7 @@ export function AgentControl() {
     abortRef.current = new AbortController();
 
     try {
-      const res = await fetch(`${API_BASE}/agent/start`, {
-        method: 'POST',
-        credentials: 'include',
-        signal: AbortSignal.timeout(10_000),
-      });
-      const json = await res.json();
-
-      if (!res.ok && json.error) {
-        throw new Error(json.error);
-      }
+      await api.agentStart({ signal: AbortSignal.timeout(10_000) });
       toast.success('Agent started');
     } catch (err) {
       if (!retryTimerRef.current && attempt < MAX_START_RETRIES) {
@@ -84,16 +75,7 @@ export function AgentControl() {
     clearRetry();
 
     try {
-      const res = await fetch(`${API_BASE}/agent/stop`, {
-        method: 'POST',
-        credentials: 'include',
-        signal: AbortSignal.timeout(10_000),
-      });
-      const json = await res.json();
-
-      if (!res.ok && json.error) {
-        throw new Error(json.error);
-      }
+      await api.agentStop({ signal: AbortSignal.timeout(10_000) });
       toast.success('Agent stopped');
     } catch (err) {
       toast.error(`Failed to stop agent: ${err instanceof Error ? err.message : String(err)}`);
