@@ -116,7 +116,6 @@ export class TelegramUserClient {
   /** Try connecting via proxy at `index`, rebuilding the client with that proxy.
    *  Races the connect() call against a timeout to avoid indefinite hangs when
    *  a proxy silently drops packets instead of refusing the connection.
-   *  On failure/timeout, disconnects the client to stop background retries.
    */
   private async connectWithProxy(index: number): Promise<void> {
     const proxies = this.config.mtprotoProxies ?? [];
@@ -144,14 +143,48 @@ export class TelegramUserClient {
 
     try {
       await Promise.race([this.client.connect(), timeoutPromise]);
-    } catch (err) {
-      // Disconnect the abandoned client so its internal retry loop stops
-      // and does not leak sockets or interfere with the next attempt.
-      this.client.disconnect().catch(() => {});
-      throw err;
     } finally {
       clearTimeout(timeoutId);
     }
+  }
+
+  private async disconnectCurrentClient(): Promise<void> {
+    await Promise.resolve(this.client.disconnect()).catch(() => {});
+  }
+
+  private async getMeWithTimeout(): Promise<Api.User> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const getMeTimeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(
+        () =>
+          reject(
+            new TelegramError(
+              "[Telegram] getMe() timed out — proxy may be unresponsive",
+              "GET_ME_TIMEOUT",
+              { timeoutMs: MTPROTO_PROXY_CONNECT_TIMEOUT_MS }
+            )
+          ),
+        MTPROTO_PROXY_CONNECT_TIMEOUT_MS
+      );
+    });
+
+    try {
+      return (await Promise.race([this.client.getMe(), getMeTimeout])) as Api.User;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  private async loadCurrentUser(): Promise<void> {
+    const me = await this.getMeWithTimeout();
+    this.me = {
+      id: BigInt(me.id.toString()),
+      username: me.username,
+      firstName: me.firstName,
+      lastName: me.lastName,
+      phone: me.phone,
+      isBot: me.bot ?? false,
+    };
   }
 
   /** Return the index (0-based) of the currently active proxy, or undefined for direct connection. */
@@ -281,6 +314,7 @@ export class TelegramUserClient {
     try {
       const proxies = this.config.mtprotoProxies ?? [];
       const hasSession = existsSync(this.config.sessionPath);
+      let userLoaded = false;
 
       if (proxies.length > 0) {
         // Try each proxy in order; fall back to direct only if all proxies fail
@@ -288,9 +322,15 @@ export class TelegramUserClient {
         for (let i = 0; i < proxies.length; i++) {
           try {
             await this.connectWithProxy(i);
+            if (hasSession) {
+              await this.loadCurrentUser();
+              userLoaded = true;
+            }
             proxyConnected = true;
             break;
           } catch (err) {
+            await this.disconnectCurrentClient();
+            this.activeProxyIndex = undefined;
             log.warn(
               { err, server: proxies[i].server },
               `[MTProxy] Proxy ${i + 1}/${proxies.length} failed, trying next`
@@ -302,6 +342,10 @@ export class TelegramUserClient {
           this.client = this.buildClient();
           this.activeProxyIndex = undefined;
           await this.client.connect();
+          if (hasSession) {
+            await this.loadCurrentUser();
+            userLoaded = true;
+          }
         }
         // If no session exists, run auth flow now that the TCP connection is established
         if (!hasSession) {
@@ -309,34 +353,16 @@ export class TelegramUserClient {
         }
       } else if (hasSession) {
         await this.client.connect();
+        await this.loadCurrentUser();
+        userLoaded = true;
       } else {
         await this.client.connect();
         await this.runAuthFlow();
       }
 
-      // Race getMe() against a timeout to avoid hanging on a broken proxy
-      const getMeTimeout = new Promise<never>((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new TelegramError(
-                "[Telegram] getMe() timed out — proxy may be unresponsive",
-                "GET_ME_TIMEOUT",
-                { timeoutMs: MTPROTO_PROXY_CONNECT_TIMEOUT_MS }
-              )
-            ),
-          MTPROTO_PROXY_CONNECT_TIMEOUT_MS
-        )
-      );
-      const me = (await Promise.race([this.client.getMe(), getMeTimeout])) as Api.User;
-      this.me = {
-        id: BigInt(me.id.toString()),
-        username: me.username,
-        firstName: me.firstName,
-        lastName: me.lastName,
-        phone: me.phone,
-        isBot: me.bot ?? false,
-      };
+      if (!userLoaded) {
+        await this.loadCurrentUser();
+      }
 
       this.connected = true;
     } catch (error) {
