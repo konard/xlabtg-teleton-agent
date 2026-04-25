@@ -184,7 +184,7 @@ describe("TelegramUserClient — proxy connection", () => {
 
       expect(mockConnect).toHaveBeenCalledTimes(2);
       expect(mockGetMe).toHaveBeenCalledTimes(2);
-      expect(mockDisconnect).toHaveBeenCalled();
+      expect(mockDisconnect).toHaveBeenCalledTimes(1);
       expect(client.getActiveProxyIndex()).toBe(1);
       expect(client.isConnected()).toBe(true);
     });
