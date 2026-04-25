@@ -2196,7 +2196,7 @@ function getCookieValue(name: string): string | null {
 
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+export async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
   const method = options?.method?.toUpperCase() ?? "GET";
   const csrfToken = MUTATION_METHODS.has(method) ? getCookieValue("teleton_csrf") : null;
 
@@ -4142,12 +4142,12 @@ export const api = {
     });
   },
 
-  async agentStart() {
-    return fetchAPI<{ state: string }>("/agent/start", { method: "POST" });
+  async agentStart(options?: Pick<RequestInit, "signal">) {
+    return fetchAPI<{ state: string }>("/agent/start", { method: "POST", ...options });
   },
 
-  async agentStop() {
-    return fetchAPI<{ state: string }>("/agent/stop", { method: "POST" });
+  async agentStop(options?: Pick<RequestInit, "signal">) {
+    return fetchAPI<{ state: string }>("/agent/stop", { method: "POST", ...options });
   },
 
   async agentStatus() {

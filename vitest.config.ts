@@ -6,6 +6,7 @@ export default defineConfig({
     environment: "node",
     include: [
       "src/**/__tests__/**/*.test.ts",
+      "web/src/**/__tests__/**/*.test.ts",
       "packages/sdk/src/**/__tests__/**/*.test.ts",
     ],
     coverage: {
