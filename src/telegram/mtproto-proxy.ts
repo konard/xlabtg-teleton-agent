@@ -512,17 +512,16 @@ function getConnectionTCPMTProxyPaddedIntermediate(): typeof Connection {
 
     constructor({ dcId, loggers, proxy, socket, testServers }: GramjsConnectionParams) {
       const mtprotoProxy = requireCustomMtprotoProxy(proxy);
+      const reconnectProxy = {
+        ...mtprotoProxy,
+        MTProxy: true,
+      } as ProxyInterface & CustomMtprotoProxy;
       super({
         ip: mtprotoProxy.ip,
         port: mtprotoProxy.port,
         dcId,
         loggers,
-        proxy: {
-          ip: mtprotoProxy.ip,
-          port: mtprotoProxy.port,
-          secret: mtprotoProxy.secret,
-          MTProxy: true,
-        } as ProxyInterface,
+        proxy: reconnectProxy,
         socket,
         testServers,
       });
