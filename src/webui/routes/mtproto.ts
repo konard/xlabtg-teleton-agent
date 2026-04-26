@@ -8,6 +8,7 @@ import {
   checkMtprotoProxies,
   uncheckedMtprotoProxyStatuses,
 } from "../../telegram/mtproto-proxy-health.js";
+import { getMtprotoProxySecretValidationError } from "../../telegram/mtproto-proxy.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 
 function unique(values: Array<string | undefined>): string[] {
@@ -174,11 +175,15 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
             400
           );
         }
-        if (!p.secret || typeof p.secret !== "string" || p.secret.length < 32) {
+        const secretError =
+          typeof p.secret === "string"
+            ? getMtprotoProxySecretValidationError(p.secret)
+            : "secret is required";
+        if (secretError) {
           return c.json(
             {
               success: false,
-              error: `Proxy ${i + 1}: 'secret' must be a hex string (32+ characters)`,
+              error: `Proxy ${i + 1}: ${secretError}`,
             } as APIResponse,
             400
           );

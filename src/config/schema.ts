@@ -782,7 +782,7 @@ const _MtprotoProxyObject = z.object({
   port: z.number().min(1).max(65535).describe("Proxy server port"),
   secret: z
     .string()
-    .describe("MTProto proxy secret (hex string, 32 chars or dd-prefixed 34 chars)"),
+    .describe("MTProto proxy secret (16-byte hex, or 17-byte transport-prefixed hex)"),
 });
 export type MtprotoProxyEntry = z.infer<typeof _MtprotoProxyObject>;
 

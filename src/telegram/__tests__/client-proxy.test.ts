@@ -25,20 +25,50 @@ vi.mock("../flood-retry.js", () => ({
 }));
 
 // Use vi.hoisted so variables are available inside vi.mock factories
-const { mockConnect, mockDisconnect, mockGetMe, mockInvoke, mockExistsSync } = vi.hoisted(() => {
+const {
+  mockConnect,
+  mockDisconnect,
+  mockGetMe,
+  mockInvoke,
+  mockExistsSync,
+  mockReadFileSync,
+  mockUnlinkSync,
+  constructedOptions,
+  constructedSessions,
+} = vi.hoisted(() => {
   const mockConnect = vi.fn();
   const mockDisconnect = vi.fn().mockResolvedValue(undefined);
   const mockGetMe = vi.fn();
   const mockInvoke = vi.fn();
   const mockExistsSync = vi.fn();
-  return { mockConnect, mockDisconnect, mockGetMe, mockInvoke, mockExistsSync };
+  const mockReadFileSync = vi.fn();
+  const mockUnlinkSync = vi.fn();
+  const constructedOptions: Array<Record<string, unknown>> = [];
+  const constructedSessions: string[] = [];
+  return {
+    mockConnect,
+    mockDisconnect,
+    mockGetMe,
+    mockInvoke,
+    mockExistsSync,
+    mockReadFileSync,
+    mockUnlinkSync,
+    constructedOptions,
+    constructedSessions,
+  };
 });
 
 vi.mock("telegram", () => {
   class MockTelegramClient {
     session: { save: () => string };
-    constructor(_session: unknown, _apiId: number, _apiHash: string) {
-      this.session = { save: () => "" };
+    constructor(
+      session: { value?: string },
+      _apiId: number,
+      _apiHash: string,
+      options: Record<string, unknown> = {}
+    ) {
+      constructedOptions.push(options);
+      this.session = { save: () => session.value ?? "" };
     }
     connect = mockConnect;
     disconnect = mockDisconnect;
@@ -81,7 +111,9 @@ vi.mock("telegram/extensions/Logger.js", () => ({
 
 vi.mock("telegram/sessions/index.js", () => ({
   StringSession: class {
-    constructor(public value: string = "") {}
+    constructor(public value: string = "") {
+      constructedSessions.push(value);
+    }
     save() {
       return this.value;
     }
@@ -94,9 +126,10 @@ vi.mock("telegram/events/index.js", () => ({
 
 vi.mock("fs", () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(...args),
-  readFileSync: vi.fn().mockReturnValue(""),
+  readFileSync: (...args: unknown[]) => mockReadFileSync(...args),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
+  unlinkSync: (...args: unknown[]) => mockUnlinkSync(...args),
 }));
 
 vi.mock("path", () => ({
@@ -129,8 +162,11 @@ const MOCK_ME = {
 describe("TelegramUserClient — proxy connection", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    constructedOptions.length = 0;
+    constructedSessions.length = 0;
     mockConnect.mockResolvedValue(undefined);
     mockGetMe.mockResolvedValue(MOCK_ME);
+    mockReadFileSync.mockReturnValue("");
   });
 
   describe("with existing session", () => {
@@ -141,7 +177,7 @@ describe("TelegramUserClient — proxy connection", () => {
     it("connects via first proxy when session exists", async () => {
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
-        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }],
       });
 
       await client.connect();
@@ -158,8 +194,8 @@ describe("TelegramUserClient — proxy connection", () => {
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
         mtprotoProxies: [
-          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+          { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
         ],
       });
 
@@ -175,8 +211,8 @@ describe("TelegramUserClient — proxy connection", () => {
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
         mtprotoProxies: [
-          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+          { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
         ],
       });
 
@@ -202,19 +238,19 @@ describe("TelegramUserClient — proxy connection", () => {
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
         mtprotoProxies: [
-          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+          { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
         ],
       });
 
       await expect(client.connect()).rejects.toThrow("test: auth flow reached via proxy");
 
-      // Only proxy1 was connected (not proxy2, because auth error is not proxy failure)
-      expect(mockConnect).toHaveBeenCalledTimes(1);
+      // Only proxy1 was used. It is reconnected with a fresh session instead of trying proxy2.
+      expect(mockConnect).toHaveBeenCalledTimes(2);
       // getMe was only tried once on proxy1
       expect(mockGetMe).toHaveBeenCalledTimes(1);
-      // Proxy1 client was NOT disconnected (it stays connected for auth flow)
-      expect(mockDisconnect).not.toHaveBeenCalled();
+      // Stale-session client is disconnected before the fresh-session auth flow.
+      expect(mockDisconnect).toHaveBeenCalledTimes(1);
       // Active proxy index is 0 (first proxy)
       expect(client.getActiveProxyIndex()).toBe(0);
       // Auth flow was reached (invoke was called)
@@ -232,18 +268,51 @@ describe("TelegramUserClient — proxy connection", () => {
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
         mtprotoProxies: [
-          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+          { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
         ],
       });
 
       await expect(client.connect()).rejects.toThrow("test: auth flow reached via proxy");
 
-      expect(mockConnect).toHaveBeenCalledTimes(1);
+      expect(mockConnect).toHaveBeenCalledTimes(2);
       expect(mockGetMe).toHaveBeenCalledTimes(1);
-      expect(mockDisconnect).not.toHaveBeenCalled();
+      expect(mockDisconnect).toHaveBeenCalledTimes(1);
       expect(client.getActiveProxyIndex()).toBe(0);
       expect(mockInvoke).toHaveBeenCalledTimes(1);
+    });
+
+    it("rebuilds a fresh session on the same proxy before re-authentication after auth-key failure", async () => {
+      mockReadFileSync.mockReturnValue("stale-session");
+      const authKeyError = Object.assign(new Error("AUTH_KEY_UNREGISTERED"), {
+        code: 406,
+        errorMessage: "AUTH_KEY_UNREGISTERED",
+      });
+      mockGetMe.mockRejectedValueOnce(authKeyError);
+      mockInvoke.mockRejectedValueOnce(
+        new Error("test: auth flow reached via fresh proxy session")
+      );
+
+      const client = new TelegramUserClient({
+        ...BASE_CONFIG,
+        mtprotoProxies: [
+          { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
+        ],
+      });
+
+      await expect(client.connect()).rejects.toThrow(
+        "test: auth flow reached via fresh proxy session"
+      );
+
+      expect(mockConnect).toHaveBeenCalledTimes(2);
+      expect(mockDisconnect).toHaveBeenCalledTimes(1);
+      expect(mockGetMe).toHaveBeenCalledTimes(1);
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+      expect(client.getActiveProxyIndex()).toBe(0);
+      expect(mockUnlinkSync).toHaveBeenCalledWith(BASE_CONFIG.sessionPath);
+      expect(constructedSessions).toEqual(["stale-session", "stale-session", ""]);
+      expect(constructedOptions[1].proxy).toEqual(constructedOptions[2].proxy);
     });
 
     it("falls back to direct connection when all proxies fail (session present)", async () => {
@@ -255,8 +324,8 @@ describe("TelegramUserClient — proxy connection", () => {
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
         mtprotoProxies: [
-          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+          { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
         ],
       });
 
@@ -297,7 +366,7 @@ describe("TelegramUserClient — proxy connection", () => {
 
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
-        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }],
       });
 
       await expect(client.connect()).rejects.toThrow("test: SendCode called via proxy");
@@ -327,7 +396,7 @@ describe("TelegramUserClient — proxy connection", () => {
 
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
-        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }],
       });
 
       await expect(client.connect()).rejects.toThrow("test: SendCode called after direct fallback");
@@ -344,7 +413,7 @@ describe("TelegramUserClient — proxy connection", () => {
 
       const client = new TelegramUserClient({
         ...BASE_CONFIG,
-        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+        mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }],
       });
 
       await expect(client.connect()).rejects.toThrow("network unreachable");
@@ -384,8 +453,8 @@ describe("TelegramUserClient — proxy timeout", () => {
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
       mtprotoProxies: [
-        { server: "hanging.example.com", port: 443, secret: "aabbcc" },
-        { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+        { server: "hanging.example.com", port: 443, secret: "a".repeat(32) },
+        { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
       ],
     });
 
@@ -424,8 +493,8 @@ describe("TelegramUserClient — proxy timeout", () => {
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
       mtprotoProxies: [
-        { server: "hanging1.example.com", port: 443, secret: "aabbcc" },
-        { server: "hanging2.example.com", port: 443, secret: "ddeeff" },
+        { server: "hanging1.example.com", port: 443, secret: "a".repeat(32) },
+        { server: "hanging2.example.com", port: 443, secret: "b".repeat(32) },
       ],
     });
 
@@ -449,8 +518,8 @@ describe("TelegramUserClient — proxy timeout", () => {
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
       mtprotoProxies: [
-        { server: "bad.example.com", port: 443, secret: "aabbcc" },
-        { server: "good.example.com", port: 443, secret: "ddeeff" },
+        { server: "bad.example.com", port: 443, secret: "a".repeat(32) },
+        { server: "good.example.com", port: 443, secret: "b".repeat(32) },
       ],
     });
 
@@ -473,7 +542,7 @@ describe("TelegramUserClient — getActiveProxyIndex", () => {
   it("returns undefined before connecting", () => {
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
-      mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+      mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }],
     });
     expect(client.getActiveProxyIndex()).toBeUndefined();
   });
@@ -484,8 +553,8 @@ describe("TelegramUserClient — getActiveProxyIndex", () => {
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
       mtprotoProxies: [
-        { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-        { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+        { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+        { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
       ],
     });
 
@@ -502,8 +571,8 @@ describe("TelegramUserClient — getActiveProxyIndex", () => {
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
       mtprotoProxies: [
-        { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
-        { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+        { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
+        { server: "proxy2.example.com", port: 443, secret: "b".repeat(32) },
       ],
     });
 
@@ -519,7 +588,7 @@ describe("TelegramUserClient — getActiveProxyIndex", () => {
 
     const client = new TelegramUserClient({
       ...BASE_CONFIG,
-      mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "aabbcc" }],
+      mtprotoProxies: [{ server: "proxy1.example.com", port: 443, secret: "a".repeat(32) }],
     });
 
     await client.connect();

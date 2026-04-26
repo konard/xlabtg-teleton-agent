@@ -123,6 +123,25 @@ describe("MTProto proxy health checks", () => {
     expect(mockDisconnect).toHaveBeenCalledTimes(1);
   });
 
+  it("reports the proxy as available when authenticated validation fails with an auth error", async () => {
+    const authKeyError = Object.assign(new Error("AUTH_KEY_UNREGISTERED"), {
+      code: 406,
+      errorMessage: "AUTH_KEY_UNREGISTERED",
+    });
+    mockGetMe.mockRejectedValueOnce(authKeyError);
+
+    const status = await checkMtprotoProxy(12345, "hash", PROXY, 0, {
+      sessionString: "stale-session",
+    });
+
+    expect(status.status).toBe("available");
+    expect(status.available).toBe(true);
+    expect(status.error).toContain("re-authentication");
+    expect(mockConnect).toHaveBeenCalledTimes(1);
+    expect(mockGetMe).toHaveBeenCalledTimes(1);
+    expect(mockDisconnect).toHaveBeenCalledTimes(1);
+  });
+
   it("reports an unavailable proxy when the MTProto connection fails", async () => {
     mockConnect.mockRejectedValueOnce(new Error("proxy refused connection"));
 

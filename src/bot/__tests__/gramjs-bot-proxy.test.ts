@@ -109,7 +109,7 @@ describe("GramJSBotClient — proxy timeout and cleanup", () => {
 
   it("connects via first proxy on success", async () => {
     const client = new GramJSBotClient(12345, "hash", "/tmp/session", [
-      { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
+      { server: "proxy1.example.com", port: 443, secret: "a".repeat(32) },
     ]);
 
     await client.connect(BOT_TOKEN);
@@ -131,8 +131,8 @@ describe("GramJSBotClient — proxy timeout and cleanup", () => {
     vi.useFakeTimers();
 
     const client = new GramJSBotClient(12345, "hash", "/tmp/session", [
-      { server: "hanging.example.com", port: 443, secret: "aabbcc" },
-      { server: "good.example.com", port: 443, secret: "ddeeff" },
+      { server: "hanging.example.com", port: 443, secret: "a".repeat(32) },
+      { server: "good.example.com", port: 443, secret: "b".repeat(32) },
     ]);
 
     const connectPromise = client.connect(BOT_TOKEN);
@@ -164,8 +164,8 @@ describe("GramJSBotClient — proxy timeout and cleanup", () => {
     vi.useFakeTimers();
 
     const client = new GramJSBotClient(12345, "hash", "/tmp/session", [
-      { server: "hang1.example.com", port: 443, secret: "aabbcc" },
-      { server: "hang2.example.com", port: 443, secret: "ddeeff" },
+      { server: "hang1.example.com", port: 443, secret: "a".repeat(32) },
+      { server: "hang2.example.com", port: 443, secret: "b".repeat(32) },
     ]);
 
     const connectPromise = client.connect(BOT_TOKEN);
@@ -185,8 +185,8 @@ describe("GramJSBotClient — proxy timeout and cleanup", () => {
       .mockResolvedValueOnce(undefined);
 
     const client = new GramJSBotClient(12345, "hash", "/tmp/session", [
-      { server: "bad.example.com", port: 443, secret: "aabbcc" },
-      { server: "good.example.com", port: 443, secret: "ddeeff" },
+      { server: "bad.example.com", port: 443, secret: "a".repeat(32) },
+      { server: "good.example.com", port: 443, secret: "b".repeat(32) },
     ]);
 
     await client.connect(BOT_TOKEN);

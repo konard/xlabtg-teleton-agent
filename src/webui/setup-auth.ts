@@ -6,7 +6,6 @@
  */
 
 import { TelegramClient, Api } from "telegram";
-import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { computeCheck } from "telegram/Password.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
@@ -18,6 +17,10 @@ import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
 import { createLogger } from "../utils/logger.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
 import { MTPROTO_PROXY_CONNECT_TIMEOUT_MS } from "../constants/timeouts.js";
+import {
+  buildMtprotoProxyClientOptions,
+  type MtprotoProxyClientOptions,
+} from "../telegram/mtproto-proxy.js";
 
 const log = createLogger("Setup");
 
@@ -73,22 +76,17 @@ type AuthSession = PhoneAuthSession | QrAuthSession;
 export class TelegramAuthManager {
   private session: AuthSession | null = null;
 
-  private buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
-    return {
-      ip: entry.server,
-      port: entry.port,
-      secret: entry.secret,
-      MTProxy: true,
-    } as ProxyInterface;
-  }
-
-  private buildClient(apiId: number, apiHash: string, proxy?: ProxyInterface): TelegramClient {
+  private buildClient(
+    apiId: number,
+    apiHash: string,
+    proxyOptions: Partial<MtprotoProxyClientOptions> = {}
+  ): TelegramClient {
     const gramLogger = new Logger(LogLevel.NONE);
     return new TelegramClient(new StringSession(""), apiId, apiHash, {
       connectionRetries: 3,
       floodSleepThreshold: 0,
       baseLogger: gramLogger,
-      proxy,
+      ...proxyOptions,
     });
   }
 
@@ -122,7 +120,7 @@ export class TelegramAuthManager {
 
     for (let i = 0; i < proxies.length; i++) {
       const proxy = proxies[i];
-      const client = this.buildClient(apiId, apiHash, this.buildProxy(proxy));
+      const client = this.buildClient(apiId, apiHash, buildMtprotoProxyClientOptions(proxy));
       log.info(
         { server: proxy.server, port: proxy.port },
         `[MTProxy] Trying auth proxy ${i + 1}/${proxies.length}`
