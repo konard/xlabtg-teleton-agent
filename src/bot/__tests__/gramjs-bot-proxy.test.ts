@@ -195,4 +195,28 @@ describe("GramJSBotClient — proxy timeout and cleanup", () => {
     expect(client.isConnected()).toBe(true);
     expect(mockDisconnect).toHaveBeenCalled();
   });
+
+  // Regression test for xlabtg/teleton-agent#439:
+  // when one proxy in the configured list is disabled (refuses connections),
+  // the bot must automatically switch to the next entry in the list.
+  it("switches to the next proxy when one entry in the list is disabled", async () => {
+    mockStart
+      .mockRejectedValueOnce(new Error("ECONNREFUSED")) // proxy1 disabled
+      .mockRejectedValueOnce(new Error("ECONNREFUSED")) // proxy2 disabled
+      .mockResolvedValueOnce(undefined); //              proxy3 reachable
+
+    const client = new GramJSBotClient(12345, "hash", "/tmp/session", [
+      { server: "disabled1.example.com", port: 443, secret: "a".repeat(32) },
+      { server: "disabled2.example.com", port: 443, secret: "b".repeat(32) },
+      { server: "reachable.example.com", port: 443, secret: "c".repeat(32) },
+    ]);
+
+    await client.connect(BOT_TOKEN);
+
+    // All three proxies should have been tried in order
+    expect(mockStart).toHaveBeenCalledTimes(3);
+    // Both disabled proxies' clients should have been disconnected on failure
+    expect(mockDisconnect).toHaveBeenCalledTimes(2);
+    expect(client.isConnected()).toBe(true);
+  });
 });

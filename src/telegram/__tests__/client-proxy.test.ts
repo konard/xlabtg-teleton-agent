@@ -315,6 +315,35 @@ describe("TelegramUserClient — proxy connection", () => {
       expect(constructedOptions[1].proxy).toEqual(constructedOptions[2].proxy);
     });
 
+    // Regression test for xlabtg/teleton-agent#439:
+    // when one proxy in the configured list is disabled (refuses connections),
+    // the user client must automatically switch to the next entry in the list.
+    it("switches to the next proxy when one entry in the list is disabled", async () => {
+      mockConnect
+        .mockRejectedValueOnce(new Error("ECONNREFUSED")) // proxy1 disabled
+        .mockRejectedValueOnce(new Error("ECONNREFUSED")) // proxy2 disabled
+        .mockResolvedValueOnce(undefined); //               proxy3 reachable
+
+      const client = new TelegramUserClient({
+        ...BASE_CONFIG,
+        mtprotoProxies: [
+          { server: "disabled1.example.com", port: 443, secret: "a".repeat(32) },
+          { server: "disabled2.example.com", port: 443, secret: "b".repeat(32) },
+          { server: "reachable.example.com", port: 443, secret: "c".repeat(32) },
+        ],
+      });
+
+      await client.connect();
+
+      // All three proxies should have been tried in order
+      expect(mockConnect).toHaveBeenCalledTimes(3);
+      // Both disabled proxies' clients should have been disconnected on failure
+      expect(mockDisconnect).toHaveBeenCalledTimes(2);
+      // The active proxy index points at the third (reachable) entry
+      expect(client.getActiveProxyIndex()).toBe(2);
+      expect(client.isConnected()).toBe(true);
+    });
+
     it("falls back to direct connection when all proxies fail (session present)", async () => {
       mockConnect
         .mockRejectedValueOnce(new Error("proxy1 unreachable"))
