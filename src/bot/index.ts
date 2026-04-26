@@ -496,18 +496,11 @@ export class DealBot {
   async start(): Promise<void> {
     log.info(`🤖 [Bot] Starting @${this.config.username}...`);
 
-    // Connect GramJS bot for styled buttons (best-effort)
-    if (this.gramjsBot) {
-      try {
-        await this.gramjsBot.connect(this.config.token);
-      } catch {
-        log.warn("⚠️ [Bot] GramJS MTProto connection failed, buttons will be unstyled");
-        this.gramjsBot = null;
-      }
-    }
-
     // bot.init() fetches bot info without starting long polling
     await this.bot.init();
+
+    this.connectGramjsBotInBackground();
+
     // bot.start() launches long polling - do NOT await (it blocks forever)
     this.bot
       .start({
@@ -516,6 +509,22 @@ export class DealBot {
       .catch((err) => {
         log.error({ err }, "[Bot] Polling error");
       });
+  }
+
+  private connectGramjsBotInBackground(): void {
+    const gramjsBot = this.gramjsBot;
+    if (!gramjsBot) return;
+
+    // GramJS is optional and only enables styled inline buttons. MTProxy negotiation
+    // must not hold the main bot or agent lifecycle in the "starting" state.
+    void gramjsBot.connect(this.config.token).catch((error) => {
+      if (this.gramjsBot !== gramjsBot) return;
+      log.warn(
+        { err: error },
+        "⚠️ [Bot] GramJS MTProto connection failed, buttons will be unstyled"
+      );
+      this.gramjsBot = null;
+    });
   }
 
   /**
