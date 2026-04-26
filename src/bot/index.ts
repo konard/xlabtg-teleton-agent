@@ -496,12 +496,12 @@ export class DealBot {
   async start(): Promise<void> {
     log.info(`🤖 [Bot] Starting @${this.config.username}...`);
 
-    // bot.init() fetches bot info without starting long polling
-    await this.bot.init();
-
+    // bot.start() will run bot.init() itself if needed; launching polling in the
+    // background prevents a blocked Bot API path (api.telegram.org unreachable)
+    // from holding the agent in the "starting" state. Grammy's polling loop and
+    // GramJS MTProto path both retry transparently once Bot API becomes reachable.
     this.connectGramjsBotInBackground();
 
-    // bot.start() launches long polling - do NOT await (it blocks forever)
     this.bot
       .start({
         onStart: () => log.info(`🤖 [Bot] @${this.config.username} polling started`),
