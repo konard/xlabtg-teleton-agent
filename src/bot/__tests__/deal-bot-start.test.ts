@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type Database from "better-sqlite3";
 
 const {
-  mockBotInit,
   mockBotStart,
   mockBotStop,
   mockBotOn,
@@ -12,7 +11,6 @@ const {
   mockGramjsDisconnect,
   mockGramjsIsConnected,
 } = vi.hoisted(() => ({
-  mockBotInit: vi.fn(),
   mockBotStart: vi.fn(),
   mockBotStop: vi.fn(),
   mockBotOn: vi.fn(),
@@ -41,7 +39,6 @@ vi.mock("grammy", () => {
     on = mockBotOn;
     use = mockBotUse;
     catch = mockBotCatch;
-    init = mockBotInit;
     start = mockBotStart;
     stop = mockBotStop;
   }
@@ -74,7 +71,6 @@ function nextMacrotask(): Promise<"blocked"> {
 describe("DealBot startup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockBotInit.mockResolvedValue(undefined);
     mockBotStart.mockResolvedValue(undefined);
     mockBotStop.mockResolvedValue(undefined);
     mockGramjsConnect.mockResolvedValue(undefined);
@@ -109,7 +105,39 @@ describe("DealBot startup", () => {
 
     expect(result).toBe("resolved");
     expect(mockGramjsConnect).toHaveBeenCalledWith("123456:ABC-DEF");
-    expect(mockBotInit).toHaveBeenCalledTimes(1);
+    expect(mockBotStart).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not block startup when the Bot API path hangs (api.telegram.org blocked)", async () => {
+    // Simulate Grammy bot.start() hanging — Grammy retries getMe / deleteWebhook forever
+    // on HttpError when api.telegram.org is unreachable (e.g. regions with Telegram blocked).
+    // dealBot.start() must still resolve so the agent leaves the "starting" state.
+    mockBotStart.mockImplementationOnce(
+      () =>
+        new Promise(() => {
+          // Never resolves
+        })
+    );
+
+    const bot = new DealBot(
+      {
+        token: "123456:ABC-DEF",
+        username: "tony_idbot",
+        apiId: 12345,
+        apiHash: "hash",
+        gramjsSessionPath: "/tmp/gramjs-bot-session",
+        mtprotoProxies: [{ server: "proxy.example.com", port: 443, secret: "a".repeat(32) }],
+      },
+      {} as Database.Database
+    );
+
+    const result = await Promise.race([
+      bot.start().then(() => "resolved" as const),
+      nextMacrotask(),
+    ]);
+
+    expect(result).toBe("resolved");
+    // bot.start() must still be invoked so polling can self-heal once Bot API is reachable.
     expect(mockBotStart).toHaveBeenCalledTimes(1);
   });
 });
