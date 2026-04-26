@@ -1,10 +1,11 @@
 import { TelegramClient } from "telegram";
-import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
 import { StringSession } from "telegram/sessions/index.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
 import { MTPROTO_PROXY_STATUS_TIMEOUT_MS } from "../constants/timeouts.js";
 import { getErrorMessage } from "../utils/errors.js";
+import { isTelegramAuthError } from "./auth-errors.js";
+import { buildMtprotoProxyClientOptions } from "./mtproto-proxy.js";
 
 export type MtprotoProxyHealthState = "available" | "unavailable" | "unchecked";
 
@@ -30,15 +31,6 @@ interface CheckAllOptions extends CheckOptions {
   apiId: number;
   apiHash: string;
   proxies: MtprotoProxyEntry[];
-}
-
-function buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
-  return {
-    ip: entry.server,
-    port: entry.port,
-    secret: entry.secret,
-    MTProxy: true,
-  } as ProxyInterface;
 }
 
 function createStatusBase(
@@ -90,7 +82,7 @@ export async function checkMtprotoProxy(
       autoReconnect: false,
       floodSleepThreshold: 0,
       baseLogger: logger,
-      proxy: buildProxy(entry),
+      ...buildMtprotoProxyClientOptions(entry),
     }
   );
 
@@ -116,7 +108,21 @@ export async function checkMtprotoProxy(
   try {
     await withStatusTimeout(client.connect(), "connection check");
     if (options.sessionString) {
-      await withStatusTimeout(client.getMe(), "authenticated check");
+      try {
+        await withStatusTimeout(client.getMe(), "authenticated check");
+      } catch (error) {
+        if (!isTelegramAuthError(error)) {
+          throw error;
+        }
+        return {
+          ...createStatusBase(entry, index, options.activeProxyIndex),
+          status: "available",
+          available: true,
+          latencyMs: Date.now() - startedAt,
+          error: `Telegram session requires re-authentication: ${getErrorMessage(error)}`,
+          checkedAt,
+        };
+      }
     }
     return {
       ...createStatusBase(entry, index, options.activeProxyIndex),

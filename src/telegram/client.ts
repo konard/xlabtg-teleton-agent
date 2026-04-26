@@ -1,36 +1,19 @@
 import { TelegramClient, Api } from "telegram";
-import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { NewMessage } from "telegram/events/index.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from "fs";
 import { dirname } from "path";
 import { createInterface } from "readline";
 import { markdownToTelegramHtml } from "./formatting.js";
 import { withFloodRetry } from "./flood-retry.js";
 import { TelegramError } from "./errors.js";
+import { isTelegramAuthError } from "./auth-errors.js";
+import { buildMtprotoProxyClientOptions, type MtprotoProxyClientOptions } from "./mtproto-proxy.js";
 import { createLogger } from "../utils/logger.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
 import { MTPROTO_PROXY_CONNECT_TIMEOUT_MS } from "../constants/timeouts.js";
-
-/**
- * Returns true when the error is an authentication/authorization failure
- * that is NOT caused by the proxy being broken — e.g. expired session,
- * unregistered auth key, or an account-level ban. In those cases the
- * proxy transport is actually working fine; we should keep the proxy and
- * let the normal auth flow handle re-authentication instead of abandoning
- * the proxy and falling back to direct, which may itself be blocked.
- */
-function isAuthError(err: unknown): boolean {
-  if (!err || typeof err !== "object") return false;
-  const code = (err as Record<string, unknown>).code;
-  const msg = String((err as Record<string, unknown>).errorMessage ?? "");
-  // GramJS RPC error codes: 401 = Unauthorized, 406 = AuthKey error
-  if (code === 401 || code === 406) return true;
-  // Match common auth-related error messages
-  return /AUTH_KEY|UNAUTHORIZED|SESSION_EXPIRED|USER_DEACTIVATED/i.test(msg);
-}
 
 const log = createLogger("Telegram");
 
@@ -79,8 +62,11 @@ export class TelegramUserClient {
     this.client = this.buildClient();
   }
 
-  private buildClient(proxy?: ProxyInterface): TelegramClient {
-    const sessionString = this.loadSession();
+  private buildClient(
+    proxyOptions: Partial<MtprotoProxyClientOptions> = {},
+    sessionStringOverride?: string
+  ): TelegramClient {
+    const sessionString = sessionStringOverride ?? this.loadSession();
     const session = new StringSession(sessionString);
     const logger = new Logger(LogLevel.NONE);
     return new TelegramClient(session, this.config.apiId, this.config.apiHash, {
@@ -89,17 +75,8 @@ export class TelegramUserClient {
       autoReconnect: this.config.autoReconnect ?? true,
       floodSleepThreshold: this.config.floodSleepThreshold ?? 60,
       baseLogger: logger,
-      proxy,
+      ...proxyOptions,
     });
-  }
-
-  private buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
-    return {
-      ip: entry.server,
-      port: entry.port,
-      secret: entry.secret,
-      MTProxy: true,
-    } as ProxyInterface;
   }
 
   private loadSession(): string {
@@ -131,19 +108,30 @@ export class TelegramUserClient {
     }
   }
 
+  private clearSavedSession(): void {
+    try {
+      if (existsSync(this.config.sessionPath)) {
+        unlinkSync(this.config.sessionPath);
+        log.info("Stale Telegram session cleared");
+      }
+    } catch (error) {
+      log.warn({ err: error }, "Failed to clear stale Telegram session");
+    }
+  }
+
   /** Try connecting via proxy at `index`, rebuilding the client with that proxy.
    *  Races the connect() call against a timeout to avoid indefinite hangs when
    *  a proxy silently drops packets instead of refusing the connection.
    */
-  private async connectWithProxy(index: number): Promise<void> {
+  private async connectWithProxy(index: number, sessionStringOverride?: string): Promise<void> {
     const proxies = this.config.mtprotoProxies ?? [];
     const entry = proxies[index];
-    const proxy = this.buildProxy(entry);
+    const proxyOptions = buildMtprotoProxyClientOptions(entry);
     log.info(
       { server: entry.server, port: entry.port },
       `[MTProxy] Trying proxy ${index + 1}/${proxies.length}`
     );
-    this.client = this.buildClient(proxy);
+    this.client = this.buildClient(proxyOptions, sessionStringOverride);
     this.activeProxyIndex = index;
 
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -348,11 +336,14 @@ export class TelegramUserClient {
                 // Auth errors (expired session, unregistered key, etc.) mean the
                 // proxy transport is fine — keep this proxy but clear the stale
                 // session state so the auth flow can re-authenticate through it.
-                if (isAuthError(getMeErr)) {
+                if (isTelegramAuthError(getMeErr)) {
                   log.warn(
                     { err: getMeErr, server: proxies[i].server },
                     `[MTProxy] Proxy ${i + 1}/${proxies.length}: auth error, will re-authenticate through this proxy`
                   );
+                  await this.disconnectCurrentClient();
+                  this.clearSavedSession();
+                  await this.connectWithProxy(i, "");
                 } else {
                   // Network-level getMe failure — proxy is broken, try the next one
                   throw getMeErr;

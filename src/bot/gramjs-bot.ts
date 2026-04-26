@@ -11,7 +11,6 @@
  */
 
 import { TelegramClient, Api } from "telegram";
-import type { ProxyInterface } from "telegram/network/connection/TCPMTProxy.js";
 import { toLong } from "../utils/gramjs-bigint.js";
 import { StringSession } from "telegram/sessions/index.js";
 import { Logger, LogLevel } from "telegram/extensions/Logger.js";
@@ -26,6 +25,10 @@ import { TELEGRAM_CONNECTION_RETRIES } from "../constants/limits.js";
 import { withFloodRetry } from "../telegram/flood-retry.js";
 import { createLogger } from "../utils/logger.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
+import {
+  buildMtprotoProxyClientOptions,
+  type MtprotoProxyClientOptions,
+} from "../telegram/mtproto-proxy.js";
 
 const log = createLogger("Bot");
 
@@ -79,24 +82,18 @@ export class GramJSBotClient {
     this.client = this.buildClient(sessionString);
   }
 
-  private buildClient(sessionString: string, proxy?: ProxyInterface): TelegramClient {
+  private buildClient(
+    sessionString: string,
+    proxyOptions: Partial<MtprotoProxyClientOptions> = {}
+  ): TelegramClient {
     const logger = new Logger(LogLevel.NONE);
     return new TelegramClient(new StringSession(sessionString), this.apiId, this.apiHash, {
       connectionRetries: 3,
       retryDelay: GRAMJS_RETRY_DELAY_MS,
       autoReconnect: true,
       baseLogger: logger,
-      proxy,
+      ...proxyOptions,
     });
-  }
-
-  private buildProxy(entry: MtprotoProxyEntry): ProxyInterface {
-    return {
-      ip: entry.server,
-      port: entry.port,
-      secret: entry.secret,
-      MTProxy: true,
-    } as ProxyInterface;
   }
 
   private loadSession(): string {
@@ -146,7 +143,7 @@ export class GramJSBotClient {
           `[GramJS Bot] [MTProxy] Trying proxy ${i + 1}/${this.mtprotoProxies.length}`
         );
         try {
-          this.client = this.buildClient(sessionString, this.buildProxy(entry));
+          this.client = this.buildClient(sessionString, buildMtprotoProxyClientOptions(entry));
 
           let timeoutId: ReturnType<typeof setTimeout> | undefined;
           const timeoutPromise = new Promise<never>((_, reject) => {

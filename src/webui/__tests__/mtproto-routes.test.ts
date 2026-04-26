@@ -169,4 +169,30 @@ describe("MTProto routes", () => {
       1
     );
   });
+
+  it("rejects unsupported TLS-emulation MTProto proxy secrets", async () => {
+    const app = buildApp({
+      telegram: { api_id: 12345, api_hash: "hash" },
+      mtproto: { enabled: true, proxies: [] },
+    });
+
+    const res = await app.request("/mtproto/proxies", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        proxies: [
+          {
+            server: "proxy.example.com",
+            port: 443,
+            secret: `ee${"a".repeat(32)}6578616d706c652e636f6d`,
+          },
+        ],
+      }),
+    });
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.success).toBe(false);
+    expect(json.error).toContain("TLS-emulation");
+  });
 });
