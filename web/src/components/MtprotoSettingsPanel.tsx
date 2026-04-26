@@ -395,14 +395,16 @@ export function MtprotoSettingsPanel({ showSuccess, setError }: MtprotoSettingsP
                         <label style={{ fontSize: 12 }}>
                           <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                             🔑 Secret
-                            <InfoTip text="MTProto proxy secret (32+ hex characters, optionally prefixed with 'dd' for TLS obfuscation). Get it from your proxy provider or @MTProxybot." />
+                            <InfoTip
+                              text="MTProto proxy secret (hex or base64url; dd for padded transport, ee+domain for fake TLS). Get it from your proxy provider or @MTProxybot."
+                            />
                           </span>
                         </label>
                         <input
                           type="text"
                           value={proxy.secret}
                           onChange={(e) => updateProxy(idx, 'secret', e.target.value)}
-                          placeholder="e.g. dd1234abcd...  (hex string)"
+                          placeholder="e.g. dd1234abcd... or ee...domain"
                           style={{ width: '100%', fontFamily: 'monospace', fontSize: 12 }}
                         />
                       </div>

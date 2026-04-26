@@ -38,17 +38,47 @@ describe("MTProto proxy client options", () => {
     expect(options.connection).toBeTypeOf("function");
   });
 
-  it("rejects TLS-emulation secrets with a clear validation error", () => {
-    const secret = `ee${"c".repeat(32)}6578616d706c652e636f6d`;
+  it("uses fake TLS transport for an ee-prefixed TLS-emulation hex secret", () => {
+    const tlsDomainHex = Buffer.from("example.com", "utf-8").toString("hex");
+    const secret = `ee${"c".repeat(32)}${tlsDomainHex}`;
 
-    expect(getMtprotoProxySecretValidationError(secret)).toContain("TLS-emulation");
-    expect(() =>
-      buildMtprotoProxyClientOptions({
-        server: "proxy.example.com",
-        port: 443,
-        secret,
-      })
-    ).toThrow("TLS-emulation");
+    expect(getMtprotoProxySecretValidationError(secret)).toBeNull();
+    const options = buildMtprotoProxyClientOptions({
+      server: "proxy.example.com",
+      port: 443,
+      secret,
+    });
+
+    expect(options.proxy).toMatchObject({
+      ip: "proxy.example.com",
+      port: 443,
+      secret: "c".repeat(32),
+      mtprotoTransport: "tls-emulation",
+      tlsDomainHex,
+    });
+    expect("MTProxy" in options.proxy).toBe(false);
+    expect(options.connection).toBeTypeOf("function");
+  });
+
+  it("accepts Telegram base64url encoded fake TLS secrets", () => {
+    const rawSecret = Buffer.concat([
+      Buffer.from([0xee]),
+      Buffer.from("d".repeat(32), "hex"),
+      Buffer.from("example.com", "utf-8"),
+    ]).toString("base64url");
+
+    expect(getMtprotoProxySecretValidationError(rawSecret)).toBeNull();
+    const options = buildMtprotoProxyClientOptions({
+      server: "proxy.example.com",
+      port: 443,
+      secret: rawSecret,
+    });
+
+    expect(options.proxy).toMatchObject({
+      secret: "d".repeat(32),
+      mtprotoTransport: "tls-emulation",
+      tlsDomainHex: Buffer.from("example.com", "utf-8").toString("hex"),
+    });
   });
 
   it("rejects malformed secret lengths", () => {

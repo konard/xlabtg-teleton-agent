@@ -355,7 +355,7 @@ audit_trail:
 #   proxies:
 #     - server: "proxy1.example.com"   # 🖥 Server: hostname or IP
 #       port: 443                      # 🔌 Port: proxy server port
-#       secret: "dd1234abcdef..."      # 🔑 Secret: hex string (32+ chars, dd-prefix for TLS)
+#       secret: "dd1234abcdef..."      # 🔑 Secret: hex/base64url; dd for padded, ee+domain for fake TLS
 #     - server: "proxy2.example.com"
 #       port: 8888
 #       secret: "abcdef1234..."

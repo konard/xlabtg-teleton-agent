@@ -170,11 +170,27 @@ describe("MTProto routes", () => {
     );
   });
 
-  it("rejects unsupported TLS-emulation MTProto proxy secrets", async () => {
-    const app = buildApp({
+  it("accepts TLS-emulation MTProto proxy secrets", async () => {
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      "agent:\n" +
+        "  provider: openai\n" +
+        "  model: gpt-4o-mini\n" +
+        "  api_key: sk-testkey123456\n" +
+        "telegram:\n" +
+        "  api_id: 12345\n" +
+        "  api_hash: hash\n" +
+        "  phone: '+1234567890'\n" +
+        "mtproto:\n" +
+        "  enabled: true\n" +
+        "  proxies: []\n"
+    );
+    const tlsSecret = `ee${"a".repeat(32)}${Buffer.from("example.com", "utf-8").toString("hex")}`;
+    const config = {
       telegram: { api_id: 12345, api_hash: "hash" },
       mtproto: { enabled: true, proxies: [] },
-    });
+    };
+    const app = buildApp(config);
 
     const res = await app.request("/mtproto/proxies", {
       method: "PUT",
@@ -184,15 +200,17 @@ describe("MTProto routes", () => {
           {
             server: "proxy.example.com",
             port: 443,
-            secret: `ee${"a".repeat(32)}6578616d706c652e636f6d`,
+            secret: tlsSecret,
           },
         ],
       }),
     });
     const json = await res.json();
 
-    expect(res.status).toBe(400);
-    expect(json.success).toBe(false);
-    expect(json.error).toContain("TLS-emulation");
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.proxies).toEqual([
+      { server: "proxy.example.com", port: 443, secret: tlsSecret },
+    ]);
   });
 });
