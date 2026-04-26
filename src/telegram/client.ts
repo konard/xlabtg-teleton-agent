@@ -14,6 +14,24 @@ import { createLogger } from "../utils/logger.js";
 import type { MtprotoProxyEntry } from "../config/schema.js";
 import { MTPROTO_PROXY_CONNECT_TIMEOUT_MS } from "../constants/timeouts.js";
 
+/**
+ * Returns true when the error is an authentication/authorization failure
+ * that is NOT caused by the proxy being broken — e.g. expired session,
+ * unregistered auth key, or an account-level ban. In those cases the
+ * proxy transport is actually working fine; we should keep the proxy and
+ * let the normal auth flow handle re-authentication instead of abandoning
+ * the proxy and falling back to direct, which may itself be blocked.
+ */
+function isAuthError(err: unknown): boolean {
+  if (!err || typeof err !== "object") return false;
+  const code = (err as Record<string, unknown>).code;
+  const msg = String((err as Record<string, unknown>).errorMessage ?? "");
+  // GramJS RPC error codes: 401 = Unauthorized, 406 = AuthKey error
+  if (code === 401 || code === 406) return true;
+  // Match common auth-related error messages
+  return /AUTH_KEY|UNAUTHORIZED|SESSION_EXPIRED|USER_DEACTIVATED/i.test(msg);
+}
+
 const log = createLogger("Telegram");
 
 function promptInput(question: string): Promise<string> {
@@ -323,8 +341,23 @@ export class TelegramUserClient {
           try {
             await this.connectWithProxy(i);
             if (hasSession) {
-              await this.loadCurrentUser();
-              userLoaded = true;
+              try {
+                await this.loadCurrentUser();
+                userLoaded = true;
+              } catch (getMeErr) {
+                // Auth errors (expired session, unregistered key, etc.) mean the
+                // proxy transport is fine — keep this proxy but clear the stale
+                // session state so the auth flow can re-authenticate through it.
+                if (isAuthError(getMeErr)) {
+                  log.warn(
+                    { err: getMeErr, server: proxies[i].server },
+                    `[MTProxy] Proxy ${i + 1}/${proxies.length}: auth error, will re-authenticate through this proxy`
+                  );
+                } else {
+                  // Network-level getMe failure — proxy is broken, try the next one
+                  throw getMeErr;
+                }
+              }
             }
             proxyConnected = true;
             break;
@@ -347,8 +380,8 @@ export class TelegramUserClient {
             userLoaded = true;
           }
         }
-        // If no session exists, run auth flow now that the TCP connection is established
-        if (!hasSession) {
+        // If no session exists or auth failed through proxy, run auth flow now
+        if (!hasSession || !userLoaded) {
           await this.runAuthFlow();
         }
       } else if (hasSession) {

@@ -169,7 +169,7 @@ describe("TelegramUserClient — proxy connection", () => {
       expect(client.isConnected()).toBe(true);
     });
 
-    it("falls back to second proxy when first connects but getMe fails", async () => {
+    it("falls back to second proxy when first connects but getMe fails with a network error", async () => {
       mockGetMe.mockRejectedValueOnce(new Error("getMe timed out")).mockResolvedValueOnce(MOCK_ME);
 
       const client = new TelegramUserClient({
@@ -187,6 +187,63 @@ describe("TelegramUserClient — proxy connection", () => {
       expect(mockDisconnect).toHaveBeenCalledTimes(1);
       expect(client.getActiveProxyIndex()).toBe(1);
       expect(client.isConnected()).toBe(true);
+    });
+
+    it("keeps first proxy and triggers auth flow when getMe fails with auth error (401)", async () => {
+      // getMe returns an auth error — proxy transport is fine, session just expired
+      const authError = Object.assign(new Error("401: UNAUTHORIZED"), {
+        code: 401,
+        errorMessage: "UNAUTHORIZED",
+      });
+      mockGetMe.mockRejectedValueOnce(authError);
+      // Auth flow calls SendCode via invoke — throw to detect it was reached
+      mockInvoke.mockRejectedValueOnce(new Error("test: auth flow reached via proxy"));
+
+      const client = new TelegramUserClient({
+        ...BASE_CONFIG,
+        mtprotoProxies: [
+          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
+          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+        ],
+      });
+
+      await expect(client.connect()).rejects.toThrow("test: auth flow reached via proxy");
+
+      // Only proxy1 was connected (not proxy2, because auth error is not proxy failure)
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+      // getMe was only tried once on proxy1
+      expect(mockGetMe).toHaveBeenCalledTimes(1);
+      // Proxy1 client was NOT disconnected (it stays connected for auth flow)
+      expect(mockDisconnect).not.toHaveBeenCalled();
+      // Active proxy index is 0 (first proxy)
+      expect(client.getActiveProxyIndex()).toBe(0);
+      // Auth flow was reached (invoke was called)
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps first proxy and triggers auth flow when getMe fails with AUTH_KEY error (406)", async () => {
+      const authKeyError = Object.assign(new Error("406: AUTH_KEY_UNREGISTERED"), {
+        code: 406,
+        errorMessage: "AUTH_KEY_UNREGISTERED",
+      });
+      mockGetMe.mockRejectedValueOnce(authKeyError);
+      mockInvoke.mockRejectedValueOnce(new Error("test: auth flow reached via proxy"));
+
+      const client = new TelegramUserClient({
+        ...BASE_CONFIG,
+        mtprotoProxies: [
+          { server: "proxy1.example.com", port: 443, secret: "aabbcc" },
+          { server: "proxy2.example.com", port: 443, secret: "ddeeff" },
+        ],
+      });
+
+      await expect(client.connect()).rejects.toThrow("test: auth flow reached via proxy");
+
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+      expect(mockGetMe).toHaveBeenCalledTimes(1);
+      expect(mockDisconnect).not.toHaveBeenCalled();
+      expect(client.getActiveProxyIndex()).toBe(0);
+      expect(mockInvoke).toHaveBeenCalledTimes(1);
     });
 
     it("falls back to direct connection when all proxies fail (session present)", async () => {
