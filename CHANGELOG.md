@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Bot API HTTPS proxy (`mtproto.bot_api_proxy`)**: Optional HTTP/HTTPS or SOCKS5 proxy URL for Telegram Bot API HTTPS calls to `api.telegram.org`. MTProto proxies cannot tunnel HTTPS, so this lets the deals bot reach the Bot API in regions where Telegram is also blocked at the IP level. Wired through to Grammy's `client.baseFetchConfig.agent` via `https-proxy-agent` / `socks-proxy-agent` (closes xlabtg/teleton-agent#439).
+
 ### Fixed
 - **WorkflowScheduler cron deduplication (AUDIT-M7)**: `tick()` now tracks `runningWorkflowIds` (in-memory `Set`) to skip workflows whose previous execution is still in progress, and persists `last_fired_bucket` (`floor(ms/60000)`) to the DB so the same minute bucket never fires twice — even after a process restart. DB migration 1.26.0 adds the `last_fired_bucket` column to `workflows` (closes xlabtg/teleton-agent#327).
 

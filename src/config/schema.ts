@@ -794,6 +794,15 @@ const _MtprotoObject = z.object({
     .array(_MtprotoProxyObject)
     .default([])
     .describe("List of MTProto proxy servers (tried in order, failover to next on error)"),
+  bot_api_proxy: z
+    .string()
+    .url()
+    .optional()
+    .describe(
+      "HTTP/HTTPS or SOCKS5 proxy URL for Telegram Bot API HTTPS calls to api.telegram.org. " +
+        "MTProto proxies cannot tunnel HTTPS, so set this when api.telegram.org is also blocked. " +
+        "Examples: http://user:pass@host:8080, socks5://host:1080"
+    ),
 });
 export const MtprotoConfigSchema = _MtprotoObject.default(_MtprotoObject.parse({}));
 export type MtprotoConfig = z.infer<typeof _MtprotoObject>;

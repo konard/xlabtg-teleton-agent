@@ -12,6 +12,8 @@ export interface BotConfig {
   gramjsSessionPath?: string;
   /** MTProto proxy servers (tried in order, failover to next on connection error) */
   mtprotoProxies?: MtprotoProxyEntry[];
+  /** HTTP/HTTPS/SOCKS proxy URL for Telegram Bot API HTTPS calls to api.telegram.org */
+  botApiProxyUrl?: string;
 }
 
 export interface DealContext {

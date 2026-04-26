@@ -86,6 +86,10 @@ const dealsModule: PluginModule = {
           config.mtproto?.enabled && config.mtproto.proxies.length > 0
             ? config.mtproto.proxies
             : undefined;
+        const botApiProxyUrl =
+          config.mtproto?.enabled && config.mtproto.bot_api_proxy
+            ? config.mtproto.bot_api_proxy
+            : undefined;
 
         dealBot = new DealBot(
           {
@@ -95,6 +99,7 @@ const dealsModule: PluginModule = {
             apiHash: config.telegram.api_hash,
             gramjsSessionPath: join(TELETON_ROOT, "gramjs_bot_session.txt"),
             mtprotoProxies,
+            botApiProxyUrl,
           },
           dealsDb,
           botPreMiddleware

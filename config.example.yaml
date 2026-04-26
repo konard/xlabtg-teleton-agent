@@ -359,6 +359,12 @@ audit_trail:
 #     - server: "proxy2.example.com"
 #       port: 8888
 #       secret: "abcdef1234..."
+#   # Optional: HTTP/HTTPS or SOCKS5 proxy URL for the Telegram Bot API HTTPS path
+#   # (api.telegram.org). MTProto proxies cannot tunnel HTTPS, so set this when
+#   # api.telegram.org is also blocked. The Bot API path is only used for the
+#   # inline deals bot today, but it is required for the agent to work end-to-end
+#   # in regions that block Telegram at the IP level.
+#   # bot_api_proxy: "socks5://user:pass@proxy.example.com:1080"
 
 # Autonomous task policy — governs spending limits and human-approval rules.
 # These defaults are conservative to protect wallets on first run.

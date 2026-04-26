@@ -34,10 +34,41 @@ import {
 } from "./services/styled-keyboard.js";
 import { parseHtml, stripCustomEmoji } from "./services/html-parser.js";
 import { GramJSBotClient } from "./gramjs-bot.js";
+import { createBotApiProxyAgent } from "../telegram/bot-api-proxy.js";
 import { getWalletAddress } from "../ton/wallet-service.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Bot");
+
+function buildGrammyBotOptions(botApiProxyUrl: string | undefined): {
+  client?: { baseFetchConfig: { agent: ReturnType<typeof createBotApiProxyAgent> } };
+} {
+  if (!botApiProxyUrl) return {};
+  try {
+    const agent = createBotApiProxyAgent(botApiProxyUrl);
+    log.info(`[Bot] Routing Bot API HTTPS through proxy: ${maskProxyUrl(botApiProxyUrl)}`);
+    return { client: { baseFetchConfig: { agent } } };
+  } catch (error) {
+    log.warn(
+      { err: error },
+      `[Bot] Invalid bot_api_proxy URL, ignoring: ${(error as Error).message}`
+    );
+    return {};
+  }
+}
+
+function maskProxyUrl(rawUrl: string): string {
+  try {
+    const url = new URL(rawUrl);
+    if (url.username || url.password) {
+      url.username = url.username ? "***" : "";
+      url.password = url.password ? "***" : "";
+    }
+    return url.toString();
+  } catch {
+    return rawUrl;
+  }
+}
 
 export class DealBot {
   private bot: Bot;
@@ -48,7 +79,7 @@ export class DealBot {
   constructor(config: BotConfig, db: Database.Database, preMiddleware?: MiddlewareFn<Context>) {
     this.config = config;
     this.db = db;
-    this.bot = new Bot(config.token);
+    this.bot = new Bot(config.token, buildGrammyBotOptions(config.botApiProxyUrl));
 
     if (config.apiId && config.apiHash) {
       this.gramjsBot = new GramJSBotClient(
