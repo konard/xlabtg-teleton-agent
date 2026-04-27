@@ -40,6 +40,24 @@ function buildApp(db: Database.Database) {
   return app;
 }
 
+function buildTriggerApp(db: Database.Database, processMessage = vi.fn()) {
+  const deps = {
+    memory: { db },
+    agent: {
+      getConfig: () => ({ telegram: { admin_ids: [12345] } }),
+      processMessage,
+    },
+    bridge: {
+      isAvailable: () => false,
+      sendMessage: vi.fn(),
+    },
+  } as unknown as WebUIServerDeps;
+
+  const app = new Hono();
+  app.route("/self-improvement", createSelfImprovementRoutes(deps));
+  return app;
+}
+
 // ── Tests ────────────────────────────────────────────────────────────
 
 describe("GET /self-improvement/config", () => {
@@ -225,5 +243,57 @@ describe("GET /self-improvement/status (no plugin DB)", () => {
     const json = await res.json();
     expect(json.success).toBe(true);
     expect(json.data.installed).toBe(false);
+  });
+});
+
+describe("POST /self-improvement/trigger native history", () => {
+  let db: Database.Database;
+
+  beforeEach(() => {
+    db = createTestDb();
+  });
+
+  it("records completed Web UI-triggered analysis in the main DB when no plugin DB exists", async () => {
+    const processMessage = vi.fn().mockResolvedValue({
+      content: "Analyzed 12 files. Found 3 findings. Created 1 issue.",
+      toolCalls: [{ name: "github_create_issue", input: { title: "Fix issue" } }],
+    });
+    const app = buildTriggerApp(db, processMessage);
+
+    await app.request("/self-improvement/config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        selected_plugin: "github-dev-assistant",
+        target_repo: "xlabtg/teleton-agent",
+      }),
+    });
+
+    const triggerRes = await app.request("/self-improvement/trigger", { method: "POST" });
+    expect(triggerRes.status).toBe(200);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    const analysisRes = await app.request("/self-improvement/analysis");
+    expect(analysisRes.status).toBe(200);
+    const analysisJson = await analysisRes.json();
+    expect(analysisJson.success).toBe(true);
+    expect(analysisJson.data).toHaveLength(1);
+    expect(analysisJson.data[0].repo).toBe("xlabtg/teleton-agent");
+    expect(analysisJson.data[0].files_analyzed).toBe(12);
+    expect(analysisJson.data[0].issues_found).toBe(3);
+    expect(analysisJson.data[0].issues_created).toBe(1);
+    expect(analysisJson.data[0].status).toBe("completed");
+    expect(analysisJson.data[0].source).toBe("native");
+
+    const statusRes = await app.request("/self-improvement/status");
+    expect(statusRes.status).toBe(200);
+    const statusJson = await statusRes.json();
+    expect(statusJson.data.installed).toBe(true);
+    expect(statusJson.data.plugin_installed).toBe(false);
+    expect(statusJson.data.source).toBe("native");
+    expect(statusJson.data.analysis_count).toBe(1);
+    expect(statusJson.data.pending_tasks).toBe(0);
   });
 });

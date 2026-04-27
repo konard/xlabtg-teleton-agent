@@ -535,10 +535,11 @@ function QuickStats({
   const critical = tasks.filter((t) => t.priority === "critical").length;
   const high = tasks.filter((t) => t.priority === "high").length;
   const medium = tasks.filter((t) => t.priority === "medium").length;
-  // Prefer status endpoint data (from plugin DB) over in-memory counts when available
+  // Prefer merged status endpoint data over in-memory counts when available.
   const lastScan = pluginStatus?.last_analysis ?? analysis[0]?.timestamp ?? null;
   const totalScans = pluginStatus?.analysis_count ?? analysis.length;
-  const pendingTasks = pluginStatus?.pending_tasks ?? tasks.filter((t) => t.status === "pending").length;
+  const pendingTasks =
+    pluginStatus?.pending_tasks ?? tasks.filter((t) => t.status === "pending").length;
   const nextScheduled =
     config.schedule_enabled && lastScan
       ? lastScan + config.schedule_interval_hours * 3_600_000
@@ -557,8 +558,7 @@ function QuickStats({
             color: "#d97706",
           }}
         >
-          ⚠ Plugin database not found. Install and run the{" "}
-          <code>github-dev-assistant</code> plugin to see real data.
+          ⚠ No self-improvement history found. Run an analysis to populate these tabs.
         </div>
       )}
       <div
@@ -1245,8 +1245,6 @@ function AnalyticsTab({
           {analysis.length === 0 ? (
             <p style={{ fontSize: "14px", opacity: 0.6 }}>
               No analysis data yet. Run your first analysis to see the security score.
-              Make sure the <code>github-dev-assistant</code> plugin is installed and has been run at
-              least once.
             </p>
           ) : (
             <div style={{ display: "flex", alignItems: "center", gap: "24px", flexWrap: "wrap" }}>
@@ -1294,7 +1292,6 @@ function AnalyticsTab({
           {analysis.length === 0 ? (
             <p style={{ fontSize: "14px", opacity: 0.6 }}>
               No analysis data yet. Run your first analysis to see trends.
-              Make sure the <code>github-dev-assistant</code> plugin is installed and configured.
             </p>
           ) : (
             <>
@@ -1487,7 +1484,7 @@ function LogsTab({
         <p style={{ margin: 0 }}>
           Full audit trail of all agent actions. Filter by status and severity to focus on what
           matters. Click <strong>View GitHub Issue</strong> on any task to open it directly.
-          Data is read from the <code>github-dev-assistant</code> plugin database.
+          Data is read from Teleton's self-improvement history and imported plugin results.
         </p>
       </ExpandableHelp>
 
@@ -1502,8 +1499,7 @@ function LogsTab({
             color: "#d97706",
           }}
         >
-          ⚠ Plugin database not found. Install the <code>github-dev-assistant</code> plugin and
-          run at least one analysis to see logs here.
+          ⚠ No self-improvement history found. Run at least one analysis to see logs here.
         </div>
       )}
 
@@ -1520,6 +1516,7 @@ function LogsTab({
                   <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600 }}>Timestamp</th>
                   <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600 }}>Repo</th>
                   <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600 }}>Branch</th>
+                  <th style={{ textAlign: "left", padding: "8px 12px", fontWeight: 600 }}>Status</th>
                   <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 600 }}>Files</th>
                   <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 600 }}>Findings</th>
                   <th style={{ textAlign: "right", padding: "8px 12px", fontWeight: 600 }}>Issues</th>
@@ -1527,7 +1524,10 @@ function LogsTab({
               </thead>
               <tbody>
                 {analysis.map((e) => (
-                  <tr key={e.id} style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}>
+                  <tr
+                    key={`${e.source ?? "plugin"}:${e.id}`}
+                    style={{ borderBottom: "1px solid var(--border, #e5e7eb)" }}
+                  >
                     <td style={{ padding: "8px 12px", whiteSpace: "nowrap" }}>{fmtTs(e.timestamp)}</td>
                     <td style={{ padding: "8px 12px" }}>
                       <code style={{ fontSize: "12px" }}>{e.repo}</code>
@@ -1535,6 +1535,7 @@ function LogsTab({
                     <td style={{ padding: "8px 12px" }}>
                       <code style={{ fontSize: "12px" }}>{e.branch}</code>
                     </td>
+                    <td style={{ padding: "8px 12px" }}>{e.status ?? "completed"}</td>
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>{e.files_analyzed}</td>
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>{e.issues_found}</td>
                     <td style={{ padding: "8px 12px", textAlign: "right" }}>{e.issues_created}</td>
@@ -1602,7 +1603,7 @@ function LogsTab({
             <p style={{ fontSize: "14px", opacity: 0.6 }}>
               {taskFilter === "all" && severityFilter === "all"
                 ? pluginStatus && !pluginStatus.installed
-                  ? "Plugin database not found — run an analysis first."
+                  ? "No self-improvement history found — run an analysis first."
                   : "No tasks found. Run an analysis to discover improvement opportunities."
                 : "No matching tasks found. Try adjusting the filters."}
             </p>
@@ -1777,6 +1778,7 @@ export function SelfImprove() {
       const res = await api.triggerSelfImprovement();
       if (res.success && res.data) {
         setTriggerMsg({ type: "success", text: res.data.message });
+        await load();
       } else {
         setTriggerMsg({ type: "error", text: "Unknown error" });
       }

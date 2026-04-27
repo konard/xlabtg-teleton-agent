@@ -2144,6 +2144,10 @@ export interface SelfImprovementAnalysisEntry {
   issues_found: number;
   issues_created: number;
   summary: string | null;
+  source?: "plugin" | "native";
+  status?: "running" | "completed" | "failed";
+  error?: string | null;
+  completed_at?: number | null;
 }
 
 export interface SelfImprovementTask {
@@ -2158,6 +2162,7 @@ export interface SelfImprovementTask {
   status: string;
   created_at: number;
   github_issue_url: string | null;
+  source?: "plugin" | "native";
 }
 
 // ── Fetch helpers ───────────────────────────────────────────────────
@@ -3902,6 +3907,8 @@ export const api = {
     return fetchAPI<
       APIResponse<{
         installed: boolean;
+        plugin_installed?: boolean;
+        source?: "plugin" | "native" | "mixed" | "none";
         analysis_count?: number;
         pending_tasks?: number;
         last_analysis?: number | null;
