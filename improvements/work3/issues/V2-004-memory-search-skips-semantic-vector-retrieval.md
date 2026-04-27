@@ -6,6 +6,7 @@ audit-source: "#445"
 finding-id: "V2-004"
 severity: "medium"
 category: "ui"
+github-issue: "https://github.com/xlabtg/teleton-agent/issues/450"
 ---
 
 ## Problem Description
@@ -99,6 +100,7 @@ it("uses embeddings and semantic vector store for memory route search", async ()
 
 ## Related Artifacts
 
+- GitHub issue: https://github.com/xlabtg/teleton-agent/issues/450
 - Report: `improvements/work3/AUDIT_V2_REPORT.md#v2-004---memory-search-api-skips-semantic-vector-retrieval`
 - Module: `src/webui/routes/memory.ts`
 - Related V2 spec: `improvements/v2-01-semantic-vector-memory.md`

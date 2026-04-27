@@ -6,6 +6,7 @@ audit-source: "#445"
 finding-id: "V2-001"
 severity: "high"
 category: "integration"
+github-issue: "https://github.com/xlabtg/teleton-agent/issues/447"
 ---
 
 ## Problem Description
@@ -110,6 +111,7 @@ it("allows signed incoming webhooks through WebUI auth and CSRF middleware", asy
 
 ## Related Artifacts
 
+- GitHub issue: https://github.com/xlabtg/teleton-agent/issues/447
 - Report: `improvements/work3/AUDIT_V2_REPORT.md#v2-001---public-v2-webhook-ingress-is-blocked-by-webui-auth-and-csrf`
 - Module: `src/webui/server.ts`
 - Previous audits checked agent-network signed ingress in #400-#402; this

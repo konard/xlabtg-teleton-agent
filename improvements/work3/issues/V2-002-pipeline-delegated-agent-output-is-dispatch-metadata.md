@@ -6,6 +6,7 @@ audit-source: "#445"
 finding-id: "V2-002"
 severity: "high"
 category: "runtime-integration"
+github-issue: "https://github.com/xlabtg/teleton-agent/issues/448"
 ---
 
 ## Problem Description
@@ -109,6 +110,7 @@ it("waits for managed-agent output before running dependent pipeline steps", asy
 
 ## Related Artifacts
 
+- GitHub issue: https://github.com/xlabtg/teleton-agent/issues/448
 - Report: `improvements/work3/AUDIT_V2_REPORT.md#v2-002---managed-agent-pipeline-steps-complete-on-dispatch-metadata`
 - Module: `src/services/pipeline/executor.ts`
 - Related V2 specs: `improvements/v2-08-task-delegation.md`,

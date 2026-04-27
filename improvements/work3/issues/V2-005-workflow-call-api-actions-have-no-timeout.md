@@ -6,6 +6,7 @@ audit-source: "#445"
 finding-id: "V2-005"
 severity: "medium"
 category: "performance"
+github-issue: "https://github.com/xlabtg/teleton-agent/issues/451"
 ---
 
 ## Problem Description
@@ -88,6 +89,7 @@ it("records an error when a call_api action exceeds the default timeout", async 
 
 ## Related Artifacts
 
+- GitHub issue: https://github.com/xlabtg/teleton-agent/issues/451
 - Report: `improvements/work3/AUDIT_V2_REPORT.md#v2-005---workflow-call_api-actions-have-no-timeout`
 - Module: `src/services/workflow-executor.ts`
 - Related V2 spec: `improvements/v2-16-webhooks-event-bus.md`

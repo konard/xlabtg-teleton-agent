@@ -6,6 +6,7 @@ audit-source: "#445"
 finding-id: "V2-003"
 severity: "high"
 category: "performance"
+github-issue: "https://github.com/xlabtg/teleton-agent/issues/449"
 ---
 
 ## Problem Description
@@ -97,6 +98,7 @@ it("fails a hung step when only the pipeline run timeout is configured", async (
 
 ## Related Artifacts
 
+- GitHub issue: https://github.com/xlabtg/teleton-agent/issues/449
 - Report: `improvements/work3/AUDIT_V2_REPORT.md#v2-003---pipeline-run-timeout-does-not-bound-running-steps`
 - Module: `src/services/pipeline/executor.ts`
 - Related V2 spec: `improvements/v2-09-pipeline-execution.md`

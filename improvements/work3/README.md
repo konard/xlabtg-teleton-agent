@@ -37,13 +37,18 @@ integrations, dynamic dashboards, feedback learning, and agent network work.
 
 ## Confirmed Findings From #445
 
-| ID     | Severity | Task File                                                                                                                                      | Status            |
-| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| V2-001 | High     | [issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md](issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md)                         | Filed as template |
-| V2-002 | High     | [issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md](issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md) | Filed as template |
-| V2-003 | High     | [issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md](issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md)       | Filed as template |
-| V2-004 | Medium   | [issues/V2-004-memory-search-skips-semantic-vector-retrieval.md](issues/V2-004-memory-search-skips-semantic-vector-retrieval.md)               | Filed as template |
-| V2-005 | Medium   | [issues/V2-005-workflow-call-api-actions-have-no-timeout.md](issues/V2-005-workflow-call-api-actions-have-no-timeout.md)                       | Filed as template |
+| ID     | Severity | Task File                                                                                                                                      | GitHub Issue                                               | Status  |
+| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------- |
+| V2-001 | High     | [issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md](issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md)                         | [#447](https://github.com/xlabtg/teleton-agent/issues/447) | Created |
+| V2-002 | High     | [issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md](issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md) | [#448](https://github.com/xlabtg/teleton-agent/issues/448) | Created |
+| V2-003 | High     | [issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md](issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md)       | [#449](https://github.com/xlabtg/teleton-agent/issues/449) | Created |
+| V2-004 | Medium   | [issues/V2-004-memory-search-skips-semantic-vector-retrieval.md](issues/V2-004-memory-search-skips-semantic-vector-retrieval.md)               | [#450](https://github.com/xlabtg/teleton-agent/issues/450) | Created |
+| V2-005 | Medium   | [issues/V2-005-workflow-call-api-actions-have-no-timeout.md](issues/V2-005-workflow-call-api-actions-have-no-timeout.md)                       | [#451](https://github.com/xlabtg/teleton-agent/issues/451) | Created |
+
+The issue body frontmatter contains the requested labels and milestone metadata.
+The automation token used for creation has read-only upstream repository
+permission, so maintainers need to apply the labels, milestone, and assignment
+in GitHub.
 
 ## Validation For #445
 

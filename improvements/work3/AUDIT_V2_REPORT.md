@@ -40,34 +40,63 @@ the documented fallback and hanging-call risks.
 ## Quick Links
 
 - Task files: [issues/](./issues/)
+- Filed GitHub issues: [#447](https://github.com/xlabtg/teleton-agent/issues/447),
+  [#448](https://github.com/xlabtg/teleton-agent/issues/448),
+  [#449](https://github.com/xlabtg/teleton-agent/issues/449),
+  [#450](https://github.com/xlabtg/teleton-agent/issues/450), and
+  [#451](https://github.com/xlabtg/teleton-agent/issues/451)
 - Validation scripts: [validation/](./validation/)
 - Previous V2 audit workspace: [README.md](./README.md)
 
 ## Finding Statistics
 
-| Severity | Count | Task Files Created | Draft PRs |
-| -------- | ----- | ------------------ | --------- |
-| Critical | 0     | 0                  | 0         |
-| High     | 3     | 3                  | 0         |
-| Medium   | 2     | 2                  | 0         |
-| Low      | 0     | 0                  | 0         |
+| Severity | Count | Task Files Created | GitHub Issues Created | Draft PRs |
+| -------- | ----- | ------------------ | --------------------- | --------- |
+| Critical | 0     | 0                  | 0                     | 0         |
+| High     | 3     | 3                  | 3                     | 0         |
+| Medium   | 2     | 2                  | 2                     | 0         |
+| Low      | 0     | 0                  | 0                     | 0         |
+
+## Filed GitHub Issues
+
+The five follow-up issues were created from the task templates on 2026-04-27.
+The issue bodies preserve the requested frontmatter metadata for labels,
+milestone, audit source, finding id, severity, and category.
+
+| Finding | GitHub Issue                                               | Source Template                                                                                                                           |
+| ------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| V2-001  | [#447](https://github.com/xlabtg/teleton-agent/issues/447) | [V2-001-public-v2-webhooks-blocked-by-webui-auth.md](./issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md)                         |
+| V2-002  | [#448](https://github.com/xlabtg/teleton-agent/issues/448) | [V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md](./issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md) |
+| V2-003  | [#449](https://github.com/xlabtg/teleton-agent/issues/449) | [V2-003-pipeline-run-timeout-does-not-bound-running-steps.md](./issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md)       |
+| V2-004  | [#450](https://github.com/xlabtg/teleton-agent/issues/450) | [V2-004-memory-search-skips-semantic-vector-retrieval.md](./issues/V2-004-memory-search-skips-semantic-vector-retrieval.md)               |
+| V2-005  | [#451](https://github.com/xlabtg/teleton-agent/issues/451) | [V2-005-workflow-call-api-actions-have-no-timeout.md](./issues/V2-005-workflow-call-api-actions-have-no-timeout.md)                       |
+
+Metadata application note: the automation token has `READ` permission on
+`xlabtg/teleton-agent`, so GitHub accepted issue creation but rejected upstream
+label and milestone management. Maintainers with triage/write access should add
+the frontmatter labels (`bug`, `audit-finding-v2`, severity, `v3.0-blocker`),
+assign the issues as needed, and create/apply the `v3.0 - Production Ready`
+milestone.
 
 ## Prioritized Fix Plan
 
 ### Priority 0 - Fix before any production webhook or multi-agent pipeline use
 
 1. [V2-001](./issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md) -
-   Public V2 webhook ingress is blocked by WebUI auth and CSRF.
+   Public V2 webhook ingress is blocked by WebUI auth and CSRF
+   ([#447](https://github.com/xlabtg/teleton-agent/issues/447)).
    - Effort: Medium
    - Validation: route-level tests that unsigned browser mutations still require
      auth/CSRF while signed webhook ingress reaches the route handler.
 2. [V2-002](./issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md) -
-   Delegated pipeline steps complete on inbox dispatch rather than remote result.
+   Delegated pipeline steps complete on inbox dispatch rather than remote result
+   ([#448](https://github.com/xlabtg/teleton-agent/issues/448)).
    - Effort: High
    - Validation: pipeline test where step B depends on the textual result of a
      managed-agent step A.
 3. [V2-003](./issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md) -
-   Pipeline-level timeouts do not stop hung step execution.
+   Pipeline-level timeouts do not stop hung step execution
+   ([#449](https://github.com/xlabtg/teleton-agent/issues/449)).
    - Effort: Medium
    - Validation: fake-timer test with a never-resolving `processMessage()` and a
      short `timeoutSeconds` pipeline limit.
@@ -75,12 +104,14 @@ the documented fallback and hanging-call risks.
 ### Priority 1 - Fix before v3.0 release
 
 4. [V2-004](./issues/V2-004-memory-search-skips-semantic-vector-retrieval.md) -
-   Memory search API never computes query embeddings for semantic retrieval.
+   Memory search API never computes query embeddings for semantic retrieval
+   ([#450](https://github.com/xlabtg/teleton-agent/issues/450)).
    - Effort: Medium
    - Validation: route test with a mock embedder/vector store proving semantic
      results are returned for queries that keyword search misses.
 5. [V2-005](./issues/V2-005-workflow-call-api-actions-have-no-timeout.md) -
-   Workflow `call_api` actions have no timeout or abort path.
+   Workflow `call_api` actions have no timeout or abort path
+   ([#451](https://github.com/xlabtg/teleton-agent/issues/451)).
    - Effort: Small
    - Validation: fake-timer test where `fetch()` never resolves and the workflow
      records an error instead of hanging.
@@ -105,6 +136,7 @@ the documented fallback and hanging-call risks.
   using their advertised secret/signature model. Operators may conclude
   webhooks are active while all real inbound calls fail with 401/403.
 - Task: [V2-001](./issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md)
+- GitHub issue: [#447](https://github.com/xlabtg/teleton-agent/issues/447)
 
 ### V2-002 - Managed-agent pipeline steps complete on dispatch metadata
 
@@ -122,6 +154,7 @@ the documented fallback and hanging-call risks.
   dependent steps run on metadata rather than real outputs, and failures in the
   managed agent are invisible to the pipeline run.
 - Task: [V2-002](./issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md)
+- GitHub issue: [#448](https://github.com/xlabtg/teleton-agent/issues/448)
 
 ### V2-003 - Pipeline run timeout does not bound running steps
 
@@ -139,6 +172,7 @@ the documented fallback and hanging-call risks.
   step without its own timeout never resolves. Cancellation only changes stored
   state; it does not abort the in-flight promise.
 - Task: [V2-003](./issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md)
+- GitHub issue: [#449](https://github.com/xlabtg/teleton-agent/issues/449)
 
 ### V2-004 - Memory search API skips semantic vector retrieval
 
@@ -156,6 +190,7 @@ the documented fallback and hanging-call risks.
   queries that should be answered by semantic similarity return empty or
   incomplete results.
 - Task: [V2-004](./issues/V2-004-memory-search-skips-semantic-vector-retrieval.md)
+- GitHub issue: [#450](https://github.com/xlabtg/teleton-agent/issues/450)
 
 ### V2-005 - Workflow `call_api` actions have no timeout
 
@@ -171,6 +206,7 @@ the documented fallback and hanging-call risks.
   executor, scheduler progress and later workflow actions can stall behind the
   hung fetch.
 - Task: [V2-005](./issues/V2-005-workflow-call-api-actions-have-no-timeout.md)
+- GitHub issue: [#451](https://github.com/xlabtg/teleton-agent/issues/451)
 
 ## Non-Duplicate Check
 
@@ -211,8 +247,9 @@ HTTP action timeouts. They do not duplicate the closed work3 issues.
 
 - Applying the five production fixes in this PR. Issue #445 asks for an audit
   report and ready-to-import issue templates.
-- Creating real GitHub issues from the templates. The files in
-  `improvements/work3/issues/` are structured so maintainers can import or copy
-  them without additional triage.
+- Applying labels, milestone, or assignees to the created follow-up issues. The
+  upstream token available to this automation has read-only repository
+  permission, so the requested metadata remains in each issue body frontmatter
+  for maintainers to apply.
 - Load testing, browser screenshots, or end-to-end webhook calls against a
   deployed instance.
