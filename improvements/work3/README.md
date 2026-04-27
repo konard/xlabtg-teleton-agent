@@ -1,9 +1,10 @@
 # V2 Full Audit Work Folder
 
-This folder is the audit workspace for
-[`#398`](https://github.com/xlabtg/teleton-agent/issues/398). It is not a
+This folder contains V2 audit workspaces for
+[`#398`](https://github.com/xlabtg/teleton-agent/issues/398) and
+[`#445`](https://github.com/xlabtg/teleton-agent/issues/445). It is not a
 scratchpad: each report covers one requested audit lane, and each confirmed
-defect uses the same record format.
+defect uses a reproducible record format.
 
 ## Scope
 
@@ -24,6 +25,7 @@ integrations, dynamic dashboards, feedback learning, and agent network work.
 
 | File                                                                       | Purpose                                                        |
 | -------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| [AUDIT_V2_REPORT.md](AUDIT_V2_REPORT.md)                                   | Issue #445 full V2 audit report and task index                 |
 | [01-architecture-consistency.md](01-architecture-consistency.md)           | Cross-feature architecture shape and ownership boundaries      |
 | [02-security-and-trust.md](02-security-and-trust.md)                       | Signed ingress, trust config, replay, and privilege boundaries |
 | [03-runtime-and-integrations.md](03-runtime-and-integrations.md)           | Whether V2 endpoints connect to executable runtime paths       |
@@ -31,8 +33,42 @@ integrations, dynamic dashboards, feedback learning, and agent network work.
 | [05-regressions-and-compatibility.md](05-regressions-and-compatibility.md) | Backward compatibility and externally visible route behavior   |
 | [06-performance-and-reliability.md](06-performance-and-reliability.md)     | Idempotency, duplicate work, and preview reliability           |
 | [07-final-v2-summary.md](07-final-v2-summary.md)                           | Final summary, issue index, and follow-up order                |
+| [audit-config.yaml](audit-config.yaml)                                     | Issue #445 audit metadata and inspected paths                  |
 
-## Confirmed Findings
+## Confirmed Findings From #445
+
+| ID     | Severity | Task File                                                                                                                                      | GitHub Issue                                               | Status  |
+| ------ | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------- |
+| V2-001 | High     | [issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md](issues/V2-001-public-v2-webhooks-blocked-by-webui-auth.md)                         | [#447](https://github.com/xlabtg/teleton-agent/issues/447) | Created |
+| V2-002 | High     | [issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md](issues/V2-002-pipeline-delegated-agent-output-is-dispatch-metadata.md) | [#448](https://github.com/xlabtg/teleton-agent/issues/448) | Created |
+| V2-003 | High     | [issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md](issues/V2-003-pipeline-run-timeout-does-not-bound-running-steps.md)       | [#449](https://github.com/xlabtg/teleton-agent/issues/449) | Created |
+| V2-004 | Medium   | [issues/V2-004-memory-search-skips-semantic-vector-retrieval.md](issues/V2-004-memory-search-skips-semantic-vector-retrieval.md)               | [#450](https://github.com/xlabtg/teleton-agent/issues/450) | Created |
+| V2-005 | Medium   | [issues/V2-005-workflow-call-api-actions-have-no-timeout.md](issues/V2-005-workflow-call-api-actions-have-no-timeout.md)                       | [#451](https://github.com/xlabtg/teleton-agent/issues/451) | Created |
+
+The issue body frontmatter contains the requested labels and milestone metadata.
+The automation token used for creation has read-only upstream repository
+permission, so maintainers need to apply the labels, milestone, and assignment
+in GitHub.
+
+## Validation For #445
+
+Run the structural artifact check:
+
+```bash
+node improvements/work3/validation/check-artifacts.mjs
+```
+
+Run the current-code reproduction check:
+
+```bash
+node improvements/work3/validation/reproduce-findings.mjs
+```
+
+The reproduction check exits non-zero while the five audit findings remain
+present. After future fix PRs, the same script can be used as a quick guard that
+the audited code patterns are gone.
+
+## Confirmed Findings From #398
 
 | ID       | Seriousness | Primary Report                                                                                                                           | GitHub Issue                                               | Status |
 | -------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ------ |

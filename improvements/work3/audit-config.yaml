@@ -1,0 +1,39 @@
+audit:
+  source_issue: "https://github.com/xlabtg/teleton-agent/issues/445"
+  prepared_pr: "https://github.com/xlabtg/teleton-agent/pull/446"
+  branch: "issue-445-2a5fadc82968"
+  executed_at: "2026-04-27T22:44:00Z"
+  model: "OpenAI Codex GPT-5"
+  requested_model_note: "Issue requested Claude/Hive Mind; actual executor was Codex."
+  audit_commit: "1824d777e9ac37acb2b530d7de195f3cbb17891a"
+  compared_base: "3eacbbf976023a4aaa7eda290a827ca589d76c47"
+scope:
+  previous_audit_folders:
+    - "improvements/work"
+    - "improvements/work2"
+    - "improvements/work3"
+  v2_specs_glob: "improvements/v2-*.md"
+  inspected_paths:
+    - "src/webui/server.ts"
+    - "src/webui/routes/workflows.ts"
+    - "src/webui/routes/webhooks.ts"
+    - "src/services/pipeline/executor.ts"
+    - "src/services/pipeline/definition.ts"
+    - "src/webui/routes/pipelines.ts"
+    - "src/webui/routes/memory.ts"
+    - "src/services/workflow-executor.ts"
+output:
+  report: "improvements/work3/AUDIT_V2_REPORT.md"
+  issues_dir: "improvements/work3/issues"
+  validation_dir: "improvements/work3/validation"
+finding_policy:
+  create_task_file_for_severity:
+    - "critical"
+    - "high"
+    - "medium"
+  duplicate_baseline:
+    - "#400"
+    - "#401"
+    - "#402"
+    - "#403"
+    - "#404"
