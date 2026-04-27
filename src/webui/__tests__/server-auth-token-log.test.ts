@@ -3,6 +3,7 @@ import Database from "better-sqlite3";
 import { WebUIServer } from "../server.js";
 import { addLogListener } from "../../utils/logger.js";
 import { maskToken } from "../middleware/auth.js";
+import { hashToken } from "../middleware/token-hash.js";
 import type { WebUIServerDeps } from "../types.js";
 
 // AUDIT-C4 regression test: the full WebUI auth token must not appear in any
@@ -28,6 +29,18 @@ function buildDeps(authToken: string): WebUIServerDeps {
     },
     configPath: "/tmp/teleton-test-config.yaml",
   } as unknown as WebUIServerDeps;
+}
+
+function buildDepsWithTokenHash(rawToken: string): WebUIServerDeps {
+  const deps = buildDeps("");
+  deps.config.auth_token = undefined;
+  deps.config.auth_token_hash = hashToken(rawToken);
+  return deps;
+}
+
+function fetchApp(server: WebUIServer): (req: Request) => Promise<Response> {
+  const app = (server as unknown as { app: { fetch: (req: Request) => Promise<Response> } }).app;
+  return (req: Request) => app.fetch(req);
 }
 
 describe("WebUIServer startup — AUDIT-C4 token leak regression", () => {
@@ -103,5 +116,48 @@ describe("WebUIServer startup — AUDIT-C4 token leak regression", () => {
     // operator can still click it from an interactive terminal.
     const stderrOutput = stderrChunks.join("");
     expect(stderrOutput).toContain(`/auth/exchange?token=${authToken}`);
+  });
+
+  it("prints a usable startup exchange link when the configured auth token is hashed", async () => {
+    const rawToken = "setup_token_only_known_to_the_initial_client";
+
+    const originalWrite = process.stderr.write.bind(process.stderr);
+    const stderrChunks: string[] = [];
+    process.stderr.write = ((chunk: unknown, ...rest: unknown[]) => {
+      stderrChunks.push(typeof chunk === "string" ? chunk : String(chunk));
+      return originalWrite(chunk, ...rest);
+    }) as typeof process.stderr.write;
+
+    const server = new WebUIServer(buildDepsWithTokenHash(rawToken));
+    started.push(server);
+
+    try {
+      await server.start();
+    } finally {
+      process.stderr.write = originalWrite;
+    }
+
+    const stderrOutput = stderrChunks.join("");
+    const printedToken = stderrOutput.match(/\/auth\/exchange\?token=([A-Za-z0-9_-]+)/)?.[1];
+    expect(printedToken).toBeTruthy();
+    expect(printedToken).not.toBe(rawToken);
+    expect(stderrOutput).not.toContain(rawToken);
+
+    const res = await fetchApp(server)(
+      new Request(`http://localhost/auth/exchange?token=${printedToken}`, {
+        redirect: "manual",
+      })
+    );
+
+    expect(res.status).toBe(302);
+    expect(res.headers.get("set-cookie")).toContain("teleton_session=");
+
+    const replay = await fetchApp(server)(
+      new Request(`http://localhost/auth/exchange?token=${printedToken}`, {
+        redirect: "manual",
+      })
+    );
+
+    expect(replay.status).toBe(401);
   });
 });

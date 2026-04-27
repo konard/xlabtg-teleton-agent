@@ -94,12 +94,15 @@ export class WebUIServer {
   private server: ReturnType<typeof serve> | null = null;
   private deps: WebUIServerDeps;
   private authToken: string;
+  private readonly startupExchangeToken: string;
+  private startupExchangeTokenConsumed = false;
   /**
    * When the config stores a hashed token (`auth_token_hash`), we don't know
    * the raw value — it was handed to the client by the setup wizard. We can
    * only verify incoming tokens against the hash. In that case `authToken`
-   * is a fresh random string used to mint the session cookie after the
-   * initial /auth/exchange succeeds.
+   * is a fresh random string used to mint the session cookie, while
+   * `startupExchangeToken` is a separate one-time browser login token printed
+   * to stderr for the local operator.
    */
   private readonly authTokenHash: string | null;
 
@@ -113,9 +116,11 @@ export class WebUIServer {
       // Used to mint session cookies after a successful token exchange.
       // Never compared against raw user input.
       this.authToken = generateToken();
+      this.startupExchangeToken = generateToken();
     } else {
       this.authTokenHash = null;
       this.authToken = deps.config.auth_token || generateToken();
+      this.startupExchangeToken = this.authToken;
     }
 
     this.setupMiddleware();
@@ -132,6 +137,19 @@ export class WebUIServer {
     if (!incoming) return false;
     if (this.authTokenHash) return verifyToken(incoming, this.authTokenHash);
     return safeCompare(incoming, this.authToken);
+  }
+
+  /**
+   * Accept either the configured token or the one-time startup exchange token
+   * for browser login routes. The startup token is intentionally not accepted
+   * by API Bearer/query auth.
+   */
+  private acceptBrowserLoginToken(incoming: string | undefined | null): boolean {
+    if (this.matchToken(incoming)) return true;
+    if (!incoming || this.startupExchangeTokenConsumed) return false;
+    if (!safeCompare(incoming, this.startupExchangeToken)) return false;
+    this.startupExchangeTokenConsumed = true;
+    return true;
   }
 
   /** Set an HttpOnly session cookie */
@@ -237,7 +255,7 @@ export class WebUIServer {
     // Token exchange: browser opens with ?token=, gets HttpOnly cookie, redirects to /
     this.app.get("/auth/exchange", (c) => {
       const token = c.req.query("token");
-      if (!this.matchToken(token ?? null)) {
+      if (!this.acceptBrowserLoginToken(token ?? null)) {
         return c.json({ success: false, error: "Invalid token" }, 401);
       }
 
@@ -249,7 +267,7 @@ export class WebUIServer {
     this.app.post("/auth/login", async (c) => {
       try {
         const body = await c.req.json<{ token: string }>();
-        if (!this.matchToken(body.token)) {
+        if (!this.acceptBrowserLoginToken(body.token)) {
           return c.json({ success: false, error: "Invalid token" }, 401);
         }
 
@@ -564,13 +582,19 @@ export class WebUIServer {
 
             log.info(`WebUI server running`);
             log.info(`URL:   ${url}/auth/exchange`);
-            log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
+            if (this.authTokenHash) {
+              log.info(
+                `Startup token: ${maskToken(this.startupExchangeToken)} (one-time browser login)`
+              );
+            } else {
+              log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
+            }
             log.info(`One-time exchange link printed to stderr below (not logged).`);
             // Full token intentionally written via raw stderr to bypass the logger
             // so that it never ends up in journalctl, Docker log drivers, tsx
             // --log-file, CI artifacts, or `teleton --debug > log.txt`. See AUDIT-C4.
             process.stderr.write(
-              `\n>>> One-time link: ${url}/auth/exchange?token=${this.authToken}\n\n`
+              `\n>>> One-time link: ${url}/auth/exchange?token=${this.startupExchangeToken}\n\n`
             );
             resolve();
           }
