@@ -3,6 +3,10 @@ import { randomUUID } from "node:crypto";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { getWorkflowStore, type WorkflowConfig, type Workflow } from "../../services/workflows.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import {
+  MAX_WORKFLOW_HTTP_TIMEOUT_MS,
+  MIN_WORKFLOW_HTTP_TIMEOUT_MS,
+} from "../../constants/timeouts.js";
 
 const MAX_WORKFLOWS = 100;
 const MAX_NAME_LENGTH = 100;
@@ -279,6 +283,14 @@ function validateConfig(config: WorkflowConfig): string | null {
       }
       if (typeof action.url !== "string" || !action.url.startsWith("http")) {
         return `actions[${i}] call_api requires a valid HTTP URL`;
+      }
+      if (
+        action.timeoutMs !== undefined &&
+        (!Number.isInteger(action.timeoutMs) ||
+          action.timeoutMs < MIN_WORKFLOW_HTTP_TIMEOUT_MS ||
+          action.timeoutMs > MAX_WORKFLOW_HTTP_TIMEOUT_MS)
+      ) {
+        return `actions[${i}] call_api timeoutMs must be an integer between ${MIN_WORKFLOW_HTTP_TIMEOUT_MS} and ${MAX_WORKFLOW_HTTP_TIMEOUT_MS}`;
       }
     }
 

@@ -46,6 +46,8 @@ export interface CallApiAction {
   headers?: Record<string, string>;
   /** Optional request body (JSON string) */
   body?: string;
+  /** Optional request timeout in milliseconds */
+  timeoutMs?: number;
 }
 
 export interface SetVariableAction {
