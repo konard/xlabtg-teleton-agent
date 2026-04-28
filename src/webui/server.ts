@@ -23,6 +23,7 @@ import {
 } from "./middleware/auth.js";
 import { isHashedToken, verifyToken } from "./middleware/token-hash.js";
 import { createCsrfMiddleware } from "./middleware/csrf.js";
+import { isPublicSignedApiIngress } from "./middleware/public-ingress.js";
 import { logInterceptor } from "./log-interceptor.js";
 import { createStatusRoutes } from "./routes/status.js";
 import { createToolsRoutes } from "./routes/tools.js";
@@ -211,7 +212,7 @@ export class WebUIServer {
     // Auth for all /api/* routes
     // Accepts: HttpOnly cookie > Bearer header > ?token= query param (fallback)
     this.app.use("/api/*", async (c, next) => {
-      if (c.req.path === "/api/agent-network") {
+      if (isPublicSignedApiIngress(c.req.path)) {
         return next();
       }
 

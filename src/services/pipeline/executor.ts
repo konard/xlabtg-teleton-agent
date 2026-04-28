@@ -15,6 +15,7 @@ import {
 import { resolvePipelineSteps } from "./resolver.js";
 
 const log = createLogger("PipelineExecutor");
+const STEP_CANCELLATION_POLL_MS = 100;
 
 export interface PipelineExecutorDeps {
   store: PipelineStore;
@@ -32,16 +33,24 @@ interface StepExecutionResult {
   outputName: string;
   outputValue: unknown;
   failed: boolean;
+  cancelled: boolean;
   error: string | null;
   strategy: PipelineErrorStrategy;
 }
 
-interface TimeoutBudget {
-  timeoutMs: number;
-  errorMessage: string;
+interface DispatchStepOptions {
+  signal: AbortSignal;
+  timeoutSeconds?: number;
 }
 
 type RunInterruption = "cancelled" | { status: "timeout"; message: string } | null;
+
+class PipelineRunCancelledError extends Error {
+  constructor() {
+    super("Pipeline run cancelled");
+    this.name = "PipelineRunCancelledError";
+  }
+}
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
@@ -86,6 +95,7 @@ export class PipelineExecutor {
       errorStrategy: options.errorStrategy,
     });
     void this.executeRun(pipeline, run.id).catch((error) => {
+      if (this.isRunCancelled(run.id)) return;
       log.error({ err: error, pipelineId: pipeline.id, runId: run.id }, "Pipeline run failed");
       this.deps.store.updateRun(run.id, {
         status: "failed",
@@ -134,11 +144,10 @@ export class PipelineExecutor {
         return;
       }
 
-      const levelPromise = Promise.all(
-        level.map((step) => this.executeStep(runId, pipeline, step, context, deadline))
-      );
       const results = await this.withOptionalTimeout(
-        levelPromise,
+        Promise.all(
+          level.map((step) => this.executeStep(runId, pipeline, step, context, deadline))
+        ),
         this.pipelineRemainingTimeout(deadline),
         this.pipelineTimeoutMessage(pipeline)
       ).catch((error) => {
@@ -156,6 +165,10 @@ export class PipelineExecutor {
       if (afterLevelInterruption === "cancelled") return;
       if (afterLevelInterruption?.status === "timeout") {
         this.failRunForTimeout(runId, afterLevelInterruption.message);
+        return;
+      }
+
+      if (this.isRunCancelled(runId) || results.some((result) => result.cancelled)) {
         return;
       }
 
@@ -203,46 +216,16 @@ export class PipelineExecutor {
     pipeline: PipelineDefinition,
     step: PipelineStep,
     context: PipelineContext,
-    deadline: number | null
+    pipelineDeadline: number | null
   ): Promise<StepExecutionResult> {
     const strategy = step.errorStrategy ?? pipeline.errorStrategy;
     const retries =
       strategy === "retry" ? Math.max(0, step.retryCount ?? pipeline.maxRetries ?? 0) : 0;
     const maxAttempts = retries + 1;
     let lastError: string | null = null;
-    let attemptsUsed = 0;
     const startedAt = nowSeconds();
 
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const beforeAttemptInterruption = this.getRunInterruption(runId, pipeline, deadline);
-      if (beforeAttemptInterruption === "cancelled") {
-        return {
-          step,
-          outputName: step.output,
-          outputValue: null,
-          failed: true,
-          error: "Pipeline run cancelled",
-          strategy,
-        };
-      }
-      if (beforeAttemptInterruption?.status === "timeout") {
-        lastError = beforeAttemptInterruption.message;
-        this.deps.store.updateStep(runId, step.id, {
-          status: "failed",
-          error: lastError,
-          attempts: Math.max(0, attempt - 1),
-          completedAt: nowSeconds(),
-        });
-        return {
-          step,
-          outputName: step.output,
-          outputValue: null,
-          failed: true,
-          error: lastError,
-          strategy,
-        };
-      }
-
       this.deps.store.updateStep(runId, step.id, {
         status: "running",
         inputContext: context,
@@ -250,30 +233,25 @@ export class PipelineExecutor {
         startedAt,
         error: lastError,
       });
-      attemptsUsed = attempt;
 
       try {
         const action = interpolateAction(step.action, context);
-        const timeout = this.getStepTimeoutBudget(pipeline, step, deadline);
-        const outputValue = await this.withOptionalTimeout(
-          this.dispatchStep(runId, step, action, context),
-          timeout?.timeoutMs,
-          timeout?.errorMessage
+        const timeoutSeconds = this.resolveStepTimeoutSeconds(step, pipelineDeadline);
+        const controller = new AbortController();
+        const outputValue = await this.withStepControls(
+          this.dispatchStep(runId, step, action, context, {
+            signal: controller.signal,
+            ...(timeoutSeconds !== undefined ? { timeoutSeconds } : {}),
+          }),
+          {
+            runId,
+            label: `Pipeline step "${step.id}"`,
+            controller,
+            ...(timeoutSeconds !== undefined ? { timeoutSeconds } : {}),
+          }
         );
-        const afterDispatchInterruption = this.getRunInterruption(runId, pipeline, deadline);
-        if (afterDispatchInterruption === "cancelled") {
-          return {
-            step,
-            outputName: step.output,
-            outputValue: null,
-            failed: true,
-            error: "Pipeline run cancelled",
-            strategy,
-          };
-        }
-        if (afterDispatchInterruption?.status === "timeout") {
-          lastError = afterDispatchInterruption.message;
-          break;
+        if (this.isRunCancelled(runId)) {
+          return this.cancelledResult(step, strategy);
         }
         this.deps.store.updateStep(runId, step.id, {
           status: "completed",
@@ -287,24 +265,20 @@ export class PipelineExecutor {
           outputName: step.output,
           outputValue,
           failed: false,
+          cancelled: false,
           error: null,
           strategy,
         };
       } catch (error) {
-        const interruption = this.getRunInterruption(runId, pipeline, deadline);
-        if (interruption === "cancelled") {
-          return {
-            step,
-            outputName: step.output,
-            outputValue: null,
-            failed: true,
-            error: "Pipeline run cancelled",
-            strategy,
-          };
+        if (error instanceof PipelineRunCancelledError || this.isRunCancelled(runId)) {
+          return this.cancelledResult(step, strategy);
         }
-        lastError =
-          interruption?.status === "timeout" ? interruption.message : getErrorMessage(error);
-        if (interruption?.status === "timeout") break;
+        lastError = getErrorMessage(error);
+        const timeout = this.getRunInterruption(runId, pipeline, pipelineDeadline);
+        if (timeout !== "cancelled" && timeout?.status === "timeout") {
+          lastError = timeout.message;
+          break;
+        }
         if (attempt < maxAttempts) {
           log.warn({ pipelineId: pipeline.id, runId, stepId: step.id, error }, "Retrying step");
           continue;
@@ -312,10 +286,13 @@ export class PipelineExecutor {
       }
     }
 
+    if (this.isRunCancelled(runId)) {
+      return this.cancelledResult(step, strategy);
+    }
     this.deps.store.updateStep(runId, step.id, {
       status: "failed",
       error: lastError,
-      attempts: attemptsUsed,
+      attempts: maxAttempts,
       completedAt: nowSeconds(),
     });
     return {
@@ -323,6 +300,7 @@ export class PipelineExecutor {
       outputName: step.output,
       outputValue: null,
       failed: true,
+      cancelled: false,
       error: lastError,
       strategy,
     };
@@ -332,7 +310,8 @@ export class PipelineExecutor {
     runId: string,
     step: PipelineStep,
     action: string,
-    context: PipelineContext
+    context: PipelineContext,
+    options: DispatchStepOptions
   ): Promise<unknown> {
     const requestedAgent = step.agent.trim();
     if (!requestedAgent || requestedAgent.toLowerCase() === "primary") {
@@ -354,18 +333,60 @@ export class PipelineExecutor {
     if (!agent) {
       throw new Error(`Managed agent not found: ${requestedAgent}`);
     }
-    const message = await this.deps.agentManager.sendMessage(
+    if (typeof this.deps.agentManager.waitForMessageResult !== "function") {
+      throw new Error(
+        `Managed agent result correlation unavailable for pipeline step "${step.id}"`
+      );
+    }
+    const message = this.deps.agentManager.sendMessage(
       "primary",
       agent.id,
       [`[PIPELINE STEP - ${step.id}]`, action].join("\n")
     );
-    return {
-      messageId: message.id,
-      toAgentId: agent.id,
+    const messageId = message.id;
+    const targetAgentId = agent.id;
+    const pendingOutput = {
+      messageId,
+      toAgentId: targetAgentId,
       toAgentName: agent.name,
       createdAt: message.createdAt,
+      pending: true,
       action,
     };
+    this.deps.store.updateStep(runId, step.id, {
+      outputValue: pendingOutput,
+    });
+
+    const result = await this.deps.agentManager.waitForMessageResult(messageId, {
+      agentId: targetAgentId,
+      signal: options.signal,
+      ...(options.timeoutSeconds !== undefined ? { timeoutSeconds: options.timeoutSeconds } : {}),
+    });
+    const status = result.status ?? "completed";
+    if (status === "completed") {
+      return result.content ?? null;
+    }
+
+    const reason =
+      result.error ??
+      (status === "cancelled" ? "managed agent cancelled the message" : "managed agent failed");
+    throw new Error(
+      `Managed agent "${agent.name}" ${status} pipeline step "${step.id}": ${reason}`
+    );
+  }
+
+  private resolveStepTimeoutSeconds(
+    step: PipelineStep,
+    pipelineDeadline: number | null
+  ): number | undefined {
+    const candidates: number[] = [];
+    if (step.timeoutSeconds && step.timeoutSeconds > 0) {
+      candidates.push(step.timeoutSeconds);
+    }
+    if (pipelineDeadline) {
+      candidates.push(Math.max(0, (pipelineDeadline - Date.now()) / 1000));
+    }
+    return candidates.length > 0 ? Math.min(...candidates) : undefined;
   }
 
   private getRunInterruption(
@@ -390,30 +411,6 @@ export class PipelineExecutor {
       error: message,
       completedAt: nowSeconds(),
     });
-  }
-
-  private getStepTimeoutBudget(
-    pipeline: PipelineDefinition,
-    step: PipelineStep,
-    deadline: number | null
-  ): TimeoutBudget | undefined {
-    const stepTimeout =
-      step.timeoutSeconds && step.timeoutSeconds > 0
-        ? {
-            timeoutMs: step.timeoutSeconds * 1000,
-            errorMessage: `Pipeline step "${step.id}" timed out after ${step.timeoutSeconds} seconds`,
-          }
-        : undefined;
-    const remainingTimeout = this.pipelineRemainingTimeout(deadline);
-    if (remainingTimeout === undefined) return stepTimeout;
-    const pipelineTimeout = {
-      timeoutMs: remainingTimeout,
-      errorMessage: this.pipelineTimeoutMessage(pipeline),
-    };
-    if (!stepTimeout || pipelineTimeout.timeoutMs <= stepTimeout.timeoutMs) {
-      return pipelineTimeout;
-    }
-    return stepTimeout;
   }
 
   private pipelineRemainingTimeout(deadline: number | null): number | undefined {
@@ -442,5 +439,82 @@ export class PipelineExecutor {
     return Promise.race([promise, timeout]).finally(() => {
       if (timer) clearTimeout(timer);
     });
+  }
+
+  private withStepControls<T>(
+    promise: Promise<T>,
+    options: {
+      runId: string;
+      label: string;
+      controller: AbortController;
+      timeoutSeconds?: number;
+    }
+  ): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let cancellationPoll: ReturnType<typeof setInterval> | undefined;
+    const races: Array<Promise<T> | Promise<never>> = [promise];
+
+    if (options.timeoutSeconds !== undefined) {
+      const timeoutSeconds = options.timeoutSeconds;
+      const timeoutError = new Error(
+        `${options.label} timed out after ${this.formatSeconds(timeoutSeconds)} seconds`
+      );
+      if (timeoutSeconds <= 0) {
+        options.controller.abort(timeoutError);
+        return Promise.reject(timeoutError);
+      }
+      races.push(
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            options.controller.abort(timeoutError);
+            reject(timeoutError);
+          }, timeoutSeconds * 1000);
+          timer.unref?.();
+        })
+      );
+    }
+
+    races.push(
+      new Promise<never>((_, reject) => {
+        const rejectIfCancelled = () => {
+          if (!this.isRunCancelled(options.runId)) return;
+          const error = new PipelineRunCancelledError();
+          options.controller.abort(error);
+          reject(error);
+        };
+        rejectIfCancelled();
+        cancellationPoll = setInterval(rejectIfCancelled, STEP_CANCELLATION_POLL_MS);
+        cancellationPoll.unref?.();
+      })
+    );
+
+    return Promise.race(races).finally(() => {
+      if (timer) clearTimeout(timer);
+      if (cancellationPoll) clearInterval(cancellationPoll);
+    });
+  }
+
+  private isRunCancelled(runId: string): boolean {
+    return this.deps.store.getRun(runId)?.status === "cancelled";
+  }
+
+  private cancelledResult(
+    step: PipelineStep,
+    strategy: PipelineErrorStrategy
+  ): StepExecutionResult {
+    return {
+      step,
+      outputName: step.output,
+      outputValue: null,
+      failed: true,
+      cancelled: true,
+      error: "Pipeline run cancelled",
+      strategy,
+    };
+  }
+
+  private formatSeconds(seconds: number): string {
+    if (Number.isInteger(seconds)) return String(seconds);
+    return seconds.toFixed(3).replace(/0+$/, "").replace(/\.$/, "");
   }
 }

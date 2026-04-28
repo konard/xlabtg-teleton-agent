@@ -32,6 +32,7 @@ import type { TemporalContextConfig } from "../services/temporal-context.js";
 
 export interface MemorySystem {
   db: Database.Database;
+  vectorEnabled: boolean;
   embedder: ReturnType<typeof createEmbeddingProvider>;
   knowledge: KnowledgeIndexer;
   messages: MessageStore;
@@ -87,6 +88,7 @@ export function initializeMemory(config: {
 
   return {
     db: database,
+    vectorEnabled,
     embedder,
     knowledge: new KnowledgeIndexer(
       database,

@@ -14,6 +14,9 @@ import { HybridSearch } from "../../memory/search/hybrid.js";
 import { MemoryScorer } from "../../memory/scoring.js";
 import { MemoryRetentionService } from "../../memory/retention.js";
 import type { SemanticVectorIndexStats } from "../../memory/agent/knowledge.js";
+import { createLogger } from "../../utils/logger.js";
+
+const log = createLogger("memory-routes");
 
 function vectorSyncUnavailableMessage(mode: MemoryVectorSyncResult["status"]["mode"]): string {
   if (mode === "standby") {
@@ -92,13 +95,24 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
       }
 
       const temporalConfig = deps.agent?.getConfig?.()?.temporal_context;
-      const search = new HybridSearch(deps.memory.db, false, deps.memory.vectorStore, {
+      const vectorEnabled = deps.memory.vectorEnabled ?? false;
+      let queryEmbedding: number[] = [];
+      const shouldEmbed = vectorEnabled || (deps.memory.vectorStore?.isConfigured ?? false);
+      if (shouldEmbed) {
+        try {
+          queryEmbedding = await deps.memory.embedder.embedQuery(query);
+        } catch (error) {
+          log.warn({ err: error }, "Memory route search embedding failed; using keyword fallback");
+        }
+      }
+
+      const search = new HybridSearch(deps.memory.db, vectorEnabled, deps.memory.vectorStore, {
         ...temporalConfig?.weighting,
         enabled:
           temporalConfig?.enabled === false ? false : (temporalConfig?.weighting.enabled ?? true),
         timezone: temporalConfig?.timezone,
       });
-      const results = await search.searchKnowledge(query, [], {
+      const results = await search.searchKnowledge(query, queryEmbedding, {
         limit,
         minScore: Number.isFinite(minScore) ? minScore : undefined,
         priorityWeight: 0.25,

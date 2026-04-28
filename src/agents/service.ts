@@ -24,6 +24,7 @@ import {
   getBuiltInAgentArchetype,
   listBuiltInAgentArchetypes,
 } from "./archetypes.js";
+import { MANAGED_AGENT_MESSAGE_RESULT_STATUSES } from "./types.js";
 import type {
   ManagedAgentArchetype,
   CreateManagedAgentInput,
@@ -38,16 +39,21 @@ import type {
   ManagedAgentSnapshot,
   ManagedAgentState,
   ManagedAgentHealth,
+  ManagedAgentMessageResult,
+  ManagedAgentMessageResultInput,
+  ManagedAgentMessageResultStatus,
   ManagedAgentMessagingPolicy,
   ManagedAgentRegistryConfig,
   ManagedAgentResourcePolicy,
   UpdateManagedAgentInput,
+  WaitForManagedAgentMessageResultOptions,
 } from "./types.js";
 
 const MANAGED_AGENTS_DIRNAME = "agents";
 const LOG_LINES_FALLBACK = 200;
 const STOP_GRACE_MS = 15_000;
 const MESSAGE_LINES_FALLBACK = 100;
+const MESSAGE_RESULT_POLL_INTERVAL_MS = 250;
 const STARTUP_READY_TIMEOUT_MS = 120_000;
 const SECRET_KEY_FILENAME = ".secret-key";
 const CREDENTIALS_FILENAME = "credentials.json";
@@ -127,6 +133,43 @@ function slugifyAgentId(name: string): string {
 
 function nowIso(): string {
   return new Date().toISOString();
+}
+
+function isMessageResultStatus(value: unknown): value is ManagedAgentMessageResultStatus {
+  return MANAGED_AGENT_MESSAGE_RESULT_STATUSES.includes(value as ManagedAgentMessageResultStatus);
+}
+
+function getAbortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  return new Error(signal.reason ? String(signal.reason) : "Operation aborted");
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(getAbortError(signal));
+  }
+  return new Promise((resolve, reject) => {
+    const abortSignal = signal;
+    let onAbort: (() => void) | undefined;
+    const cleanup = () => {
+      if (abortSignal && onAbort) {
+        abortSignal.removeEventListener("abort", onAbort);
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    timer.unref?.();
+    if (abortSignal) {
+      onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(getAbortError(abortSignal));
+      };
+      abortSignal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
 }
 
 function readJsonFile<T>(path: string): T {
@@ -412,6 +455,7 @@ export class ManagedAgentService {
       "utf-8"
     );
     this.writeMessages(definition, []);
+    this.writeMessageResults(definition, []);
 
     return this.toSnapshot(definition);
   }
@@ -804,6 +848,91 @@ export class ManagedAgentService {
     return {
       messages: messages.slice(-Math.max(1, Math.min(limit, 500))),
     };
+  }
+
+  readMessageResult(agentId: string, messageId: string): ManagedAgentMessageResult | null {
+    const definition = this.readDefinition(agentId);
+    return (
+      this.readMessageResultsFile(definition).find((result) => result.messageId === messageId) ??
+      null
+    );
+  }
+
+  recordMessageResult(
+    agentId: string,
+    messageId: string,
+    input: ManagedAgentMessageResultInput = {}
+  ): ManagedAgentMessageResult {
+    const definition = this.readDefinition(agentId);
+    const message = this.readMessagesFile(definition).find((item) => item.id === messageId);
+    if (!message) {
+      throw new Error(`Managed agent message not found: ${messageId}`);
+    }
+
+    const status = input.status ?? (input.error ? "failed" : "completed");
+    if (!isMessageResultStatus(status)) {
+      throw new Error(
+        `Managed agent message result status must be one of: ${MANAGED_AGENT_MESSAGE_RESULT_STATUSES.join(
+          ", "
+        )}`
+      );
+    }
+
+    const error =
+      input.error ?? (status === "cancelled" ? "Managed agent message cancelled" : null);
+    if (status === "failed" && !error) {
+      throw new Error("Failed managed agent message results require an error");
+    }
+
+    const result: ManagedAgentMessageResult = {
+      messageId,
+      fromId: definition.id,
+      toId: message.fromId,
+      status,
+      content: input.content ?? null,
+      error: status === "completed" ? null : error,
+      completedAt: nowIso(),
+    };
+
+    const existing = this.readMessageResultsFile(definition).filter(
+      (item) => item.messageId !== messageId
+    );
+    existing.push(result);
+    this.writeMessageResults(definition, existing);
+    return result;
+  }
+
+  async waitForMessageResult(
+    messageId: string,
+    options: WaitForManagedAgentMessageResultOptions = {}
+  ): Promise<ManagedAgentMessageResult> {
+    const timeoutSeconds =
+      options.timeoutSeconds !== undefined && options.timeoutSeconds > 0
+        ? options.timeoutSeconds
+        : undefined;
+    const deadline = timeoutSeconds ? Date.now() + timeoutSeconds * 1000 : null;
+    const pollIntervalMs = Math.max(
+      10,
+      Math.min(options.pollIntervalMs ?? MESSAGE_RESULT_POLL_INTERVAL_MS, 5_000)
+    );
+
+    while (true) {
+      if (options.signal?.aborted) {
+        throw getAbortError(options.signal);
+      }
+
+      const result = this.findMessageResult(messageId, options.agentId);
+      if (result) return result;
+
+      if (deadline && Date.now() >= deadline) {
+        throw new Error(
+          `Managed agent message ${messageId} timed out after ${timeoutSeconds} seconds`
+        );
+      }
+
+      const remainingMs = deadline ? Math.max(0, deadline - Date.now()) : pollIntervalMs;
+      await sleep(Math.min(pollIntervalMs, Math.max(10, remainingMs)), options.signal);
+    }
   }
 
   sendMessage(fromId: string, toId: string, text: string): ManagedAgentMessage {
@@ -1303,6 +1432,10 @@ export class ManagedAgentService {
     return join(definition.homePath, "messages", "inbox.json");
   }
 
+  private messageResultsPath(definition: ManagedAgentDefinition): string {
+    return join(definition.homePath, "messages", "results.json");
+  }
+
   private readMessagesFile(definition: ManagedAgentDefinition): ManagedAgentMessage[] {
     const path = this.messagesPath(definition);
     if (!existsSync(path)) return [];
@@ -1312,6 +1445,33 @@ export class ManagedAgentService {
   private writeMessages(definition: ManagedAgentDefinition, messages: ManagedAgentMessage[]): void {
     mkdirSync(join(definition.homePath, "messages"), { recursive: true, mode: 0o700 });
     writeFileSync(this.messagesPath(definition), JSON.stringify(messages, null, 2), "utf-8");
+  }
+
+  private readMessageResultsFile(definition: ManagedAgentDefinition): ManagedAgentMessageResult[] {
+    const path = this.messageResultsPath(definition);
+    if (!existsSync(path)) return [];
+    return readJsonFile<ManagedAgentMessageResult[]>(path);
+  }
+
+  private writeMessageResults(
+    definition: ManagedAgentDefinition,
+    results: ManagedAgentMessageResult[]
+  ): void {
+    mkdirSync(join(definition.homePath, "messages"), { recursive: true, mode: 0o700 });
+    writeFileSync(this.messageResultsPath(definition), JSON.stringify(results, null, 2), "utf-8");
+  }
+
+  private findMessageResult(messageId: string, agentId?: string): ManagedAgentMessageResult | null {
+    if (agentId) {
+      return this.readMessageResult(agentId, messageId);
+    }
+    for (const definition of this.listDefinitions()) {
+      const result = this.readMessageResultsFile(definition).find(
+        (item) => item.messageId === messageId
+      );
+      if (result) return result;
+    }
+    return null;
   }
 
   private getMessageTimestamps(id: string): number[] {

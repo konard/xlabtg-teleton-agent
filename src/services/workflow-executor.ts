@@ -1,7 +1,12 @@
 import type { TelegramBridge } from "../telegram/bridge.js";
 import type { WorkflowStore } from "./workflows.js";
-import type { Workflow, WorkflowAction } from "./workflows.js";
+import type { CallApiAction, Workflow, WorkflowAction } from "./workflows.js";
 import { createLogger } from "../utils/logger.js";
+import {
+  DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS,
+  MAX_WORKFLOW_HTTP_TIMEOUT_MS,
+  MIN_WORKFLOW_HTTP_TIMEOUT_MS,
+} from "../constants/timeouts.js";
 
 const log = createLogger("WorkflowExecutor");
 
@@ -56,7 +61,7 @@ export class WorkflowExecutor {
       if (action.body && action.method !== "GET" && action.method !== "DELETE") {
         init.body = this.interpolate(action.body);
       }
-      const res = await fetch(action.url, init);
+      const res = await this.fetchWithTimeout(action, init);
       if (!res.ok) {
         throw new Error(`HTTP ${res.status} from ${action.url}`);
       }
@@ -68,4 +73,58 @@ export class WorkflowExecutor {
       return;
     }
   }
+
+  private async fetchWithTimeout(action: CallApiAction, init: RequestInit): Promise<Response> {
+    const timeoutMs = workflowHttpTimeoutMs(action);
+    const controller = new AbortController();
+    let timeoutError: Error | null = null;
+    const fetchPromise = fetch(action.url, { ...init, signal: controller.signal });
+
+    const timer = setTimeout(() => {
+      timeoutError = new Error(`HTTP request to ${action.url} timed out after ${timeoutMs}ms`);
+      controller.abort(timeoutError);
+    }, timeoutMs);
+    timer.unref?.();
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          if (timeoutError) {
+            reject(timeoutError);
+          }
+        },
+        { once: true }
+      );
+    });
+
+    try {
+      return await Promise.race([fetchPromise, timeoutPromise]);
+    } catch (err) {
+      if (timeoutError && controller.signal.aborted) {
+        throw timeoutError;
+      }
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
+function workflowHttpTimeoutMs(action: CallApiAction): number {
+  if (action.timeoutMs === undefined) {
+    return DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS;
+  }
+
+  if (
+    !Number.isInteger(action.timeoutMs) ||
+    action.timeoutMs < MIN_WORKFLOW_HTTP_TIMEOUT_MS ||
+    action.timeoutMs > MAX_WORKFLOW_HTTP_TIMEOUT_MS
+  ) {
+    throw new Error(
+      `Invalid timeoutMs for call_api action: expected an integer between ${MIN_WORKFLOW_HTTP_TIMEOUT_MS} and ${MAX_WORKFLOW_HTTP_TIMEOUT_MS}`
+    );
+  }
+
+  return action.timeoutMs;
 }

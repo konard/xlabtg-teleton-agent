@@ -27,6 +27,22 @@ function createTestApp(overrides: Partial<WebUIServerDeps>) {
   return app;
 }
 
+function createMemoryDb(): InstanceType<typeof Database> {
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  ensureSchema(db);
+  return db;
+}
+
+function insertKnowledge(db: InstanceType<typeof Database>, id: string, text: string): void {
+  db.prepare(
+    `
+      INSERT INTO knowledge (id, source, text, hash)
+      VALUES (?, 'memory', ?, ?)
+    `
+  ).run(id, text, `hash-${id}`);
+}
+
 describe("memory routes", () => {
   let db: InstanceType<typeof Database> | null = null;
 
@@ -192,10 +208,124 @@ describe("memory routes", () => {
     expect(json.data.message).toContain("not configured");
   });
 
+  it("uses embeddings and semantic vector store for memory route search", async () => {
+    db = createMemoryDb();
+    const embedder = {
+      id: "test",
+      model: "test-model",
+      dimensions: 3,
+      embedQuery: vi.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+      embedBatch: vi.fn(),
+    };
+    const vectorStore = {
+      isConfigured: true,
+      namespace: "teleton-memory",
+      healthCheck: vi.fn(),
+      searchKnowledge: vi.fn().mockResolvedValue([
+        {
+          id: "semantic-memory",
+          text: "Semantically related memory",
+          source: "memory",
+          score: 0.92,
+          vectorScore: 0.92,
+        },
+      ]),
+    };
+
+    const app = createTestApp({
+      memory: {
+        db,
+        embedder,
+        knowledge: { indexAll: vi.fn() } as unknown as WebUIServerDeps["memory"]["knowledge"],
+        vectorStore: vectorStore as unknown as WebUIServerDeps["memory"]["vectorStore"],
+      },
+    });
+
+    const res = await app.request("/api/memory/search?q=meaning%20based%20query");
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(embedder.embedQuery).toHaveBeenCalledWith("meaning based query");
+    expect(vectorStore.searchKnowledge).toHaveBeenCalledWith([0.1, 0.2, 0.3], 30);
+    expect(json.success).toBe(true);
+    expect(json.data[0].id).toBe("semantic-memory");
+  });
+
+  it("falls back to keyword memory search when route embedding fails", async () => {
+    db = createMemoryDb();
+    insertKnowledge(db, "keyword-embedding-fallback", "route embedding fallback keyword target");
+    const embedder = {
+      id: "test",
+      model: "test-model",
+      dimensions: 3,
+      embedQuery: vi.fn().mockRejectedValue(new Error("embedding unavailable")),
+      embedBatch: vi.fn(),
+    };
+
+    const app = createTestApp({
+      memory: {
+        db,
+        embedder,
+        knowledge: { indexAll: vi.fn() } as unknown as WebUIServerDeps["memory"]["knowledge"],
+        vectorStore: {
+          isConfigured: true,
+          namespace: "teleton-memory",
+          healthCheck: vi.fn(),
+        } as unknown as WebUIServerDeps["memory"]["vectorStore"],
+      },
+    });
+
+    const res = await app.request("/api/memory/search?q=route%20embedding%20fallback%20keyword");
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(embedder.embedQuery).toHaveBeenCalledWith("route embedding fallback keyword");
+    expect(json.success).toBe(true);
+    expect(json.data.map((result: { id: string }) => result.id)).toContain(
+      "keyword-embedding-fallback"
+    );
+  });
+
+  it("falls back to keyword memory search when semantic vector search fails", async () => {
+    db = createMemoryDb();
+    insertKnowledge(db, "keyword-vector-fallback", "route vector fallback keyword target");
+    const embedder = {
+      id: "test",
+      model: "test-model",
+      dimensions: 3,
+      embedQuery: vi.fn().mockResolvedValue([0.4, 0.5, 0.6]),
+      embedBatch: vi.fn(),
+    };
+    const vectorStore = {
+      isConfigured: true,
+      namespace: "teleton-memory",
+      healthCheck: vi.fn(),
+      searchKnowledge: vi.fn().mockRejectedValue(new Error("vector unavailable")),
+    };
+
+    const app = createTestApp({
+      memory: {
+        db,
+        embedder,
+        knowledge: { indexAll: vi.fn() } as unknown as WebUIServerDeps["memory"]["knowledge"],
+        vectorStore: vectorStore as unknown as WebUIServerDeps["memory"]["vectorStore"],
+      },
+    });
+
+    const res = await app.request("/api/memory/search?q=route%20vector%20fallback%20keyword");
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(embedder.embedQuery).toHaveBeenCalledWith("route vector fallback keyword");
+    expect(vectorStore.searchKnowledge).toHaveBeenCalledWith([0.4, 0.5, 0.6], 30);
+    expect(json.success).toBe(true);
+    expect(json.data.map((result: { id: string }) => result.id)).toContain(
+      "keyword-vector-fallback"
+    );
+  });
+
   it("exposes memory graph nodes, related traversal, path, and task context", async () => {
-    db = new Database(":memory:");
-    db.pragma("foreign_keys = ON");
-    ensureSchema(db);
+    db = createMemoryDb();
     const store = new MemoryGraphStore(db);
     const conversation = store.upsertNode({ type: "conversation", label: "Telegram chat 42" });
     const task = store.upsertNode({
@@ -244,9 +374,7 @@ describe("memory routes", () => {
   });
 
   it("filters memory search by minimum score and exposes priority management endpoints", async () => {
-    db = new Database(":memory:");
-    db.pragma("foreign_keys = ON");
-    ensureSchema(db);
+    db = createMemoryDb();
     db.prepare(
       `
       INSERT INTO knowledge (id, source, text, hash)

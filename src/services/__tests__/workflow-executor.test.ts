@@ -1,8 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { WorkflowStore } from "../workflows.js";
 import { WorkflowExecutor } from "../workflow-executor.js";
 import type { Workflow } from "../workflows.js";
+import { DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS } from "../../constants/timeouts.js";
 
 vi.mock("../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
@@ -58,6 +59,11 @@ describe("WorkflowExecutor", () => {
   beforeEach(() => {
     db = createTestDb();
     store = new WorkflowStore(db);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
   it("calls recordRun with no error on success", async () => {
@@ -140,5 +146,120 @@ describe("WorkflowExecutor", () => {
     const executor = new WorkflowExecutor({ store, bridge });
     await executor.execute(wf);
     expect(sendMessage).toHaveBeenCalledWith({ chatId: "123", text: "Hello World" });
+  });
+
+  it("executes call_api action and records success", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wf = store.create({
+      name: "API success",
+      config: {
+        trigger: { type: "cron", cron: "0 9 * * 1" },
+        actions: [
+          { type: "set_variable", name: "name", value: "World" },
+          {
+            type: "call_api",
+            method: "POST",
+            url: "https://example.com/hook",
+            headers: { "content-type": "application/json" },
+            body: '{"name":"{{name}}"}',
+          },
+        ],
+      },
+    });
+
+    const executor = new WorkflowExecutor({ store });
+    await executor.execute(wf);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.com/hook",
+      expect.objectContaining({
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: '{"name":"World"}',
+        signal: expect.any(AbortSignal),
+      })
+    );
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastError).toBeNull();
+  });
+
+  it("records an error when a call_api action returns an HTTP error", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(null, { status: 503 })));
+
+    const wf = store.create({
+      name: "API failure",
+      config: {
+        trigger: { type: "cron", cron: "0 9 * * 1" },
+        actions: [{ type: "call_api", method: "GET", url: "https://example.com/down" }],
+      },
+    });
+
+    const executor = new WorkflowExecutor({ store });
+    await executor.execute(wf);
+
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastError).toContain("call_api");
+    expect(updated.lastError).toContain("HTTP 503 from https://example.com/down");
+  });
+
+  it("records an error when a call_api action exceeds its timeout", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+
+    const wf = store.create({
+      name: "Slow API",
+      config: {
+        trigger: { type: "cron", cron: "0 9 * * 1" },
+        actions: [
+          {
+            type: "call_api",
+            method: "GET",
+            url: "https://example.com/slow",
+            timeoutMs: 50,
+          },
+        ],
+      },
+    });
+
+    const executor = new WorkflowExecutor({ store });
+    await executor.execute(wf);
+
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastError).toContain("call_api");
+    expect(updated.lastError).toContain("timed out after 50ms");
+  }, 1_000);
+
+  it("records an error when a call_api action exceeds the default timeout", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => new Promise<Response>(() => {}))
+    );
+
+    const wf = store.create({
+      name: "Slow API with default timeout",
+      config: {
+        trigger: { type: "cron", cron: "0 9 * * 1" },
+        actions: [{ type: "call_api", method: "GET", url: "https://example.com/slow" }],
+      },
+    });
+
+    const executor = new WorkflowExecutor({ store });
+    const run = executor.execute(wf);
+
+    await vi.advanceTimersByTimeAsync(DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS);
+    await run;
+
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastError).toContain("call_api");
+    expect(updated.lastError).toContain(`timed out after ${DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS}ms`);
   });
 });

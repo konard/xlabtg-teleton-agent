@@ -21,6 +21,7 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
+import { isPublicSignedApiIngress } from "./public-ingress.js";
 
 export const CSRF_COOKIE_NAME = "teleton_csrf";
 export const CSRF_HEADER_NAME = "X-CSRF-Token";
@@ -58,8 +59,8 @@ export function createCsrfMiddleware(): MiddlewareHandler {
       return next();
     }
 
-    // Signed inter-agent network ingress uses message signatures instead of browser CSRF cookies.
-    if (path === "/api/agent-network") {
+    // Public signed ingress uses route-level signatures/secrets instead of browser CSRF cookies.
+    if (isPublicSignedApiIngress(path)) {
       return next();
     }
 

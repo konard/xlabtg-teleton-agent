@@ -34,6 +34,7 @@ export interface WebUIServerDeps {
   bridge: TelegramBridge;
   memory: {
     db: Database;
+    vectorEnabled?: MemorySystem["vectorEnabled"];
     embedder: MemorySystem["embedder"];
     knowledge: MemorySystem["knowledge"];
     vectorStore?: MemorySystem["vectorStore"];

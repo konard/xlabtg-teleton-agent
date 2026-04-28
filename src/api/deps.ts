@@ -18,6 +18,7 @@ export interface ApiServerDeps {
   bridge?: TelegramBridge | null;
   memory?: {
     db: Database;
+    vectorEnabled?: MemorySystem["vectorEnabled"];
     embedder: MemorySystem["embedder"];
     knowledge: MemorySystem["knowledge"];
     vectorStore?: MemorySystem["vectorStore"];

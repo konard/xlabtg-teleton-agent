@@ -116,6 +116,7 @@ export interface CallApiAction {
   url: string;
   headers?: Record<string, string>;
   body?: string;
+  timeoutMs?: number;
 }
 
 export interface SetVariableAction {

@@ -13,6 +13,9 @@ export type ManagedAgentType = BuiltInAgentType | "CustomAgent" | (string & {});
 export type ManagedAgentState = "stopped" | "starting" | "running" | "stopping" | "error";
 export type ManagedAgentTransport = "mtproto" | "bot-api";
 export type ManagedAgentHealth = "stopped" | "starting" | "healthy" | "degraded" | "error";
+export const MANAGED_AGENT_MESSAGE_RESULT_STATUSES = ["completed", "failed", "cancelled"] as const;
+export type ManagedAgentMessageResultStatus =
+  (typeof MANAGED_AGENT_MESSAGE_RESULT_STATUSES)[number];
 
 export interface ManagedAgentRegistryConfig {
   hookRules: string[];
@@ -78,6 +81,29 @@ export interface ManagedAgentMessage {
   text: string;
   createdAt: string;
   deliveredAt: string | null;
+}
+
+export interface ManagedAgentMessageResult {
+  messageId: string;
+  fromId: string;
+  toId: string;
+  status: ManagedAgentMessageResultStatus;
+  content: unknown;
+  error: string | null;
+  completedAt: string;
+}
+
+export interface ManagedAgentMessageResultInput {
+  status?: ManagedAgentMessageResultStatus;
+  content?: unknown;
+  error?: string | null;
+}
+
+export interface WaitForManagedAgentMessageResultOptions {
+  agentId?: string;
+  timeoutSeconds?: number;
+  pollIntervalMs?: number;
+  signal?: AbortSignal;
 }
 
 export interface ManagedAgentDefinition {

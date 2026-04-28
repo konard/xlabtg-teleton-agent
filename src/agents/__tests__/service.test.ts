@@ -410,6 +410,41 @@ mtproto:
     );
   });
 
+  it("records and waits for inter-agent message results", async () => {
+    service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
+
+    const sender = service.createAgent({
+      name: "Planner",
+      acknowledgePersonalAccountAccess: true,
+      messaging: { enabled: true },
+    });
+    const target = service.createAgent({
+      name: "Executor",
+      acknowledgePersonalAccountAccess: true,
+      messaging: { enabled: true, allowlist: [sender.id] },
+    });
+
+    const message = service.sendMessage(sender.id, target.id, "First task");
+    const pendingResult = service.waitForMessageResult(message.id, {
+      agentId: target.id,
+      timeoutSeconds: 1,
+      pollIntervalMs: 10,
+    });
+    const recorded = service.recordMessageResult(target.id, message.id, {
+      content: "finished task",
+    });
+
+    await expect(pendingResult).resolves.toMatchObject({
+      messageId: message.id,
+      fromId: target.id,
+      toId: sender.id,
+      status: "completed",
+      content: "finished task",
+      error: null,
+    });
+    expect(service.readMessageResult(target.id, message.id)).toEqual(recorded);
+  });
+
   it("exposes built-in archetypes and creates registry entries from them", () => {
     service = new ManagedAgentService({ rootDir, primaryConfigPath: configPath });
 
