@@ -1,48 +1,128 @@
-# Настройки
+# Настройки (Configuration)
 
-Configuration управляет agent provider, Telegram policies, command permissions, memory, integrations, WebUI behavior, TON proxy, MTProto proxy и export/import.
+Страница Configuration — постоянная панель настроек: всё, что вы здесь меняете, попадает в `config.yaml` и редактируется как графический эквивалент. Страница организована в виде вкладок, каждая по своей теме.
 
-## Скриншоты
+![Настройка векторной памяти](../assets/screenshots/ru/vector-memory-config.png)
 
-![Vector memory configuration](../assets/screenshots/ru/vector-memory-config.png)
-![MTProto proxy status](../assets/screenshots/ru/mtproto-proxy-status.png)
-![Bot token validation](../assets/screenshots/ru/agents-bot-token-validation.png)
+## Структура страницы
 
-## Configuration tabs
+Сверху — путь к активному файлу конфигурации и индикатор расхождения *server vs local*: если ваши правки расходятся с тем, что на диске, кнопка **Save** подсвечивается, а в панели сравнения видно, что именно отличается.
 
-| Область | Что настраивать |
-| --- | --- |
-| LLM | Provider, model, utility model, API keys, temperature, iteration limits. |
-| Telegram | DM policy, group policy, mentions, allowlists, admin IDs, bot token. |
-| Commands | Admin commands, allowed users, allowed chats. |
-| Memory | Vector memory, Upstash settings, namespace, sync behavior. |
-| Execution | System execution mode и allowed command prefixes. |
-| WebUI | Port, request logging, auth token behavior. |
-| MCP | Enablement и server-related configuration. |
-| TON Proxy | `.ton` browsing proxy status и port. |
-| Export/Import | Перенос configuration, hooks и prompt state между установками. |
+Под шапкой — лента вкладок. Вкладки независимы: переключение между ними сохраняет ваши правки на текущей вкладке как черновик.
 
-## Provider changes
+## Все вкладки
 
-Provider changes gated, если target provider требует key. Введите key, validate it, затем save. Если key не нужен, change можно save directly.
+| № | Вкладка | За что отвечает |
+| --- | --- | --- |
+| 1 | **LLM** | Провайдер, модель, utility-модель, API key, base URL, temperature, max tokens, retry-поведение. |
+| 2 | **Telegram** | API ID и hash, телефон, bot token, username агента, DM policy, group policy, требование mention, admin IDs. |
+| 3 | **Commands** | Кастомные команды, allowed users, allowed chats. |
+| 4 | **Heartbeat** | Включение, интервал (минуты), источник промпта, кнопка **Test** для немедленного срабатывания. |
+| 5 | **API Keys** | Agent API key, Telegram bot token, Tavily key, TON-ключи, Toncenter key. |
+| 6 | **TON Proxy** | Адрес и порт прокси для `.ton`-сайтов; индикатор статуса. |
+| 7 | **Vector Memory** | Провайдер (local / Upstash), embedding-модель, namespace, dimension, поведение синхронизации. |
+| 8 | **MTProto** | MTProto-прокси для Telegram: secret, host, port, fake-TLS, индикатор статуса. |
+| 9 | **YOLO** | Переключатели режимов выполнения (без подтверждений, без сопровождения). По умолчанию выключены. |
+| 10 | **Advanced** | Порт WebUI, log requests (dev), deals enabled, deals expiry, deals floor thresholds, hot reload, альтернативный runtime home. |
+| 11 | **Sessions** | Daily reset, idle expiry, мягкий лимит параллельных сессий. |
+| 12 | **Tool RAG** | Подбор инструментов: сколько подмешивать на ход, embedding-модель, порог. |
+| 13 | **Backup** | Экспорт всей конфигурации в JSON; импорт из JSON-снимка. |
 
-## Telegram policies
+13 вкладок располагаются в этом порядке в [реальной странице](https://github.com/xlabtg/teleton-agent/blob/main/web/src/pages/Config.tsx). Каждая вкладка правит свой кусок `config.yaml` и при необходимости — секреты.
 
-Рекомендуемые production defaults:
+## LLM
+
+Вкладка LLM «прикрывает» смену провайдера. Если у целевого провайдера есть API key:
+
+1. Выберите провайдер в выпадающем списке. Форма перерисуется под его поля.
+2. Вставьте API key. Кнопка **Validate** дёрнет whoami / models endpoint провайдера.
+3. После успешной валидации кнопка **Save** становится активной.
+
+Для провайдеров без ключа (Claude Code, Cocoon, локальный OpenAI-совместимый) шаг валидации пропускается.
+
+**Utility model** — компактная и дешёвая модель для вспомогательных задач: парсинг естественного языка в [Автономном режиме](03-autonomous-mode.md), классификация, суммаризация. Быстрая utility-модель часто заметно ускоряет общую отзывчивость без потери качества.
+
+## Telegram
+
+![Валидация bot token](../assets/screenshots/ru/agents-bot-token-validation.png)
+
+Рекомендуемые production-настройки:
 
 - `dm_policy: admin-only` или `allowlist`.
-- `group_policy: allowlist`, если public group operation не является явной целью.
-- `require_mention: true`.
-- Непустой `admin_ids`.
+- `group_policy: allowlist`, если public-режим в группах не цель.
+- `require_mention: true` для групп.
+- Непустой `admin_ids` (числовые Telegram user IDs).
 
-## Memory settings
+Поле bot token валидируется на месте: после вставки появляется зелёная галочка, как только `getMe` отдаёт ответ.
 
-Vector memory может работать локально или через Upstash Vector. Проверьте, что index dimension совпадает с embedding provider. После изменения vector settings запустите sync из Memory.
+## MTProto
 
-## Import and Export
+![Статус MTProto-прокси](../assets/screenshots/ru/mtproto-proxy-status.png)
 
-Делайте export перед крупными changes. Import только из доверенных источников: imported hooks, prompts и tool settings могут серьезно изменить behavior агента.
+Если ваша сеть блокирует CDN Telegram, настройте MTProto-прокси здесь:
 
-## Restart requirements
+- **Secret** — поддерживаются как «голые» секреты, так и формы с префиксами `dd…` / `ee…` (fake-TLS).
+- **Host** и **Port**.
+- Переключатель **Fake-TLS**.
+- Индикатор **Status** — зелёный, когда прокси валидируется через сохранённую сессию.
 
-Некоторые settings hot-reload immediately. Другие требуют agent restart. UI помечает restart-sensitive settings, а agent control в sidebar может перезапустить runtime.
+При сбое валидации через прокси страница опирается на сохранённую сессию — агент остаётся подключённым, даже если health-эндпоинт прокси отвечает с тайм-аутом. Состояние аутентификации и состояние прокси показываются раздельно: вы видите, что именно сломалось — сеть или авторизация.
+
+## Vector Memory
+
+Векторная память работает локально (по умолчанию) или через Upstash Vector. Перед сохранением проверьте две вещи:
+
+1. **Размерность индекса совпадает с embedding-моделью.** Размерность задаёт модель эмбеддингов; рассогласование даёт 4xx-ошибки при синхронизации.
+2. **Namespace** задан, если индекс используется несколькими агентами. Каждый агент читает/пишет только в своём namespace.
+
+После изменения настроек откройте [Memory](10-advanced-features.md#memory) и нажмите **Sync**, чтобы залить эмбеддинги в новый индекс.
+
+## Heartbeat
+
+Heartbeat запускает чек-лист `HEARTBEAT.md` через равные интервалы. Настройки:
+
+- Переключатель **Enable**.
+- **Interval** в минутах.
+- **Prompt source** — `HEARTBEAT.md` (по умолчанию) или произвольный файл-промпт.
+- Кнопка **Test** — запустить один heartbeat прямо сейчас и стримить результат на страницу.
+
+> ℹ️ **Heartbeat в паре с [Автономным режимом](03-autonomous-mode.md).** Heartbeat хорош для периодических проверок (глубина очереди, alerts), Autonomous Mode — для целеустремлённой работы.
+
+## TON Proxy
+
+Прокси для `.ton`-сайтов позволяет агенту получать ресурсы с доменов `.ton`. Настройки:
+
+- **Address** и **port**.
+- Индикатор **Status** — зелёный при доступности.
+
+Используется веб-инструментами при работе с `.ton`-URL.
+
+## Backup (Export and Import)
+
+Вкладка Backup делает снимок:
+
+- Полной конфигурации (структура `config.yaml`).
+- Определений хуков ([Hooks](09-hooks.md)).
+- Состояния enable/scope для инструментов ([Tools](04-tools.md)).
+- Файлов промптов Soul ([Редактор Soul](05-soul-editor.md)).
+
+> ⚠️ **Делайте Export перед любой крупной правкой.** Import перезаписывает хуки, промпты и настройки инструментов — это всё может ощутимо изменить поведение агента. Импортируйте только из доверенных снимков, в идеале — собственных.
+
+## Когда нужен restart
+
+Часть настроек применяется горячо:
+
+- Поля Telegram-политик (DM/group, allowlists, admin IDs, mentions).
+- Состояние enable/scope инструментов (живёт на странице [Tools](04-tools.md) и так).
+- Хуки (страница [Hooks](09-hooks.md)).
+- Интервал и промпт heartbeat.
+
+Другие требуют перезапуска агента:
+
+- Провайдер / модель / API key.
+- Тип Telegram-транспорта (bot vs personal).
+- Смена провайдера векторной памяти.
+- Порт WebUI.
+- Набор MCP-серверов.
+
+Поля, требующие перезапуска, помечены маленькой иконкой. Кнопки управления агентом внизу бокового меню перезапускают runtime «чисто» — Telegram-сессия и поставленные в очередь задачи переживают перезапуск.

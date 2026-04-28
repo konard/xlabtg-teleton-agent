@@ -1,73 +1,146 @@
 # FAQ и лучшие практики
 
-## Скриншоты
+Здесь — самые частые вопросы операторов и привычки, которые на практике окупаются в продакшене.
 
 ![Adaptive prompting](../assets/screenshots/ru/adaptive-prompting-soul.png)
-![Memory prioritization](../assets/screenshots/ru/memory-prioritization.png)
-![Audit trail](../assets/screenshots/ru/audit-trail-security-page.png)
 
 ## FAQ
 
-### Выбирать user mode или bot mode?
+### Выбирать режим пользователя или бота?
 
-User mode нужен для полного Telegram account access, dialogs, history, media и advanced Telegram features. Bot mode подходит, когда важнее lower account risk и simpler deployment.
+**Режим пользователя** нужен, когда требуется полный доступ к аккаунту Telegram — диалоги, история, медиа, продвинутые фичи (вступление в группы по invite, чтение истории каналов, отправка стикеров от имени пользователя). Это единственный способ заставить агента участвовать в DM, инициированных другими.
 
-### Почему требуется `telegram.admin_ids`?
+**Режим бота** — когда важнее меньший риск для аккаунта и простой деплой. У ботов чистая модель прав, их может добавить кто угодно, и они не читают сообщения, в которых к ним не обратились. Бот проще масштабируется по чатам.
 
-Autonomous actions должны быть привязаны к реальному administrator. Без admin IDs autonomous manager и heartbeat не могут безопасно отправлять escalations или выполнять admin-only tool calls.
+Можно запустить оба сразу через страницу [Agents](10-advanced-features.md#agents): personal-агент для опытных пользователей и отдельного бота для публичных групп.
+
+### Почему обязателен `telegram.admin_ids`?
+
+Автономные действия должны быть привязаны к реальному администратору. Без admin IDs:
+
+- Автономный планировщик отказывается стартовать.
+- Heartbeat не может доставлять эскалации.
+- Согласования в [Security Center](08-security.md) некому отправлять.
+- Инструменты со scope `admin-only` не могут вызываться.
+
+Admin IDs — это **числовые** Telegram user IDs (не username). Задаются в [Configuration → Telegram](11-settings.md).
 
 ### Можно ли открыть WebUI в интернет?
 
-Не открывайте напрямую. Держите WebUI на localhost или используйте hardened reverse proxy, TLS, strong auth, IP controls и monitoring.
+**Не открывайте напрямую.** Привязывайте WebUI к `localhost` и выходите на него через SSH-туннель, VPN или закалённый reverse proxy. Если без публичного reverse proxy не обойтись:
 
-### Сколько tools включать?
+- **TLS обязателен.**
+- На уровне прокси — **сильная аутентификация** (mTLS, Cloudflare Access, OAuth-прокси).
+- В [Security Center → Settings](08-security.md) задайте **IP allowlist** только для IP операторов.
+- Регулярно ротируйте токен входа в WebUI.
+- Следите за audit trail и метриками rate-limit.
 
-Включайте только tools, которые агенту реально нужны. Tool RAG помогает передавать модели релевантные инструменты, но dangerous tools все равно нужно ограничивать scope и Security Center policies.
+В Security Center есть rate-limit и IP allowlist, но это «глубокая защита» — она не заменяет защиту на уровне сети.
 
-### Как контролировать cost?
+### Сколько инструментов включать?
 
-Задавайте разумные iteration limits, используйте дешевый utility model, следите за Analytics, держите cache включенным и pause looping autonomous tasks.
+Только те, что нужны прямо сейчас. В установке по умолчанию почти всё **выключено** не зря. Стратегии:
+
+- **Tool RAG** ([Configuration → Tool RAG](11-settings.md)) — на каждом ходе подмешивает только релевантные инструменты, LLM не отвлекается, промпт остаётся коротким.
+- **Scope** ([Tools](04-tools.md)) — опасные инструменты ограничивайте до `admin-only`.
+- **Политики** ([Security Center](08-security.md)) — для самых рисковых требуйте подтверждение.
+
+### Как контролировать стоимость?
+
+В порядке убывания эффекта:
+
+1. Задавайте **token budget** автономным задачам; цикл остановится на границе.
+2. Для парсинга, классификации, суммаризации используйте **utility-модель** ([Configuration → LLM](11-settings.md)); мощную модель оставьте для финального ответа.
+3. Держите **cache** включённым и следите за hit rate на [Dashboard](02-dashboard.md).
+4. Зацикленные автономные задачи **paused** сразу, как только Analytics поднимет флаг.
+5. Снижайте **iteration limit** автономных задач до тех пор, пока не увидите измеримое изменение success rate.
+6. В [Analytics](06-analytics.md) смотрите **Cost by tool** и отключайте инструменты, которые регулярно «съедают» бюджет.
 
 ### Куда писать долгосрочные инструкции?
 
-Используйте Soul Editor для behavior и policy instructions. Используйте Memory для factual long-term context. Используйте Configuration для settings. Не прячьте settings или secrets в prompts.
+| Что нужно | Куда писать |
+| --- | --- |
+| Поведение, тон, отказы | [Редактор Soul](05-soul-editor.md) (`SOUL.md`, `SECURITY.md`, `STRATEGY.md`). |
+| Долгий фактический контекст | [Memory](10-advanced-features.md#memory) — pin факт. |
+| Настройки (провайдер, порты, ключи) | [Configuration](11-settings.md). |
+| Периодический чек-лист | `HEARTBEAT.md` плюс [Configuration → Heartbeat](11-settings.md). |
+| Жёсткая политика («перевод TON только с подтверждения») | [Security Center → Policies](08-security.md). |
+
+**Не прячьте** настройки и секреты в промптах; их место — в структурированных поверхностях. Промпт — мягкий слой; конфигурация и политики — жёсткий.
+
+### В чём разница между Workflow и Pipeline?
+
+**Workflow** — один триггер плюс цепочка действий; типичная быстрая автоматизация в духе «каждое утро в 9:00 публикуй дайджест в Telegram». Workflow линейный.
+
+**Pipeline** — DAG с типизированными шагами, ретраями, ветвлением и тайм-аутами на шаг; подходит для повторяющихся research/reporting-цепочек, где шаги зависят друг от друга и могут разветвляться.
+
+Workflow — для **простых триггеров**, Pipeline — для **сложной оркестрации**. Обе живут в [Продвинутых возможностях](10-advanced-features.md).
+
+### Моя автономная задача эскалировалась. Что дальше?
+
+Событие `escalate` в журнале значит, что агент сам поставил себя на паузу и ждёт человеческого подтверждения. Откройте [Security Center → Approvals](08-security.md), прочитайте запрошенные аргументы и причину, и решите:
+
+- **Approve**, если операция — то, что нужно, а политика просто слишком жёсткая. Подумайте, не ослабить ли политику, если она срабатывает часто.
+- **Deny**, если операция неверная — задача завершится `failed`. Посмотрите предыдущее событие `plan`, чтобы понять намерение агента, и затем уточните цель.
+
+После разрешения сохраните версию в [Редакторе Soul](05-soul-editor.md) с описанием извлечённого урока.
+
+### Как переехать на новую машину?
+
+1. На исходной машине [Configuration → Backup](11-settings.md) → **Export**.
+2. На целевой машине установите агент (`npm install -g teleton@latest`, запустите `teleton setup --ui` и пройдите мастер).
+3. На целевой [Configuration → Backup](11-settings.md) → **Import** файла из шага 1.
+4. Заново создайте Telegram-сессию на целевой (экспорт не несёт credentials).
+5. Заново заведите секреты плагинов в [Security Center → Secrets](08-security.md).
+6. Запустите [Memory → Sync](10-advanced-features.md#memory), чтобы залить эмбеддинги в новый векторный стор.
 
 ## Лучшие практики
 
-### Security
+### Безопасность
 
-- Используйте отдельный Telegram account.
-- Держите wallet tools approval-gated.
-- Держите exec off, пока он явно не нужен.
-- Rotate secrets после случайного раскрытия.
-- Проверяйте audit logs после каждого production change.
+- Для personal-режима используйте **отдельный Telegram-аккаунт**. Никогда не подключайте основной.
+- Кошельковые инструменты (`ton_send`, `jetton_send`, `nft_transfer`) держите **за подтверждением** в [Security Center](08-security.md).
+- `exec` — **выключен**, если только конкретный сценарий оператора не требует обратного.
+- При случайном раскрытии секрета (скриншот, вставка в чат, коммит в репозиторий) — **ротируйте секрет**. Это в [Security Center → Secrets](08-security.md).
+- **Просматривайте audit logs** после каждого production-изменения. Цена маленькая; ценность, когда что-то идёт не так, — большая.
 
-### Operations
+### Эксплуатация
 
-- Начинайте день с Dashboard.
-- Проверяйте pending approvals перед autonomous work.
-- Держите один focused dashboard для ежедневной работы.
-- Используйте Workflows и Pipelines для repeatable procedures.
-- Export config перед major changes.
+- **Начинайте день с Dashboard.** Статус, баннеры, потом беглый взгляд на Tokens / Tools / Activity.
+- **Pending approvals** разбирайте до возобновления автономных задач.
+- **Держите один сфокусированный дашборд** для повседневки; диагностический — отдельным.
+- Повторяющиеся процедуры превращайте в **Workflows** и **Pipelines** — написал один раз, работает стабильно.
+- **Export configuration** перед любой крупной правкой. Import — деструктивная операция.
 
-### Prompt management
+### Управление промптами
 
-- Сохраняйте prompt versions перед edits.
-- Используйте A/B experiments для tone changes.
-- Делайте security prompts конкретными.
-- Не дублируйте configuration в prompt instructions.
+- **Сохраняйте версию** до правки промптов. Комментарий версии становится таймлайном инцидента.
+- Для смены тона используйте **A/B-эксперименты**. Promote только после стабильной разницы рейтингов.
+- **Security-промпты должны быть конкретными.** «Refuse seed phrases» enforceable; «be careful with funds» — нет.
+- **Не дублируйте конфигурацию в промптах.** Если поведение задано в [Configuration](11-settings.md), промпт ему не должен противоречить.
+- Относитесь к `MEMORY.md` как к **инструкции, как пользоваться** памятью, а не как к самой памяти.
 
-### Memory
+### Память
 
-- Pin durable facts.
-- Периодически clean stale memory.
-- Sync vectors после изменения embedding или Upstash settings.
-- Используйте Sessions для recent context и Memory для durable knowledge.
+![Приоритизация памяти](../assets/screenshots/ru/memory-prioritization.png)
 
-### Autonomous tasks
+- **Pin** долгие факты. Пинаемые воспоминания переживают cleanup.
+- **Чистите** память во вкладке Priority время от времени. Старые воспоминания всё равно стареют по TTL, но проактивная чистка держит индекс маленьким.
+- **Sync vectors** после смены embedding-модели или конфигурации Upstash.
+- Используйте **Sessions** для свежего разговорного контекста и **Memory** для долгого знания.
 
-- Пишите measurable success criteria.
-- Задавайте failure conditions.
-- Ограничивайте risky tools.
-- Используйте pause, а не delete, когда нужен дополнительный context.
-- Проверяйте checkpoints перед restart failed work.
+### Автономные задачи
+
+- **Пишите измеримые success criteria.** «Report when count > 3» лучше «monitor pools».
+- **Указывайте failure conditions.** Без них цикл будет ретраить до конца бюджета.
+- **Ограничивайте рисковые инструменты.** Разрешайте только то, что цели явно нужно.
+- **Pause вместо Delete**, если задаче не хватает контекста. Чекпоинт сохранится.
+- **Чекпоинты — до restart.** Иногда сбой лечится сменой политики, а не цели.
+
+### Аудит и инциденты
+
+![Журнал аудита](../assets/screenshots/ru/audit-trail-security-page.png)
+
+- После любой смены инструмента, политики, плагина или секрета **проверьте**, что событие записалось в audit trail.
+- Запускайте **Verify chain** еженедельно. Сломанная hash-цепочка — серьёзный инцидент.
+- Стройте **таймлайны инцидента** из экспортов [Sessions](07-sessions.md) и [Security Center](08-security.md) — они восстанавливают события куда лучше памяти.

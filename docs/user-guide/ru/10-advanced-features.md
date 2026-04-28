@@ -1,54 +1,274 @@
-# Продвинутые функции
+# Продвинутые возможности
 
-Этот раздел покрывает WebUI области, которые расширяют core dashboard: multi-agent operations, memory management, workflow automation, integrations и self-improvement.
-
-## Скриншоты
-
-![Agent network page](../assets/screenshots/ru/agent-network-page.png)
-![Memory graph](../assets/screenshots/ru/memory-graph.png)
-![Pipelines page](../assets/screenshots/ru/pipelines-page.png)
-![Integrations page](../assets/screenshots/ru/integrations-page.png)
-
-## Multi-Agent Network
-
-![Multi-agent network](../assets/diagrams/multi-agent-network.svg)
-
-Используйте `Network`, чтобы регистрировать remote agents, просматривать topology, trust levels, block peers, delegate tasks и message logs. Capabilities и trust level должны определять delegation decisions.
+Этот раздел — справочник по всем страницам бокового меню, у которых нет отдельной главы: Agents, Plugins, Memory, Workspace, Tasks, Workflows, Pipelines, Events, MCP, Integrations, Network, Feedback, Self-Improve. Для каждой страницы — компактная справка.
 
 ## Agents
 
-Страница `Agents` управляет primary и managed agents. Она покрывает archetypes, transport mode, bot token validation, personal account authentication, resource policy, messaging policy, logs и messages.
+Страница Agents управляет основным агентом и **managed agents** — клонами со своей персоной, моделью, Telegram-сессией и политикой ресурсов. Применяется для мультиаккаунтных операций или специализированных персонажей.
 
-## Memory
+В верхней части — таблица, ниже — форма создания.
 
-Memory включает source files, chunks, priority scores, graph relationships, vector sync, cleanup и pins. Graph view помогает искать связи, priority view - решать, что pin или prune.
+| Колонка | Что значит |
+| --- | --- |
+| **Name** | Отображаемое имя. |
+| **Status** | `running`, `stopped`, `crashed`. |
+| **Uptime** | Время с последнего перезапуска. |
+| **Provider / model** | Активная связка LLM. |
+| **Mode** | `bot` или `personal`. |
+| **Actions** | Start / Stop / Restart / Logs / Edit / Clone / Delete. |
 
-## Workspace
+Форма создания содержит более 30 полей, сгруппированных в:
 
-Workspace - file browser sandboxed agent workspace. Используйте его для reports, generated files, task artifacts и safe manual edits. Не храните secrets в workspace files.
+- **Identity** — имя, archetype (research / support / trader / custom), аватар.
+- **Transport** — `personal` (API ID + API hash + телефон) или `bot` (token + username); форма проверяет bot token прямо в поле и ставит зелёную галочку, если он соответствует реальному боту.
+- **Resource policy** — суточный бюджет токенов, лимит параллельных задач, лимит запросов на чат.
+- **Messaging policy** — DM-политика, групповая политика, требование mention, allowlist.
+- **Memory policy** — отдельный векторный стор или общий с основным агентом.
+- **Crash recovery** — автоперезапуск, лимит перезапусков в час, чат для эскалации.
 
-## Workflows
+![Валидация bot token](../assets/screenshots/ru/agents-bot-token-validation.png)
 
-Workflows автоматизируют cron, event или webhook-triggered actions. Action types включают send Telegram messages, call APIs и set variables.
+Для personal-агента после сохранения открывается панель аутентификации:
 
-## Pipelines
+![Панель аутентификации личного аккаунта](../assets/screenshots/ru/agents-personal-auth-panel.png)
+![Аутентификация через QR](../assets/screenshots/ru/agents-personal-auth-qr-panel.png)
 
-Pipelines выполняют multi-step processes с timeouts, retries, typed steps, run history, cancellation и detail views. Они хорошо подходят для repeatable research или reporting chains.
-
-## Events and Webhooks
-
-![Events and webhooks](../assets/diagrams/webhooks-event-bus.svg)
-
-Events записывает internal activity. Webhooks доставляют выбранные event types на external URLs с retry tracking. Для inbound webhook triggers используйте signed secrets.
-
-## MCP Servers
-
-MCP подключает external tool servers через stdio, SSE или Streamable HTTP. Внимательно задавайте package, arguments, scope и environment variables.
+QR или код по телефону — тот же поток, что и в мастере установки. **Clone** существующего агента наследует его промпты, хуки и scope инструментов.
 
 ## Plugins
 
-Plugins добавляют tools через manifests и Plugin SDK. Перед включением plugin в production проверьте source, permissions, secrets и tool scopes.
+Страница Plugins разделена на две вкладки:
 
-## Self-Improvement
+- **Installed** — активные плагины. В строке: имя плагина, версия, бейдж источника (`official` / `community` / `custom`), автор с верификационным значком из GitHub и количество инструментов от плагина.
+- **Marketplace** — каталог плагинов из реестра с поиском.
 
-Self-Improvement анализирует repositories, documentation, plugins и tasks. Держите automation conservative и используйте pull requests для каждого generated change.
+По клику на плагин открывается модальное окно с тремя вкладками:
+
+- **Overview** — описание, запрашиваемые разрешения, поддерживаемые действия, URL источника.
+- **Tools** — все инструменты, которые регистрирует плагин (видны и на странице [Tools](04-tools.md)).
+- **Secrets** — секреты, которые требуются плагину; задавайте их в [Security Center → Secrets](08-security.md).
+
+> ⚠️ **Перед установкой.** Прочитайте **Overview → requested_permissions**. Плагин, просящий `wallet:transfer` или `exec:run`, ставьте только если доверяете автору. Верифицированные авторы — зелёная галочка, неверифицированные — жёлтый кружок.
+
+## Memory
+
+Страница Memory управляет всем, что агент сохраняет между сессиями. Три вкладки:
+
+| Вкладка | Назначение |
+| --- | --- |
+| **Sources** | Файлы и заметки, которые проиндексированы. Раскрытие источника показывает чанки, статус эмбеддингов и priority score. |
+| **Graph** | Визуализация графа знаний — связи между сущностями. Используйте для discovery: «что у нас связывает X и Y?» |
+| **Priority** | Очистка по принципу recency × access. Pin важного, prune нижней части списка. |
+
+Сверху страницы:
+
+- **Sync** — пушит эмбеддинги в настроенный векторный стор ([Configuration → Vector Memory](11-settings.md)) и сообщает новый размер индекса и статус.
+- **Add source** — загрузить файл или вставить URL.
+- **Search** — семантический поиск по всем источникам; результаты ведут на исходный source.
+
+![Граф памяти](../assets/screenshots/ru/memory-graph.png)
+![Приоритизация памяти](../assets/screenshots/ru/memory-prioritization.png)
+![Статус векторной синхронизации](../assets/screenshots/ru/memory-sync-vector.png)
+
+> ℹ️ **Закрепляйте долгие факты, обрезайте эфемерные.** Запинённые воспоминания переживают cleanup. Не запинённые стареют по TTL из настроек.
+
+## Workspace
+
+Страница Workspace — файловый браузер «песочницы», к которой у агента есть чтение/запись. Применения:
+
+- Отчёты, которые генерирует агент (`dedust-pools-2025-04-28.md`).
+- Артефакты задач (скачанный JSON, скриншоты).
+- Безопасные ручные правки файлов, которые читает агент.
+
+Раскладка — привычный двухпанельный браузер:
+
+- **Дерево** слева, breadcrumbs сверху.
+- **Редактор** справа: подсветка синтаксиса (CodeMirror) для текста, превью изображения для картинок, индикатор *binary file* для остального.
+- **Файловые операции** — New file, New folder, Rename, Delete, Download.
+- **Stats panel** — общее число файлов, общий объём, дата последнего изменения.
+
+> ⚠️ **Не храните в workspace секреты.** Всё в нём доступно инструментам. Секретам место в [Security Center → Secrets](08-security.md).
+
+## Tasks
+
+Страница Tasks — очередь и монитор краткоживущих задач агента (в отличие от долгих целей в [Автономном режиме](03-autonomous-mode.md)). Колонки:
+
+| Колонка | Что значит |
+| --- | --- |
+| **ID** | Идентификатор задачи. |
+| **Title** | Задано оператором или сгенерировано автоматически. |
+| **Status** | `pending` (жёлтый), `running` (циан), `done` (зелёный), `failed` (красный), `cancelled` (серый). |
+| **Priority** | 1–10, отрисовывается точками. |
+| **Created / Started / Completed** | Метки времени. |
+
+По клику на задачу открывается панель деталей: tool calls по порядку, выполненные коррекции, оценки feedback, полное тело результата и трассировка ошибки.
+
+![Контекст делегирования задачи](../assets/screenshots/ru/task-delegation-ui.png)
+
+Tasks нужны, чтобы:
+
+- Понять, почему ответ агента долго формировался.
+- Найти конкретный tool call постфактум (фильтр `failed` для разбора).
+- Отменить «зависшую» задачу, пока она не съела бюджет.
+
+## Workflows
+
+Страница Workflows — автоматизация по cron / событию / вебхуку. Таблица:
+
+| Колонка | Что значит |
+| --- | --- |
+| **Name** | Задано оператором. |
+| **Status** | `enabled`, `disabled`, `error`. |
+| **Trigger** | Cron-выражение, имя события или URL вебхука. |
+| **Last run** | Время + статус. |
+| **Next run** | Для cron-триггеров. |
+
+Диалог редактирования содержит три секции:
+
+- **Trigger editor** — выбор `Cron`, `Webhook` или `Event`. Для cron — выражение; диалог парсит его и показывает три ближайших срабатывания. Для webhook — генерирует входящий URL и signing secret.
+- **Actions editor** — цепочка из одного или нескольких действий: `send_message` (Telegram), `call_api` (HTTP), `set_variable` (переменная в рамках workflow). Действия могут ссылаться на переменные предыдущих шагов.
+- **Test trigger** — ручной запуск с синтетическим входом.
+
+**Run history** — список запусков со статусом, длительностью, ошибкой и ссылкой на запись в [Events](#events).
+
+> ℹ️ **`call_api` имеет жёсткий тайм-аут** (по умолчанию 10 секунд, настраиваемый), чтобы зависший endpoint не блокировал очередь.
+
+## Pipelines
+
+![Страница Pipelines](../assets/screenshots/ru/pipelines-page.png)
+
+Pipelines — DAG-оркестрация многошаговых процессов; идеально подходит для повторяющихся research- или reporting-цепочек.
+
+Сверху — список пайплайнов, ниже — **редактор DAG**:
+
+- **Nodes** — task, tool, script или delegated-agent.
+- **Edges** — соединяют выходы одного узла со входами следующего; поддерживаются ветвление и условные ветки.
+- **Per-step settings** — timeout, retry count, retry backoff, on-failure action.
+- **Run history** — последние 50 запусков с временем старта, длительностью, статусом и метриками по узлам.
+
+Pipelines строже, чем Workflows: у каждого шага типизированы входы, общий run timeout ограничивает **весь** запуск (уже выполняющиеся шаги прерываются по тайм-ауту), а delegated-agent шаги ждут реального результата, а не «успешной отправки».
+
+## Events
+
+Страница Events — единый лог всех внутренних событий и управление вебхуками.
+
+**Event log** — хронологический список с фильтром по типу, превью полезной нагрузки и временем. Раскрытие строки — полная нагрузка. Распространённые типы: `message_received`, `message_replied`, `tool_call`, `tool_result`, `task_started`, `task_completed`, `policy_decision`, `webhook_delivered`, `agent_restart`.
+
+**Webhooks** — регистрация исходящих вебхуков:
+
+- **URL** — назначение.
+- **Events** — какие типы доставлять.
+- **Secret** — для HMAC-подписи.
+- **Retries** — число попыток и стратегия отступа.
+
+У каждого зарегистрированного вебхука — **delivery history** с цветами: `delivered` (зелёный), `failed` (красный), `retrying` (жёлтый).
+
+![События и вебхуки](../assets/diagrams/webhooks-event-bus.svg)
+
+> ⚠️ **Для входящих вебхуков используйте signed secrets.** Webhook-триггеры workflow принимают внешние POST; перед доверием полезной нагрузке проверяйте подпись.
+
+## MCP
+
+Страница MCP подключает внешние **Model Context Protocol** серверы — поставщиков языка или инструментов, доступных агенту. У каждого MCP-сервера:
+
+- **Name** и **description**.
+- **Transport** — `stdio` (запуск локального процесса), `sse` или `streamable_http`.
+- **Package / URL** — npm-пакет, путь команды или HTTP-эндпоинт.
+- **Args** — аргументы командной строки.
+- **Env** — переменные окружения (для секретов используйте [Security Center → Secrets](08-security.md)).
+- **Status** — `connected`, `error`, с последней ошибкой.
+- **Capabilities** — инструменты, которые отдает сервер; те же переключатели enable/scope, что и у встроенных.
+
+Форма **Add server** проверяет соединение прямо в форме. Удаление сервера через корзину — его инструменты исчезают из каталога.
+
+## Integrations
+
+![Страница Integrations](../assets/screenshots/ru/integrations-page.png)
+
+Страница Integrations управляет подключениями к внешним сервисам. Два уровня:
+
+- **Catalogue** — готовые шаблоны (GitHub, Notion, Slack, OpenWeather, custom HTTP и т. п.).
+- **Installed** — активные интеграции с индикаторами статуса.
+
+Каждая интеграция поддерживает несколько типов аутентификации:
+
+- **API Key** — заголовок или query-параметр.
+- **OAuth2** — полноценный обмен code/token.
+- **JWT** — подписанные claims.
+- **Basic** — username/password.
+- **Custom Headers** — всё остальное.
+- **None** — открытые API.
+
+В настройках каждой интеграции: лимиты запросов, тайм-аут на маршрут и кнопка **Health check**, которая дёргает заведомо безопасный endpoint, чтобы убедиться в актуальности credentials.
+
+## Network
+
+![Страница сети агентов](../assets/screenshots/ru/agent-network-page.png)
+![Мультиагентная сеть](../assets/diagrams/multi-agent-network.svg)
+![Контекст делегирования задач](../assets/screenshots/ru/task-delegation-ui.png)
+
+Страница Network — мультиагентные операции.
+
+**Stats band** — число активных агентов, глубина очереди, средняя задержка ингресса, аптайм.
+
+Таблица **remote agents**:
+
+| Колонка | Что значит |
+| --- | --- |
+| **Name** | Задано оператором. |
+| **Status** | `online`, `offline`, `degraded`. |
+| **Trust** | `untrusted`, `delegate`, `peer`, `admin`. |
+| **Capabilities** | Инструменты, которые отдаёт удалённый агент. |
+| **Last seen** | Время. |
+
+**Message queue** — входящие сообщения, ждущие диспетчеризации, и журнал недавних обменов.
+
+**Add / Edit / Remove** — регистрация нового удалённого агента, изменение trust level, отзыв пира.
+
+> ⚠️ **Ингресс защищён.** Агент отклоняет сообщения, у которых получатель не совпадает с локальным идентификатором, переигранные подписанные сообщения и сообщения от отправителей, не из allowlist. Решения о делегировании принимайте по trust level и capabilities; никогда не делегируйте `untrusted`.
+
+## Feedback
+
+![Дашборд обучения по обратной связи](../assets/screenshots/ru/feedback-learning-dashboard.png)
+
+Страница Feedback — операторская сторона сбора обратной связи.
+
+**Шапка-дашборд** — общее количество, средний рейтинг, доля положительных/отрицательных, график во времени за выбранный период.
+
+**Preference profile** — что система выучила про пользователя(ей), с которыми работает оператор: коммуникативный стиль (formal / friendly / concise), предпочтения по тону, уровень детализации. Эти профили — вход для [Soul Editor → Adaptive prompting](05-soul-editor.md).
+
+**Список feedback** — каждая запись: рейтинг, свободный текст, классификация тональности, сообщение, вызвавшее оценку, и время.
+
+Используйте Feedback вместе с [Analytics → Anomaly](06-analytics.md) и видом экспериментов в [Редакторе Soul](05-soul-editor.md): устойчивое падение среднего рейтинга после изменения — сигнал к откату.
+
+## Self-Improve
+
+Страница Self-Improve — цикл улучшения качества кода и процесса самим агентом. Анализ покрывает:
+
+- Репозиторий агента (коммиты, качество кода, покрытие тестами).
+- Свежесть документации.
+- Установленные плагины (версии, security advisories).
+- Паттерны недавних задач (повторяющиеся ошибки, медленные инструменты).
+
+У каждой находки — **severity badge** (`critical`, `high`, `medium`, `low`) и структурированный блок: пути к файлам, номера строк, предложение по исправлению, blast radius.
+
+В настройках можно:
+
+- Выбрать **target repository** (агентский или другой проект).
+- Задать **scan scope** (пути, типы файлов).
+- Настроить **automation**: частоту сканирования, какие типы находок переходят в авто-сгенерированную задачу на странице [Tasks](#tasks), какие паттерны можно автоисправлять.
+
+> ⚠️ **Держите автоматизацию консервативной.** Авто-сгенерированные задачи должны открывать pull request, а не сливаться напрямую. Каждый diff проходит ревью перед мерджем.
+
+## Сценарий перекрёстных проверок
+
+Когда меняете что-то на одной из страниц, проверьте соседние:
+
+| Изменили… | Проверьте… |
+| --- | --- |
+| **Agents** (новый managed agent) | scope в **Tools**, маршрутизацию в **Hooks**, политику **Memory**. |
+| **Plugins** (установка) | **Tools** (новые инструменты), **Security Center → Secrets**, **Audit Trail** на `plugin_install`. |
+| **MCP** (новый сервер) | **Tools** (capabilities сервера), **Configuration → MCP** на enable. |
+| **Workflows / Pipelines** | **Events** на новые типы событий, **Integrations** на адресатов. |
+| **Network** (новый remote) | матрицу делегирования в **Tools**, кросс-агентские правила в **Security Center → Policies**. |
+| **Self-Improve** | очередь в **Tasks** на авто-сгенерированные задачи, **Audit Trail** на новые tool calls. |
