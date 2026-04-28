@@ -1,63 +1,100 @@
 # Устранение неполадок
 
-Используйте этот раздел, когда WebUI, agent runtime, Telegram connection, tools, memory или autonomous tasks работают не так, как ожидается.
+Открывайте этот раздел, когда WebUI, runtime агента, Telegram-подключение, инструменты, память или автономные задачи ведут себя не так, как ожидается. Каждый блок: симптом → наиболее вероятная причина → пошаговое восстановление.
 
-## Скриншоты
+> ℹ️ **Сначала проверяйте Dashboard.** Шапка статуса и health-виджеты ловят большинство проблем за полминуты.
 
-![MTProto proxy status](../assets/screenshots/ru/mtproto-proxy-status.png)
-![Vector memory configuration](../assets/screenshots/ru/vector-memory-config.png)
-![Zero-trust mobile view](../assets/screenshots/ru/zero-trust-security-mobile.png)
+## Не пускает в WebUI
 
-## WebUI login fails
+**Симптомы**: токен отвергается, появляется баннер *Invalid token*, страница перебрасывает обратно на форму входа.
 
-- Проверьте, что используете current token или startup exchange link.
-- Перезапустите `teleton start --webui` и откройте напечатанный local URL.
-- Проверьте, что browser не блокирует local cookies.
-- Если используете reverse proxy, проверьте cookies и убедитесь, что WebUI не открыт публично.
+1. Убедитесь, что используете **актуальный** токен. Запустите `teleton start --webui` ещё раз — терминал напомнит сохранённый токен либо, если вы его пересоздавали, выдаст свежую startup exchange ссылку.
+2. Откройте напечатанный local URL. Фрагмент после `#` несёт одноразовый exchange nonce и пропускает поле ввода токена.
+3. Проверьте, что браузер **не блокирует локальные cookies**. Расширения-блокировщики и строгий «трекинг» иногда выкидывают сессионную cookie WebUI.
+4. Если стоите за reverse proxy, убедитесь, что он пропускает заголовки `Set-Cookie` и не срезает префикс `__Host-`.
+5. После трёх неудачных попыток включается rate-limit WebUI; подождите минуту или ротируйте токен в [Security Center → Settings](08-security.md).
 
-## Agent does not respond
+## Агент не отвечает в Telegram
 
-- Проверьте sidebar state и запустите agent, если он stopped.
-- Посмотрите Dashboard health checks.
-- Проверьте Telegram session и policies.
-- Убедитесь, что user или chat разрешен DM/group policy.
-- Проверьте recent logs и Sessions.
+**Симптомы**: сообщения доходят до Telegram, но агент молчит.
 
-## Autonomous Mode does not start
+1. Проверьте **состояние агента** внизу бокового меню. Если `stopped` — нажмите *Start*.
+2. Откройте **Dashboard** и прочитайте health-check виджеты. Красный индикатор Telegram подскажет следующий шаг.
+3. Убедитесь, что **Telegram-сессия жива** — откройте [Configuration → Telegram](11-settings.md) и проверьте, что бот/пользователь залогинен.
+4. Убедитесь, что чат разрешён политиками **DM / group / mention** в [Configuration → Telegram](11-settings.md).
+5. Откройте [Сессии (Sessions)](07-sessions.md) и найдите чат. Если сообщение пришло — агент его обрабатывает; если нет — проблема на стороне Telegram (прокси или авторизация).
 
-- Убедитесь, что `telegram.admin_ids` содержит минимум один ID.
-- Проверьте Security Center на denied tools или pending approvals.
-- Проверьте, что task имеет достаточный iteration и duration budget.
-- Явно задайте restricted tools.
+## Автономные задачи зависают в `pending`
 
-## Telegram auth problems
+**Симптомы**: задачи на странице Autonomous никогда не выходят из `pending`.
 
-- Проверьте API ID, API hash, phone number и code.
-- Если включен 2FA, введите password в wizard.
-- Если сеть блокирует Telegram, настройте MTProto proxy.
-- Для bot mode проверьте bot token и username.
+1. Проверьте, что **`telegram.admin_ids`** содержит хотя бы один числовой ID. Пустой список admin блокирует автономный планировщик.
+2. Откройте [Security Center → Validation Log](08-security.md) и поищите решения `denied` по инструментам, которые нужны задаче.
+3. Проверьте у задачи **iteration limit** и **duration limit** — слишком маленькие значения могут не дать циклу запуститься.
+4. Высокорисковые инструменты, которые задаче не нужны, перенесите в **restricted tools**; некоторые задачи fail-fast’ятся, если на ход полагается «слишком разрешающий» инструмент.
+5. Глобальный **переключатель Autonomous** в шапке страницы [Autonomous](03-autonomous-mode.md) должен быть **on**.
 
-## Tools fail
+## Не проходит авторизация Telegram
 
-- Откройте Tools и проверьте enabled state и scope.
-- Используйте tool details для просмотра parameters и recent failures.
-- Проверьте Security Center validation logs.
-- Для plugin tools проверьте plugin secrets и dependencies.
+![Статус MTProto-прокси](../assets/screenshots/ru/mtproto-proxy-status.png)
 
-## Memory or vector sync fails
+**Симптомы**: мастер установки или [Configuration → Telegram](11-settings.md) сообщает `auth failed`, либо соединение рвётся вскоре после старта.
 
-- Проверьте, что локальные SQLite files доступны для записи.
-- Проверьте Upstash URL, token, namespace и vector dimension.
-- После исправления credentials запустите vector sync снова.
-- Pin important memories перед cleanup.
+1. **API ID / API hash / phone number / code** — перепроверьте каждое. Чаще всего ошибка — пропущенный `+` перед кодом страны.
+2. **Пароль 2FA** — если у аккаунта включён 2FA, вводите пароль в соответствующее поле мастера.
+3. **MTProto-прокси** — если сеть блокирует Telegram, настройте прокси в [Configuration → MTProto](11-settings.md). Поддерживаются и «голые» секреты, и формы `dd…`/`ee…` (fake-TLS).
+4. **Bot mode** — для бота проверьте **bot token** и **username**. Поле username принимает `@bot_name` или `bot_name`.
+5. После исправления credentials перезапустите runtime; Telegram-клиент перечитывает их только на старте.
 
-## Cost or latency spikes
+## Падают вызовы инструментов
 
-- Откройте Analytics и сравните token usage, tool usage и performance за 24 hours.
-- Проверьте, не зациклились ли autonomous tasks.
-- Уменьшите iteration limits или pause noisy tasks.
-- Используйте cache widgets для проверки hit rate.
+**Симптомы**: tool call возвращает `error` или `denied`, либо агент сообщает, что нет подходящего инструмента.
+
+1. Откройте [Tools](04-tools.md) и убедитесь, что инструмент **включён** и его **scope** соответствует чату, в котором он должен сработать.
+2. Раскройте инструмент и прочитайте **recent failures** — в ошибке обычно есть upstream-причина (rate limit, истёкший ключ, неверный аргумент).
+3. Откройте [Security Center → Validation Log](08-security.md) и найдите строку этого инструмента. `deny` — указывает на политику; `require_approval` — на очередь [Approvals](08-security.md).
+4. Для **plugin tools** откройте [Plugins](10-advanced-features.md#plugins) → плагин → вкладку **Secrets** и проверьте, что все требуемые секреты заданы.
+5. Если ограничение на стороне внешнего сервиса, снизьте частоту вызовов в автономной задаче или добавьте условие `time_window` в [Hooks](09-hooks.md).
+
+## Падает синхронизация памяти/векторов
+
+![Конфигурация векторной памяти](../assets/screenshots/ru/vector-memory-config.png)
+
+**Симптомы**: кнопка Sync на странице [Memory](10-advanced-features.md#memory) сообщает об ошибке, либо поиск по памяти не находит ничего.
+
+1. **Локальный режим**: убедитесь, что SQLite-файлы в runtime home доступны на запись пользователю агента.
+2. **Upstash**: проверьте URL, token и namespace в [Configuration → Vector Memory](11-settings.md).
+3. **Несовпадение размерности** — самая частая ошибка Upstash: размерность embedding-модели и индекса должна совпадать. После смены модели пересоздайте индекс.
+4. Когда credentials исправлены, нажмите **Sync** на странице Memory; страница покажет новый размер индекса и пер-документные ошибки.
+5. **Pin** важные воспоминания до любого cleanup — так они переживут шаг очистки.
+
+## Скачки стоимости и задержек
+
+**Симптомы**: виджет токенов на Dashboard показывает резкий рост, во вкладке Performance — регрессия.
+
+1. Откройте [Analytics](06-analytics.md) → **Tokens** и переключитесь на 24h. Найдите модель/сессию/автономную задачу, которая раздувает счёт.
+2. Откройте [Tasks](10-advanced-features.md#tasks) и проверьте, не **зациклилась** ли автономная задача (`running` много часов, итерации только растут).
+3. Снизьте **iteration limit** или поставьте «шумные» задачи на **pause** на странице [Autonomous](03-autonomous-mode.md).
+4. Откройте [Dashboard](02-dashboard.md) → виджет **Cache** и проверьте hit rate. Падение hit rate после смены модели обычно лечится очисткой кэша.
+5. Если регрессия началась после смены модели, в [Configuration → LLM](11-settings.md) переключите модель обратно и перепроверьте.
+
+## WebUI работает медленно
+
+**Симптомы**: страницы рендерятся секундами, индикатор поллинга не пропадает.
+
+1. Откройте DevTools → Network. Если медленно отвечают `/api/...`, узкое место — runtime агента, а не UI.
+2. Снизьте уровень **request logging** в [Configuration → Advanced](11-settings.md) — подробные логи замедляют runtime в dev-режиме.
+3. Перезапустите runtime через кнопки внизу бокового меню. Кэш и буферы Recharts сбросятся.
 
 ## Когда эскалировать
 
-Обращайтесь к maintainers с exact version, config area, reproduction steps, logs, screenshots и указанием affected области: Telegram, TON, memory, tools или только WebUI.
+К мейнтейнерам обращайтесь с:
+
+- Точной версией агента (видна внизу бокового меню).
+- Областью настроек, где вы находитесь (LLM, Telegram, MTProto, Memory и т. д.).
+- Шагами воспроизведения и входными данными.
+- Фрагментами логов (через [Dashboard](02-dashboard.md) → *Export logs*).
+- Скриншотами — желательно строкой аудита из [Security Center](08-security.md) и сообщением из [Сессии (Sessions)](07-sessions.md).
+- Указанием, что именно затронуто: только Telegram, только TON, только память, только инструменты или только WebUI.
+
+Issues — <https://github.com/xlabtg/teleton-agent/issues>.

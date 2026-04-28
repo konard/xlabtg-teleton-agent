@@ -1,53 +1,152 @@
-# Центр безопасности
+# Центр безопасности (Security Center)
 
-Security Center - центральное место для audit и policies. Используйте его для просмотра administrative mutations, zero-trust decisions, approval queues, validation logs, secrets и WebUI access controls.
+Security Center — центр аудита и политик WebUI. Это страница, которая отвечает на четыре вопроса: *кто что изменил?*, *какие вызовы инструментов разрешены, отклонены или эскалированы?*, *что ждёт согласования?* и *какие правила сейчас действуют?*.
 
-## Скриншоты
+![Журнал аудита](../assets/screenshots/ru/audit-trail-security-page.png)
 
-![Audit trail](../assets/screenshots/ru/audit-trail-security-page.png)
-![Zero-trust security page](../assets/screenshots/ru/zero-trust-security-page.png)
-![Zero-trust mobile view](../assets/screenshots/ru/zero-trust-security-mobile.png)
+## Структура страницы
+
+Сверху четыре вкладки:
+
+| Вкладка | Что показывает |
+| --- | --- |
+| **Audit Trail** | Хеш-сцепленный (hash-chained) append-only лог всех значимых событий. |
+| **Validation Log** | Решения по каждому вызову инструмента: allow / deny / require_approval, с указанием сработавшей политики. |
+| **Approvals** | Очередь оператора: вызовы, требующие согласования. |
+| **Settings** | Политики, секреты, тайм-аут сессии, IP allowlist, лимит запросов WebUI. |
+
+Над всем этим — баннер статуса с результатом проверки цепочки и количеством ожидающих согласований.
 
 ## Audit Trail
 
-Audit trail записывает важные events с timestamps, actors, actions, targets, payloads и chain data. Verification помогает найти broken hash chains, а chain view - посмотреть decision path вокруг одного event.
+![Страница zero-trust security](../assets/screenshots/ru/zero-trust-security-page.png)
 
-## Audit Log
+Audit trail — каноническая запись с хеш-цепочкой. У каждого события:
 
-Audit log фокусируется на WebUI administrative activity. Он отвечает на вопросы: кто изменил setting, установил plugin, изменил policy или approved sensitive operation.
+- **Timestamp** (UTC).
+- **Actor** — учётка оператора или `system`.
+- **Action** — типизированное действие: `agent_start`, `agent_stop`, `tool_toggle`, `tool_test`, `soul_edit`, `policy_change`, `plugin_install`, `secret_change`, `approval_grant`, `approval_deny`, `config_change` и др.
+- **Target** — имя инструмента, файл, plugin id и т. п.
+- **Payload** — JSON-снимок того, что изменилось.
+- **Chain hash** — хеш предыдущего события + текущего содержимого.
 
-## Zero-trust policies
+Над таблицей:
 
-Policies match по tool, module или parameter и возвращают одно из действий:
+- **Search** — текстовый поиск по actor, target и payload.
+- **Action filter** — мульти-селектор (например, только `policy_change` и `approval_grant`).
+- **Date range** — окно по датам.
+- **Verify chain** — пересчитывает хеши с начала. Зелёный значок — цепочка целостна; красный — запись подменена.
+- **Export** — выгрузка отфильтрованного диапазона в JSON для офлайн-анализа или отчёта об инциденте.
+
+Кликом по строке открывается **chain view** — текущая запись с предыдущей и следующей вокруг неё, чтобы видеть контекст.
+
+> ⚠️ **Хеш-цепочка не верифицируется?** Немедленно остановите агента, скопируйте свежую резервную копию и обратитесь к мейнтейнеру. Сломанная цепочка означает, что кто-то правил SQLite-файл напрямую.
+
+## Validation Log
+
+Validation Log отвечает «почему этот tool call разрешён (или нет)». Каждая запись — одно решение по вызову инструмента:
+
+- **Tool name** и модуль.
+- **Decision** — `allow`, `deny` или `require_approval`.
+- **Matched policy** — правило, давшее это решение (со ссылкой на редактор правил).
+- **Caller** — оператор, автономная задача, удалённый агент.
+- **Arguments** (сокращённо; раскрытие по клику).
+- **Outcome** — что в итоге произошло (executed, blocked, queued).
+
+Используйте сразу после правки политики: вызовите инструмент из тест-панели в [Tools](04-tools.md) и проверьте по соответствующей записи лога, что новая политика действительно сработала.
+
+## Очередь согласований (Approvals)
+
+![Мобильный вид zero-trust](../assets/screenshots/ru/zero-trust-security-mobile.png)
+
+Когда политика возвращает `require_approval`, вызов инструмента попадает сюда. В каждой записи:
+
+- **Tool** и модуль.
+- **Caller** — кто запросил (оператор, автономная задача, удалённый агент).
+- **Arguments** — точные параметры, с которыми вызов будет выполнен.
+- **Reason** — почему политика потребовала согласования.
+- **Created** — когда запрос попал в очередь.
+- **Expires** — крайний срок; зависит от политики.
+
+Подтверждайте только после того, как:
+
+1. Аргументы соответствуют намерению пользователя.
+2. Текущий уровень допустимого риска позволяет это сделать (например, бюджет не исчерпан).
+3. В audit trail нет недавних подозрительных действий со стороны caller.
+
+В мобильном виде колонок меньше, но кнопки *Approve* / *Deny* и сводка аргументов сохраняются, чтобы можно было разгребать очередь во время инцидента с телефона.
+
+## Settings
+
+Вкладка Settings содержит правила и контроль доступа.
+
+### Zero-trust политики
+
+Политики сопоставляются по **tool**, **module** или **шаблону параметра** и возвращают одно из:
 
 | Action | Значение |
 | --- | --- |
 | `allow` | Операция может продолжаться. |
 | `deny` | Операция заблокирована. |
-| `require_approval` | Перед выполнением нужен human approval. |
+| `require_approval` | Перед выполнением нужно человеческое подтверждение. |
 
-Wallet, workspace write/delete, exec, external API mutation и account-control tools держите за explicit policies.
+Редактор принимает набор правил в YAML-подобном формате. Типичные шаблоны:
 
-## Approval queue
+```yaml
+- tool: ton_send
+  action: require_approval
+  reason: "Wallet transfer outside admin chat"
+  unless:
+    chat_type: admin
 
-Pending approvals показывают tool, parameters, requester, reason, policy и creation time. Approve только если операция соответствует намерению пользователя и текущему risk tolerance.
+- module: exec
+  action: deny
+  reason: "Shell execution disabled"
 
-## Validation log
+- tool: workspace_delete
+  action: require_approval
+  reason: "Destructive workspace action"
+```
 
-Validation log - самый быстрый способ понять, почему tool call был allowed, denied или escalated. Используйте его после policy changes.
+> ℹ️ **Порядок важен.** Правила применяются сверху вниз, побеждает первое совпавшее. Узкие правила — выше, широкие — ниже.
 
-## Security settings
+За явными политиками держите:
 
-Security settings включают session timeout, IP allowlist и WebUI rate limit. Держите WebUI на localhost, если нет защищенного reverse proxy и сильной operational причины.
+- Кошельковые операции (`ton_send`, `jetton_send`, `nft_transfer`).
+- Workspace write/delete.
+- `exec` и другие shell-инструменты.
+- Всё, что мутирует внешний API (POST/PUT/DELETE).
+- Управление аккаунтом (блокировка, выход из чата, смена набора админов).
 
-## Secrets management
+### Секреты
 
-Secrets храните через secrets UI или plugin-specific secret controls, а не в prompt files, screenshots или exported session logs.
+Подраздел **Secrets** — добавление, ротация и удаление секретов:
 
-## Incident checklist
+- API-ключи провайдеров LLM, плагинов и интеграций.
+- Telegram-credentials.
+- Подписи (signing secrets) для вебхуков.
+- Приватные ключи TON, если их использует инструмент.
 
-1. Export relevant audit trail records.
-2. Verify audit chain.
-3. Inspect policy validation для affected tool.
-4. Rotate exposed secrets при необходимости.
-5. Tighten tool scopes и policies перед resume autonomous tasks.
+> ⚠️ **Никогда** не вставляйте секрет в [Редактор Soul](05-soul-editor.md), на скриншот или в экспорт сессии. Введённые здесь секреты хранятся зашифрованно и доступны только runtime.
+
+### Контроль доступа
+
+- **Session timeout** — сколько живёт сессия WebUI без активности. По умолчанию 30 минут.
+- **IP allowlist** — список CIDR через запятую. Пусто = только localhost.
+- **WebUI rate limit** — лимит запросов в минуту на IP.
+- **Token rotation** — ротация токена входа в WebUI; старый отзывается мгновенно.
+
+> ⚠️ **Держите WebUI на localhost**, пока у вас нет защищённого reverse proxy с TLS, сильной аутентификацией, контролем IP и мониторингом. Security Center не заменяет защиту на уровне сети.
+
+## Чек-лист инцидента
+
+Когда что-то выглядит неправильно:
+
+1. **Поставьте на паузу** затронутые автономные задачи в [Автономном режиме](03-autonomous-mode.md).
+2. **Проверьте цепочку** (Audit Trail → Verify chain).
+3. **Экспортируйте** соответствующие записи audit и validation для отчёта.
+4. **Изучите** validation log для затронутого инструмента — сравните решения с ожидаемой политикой.
+5. **Ротируйте** возможно скомпрометированные секреты в Settings → Secrets.
+6. **Ужесточите** scope инструментов ([Tools](04-tools.md)) и политики (Settings → Policies) перед возобновлением.
+7. **Задокументируйте** таймлайн через экспорт сессий из [Сессий (Sessions)](07-sessions.md).
+8. После разрешения **сохраните версию в Soul Editor** с описанием изменения политики, чтобы следующий оператор её нашёл.
