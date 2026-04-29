@@ -444,7 +444,3 @@ export function loadContextFromTranscript(sessionId: string, systemPrompt?: stri
     messages: deduped,
   };
 }
-
-export function createClient(_config: AgentConfig): null {
-  return null;
-}
