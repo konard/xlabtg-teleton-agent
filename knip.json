@@ -21,8 +21,7 @@
   "ignoreDependencies": [
     "pino-pretty",
     "@teleton-agent/sdk",
-    "@grammyjs/types",
-    "better-sqlite3"
+    "@grammyjs/types"
   ],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types"]

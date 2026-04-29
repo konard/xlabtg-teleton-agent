@@ -207,12 +207,10 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     { value: "llama3.1-8b", name: "Llama 3.1 8B", description: "Fast & cheap, 32K ctx, $0.10/M" },
   ],
   zai: [
-    { value: "glm-4.7-flash", name: "GLM-4.7 Flash", description: "FREE, 200K ctx" },
-    { value: "glm-4.7", name: "GLM-4.7", description: "204K ctx, $0.60/$2.20" },
-    { value: "glm-5", name: "GLM-5", description: "Best quality, 204K ctx, $1.00/$3.20" },
-    { value: "glm-4.6", name: "GLM-4.6", description: "204K ctx, $0.60/$2.20" },
-    { value: "glm-4.5-flash", name: "GLM-4.5 Flash", description: "FREE, 131K ctx" },
-    { value: "glm-4.5v", name: "GLM-4.5V", description: "Vision, 64K ctx, $0.60/$1.80" },
+    { value: "glm-5.1", name: "GLM-5.1", description: "Latest, reasoning, 200K ctx" },
+    { value: "glm-5-turbo", name: "GLM-5 Turbo", description: "Fast reasoning, 200K ctx" },
+    { value: "glm-4.7", name: "GLM-4.7", description: "Strong general model, 200K ctx" },
+    { value: "glm-4.5-air", name: "GLM-4.5 Air", description: "Fast utility model, 128K ctx" },
   ],
   minimax: [
     { value: "MiniMax-M2.7", name: "MiniMax M2.7", description: "204K ctx, $0.30/$1.20" },

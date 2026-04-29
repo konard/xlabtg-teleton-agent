@@ -94,7 +94,7 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 | `moonshot` | `k2p6` | `k2p6` |
 | `mistral` | `devstral-small-2507` | `ministral-8b-latest` |
 | `cerebras` | `qwen-3-235b-a22b-instruct-2507` | `llama3.1-8b` |
-| `zai` | `glm-4.7-flash` | `glm-4.5-flash` |
+| `zai` | `glm-5.1` | `glm-4.5-air` |
 | `minimax` | `MiniMax-M2.7` | `MiniMax-M2.7` |
 | `huggingface` | `deepseek-ai/DeepSeek-V3.2` | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
 | `cocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
