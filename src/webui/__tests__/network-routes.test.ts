@@ -146,6 +146,27 @@ describe("network routes", () => {
     db.close();
   });
 
+  it("exposes the local agent in the network status response", async () => {
+    const statusRes = await app.request("/api/network/status");
+    expect(statusRes.status).toBe(200);
+    const body = await statusRes.json();
+    expect(body.data).toMatchObject({
+      totalAgents: 0,
+      availableAgents: 0,
+      localAgent: {
+        id: "primary",
+        name: "Primary Agent",
+        networkEnabled: true,
+        discoveryMode: "central",
+        status: "available",
+        hasPrivateKey: true,
+      },
+    });
+    expect(body.data.localAgent.capabilities).toEqual(
+      expect.arrayContaining(["task-delegation", "web_search", "workspace_write"])
+    );
+  });
+
   it("registers remote agents and updates trust", async () => {
     const registerRes = await app.request("/api/network/agents", {
       method: "POST",

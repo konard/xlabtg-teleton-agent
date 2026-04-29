@@ -229,6 +229,18 @@ export interface NetworkAgentData {
   updatedAt: number;
 }
 
+export interface NetworkLocalAgentData {
+  id: string;
+  name: string;
+  endpoint: string | null;
+  capabilities: string[];
+  status: NetworkAgentStatus;
+  networkEnabled: boolean;
+  discoveryMode: "central" | "peer-to-peer" | "dns";
+  publicKey: string | null;
+  hasPrivateKey: boolean;
+}
+
 export interface NetworkStatusData {
   totalAgents: number;
   availableAgents: number;
@@ -239,6 +251,7 @@ export interface NetworkStatusData {
   averageLoad: number;
   messagesLastHour: number;
   errorsLastHour: number;
+  localAgent?: NetworkLocalAgentData;
 }
 
 export interface NetworkMessageData {

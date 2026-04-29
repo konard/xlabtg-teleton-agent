@@ -3,6 +3,7 @@ import {
   api,
   type NetworkAgentData,
   type NetworkAgentStatus,
+  type NetworkLocalAgentData,
   type NetworkMessageData,
   type NetworkStatusData,
   type NetworkTrustLevel,
@@ -73,6 +74,153 @@ function StatTile({ label, value }: { label: string; value: string | number }) {
       <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>{label}</div>
       <div style={{ marginTop: "6px", fontSize: "24px", fontWeight: 700 }}>{value}</div>
     </div>
+  );
+}
+
+function LocalAgentNode({ local }: { local?: NetworkLocalAgentData }) {
+  const status: NetworkAgentStatus = local?.status ?? "available";
+  return (
+    <div
+      style={{
+        border: "1px solid var(--separator)",
+        borderRadius: "8px",
+        padding: "10px",
+        background: "var(--surface)",
+        minWidth: 0,
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+        <span
+          style={{
+            width: "9px",
+            height: "9px",
+            borderRadius: "50%",
+            background: statusColor(status),
+            flex: "0 0 auto",
+          }}
+        />
+        <strong style={{ overflowWrap: "anywhere" }}>{local?.name ?? "Primary Agent"}</strong>
+      </div>
+      <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
+        {(local?.id ?? "primary") + " / local / "}
+        {local?.networkEnabled ? "network on" : "network off"}
+      </div>
+    </div>
+  );
+}
+
+function LocalAgentCard({ local }: { local: NetworkLocalAgentData }) {
+  return (
+    <section className="card" style={{ padding: "16px", borderRadius: "8px" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: "12px",
+          flexWrap: "wrap",
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: "18px" }}>This Agent</h2>
+          <p style={{ marginTop: "4px", color: "var(--text-secondary)", fontSize: "12px" }}>
+            Local agent identity advertised to peers in the network.
+          </p>
+        </div>
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            color: "var(--text-secondary)",
+            fontSize: "12px",
+          }}
+        >
+          <span
+            style={{
+              width: "8px",
+              height: "8px",
+              borderRadius: "50%",
+              background: statusColor(local.status),
+            }}
+          />
+          {local.status} / {local.networkEnabled ? "network enabled" : "network disabled"}
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: "12px",
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: "10px",
+        }}
+      >
+        <div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Agent ID</div>
+          <div style={{ marginTop: "4px", overflowWrap: "anywhere" }}>{local.id}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Name</div>
+          <div style={{ marginTop: "4px", overflowWrap: "anywhere" }}>{local.name}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Endpoint</div>
+          <div
+            style={{
+              marginTop: "4px",
+              overflowWrap: "anywhere",
+              fontFamily: "var(--font-mono)",
+              fontSize: "12px",
+            }}
+          >
+            {local.endpoint ?? "not configured"}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Discovery</div>
+          <div style={{ marginTop: "4px" }}>{local.discoveryMode}</div>
+        </div>
+        <div>
+          <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Signing key</div>
+          <div style={{ marginTop: "4px" }}>
+            {local.publicKey ? "advertised" : "not configured"}
+            {local.hasPrivateKey ? " / outbound signing ready" : " / outbound signing missing"}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ marginTop: "12px" }}>
+        <div style={{ fontSize: "12px", color: "var(--text-secondary)" }}>Capabilities</div>
+        <div style={{ marginTop: "4px", display: "flex", flexWrap: "wrap", gap: "6px" }}>
+          {local.capabilities.length === 0 && (
+            <span style={{ color: "var(--text-secondary)", fontSize: "12px" }}>none</span>
+          )}
+          {local.capabilities.map((capability) => (
+            <span
+              key={capability}
+              style={{
+                fontSize: "11px",
+                padding: "2px 6px",
+                borderRadius: "4px",
+                background: "var(--surface-elevated, var(--background))",
+                border: "1px solid var(--separator)",
+              }}
+            >
+              {capability}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      {!local.networkEnabled && (
+        <div className="alert" style={{ marginTop: "12px" }}>
+          The agent network is disabled. Set <code>network.enabled: true</code> in your config and
+          configure <code>network.endpoint</code> plus signing keys before peers can reach this
+          agent. See the user guide&apos;s Network section for the detailed checklist.
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -236,13 +384,15 @@ export function Network() {
           gap: "10px",
         }}
       >
-        <StatTile label="Agents" value={status?.totalAgents ?? 0} />
-        <StatTile label="Available" value={status?.availableAgents ?? 0} />
-        <StatTile label="Trusted" value={status?.trustedAgents ?? 0} />
+        <StatTile label="Agents" value={(status?.totalAgents ?? 0) + 1} />
+        <StatTile label="Available" value={(status?.availableAgents ?? 0) + 1} />
+        <StatTile label="Trusted" value={(status?.trustedAgents ?? 0) + 1} />
         <StatTile label="Avg Load" value={formatPercent(status?.averageLoad ?? 0)} />
         <StatTile label="Messages 1h" value={status?.messagesLastHour ?? 0} />
         <StatTile label="Errors 1h" value={status?.errorsLastHour ?? 0} />
       </div>
+
+      {status?.localAgent && <LocalAgentCard local={status.localAgent} />}
 
       <section style={{ display: "grid", gap: "12px" }}>
         <h2 style={{ fontSize: "18px" }}>Topology</h2>
@@ -253,12 +403,7 @@ export function Network() {
             gap: "10px",
           }}
         >
-          <div className="card" style={{ padding: "14px", borderRadius: "8px" }}>
-            <strong>Primary Agent</strong>
-            <div style={{ marginTop: "6px", fontSize: "12px", color: "var(--text-secondary)" }}>
-              local / orchestrator
-            </div>
-          </div>
+          <LocalAgentNode local={status?.localAgent} />
           {agents.map((agent) => (
             <AgentNode key={agent.id} agent={agent} />
           ))}

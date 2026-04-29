@@ -207,17 +207,27 @@ Per-integration settings include rate limit, per-route timeout, and a **Health c
 ![Multi-agent network](../assets/diagrams/multi-agent-network.svg)
 ![Task delegation context](../assets/screenshots/en/task-delegation-ui.png)
 
-The Network page handles multi-agent operations.
+The Network page handles multi-agent operations across deployments. Your local agent is **always present** on this page — it appears in the Topology with a "This Agent" card that lists its id, name, public endpoint, capabilities, and key state. The stats counters include the local agent so an isolated installation shows `Agents: 1`, `Available: 1`, `Trusted: 1` rather than zeros.
 
-**Stats band** — active agents count, queue depth, average ingress latency, uptime.
+**Stats band** — active agents count, available count, trusted count, average load, messages and errors in the last hour. The local agent is counted in the totals.
+
+**This Agent** card — appears at the top of the page and reflects the values from the `network` block of `~/.teleton/config.yaml`:
+
+- **Agent ID** / **Name** — what peers see when this agent advertises itself.
+- **Endpoint** — public HTTPS URL ending in `/api/agent-network` that peers POST signed messages to.
+- **Discovery mode** — `central`, `peer-to-peer`, or `dns`.
+- **Signing key** — whether a public key is advertised and whether the private key is loaded for outbound signing.
+- **Status** — `available` while the agent lifecycle is `running`, otherwise `degraded`.
+
+If `network.enabled` is `false`, the card shows the disabled banner and remote ingress (`POST /api/agent-network`) returns `403`.
 
 **Remote agents** table:
 
 | Column | Meaning |
 | --- | --- |
 | **Name** | Operator-set. |
-| **Status** | `online`, `offline`, `degraded`. |
-| **Trust** | `untrusted`, `delegate`, `peer`, `admin`. |
+| **Status** | `available`, `busy`, `offline`, `degraded`. |
+| **Trust** | `trusted`, `verified`, `untrusted`. |
 | **Capabilities** | Tools the remote exposes. |
 | **Last seen** | Timestamp. |
 
@@ -225,7 +235,114 @@ The Network page handles multi-agent operations.
 
 **Add / Edit / Remove** controls let you register a new remote, change trust level, or revoke a peer.
 
-> ⚠️ **Ingress is gated.** The agent rejects inbound messages whose recipient does not match the local agent identity, replays previously-signed messages, or come from unallowlisted senders. Capabilities and trust level should drive delegation decisions; never delegate to `untrusted`.
+### Why the page can show zero remote agents
+
+Remote agents do **not** auto-discover each other yet. The local agent is always shown as "This Agent", but other agents only appear in the *Remote agents* table after one of:
+
+- An operator registers them through `Register Agent` on this page (or `POST /api/network/agents`).
+- They send a signed `heartbeat` to your `/api/agent-network` endpoint after **you have already registered them** with their public key (unsigned heartbeats from unknown peers are rejected).
+- A central registry (when `discovery_mode: central` is implemented for your deployment) returns them at startup.
+
+A fresh install therefore shows the local agent plus an empty remote-agents table. Use the steps below to add a peer.
+
+### Detailed instructions: connect another agent deployed on another server
+
+Both deployments must run Teleton with the network feature enabled. The protocol uses Ed25519 signatures over JSON sent to `POST /api/agent-network`. The same procedure works whether the remote agent belongs to you or to another user.
+
+**1. Enable the network on each agent.** On every deployment that should join the network, edit `~/.teleton/config.yaml`:
+
+```yaml
+network:
+  enabled: true
+  agent_id: "primary"                                    # Globally unique identifier
+  agent_name: "Primary Agent"                            # Human-readable name
+  endpoint: "https://agent.example.com/api/agent-network" # Public HTTPS URL
+  discovery_mode: "central"
+  public_key: |                                          # PEM Ed25519 public key (advertised)
+    -----BEGIN PUBLIC KEY-----
+    ...
+    -----END PUBLIC KEY-----
+  private_key: |                                         # PEM Ed25519 private key (signs outbound)
+    -----BEGIN PRIVATE KEY-----
+    ...
+    -----END PRIVATE KEY-----
+  default_trust_level: "untrusted"                       # Newly-added peers start untrusted
+  allowlist: []                                          # Optional: restrict accepted senders
+  blocklist: []                                          # Optional: explicit blocks
+  message_timeout_ms: 15000
+  max_clock_skew_seconds: 300
+```
+
+The `endpoint` must be reachable from the public internet for peers to connect. Use a domain plus a TLS-terminating reverse proxy (Caddy, Nginx, Traefik) in front of the WebUI port. HTTP endpoints are only accepted for `localhost` and `127.0.0.1` testing.
+
+**2. Generate the Ed25519 key pair** (each agent needs its own pair). Use Node from the agent's host:
+
+```bash
+node -e "const c=require('crypto');const {publicKey,privateKey}=c.generateKeyPairSync('ed25519');\
+console.log(publicKey.export({format:'pem',type:'spki'}).toString());\
+console.log(privateKey.export({format:'pem',type:'pkcs8'}).toString())"
+```
+
+Paste the public-key block into `network.public_key` and the private-key block into `network.private_key`. The private key only ever lives on the host that owns the identity. Restart Teleton so the new keys load.
+
+**3. Exchange identities with the other operator.** Both sides need the other's:
+
+- `agent_id`
+- `agent_name`
+- public `endpoint` (the full `https://.../api/agent-network` URL)
+- `public_key` (PEM SPKI, starting with `-----BEGIN PUBLIC KEY-----`)
+
+Treat this exchange as you would an SSH `authorized_keys` swap — copy by a channel you trust.
+
+**4. Register the remote agent on each side.** Open the Network page and fill **Register Agent**:
+
+- **Agent ID** — exactly what the remote uses as `network.agent_id`.
+- **Name** — human-readable label.
+- **Endpoint** — full HTTPS URL ending in `/api/agent-network`.
+- **Capabilities** — comma-separated list (e.g. `web-search, summarization`).
+- **Status** — start with `available`.
+- **Load** — start at `0`.
+- **Trust** — keep at `untrusted` until you have verified inbound traffic.
+- **Public Key** — paste the PEM block you received.
+
+Equivalent REST call (from the operator's machine, with the WebUI auth token):
+
+```bash
+curl -X POST https://my-agent.example.com/api/network/agents \
+  -H "Authorization: Bearer $TELETON_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "agentId": "agent-002",
+    "name": "Research Remote",
+    "endpoint": "https://research.example.com/api/agent-network",
+    "capabilities": ["web-search", "summarization"],
+    "status": "available",
+    "load": 0,
+    "trustLevel": "untrusted",
+    "publicKey": "-----BEGIN PUBLIC KEY-----\n...\n-----END PUBLIC KEY-----\n"
+  }'
+```
+
+The other operator runs the same call against their server with **your** identity, so both sides know about each other.
+
+**5. Verify the link with a signed heartbeat.** From the remote, send a `heartbeat` to your endpoint to populate the message log and confirm signatures verify:
+
+```bash
+# On the remote agent's host (uses its own private key to sign)
+curl -X POST https://my-agent.example.com/api/agent-network \
+  -H "Content-Type: application/json" \
+  -d "$(node ./scripts/sign-heartbeat.js)"  # See the docs/agent-network.md sample
+```
+
+A successful heartbeat returns `200`. The Network page shows the remote with a fresh `Last seen`, and the `Message Log` records a `heartbeat` row with `status: received`.
+
+**6. Promote trust once you are satisfied.** In the **Remote Agents** card, change the trust dropdown from `untrusted` to `verified` (signature check only) or `trusted` (full delegation rights). Untrusted peers cannot receive delegated tasks even if you select them in the Task Delegation form.
+
+**7. Delegate a task.** In **Task Delegation**, choose the remote, fill **Description**, optionally list **Required Capabilities** (the coordinator only picks peers that advertise them), paste a JSON **Payload**, and click **Send Task**. The signed `task_request` is recorded in the Message Log; the remote's autonomous task manager (or manual inbox if it has none) picks it up.
+
+**Allowlist / blocklist.** When you want to lock the network down, list the explicit peer ids you accept under `network.allowlist`, or block specific ids under `network.blocklist`. Inbound messages from peers outside the allowlist (or inside the blocklist) are rejected before signature verification.
+
+> ⚠️ **Ingress is gated.** The agent rejects inbound messages whose recipient does not match the local agent identity, replays of previously-signed messages, messages from blocklisted or non-allowlisted senders, and messages with timestamps outside `max_clock_skew_seconds`. Capabilities and trust level drive delegation decisions; never delegate to `untrusted`.
 
 ## Feedback
 

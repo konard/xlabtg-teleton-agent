@@ -107,6 +107,23 @@ function localCapabilities(deps: WebUIServerDeps): string[] {
   return [...new Set(["task-delegation", ...tools])].sort();
 }
 
+function localAgentInfo(deps: WebUIServerDeps) {
+  const lifecycleState = deps.lifecycle?.getState?.();
+  const status: NetworkAgentStatus =
+    lifecycleState && lifecycleState !== "running" ? "degraded" : "available";
+  return {
+    id: localAgentId(deps),
+    name: localAgentName(deps),
+    endpoint: deps.networkConfig?.endpoint ?? null,
+    capabilities: localCapabilities(deps),
+    status,
+    networkEnabled: networkEnabled(deps),
+    discoveryMode: deps.networkConfig?.discovery_mode ?? "central",
+    publicKey: deps.networkConfig?.public_key ?? null,
+    hasPrivateKey: Boolean(deps.networkConfig?.private_key),
+  };
+}
+
 export function createNetworkRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
 
@@ -218,7 +235,10 @@ export function createNetworkRoutes(deps: WebUIServerDeps) {
 
   app.get("/status", (c) => {
     const status = getAgentNetworkStore(deps.memory.db).getNetworkStatus();
-    return c.json({ success: true, data: status } as APIResponse);
+    return c.json({
+      success: true,
+      data: { ...status, localAgent: localAgentInfo(deps) },
+    } as APIResponse);
   });
 
   app.get("/messages", (c) => {
