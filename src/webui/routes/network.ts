@@ -235,9 +235,23 @@ export function createNetworkRoutes(deps: WebUIServerDeps) {
 
   app.get("/status", (c) => {
     const status = getAgentNetworkStore(deps.memory.db).getNetworkStatus();
+    const localAgent = localAgentInfo(deps);
+    const localAvailable = localAgent.status === "available" ? 1 : 0;
+    const localDegraded = localAgent.status === "degraded" ? 1 : 0;
+    const totalAgents = status.totalAgents + 1;
+    const remoteLoadSum = status.averageLoad * status.totalAgents;
+    const averageLoad = Number((remoteLoadSum / totalAgents).toFixed(3));
     return c.json({
       success: true,
-      data: { ...status, localAgent: localAgentInfo(deps) },
+      data: {
+        ...status,
+        totalAgents,
+        availableAgents: status.availableAgents + localAvailable,
+        degradedAgents: status.degradedAgents + localDegraded,
+        trustedAgents: status.trustedAgents + 1,
+        averageLoad,
+        localAgent,
+      },
     } as APIResponse);
   });
 

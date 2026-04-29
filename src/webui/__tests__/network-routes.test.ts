@@ -151,8 +151,11 @@ describe("network routes", () => {
     expect(statusRes.status).toBe(200);
     const body = await statusRes.json();
     expect(body.data).toMatchObject({
-      totalAgents: 0,
-      availableAgents: 0,
+      totalAgents: 1,
+      availableAgents: 1,
+      trustedAgents: 1,
+      degradedAgents: 0,
+      offlineAgents: 0,
       localAgent: {
         id: "primary",
         name: "Primary Agent",
@@ -165,6 +168,45 @@ describe("network routes", () => {
     expect(body.data.localAgent.capabilities).toEqual(
       expect.arrayContaining(["task-delegation", "web_search", "workspace_write"])
     );
+  });
+
+  it("counts the local agent alongside remote agents in the status totals", async () => {
+    await app.request("/api/network/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: "remote-1",
+        name: "Remote One",
+        endpoint: "https://remote-1.example.com/api/agent-network",
+        capabilities: ["summarization"],
+        status: "available",
+        load: 0.5,
+        trustLevel: "verified",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+    await app.request("/api/network/agents", {
+      method: "POST",
+      body: JSON.stringify({
+        agentId: "remote-2",
+        name: "Remote Two",
+        endpoint: "https://remote-2.example.com/api/agent-network",
+        capabilities: ["web-search"],
+        status: "offline",
+        load: 0,
+        trustLevel: "untrusted",
+      }),
+      headers: { "Content-Type": "application/json" },
+    });
+
+    const statusRes = await app.request("/api/network/status");
+    const body = await statusRes.json();
+    expect(body.data).toMatchObject({
+      totalAgents: 3,
+      availableAgents: 2,
+      offlineAgents: 1,
+      trustedAgents: 2,
+      localAgent: { id: "primary" },
+    });
   });
 
   it("registers remote agents and updates trust", async () => {
