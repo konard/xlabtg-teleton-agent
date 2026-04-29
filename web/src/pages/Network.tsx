@@ -384,9 +384,9 @@ export function Network() {
           gap: "10px",
         }}
       >
-        <StatTile label="Agents" value={(status?.totalAgents ?? 0) + 1} />
-        <StatTile label="Available" value={(status?.availableAgents ?? 0) + 1} />
-        <StatTile label="Trusted" value={(status?.trustedAgents ?? 0) + 1} />
+        <StatTile label="Agents" value={status?.totalAgents ?? 1} />
+        <StatTile label="Available" value={status?.availableAgents ?? 1} />
+        <StatTile label="Trusted" value={status?.trustedAgents ?? 1} />
         <StatTile label="Avg Load" value={formatPercent(status?.averageLoad ?? 0)} />
         <StatTile label="Messages 1h" value={status?.messagesLastHour ?? 0} />
         <StatTile label="Errors 1h" value={status?.errorsLastHour ?? 0} />
