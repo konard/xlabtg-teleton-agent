@@ -18,12 +18,25 @@ interface ScheduleMessageParams {
 }
 
 /**
+ * Deprecation warning shown to the LLM and logged at runtime.
+ * Kept as a constant so tests can assert on the same string.
+ */
+export const TELEGRAM_SCHEDULE_MESSAGE_DEPRECATION_NOTICE =
+  "telegram_schedule_message is DEPRECATED and will be removed in a future release. " +
+  "It only queues plain text — it cannot execute tools, trading functions, or multi-step workflows. " +
+  "Use telegram_create_scheduled_task instead (with a tool_call or agent_task payload) for any automation that must run at a scheduled time.";
+
+/**
  * Tool definition for scheduling Telegram messages
+ *
+ * @deprecated Use telegram_create_scheduled_task instead. This tool only queues
+ * plain text and cannot trigger tool calls or agent actions when the message
+ * is delivered. See issue #459.
  */
 export const telegramScheduleMessageTool: Tool = {
   name: "telegram_schedule_message",
   description:
-    "Queue a text message for delayed delivery at a specific date/time. Sends ONLY text — does NOT execute any functions or tools automatically. Pass scheduleDate as ISO 8601 string or Unix timestamp (must be in the future). When NOT to use: if you need to automatically run trading functions, execute tools, or perform multi-step workflows at a scheduled time, use telegram_create_scheduled_task with an agent_task payload instead. Manage pending messages with telegram_get_scheduled_messages.",
+    "[DEPRECATED — use telegram_create_scheduled_task instead] Queue a plain text message for delayed delivery at a specific date/time. Sends ONLY text — does NOT execute any functions, tools, or agent instructions, even if the message text reads like a command (e.g., 'Check TON price', 'Buy USDT'). Pass scheduleDate as ISO 8601 string or Unix timestamp (must be in the future). For ANY automation that must run at a scheduled time — trading functions, tool calls, multi-step workflows, recurring tasks — use telegram_create_scheduled_task with a tool_call or agent_task payload. Manage pending messages with telegram_get_scheduled_messages.",
   parameters: Type.Object({
     chatId: Type.String({
       description: "The chat ID to send the scheduled message to",
@@ -46,6 +59,11 @@ export const telegramScheduleMessageExecutor: ToolExecutor<ScheduleMessageParams
   params,
   context
 ): Promise<ToolResult> => {
+  log.warn(
+    { tool: "telegram_schedule_message", replacement: "telegram_create_scheduled_task" },
+    TELEGRAM_SCHEDULE_MESSAGE_DEPRECATION_NOTICE
+  );
+
   try {
     const { chatId, text, scheduleDate } = params;
 
@@ -107,6 +125,8 @@ export const telegramScheduleMessageExecutor: ToolExecutor<ScheduleMessageParams
         chatId,
         scheduledFor: new Date(scheduleTimestamp * 1000).toISOString(),
         messageId,
+        deprecated: true,
+        deprecationNotice: TELEGRAM_SCHEDULE_MESSAGE_DEPRECATION_NOTICE,
       },
     };
   } catch (error) {

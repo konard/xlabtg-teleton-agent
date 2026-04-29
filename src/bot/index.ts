@@ -75,6 +75,7 @@ export class DealBot {
   private db: Database.Database;
   private config: BotConfig;
   private gramjsBot: GramJSBotClient | null = null;
+  private stopping = false;
 
   constructor(config: BotConfig, db: Database.Database, preMiddleware?: MiddlewareFn<Context>) {
     this.config = config;
@@ -538,6 +539,9 @@ export class DealBot {
         onStart: () => log.info(`🤖 [Bot] @${this.config.username} polling started`),
       })
       .catch((err) => {
+        // bot.stop() aborts the polling loop's pending delay, surfacing here as
+        // "Aborted delay". That's an expected shutdown signal, not a real error.
+        if (this.stopping) return;
         log.error({ err }, "[Bot] Polling error");
       });
   }
@@ -563,6 +567,7 @@ export class DealBot {
    */
   async stop(): Promise<void> {
     log.info(`🛑 [Bot] Stopping @${this.config.username}...`);
+    this.stopping = true;
     await this.bot.stop();
     if (this.gramjsBot) {
       await this.gramjsBot.disconnect();
