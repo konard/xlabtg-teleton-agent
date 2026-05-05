@@ -73,4 +73,45 @@ describe("UpstashSemanticVectorStore timeouts", () => {
 
     await expectation;
   });
+
+  it("circuit breaker skips Upstash calls after a failure without re-throwing", async () => {
+    mocks.query.mockRejectedValue(new Error("backend unavailable"));
+    const store = new UpstashSemanticVectorStore({
+      url: "https://example.upstash.io",
+      token: "token",
+      requestTimeoutMs: 5_000,
+    });
+
+    // First call: circuit opens on error
+    await expect(store.searchKnowledge([0.1, 0.2], 3)).rejects.toThrow("backend unavailable");
+
+    // Second call within cooldown: returns [] immediately without hitting Upstash
+    mocks.query.mockClear();
+    const secondResult = await store.searchKnowledge([0.1, 0.2], 3);
+    expect(secondResult).toEqual([]);
+    expect(mocks.query).not.toHaveBeenCalled();
+  });
+
+  it("circuit breaker resets after the cooldown period", async () => {
+    vi.useFakeTimers();
+    mocks.query.mockRejectedValue(new Error("backend unavailable"));
+    const store = new UpstashSemanticVectorStore({
+      url: "https://example.upstash.io",
+      token: "token",
+      requestTimeoutMs: 5_000,
+    });
+
+    // Open the circuit
+    await expect(store.searchKnowledge([0.1, 0.2], 3)).rejects.toThrow("backend unavailable");
+
+    // Advance past the 60-second cooldown
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    // After cooldown, the circuit should be closed and Upstash is contacted again
+    mocks.query.mockClear();
+    mocks.query.mockResolvedValue([]);
+    const result = await store.searchKnowledge([0.1, 0.2], 3);
+    expect(mocks.query).toHaveBeenCalled();
+    expect(result).toEqual([]);
+  });
 });
