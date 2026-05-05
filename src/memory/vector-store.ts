@@ -62,6 +62,7 @@ export interface UpstashVectorStoreConfig {
 
 const DEFAULT_NAMESPACE = "teleton-memory";
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
+const CIRCUIT_BREAKER_COOLDOWN_MS = 60_000;
 
 function numberFromMetadata(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -95,6 +96,7 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
   private index: Index<SemanticMemoryMetadata> | null = null;
   private lastLoggedMode: SemanticMemoryStatus["mode"] | null = null;
   private requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
+  private circuitOpenUntil = 0;
 
   constructor(config: UpstashVectorStoreConfig = {}) {
     this.configure(config);
@@ -117,6 +119,11 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
       this.index = null;
     }
     this.lastLoggedMode = null;
+    this.circuitOpenUntil = 0;
+  }
+
+  get isCircuitOpen(): boolean {
+    return Date.now() < this.circuitOpenUntil;
   }
 
   get isConfigured(): boolean {
@@ -175,43 +182,51 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
 
   async searchKnowledge(embedding: number[], limit: number): Promise<SemanticMemorySearchResult[]> {
     if (!this.index || embedding.length === 0 || limit <= 0) return [];
+    if (this.isCircuitOpen) return [];
 
-    const results = await withRequestTimeout(
-      this.index.query(
-        {
-          vector: embedding,
-          topK: limit,
-          includeMetadata: true,
-          includeData: true,
-        },
-        { namespace: this.namespace }
-      ),
-      "Upstash Vector query",
-      this.requestTimeoutMs
-    );
+    try {
+      const results = await withRequestTimeout(
+        this.index.query(
+          {
+            vector: embedding,
+            topK: limit,
+            includeMetadata: true,
+            includeData: true,
+          },
+          { namespace: this.namespace }
+        ),
+        "Upstash Vector query",
+        this.requestTimeoutMs
+      );
 
-    return results
-      .map((result) => {
-        const text = resultText(result);
-        const source =
-          typeof result.metadata?.path === "string"
-            ? result.metadata.path
-            : typeof result.metadata?.source === "string"
-              ? result.metadata.source
-              : "memory";
-        const createdAt =
-          numberFromMetadata(result.metadata?.createdAt) ??
-          numberFromMetadata(result.metadata?.created_at);
-        return {
-          id: String(result.id),
-          text,
-          source,
-          score: result.score,
-          vectorScore: result.score,
-          createdAt,
-        };
-      })
-      .filter((result) => result.text.length > 0);
+      this.circuitOpenUntil = 0;
+
+      return results
+        .map((result) => {
+          const text = resultText(result);
+          const source =
+            typeof result.metadata?.path === "string"
+              ? result.metadata.path
+              : typeof result.metadata?.source === "string"
+                ? result.metadata.source
+                : "memory";
+          const createdAt =
+            numberFromMetadata(result.metadata?.createdAt) ??
+            numberFromMetadata(result.metadata?.created_at);
+          return {
+            id: String(result.id),
+            text,
+            source,
+            score: result.score,
+            vectorScore: result.score,
+            createdAt,
+          };
+        })
+        .filter((result) => result.text.length > 0);
+    } catch (error) {
+      this.circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS;
+      throw error;
+    }
   }
 
   async upsertKnowledge(vectors: SemanticMemoryVector[]): Promise<void> {
