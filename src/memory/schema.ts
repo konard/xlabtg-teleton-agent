@@ -940,7 +940,158 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.36.0";
+function getPragmaFlag(db: Database.Database, name: string): boolean {
+  return Number(db.pragma(name, { simple: true })) === 1;
+}
+
+function setPragmaFlag(db: Database.Database, name: string, enabled: boolean): void {
+  db.pragma(`${name} = ${enabled ? "ON" : "OFF"}`);
+}
+
+function withAutonomousTaskTableRebuildPragmas<T>(db: Database.Database, fn: () => T): T {
+  const foreignKeysEnabled = getPragmaFlag(db, "foreign_keys");
+  const legacyAlterTableEnabled = getPragmaFlag(db, "legacy_alter_table");
+
+  setPragmaFlag(db, "foreign_keys", false);
+  setPragmaFlag(db, "legacy_alter_table", true);
+  try {
+    return fn();
+  } finally {
+    setPragmaFlag(db, "legacy_alter_table", legacyAlterTableEnabled);
+    setPragmaFlag(db, "foreign_keys", foreignKeysEnabled);
+  }
+}
+
+function runMigrationTransaction(db: Database.Database, fn: () => void): void {
+  db.exec("BEGIN");
+  try {
+    fn();
+    db.exec("COMMIT");
+  } catch (error) {
+    if (db.inTransaction) {
+      db.exec("ROLLBACK");
+    }
+    throw error;
+  }
+}
+
+function tableExists(db: Database.Database, tableName: string): boolean {
+  const row = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(tableName);
+  return Boolean(row);
+}
+
+function tableHasForeignKeyTarget(
+  db: Database.Database,
+  tableName: string,
+  targetTableName: string
+): boolean {
+  if (!tableExists(db, tableName)) {
+    return false;
+  }
+
+  const foreignKeys = db.prepare(`PRAGMA foreign_key_list(${tableName})`).all() as Array<{
+    table: string;
+  }>;
+  return foreignKeys.some((foreignKey) => foreignKey.table === targetTableName);
+}
+
+interface AutonomousTaskChildTable {
+  name: string;
+  tempName: string;
+  columns: string;
+  createTempSql: string;
+  createIndexesSql: string;
+}
+
+const AUTONOMOUS_TASK_CHILD_TABLES: AutonomousTaskChildTable[] = [
+  {
+    name: "task_checkpoints",
+    tempName: "task_checkpoints_fk_repair",
+    columns: "id, task_id, step, state, tool_calls, next_action_hint, created_at",
+    createTempSql: `
+      CREATE TABLE task_checkpoints_fk_repair (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT '{}',
+        tool_calls TEXT NOT NULL DEFAULT '[]',
+        next_action_hint TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+      );
+    `,
+    createIndexesSql: `
+      CREATE INDEX IF NOT EXISTS idx_checkpoints_task ON task_checkpoints(task_id, step DESC);
+    `,
+  },
+  {
+    name: "execution_logs",
+    tempName: "execution_logs_fk_repair",
+    columns: "id, task_id, step, event_type, message, data, created_at",
+    createTempSql: `
+      CREATE TABLE execution_logs_fk_repair (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        event_type TEXT NOT NULL
+          CHECK(event_type IN ('plan', 'tool_call', 'tool_result', 'reflect', 'checkpoint', 'escalate', 'error', 'info')),
+        message TEXT NOT NULL,
+        data TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+      );
+    `,
+    createIndexesSql: `
+      CREATE INDEX IF NOT EXISTS idx_exec_logs_task ON execution_logs(task_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_exec_logs_type ON execution_logs(event_type);
+    `,
+  },
+  {
+    name: "policy_state",
+    tempName: "policy_state_fk_repair",
+    columns: "task_id, state, updated_at",
+    createTempSql: `
+      CREATE TABLE policy_state_fk_repair (
+        task_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT '{}',
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+      );
+    `,
+    createIndexesSql: "",
+  },
+];
+
+function repairAutonomousTaskChildForeignKeys(db: Database.Database): number {
+  const tablesToRepair = AUTONOMOUS_TASK_CHILD_TABLES.filter((table) =>
+    tableHasForeignKeyTarget(db, table.name, "autonomous_tasks_old")
+  );
+  if (tablesToRepair.length === 0) {
+    return 0;
+  }
+
+  withAutonomousTaskTableRebuildPragmas(db, () => {
+    runMigrationTransaction(db, () => {
+      for (const table of tablesToRepair) {
+        db.exec(`
+          DROP TABLE IF EXISTS ${table.tempName};
+          ${table.createTempSql}
+          INSERT INTO ${table.tempName} (${table.columns})
+          SELECT ${table.columns} FROM ${table.name};
+          DROP TABLE ${table.name};
+          ALTER TABLE ${table.tempName} RENAME TO ${table.name};
+          ${table.createIndexesSql}
+        `);
+      }
+    });
+  });
+
+  return tablesToRepair.length;
+}
+
+export const CURRENT_SCHEMA_VERSION = "1.37.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -1559,47 +1710,49 @@ export function runMigrations(db: Database.Database): void {
         // the recommended rename-create-copy-drop approach inside a
         // transaction. List columns explicitly so the copy is robust to
         // extra columns added by other migrations running in the same pass.
-        db.exec(`
-          BEGIN;
-          ALTER TABLE autonomous_tasks RENAME TO autonomous_tasks_old;
-          CREATE TABLE autonomous_tasks (
-            id TEXT PRIMARY KEY,
-            goal TEXT NOT NULL,
-            success_criteria TEXT NOT NULL DEFAULT '[]',
-            failure_conditions TEXT NOT NULL DEFAULT '[]',
-            constraints TEXT NOT NULL DEFAULT '{}',
-            strategy TEXT NOT NULL DEFAULT 'balanced'
-              CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
-            retry_policy TEXT NOT NULL DEFAULT '{}',
-            context TEXT NOT NULL DEFAULT '{}',
-            priority TEXT NOT NULL DEFAULT 'medium'
-              CHECK(priority IN ('low', 'medium', 'high', 'critical')),
-            status TEXT NOT NULL DEFAULT 'pending'
-              CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
-            current_step INTEGER NOT NULL DEFAULT 0,
-            last_checkpoint_id TEXT,
-            created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-            updated_at INTEGER,
-            started_at INTEGER,
-            completed_at INTEGER,
-            result TEXT,
-            error TEXT
-          );
-          INSERT INTO autonomous_tasks (
-            id, goal, success_criteria, failure_conditions, constraints,
-            strategy, retry_policy, context, priority, status, current_step,
-            last_checkpoint_id, created_at, updated_at, started_at,
-            completed_at, result, error
-          )
-          SELECT
-            id, goal, success_criteria, failure_conditions, constraints,
-            strategy, retry_policy, context, priority, status, current_step,
-            last_checkpoint_id, created_at, updated_at, started_at,
-            completed_at, result, error
-          FROM autonomous_tasks_old;
-          DROP TABLE autonomous_tasks_old;
-          COMMIT;
-        `);
+        withAutonomousTaskTableRebuildPragmas(db, () => {
+          runMigrationTransaction(db, () => {
+            db.exec(`
+              ALTER TABLE autonomous_tasks RENAME TO autonomous_tasks_old;
+              CREATE TABLE autonomous_tasks (
+                id TEXT PRIMARY KEY,
+                goal TEXT NOT NULL,
+                success_criteria TEXT NOT NULL DEFAULT '[]',
+                failure_conditions TEXT NOT NULL DEFAULT '[]',
+                constraints TEXT NOT NULL DEFAULT '{}',
+                strategy TEXT NOT NULL DEFAULT 'balanced'
+                  CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+                retry_policy TEXT NOT NULL DEFAULT '{}',
+                context TEXT NOT NULL DEFAULT '{}',
+                priority TEXT NOT NULL DEFAULT 'medium'
+                  CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+                status TEXT NOT NULL DEFAULT 'pending'
+                  CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+                current_step INTEGER NOT NULL DEFAULT 0,
+                last_checkpoint_id TEXT,
+                created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+                updated_at INTEGER,
+                started_at INTEGER,
+                completed_at INTEGER,
+                result TEXT,
+                error TEXT
+              );
+              INSERT INTO autonomous_tasks (
+                id, goal, success_criteria, failure_conditions, constraints,
+                strategy, retry_policy, context, priority, status, current_step,
+                last_checkpoint_id, created_at, updated_at, started_at,
+                completed_at, result, error
+              )
+              SELECT
+                id, goal, success_criteria, failure_conditions, constraints,
+                strategy, retry_policy, context, priority, status, current_step,
+                last_checkpoint_id, created_at, updated_at, started_at,
+                completed_at, result, error
+              FROM autonomous_tasks_old;
+              DROP TABLE autonomous_tasks_old;
+            `);
+          });
+        });
         log.info("Migration 1.24.0 complete: 'queued' status added to autonomous_tasks");
       } else {
         log.info("Migration 1.24.0 skipped: autonomous_tasks already supports 'queued' status");
@@ -2106,6 +2259,19 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.36.0 complete: agent network replay protection added");
     } catch (error) {
       log.error({ err: error }, "Migration 1.36.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.37.0")) {
+    log.info("Running migration 1.37.0: Repair autonomous task child foreign keys");
+    try {
+      const repairedTables = repairAutonomousTaskChildForeignKeys(db);
+      log.info(
+        `Migration 1.37.0 complete: repaired ${repairedTables} autonomous task child table foreign keys`
+      );
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.37.0 failed");
       throw error;
     }
   }

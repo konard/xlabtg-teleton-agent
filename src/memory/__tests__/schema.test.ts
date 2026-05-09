@@ -8,6 +8,7 @@ import {
   runMigrations,
   CURRENT_SCHEMA_VERSION,
 } from "../schema.js";
+import { getAutonomousTaskStore } from "../agent/autonomous-tasks.js";
 
 describe("Memory Schema", () => {
   let db: InstanceType<typeof Database>;
@@ -20,6 +21,157 @@ describe("Memory Schema", () => {
   afterEach(() => {
     db.close();
   });
+
+  function createLegacyAutonomousTaskSchema(): void {
+    db.exec(`
+      CREATE TABLE meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE autonomous_tasks (
+        id TEXT PRIMARY KEY,
+        goal TEXT NOT NULL,
+        success_criteria TEXT NOT NULL DEFAULT '[]',
+        failure_conditions TEXT NOT NULL DEFAULT '[]',
+        constraints TEXT NOT NULL DEFAULT '{}',
+        strategy TEXT NOT NULL DEFAULT 'balanced'
+          CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+        retry_policy TEXT NOT NULL DEFAULT '{}',
+        context TEXT NOT NULL DEFAULT '{}',
+        priority TEXT NOT NULL DEFAULT 'medium'
+          CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+        current_step INTEGER NOT NULL DEFAULT 0,
+        last_checkpoint_id TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER,
+        started_at INTEGER,
+        completed_at INTEGER,
+        result TEXT,
+        error TEXT
+      );
+
+      CREATE TABLE task_checkpoints (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT '{}',
+        tool_calls TEXT NOT NULL DEFAULT '[]',
+        next_action_hint TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE execution_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        event_type TEXT NOT NULL
+          CHECK(event_type IN ('plan', 'tool_call', 'tool_result', 'reflect', 'checkpoint', 'escalate', 'error', 'info')),
+        message TEXT NOT NULL,
+        data TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE policy_state (
+        task_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT '{}',
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO autonomous_tasks (id, goal, status)
+      VALUES ('task-1', 'Legacy autonomous task', 'completed');
+      INSERT INTO task_checkpoints (id, task_id, step, state, tool_calls, created_at)
+      VALUES ('checkpoint-1', 'task-1', 1, '{}', '[]', unixepoch() - 9 * 86400);
+      INSERT INTO execution_logs (task_id, step, event_type, message)
+      VALUES ('task-1', 1, 'info', 'legacy log');
+      INSERT INTO policy_state (task_id, state)
+      VALUES ('task-1', '{}');
+    `);
+    setSchemaVersion(db, "1.23.0");
+  }
+
+  function createCorruptedAutonomousTaskForeignKeySchema(): void {
+    db.pragma("foreign_keys = OFF");
+    db.exec(`
+      CREATE TABLE meta (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch())
+      );
+
+      CREATE TABLE autonomous_tasks (
+        id TEXT PRIMARY KEY,
+        goal TEXT NOT NULL,
+        success_criteria TEXT NOT NULL DEFAULT '[]',
+        failure_conditions TEXT NOT NULL DEFAULT '[]',
+        constraints TEXT NOT NULL DEFAULT '{}',
+        strategy TEXT NOT NULL DEFAULT 'balanced'
+          CHECK(strategy IN ('conservative', 'balanced', 'aggressive')),
+        retry_policy TEXT NOT NULL DEFAULT '{}',
+        context TEXT NOT NULL DEFAULT '{}',
+        priority TEXT NOT NULL DEFAULT 'medium'
+          CHECK(priority IN ('low', 'medium', 'high', 'critical')),
+        status TEXT NOT NULL DEFAULT 'pending'
+          CHECK(status IN ('pending', 'queued', 'running', 'paused', 'completed', 'failed', 'cancelled')),
+        current_step INTEGER NOT NULL DEFAULT 0,
+        last_checkpoint_id TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        updated_at INTEGER,
+        started_at INTEGER,
+        completed_at INTEGER,
+        paused_at INTEGER,
+        result TEXT,
+        error TEXT
+      );
+
+      CREATE TABLE task_checkpoints (
+        id TEXT PRIMARY KEY,
+        task_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        state TEXT NOT NULL DEFAULT '{}',
+        tool_calls TEXT NOT NULL DEFAULT '[]',
+        next_action_hint TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks_old(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE execution_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        task_id TEXT NOT NULL,
+        step INTEGER NOT NULL,
+        event_type TEXT NOT NULL
+          CHECK(event_type IN ('plan', 'tool_call', 'tool_result', 'reflect', 'checkpoint', 'escalate', 'error', 'info')),
+        message TEXT NOT NULL,
+        data TEXT,
+        created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks_old(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE policy_state (
+        task_id TEXT PRIMARY KEY,
+        state TEXT NOT NULL DEFAULT '{}',
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+        FOREIGN KEY (task_id) REFERENCES autonomous_tasks_old(id) ON DELETE CASCADE
+      );
+
+      INSERT INTO autonomous_tasks (id, goal, status)
+      VALUES ('task-1', 'Corrupted migrated task', 'completed');
+      INSERT INTO task_checkpoints (id, task_id, step, state, tool_calls, created_at)
+      VALUES ('checkpoint-1', 'task-1', 1, '{}', '[]', unixepoch() - 9 * 86400);
+      INSERT INTO execution_logs (task_id, step, event_type, message)
+      VALUES ('task-1', 1, 'info', 'corrupted log');
+      INSERT INTO policy_state (task_id, state)
+      VALUES ('task-1', '{}');
+    `);
+    setSchemaVersion(db, "1.36.0");
+    db.pragma("foreign_keys = ON");
+  }
 
   // ============================================
   // TABLE CREATION
@@ -1341,7 +1493,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.36.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.37.0");
     });
   });
 
@@ -1451,6 +1603,40 @@ describe("Memory Schema", () => {
 
       expect(version1).toBe(version2);
       expect(version2).toBe(CURRENT_SCHEMA_VERSION);
+    });
+
+    it("preserves autonomous task child foreign keys when migrating through 1.24.0", () => {
+      createLegacyAutonomousTaskSchema();
+
+      runMigrations(db);
+
+      for (const table of ["task_checkpoints", "execution_logs", "policy_state"]) {
+        const foreignKeys = db.prepare(`PRAGMA foreign_key_list(${table})`).all() as Array<{
+          table: string;
+        }>;
+        expect(foreignKeys.map((fk) => fk.table)).toContain("autonomous_tasks");
+        expect(foreignKeys.map((fk) => fk.table)).not.toContain("autonomous_tasks_old");
+      }
+
+      const store = getAutonomousTaskStore(db);
+      expect(store.cleanOldCheckpoints(7)).toBe(1);
+    });
+
+    it("repairs autonomous task child foreign keys left on autonomous_tasks_old", () => {
+      createCorruptedAutonomousTaskForeignKeySchema();
+
+      runMigrations(db);
+
+      for (const table of ["task_checkpoints", "execution_logs", "policy_state"]) {
+        const foreignKeys = db.prepare(`PRAGMA foreign_key_list(${table})`).all() as Array<{
+          table: string;
+        }>;
+        expect(foreignKeys.map((fk) => fk.table)).toContain("autonomous_tasks");
+        expect(foreignKeys.map((fk) => fk.table)).not.toContain("autonomous_tasks_old");
+      }
+
+      const store = getAutonomousTaskStore(db);
+      expect(store.cleanOldCheckpoints(7)).toBe(1);
     });
   });
 
