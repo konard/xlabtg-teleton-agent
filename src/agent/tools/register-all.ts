@@ -17,6 +17,7 @@ import { tools as journalTools } from "./journal/index.js";
 import { tools as workspaceTools } from "./workspace/index.js";
 import { tools as webTools } from "./web/index.js";
 import { tools as botTools } from "./bot/index.js";
+import { toolSearchTool, createToolSearchExecutor } from "./search/index.js";
 
 const ALL_CATEGORIES: ToolEntry[][] = [
   telegramTools,
@@ -36,4 +37,11 @@ export function registerAllTools(registry: ToolRegistry): void {
       registry.register(tool, executor, scope, requiredMode, tags);
     }
   }
+
+  // Register tool_search LAST so its executor closure captures a fully-populated registry.
+  // scope "open" (always available), tags ["core"] so getCoreTools() includes it.
+  // The executor lazily reads registry.getToolIndex() + registry.getEmbedder() at call time,
+  // both of which are set during startAgent() — after this registration.
+  const toolSearchExecutor = createToolSearchExecutor(registry);
+  registry.register(toolSearchTool, toolSearchExecutor, "open", undefined, ["core"]);
 }

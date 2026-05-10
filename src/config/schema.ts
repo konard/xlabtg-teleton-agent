@@ -272,6 +272,14 @@ const _McpObject = z.object({
 });
 export const McpConfigSchema = _McpObject.default(_McpObject.parse({}));
 
+const _ToolSearchObject = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe("Enable ToolSearch mode: core tools + meta-tool replaces RAG pre-selection"),
+});
+export const ToolSearchConfigSchema = _ToolSearchObject.default(_ToolSearchObject.parse({}));
+
 const _ToolRagObject = z.object({
   enabled: z.boolean().default(true).describe("Enable semantic tool retrieval (Tool RAG)"),
   top_k: z.number().default(35).describe("Max tools to retrieve per LLM call"),
@@ -357,6 +365,7 @@ export const ConfigSchema = z.object({
   logging: LoggingConfigSchema,
   dev: DevConfigSchema,
   tool_rag: ToolRagConfigSchema,
+  tool_search: ToolSearchConfigSchema.optional(),
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
   ton_proxy: TonProxyConfigSchema,
@@ -403,6 +412,7 @@ export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
 export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;
 export type ToolRagConfig = z.infer<typeof ToolRagConfigSchema>;
+export type ToolSearchConfig = z.infer<typeof ToolSearchConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
 export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;

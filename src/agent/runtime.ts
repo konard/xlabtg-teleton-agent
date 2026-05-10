@@ -175,6 +175,7 @@ export class AgentRuntime {
 
   initializeContextBuilder(embedder: EmbeddingProvider, vectorEnabled: boolean): void {
     this.embedder = embedder;
+    this.toolRegistry?.setEmbedder(embedder);
     const db = getDatabase().getDb();
     this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled);
   }
@@ -533,7 +534,19 @@ export class AgentRuntime {
             this.config.tool_rag?.skip_unlimited_providers !== false
           );
 
-        if (useRAG && this.toolRegistry && queryEmbedding) {
+        if (this.config.tool_search?.enabled && this.toolRegistry) {
+          // ToolSearch mode: always start with core tools only.
+          // The LLM discovers additional tools on demand via the tool_search meta-tool.
+          tools = this.toolRegistry.getCoreTools(
+            effectiveIsGroup,
+            chatId,
+            isAdmin,
+            toolContext?.senderId
+          );
+          log.info(
+            `ToolSearch: ${tools.length} core tools (${this.toolRegistry.count} total available)`
+          );
+        } else if (useRAG && this.toolRegistry && queryEmbedding) {
           tools = await this.toolRegistry.getForContextWithRAG(
             effectiveMessage,
             queryEmbedding,
@@ -969,6 +982,36 @@ export class AgentRuntime {
         // Await all observing hooks from Phase 3 (non-blocking during result processing)
         if (observingHookPromises.length > 0) {
           await Promise.allSettled(observingHookPromises);
+        }
+
+        // Mid-loop tool injection: when tool_search returns discoveries, inject schemas
+        // into the live tools[] so the LLM can call them in the next iteration (D4).
+        if (this.config.tool_search?.enabled && tools) {
+          let injected = 0;
+          for (let i = 0; i < toolPlans.length; i++) {
+            const plan = toolPlans[i];
+            const exec = execResults[i];
+            if (
+              plan.block.name === "tool_search" &&
+              exec.result.success &&
+              exec.result.data &&
+              typeof exec.result.data === "object" &&
+              "tools" in exec.result.data
+            ) {
+              const discovered = (exec.result.data as { tools: PiAiTool[] }).tools;
+              if (Array.isArray(discovered)) {
+                for (const t of discovered) {
+                  if (t?.name && !tools.some((existing) => existing.name === t.name)) {
+                    tools.push(t);
+                    injected++;
+                  }
+                }
+              }
+            }
+          }
+          if (injected > 0) {
+            log.info(`ToolSearch: injected ${injected} tool(s) mid-loop (total: ${tools.length})`);
+          }
         }
 
         log.info(`${iteration}/${maxIterations} → ${iterationToolNames.join(", ")}`);

@@ -1,13 +1,16 @@
 import { validateToolCall } from "@mariozechner/pi-ai";
 import type { Tool as PiAiTool, ToolCall } from "@mariozechner/pi-ai";
+import type { TSchema } from "@sinclair/typebox";
 import type {
   RegisteredTool,
   Tool,
   ToolContext,
+  ToolEntry,
   ToolExecutor,
   ToolResult,
   ToolScope,
 } from "./types.js";
+import type { EmbeddingProvider } from "../../memory/embeddings/provider.js";
 import type { ModulePermissions } from "./module-permissions.js";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../../constants/timeouts.js";
 import type Database from "better-sqlite3";
@@ -33,6 +36,7 @@ export class ToolRegistry {
   private db: Database.Database | null = null;
   private pluginToolNames: Map<string, string[]> = new Map();
   private toolIndex: ToolIndex | null = null;
+  private embedderRef: EmbeddingProvider | null = null;
   private onToolsChangedCallbacks: Array<(removed: string[], added: PiAiTool[]) => void> = [];
   private mode: "user" | "bot";
   private requiredModes: Map<string, "user" | "bot"> = new Map();
@@ -278,59 +282,8 @@ export class ToolRegistry {
     isAdmin?: boolean,
     senderId?: number
   ): PiAiTool[] {
-    const excluded = isGroup ? "dm-only" : "group-only";
     const filtered = Array.from(this.tools.values())
-      .filter((rt) => {
-        // Filter out mode-restricted tools (takes priority over DB overrides)
-        const reqMode = this.requiredModes.get(rt.tool.name);
-        if (reqMode && reqMode !== this.mode) return false;
-
-        // Filter by active toolset profile
-        if (this.activeToolset) {
-          const allowedTags = ToolRegistry.TOOLSET_PROFILES[this.activeToolset];
-          if (allowedTags && allowedTags.length > 0) {
-            const toolTagList = this.toolTags.get(rt.tool.name);
-            // Tools without tags are always included (backward compat)
-            if (toolTagList && toolTagList.length > 0) {
-              const hasMatch = toolTagList.some((t) => allowedTags.includes(t));
-              if (!hasMatch) return false;
-            }
-          }
-        }
-
-        // Filter out disabled tools
-        if (!this.isToolEnabled(rt.tool.name)) return false;
-
-        // Use effective scope (with config override)
-        const effectiveScope = this.getEffectiveScope(rt.tool.name);
-
-        // "disabled" = completely hidden
-        if (effectiveScope === "disabled") return false;
-
-        // "dm-only" excluded from groups, "group-only" excluded from DMs
-        if (effectiveScope === excluded) return false;
-
-        // "admin-only" requires admin
-        if (effectiveScope === "admin-only" && !isAdmin) return false;
-
-        // "allowlist" requires senderId in allowFrom OR isAdmin (admins bypass)
-        if (effectiveScope === "allowlist" && !isAdmin) {
-          if (!senderId || !this.allowFrom.has(senderId)) return false;
-        }
-
-        // "open" and "always" = always available (no filter)
-
-        if (isGroup && chatId && this.permissions) {
-          const module = this.toolModules.get(rt.tool.name);
-          if (module) {
-            const level = this.permissions.getLevel(chatId, module);
-            if (level === "disabled") return false;
-            if (level === "admin" && !isAdmin) return false;
-          }
-        }
-
-        return true;
-      })
+      .filter((rt) => this.passesFilters(rt.tool.name, isGroup, chatId, isAdmin, senderId))
       .map((rt) => rt.tool);
 
     if (toolLimit !== null && filtered.length > toolLimit) {
@@ -576,6 +529,115 @@ export class ToolRegistry {
 
   getToolIndex(): ToolIndex | null {
     return this.toolIndex;
+  }
+
+  setEmbedder(embedder: EmbeddingProvider | null): void {
+    this.embedderRef = embedder;
+  }
+
+  getEmbedder(): EmbeddingProvider | null {
+    return this.embedderRef;
+  }
+
+  // ─── ToolSearch helpers ────────────────────────────────────────
+
+  /**
+   * Return the TypeBox parameter schema for a tool, or null if not found.
+   * Used by tool_search executor to provide full schemas to the LLM.
+   */
+  getToolSchema(name: string): TSchema | null {
+    const registered = this.tools.get(name);
+    return registered?.tool.parameters ?? null;
+  }
+
+  /**
+   * Return a ToolEntry snapshot for a named tool (scope, mode, tags, executor).
+   * Returns null if the tool is not registered.
+   */
+  getEntry(name: string): ToolEntry | null {
+    const registered = this.tools.get(name);
+    if (!registered) return null;
+    return {
+      tool: registered.tool,
+      executor: registered.executor,
+      scope: this.getEffectiveScope(name),
+      requiredMode: this.requiredModes.get(name),
+      tags: this.toolTags.get(name),
+    };
+  }
+
+  /**
+   * Returns true if a tool passes all scope/mode/enabled filters for the given context.
+   * Extracted from getForContext() for reuse by tool_search and getCoreTools().
+   */
+  passesFilters(
+    name: string,
+    isGroup: boolean,
+    chatId?: string,
+    isAdmin?: boolean,
+    senderId?: number
+  ): boolean {
+    if (!this.tools.has(name)) return false;
+
+    // Mode restriction (user vs bot)
+    const reqMode = this.requiredModes.get(name);
+    if (reqMode && reqMode !== this.mode) return false;
+
+    // Active toolset profile filter
+    if (this.activeToolset) {
+      const allowedTags = ToolRegistry.TOOLSET_PROFILES[this.activeToolset];
+      if (allowedTags && allowedTags.length > 0) {
+        const toolTagList = this.toolTags.get(name);
+        if (toolTagList && toolTagList.length > 0) {
+          if (!toolTagList.some((t) => allowedTags.includes(t))) return false;
+        }
+      }
+    }
+
+    // Enabled check
+    if (!this.isToolEnabled(name)) return false;
+
+    const effectiveScope = this.getEffectiveScope(name);
+    if (effectiveScope === "disabled") return false;
+
+    const excluded = isGroup ? "dm-only" : "group-only";
+    if (effectiveScope === excluded) return false;
+
+    if (effectiveScope === "admin-only" && !isAdmin) return false;
+
+    if (effectiveScope === "allowlist" && !isAdmin) {
+      if (!senderId || !this.allowFrom.has(senderId)) return false;
+    }
+
+    if (isGroup && chatId && this.permissions) {
+      const module = this.toolModules.get(name);
+      if (module) {
+        const level = this.permissions.getLevel(chatId, module);
+        if (level === "disabled") return false;
+        if (level === "admin" && !isAdmin) return false;
+      }
+    }
+
+    return true;
+  }
+
+  /**
+   * Return PiAiTool[] for all tools tagged "core" that pass scope/mode filters.
+   * Used by the runtime when tool_search.enabled is true to build the initial tool set.
+   */
+  getCoreTools(
+    isGroup: boolean,
+    chatId?: string,
+    isAdmin?: boolean,
+    senderId?: number
+  ): PiAiTool[] {
+    return Array.from(this.tools.entries())
+      .filter(([name]) => {
+        const tags = this.toolTags.get(name);
+        if (!tags?.includes("core")) return false;
+        return this.passesFilters(name, isGroup, chatId, isAdmin, senderId);
+      })
+      .map(([, rt]) => rt.tool);
   }
 
   onToolsChanged(callback: (removed: string[], added: PiAiTool[]) => void): void {
