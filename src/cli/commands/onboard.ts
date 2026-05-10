@@ -1117,9 +1117,8 @@ async function runInteractiveOnboarding(
       top_k: 25,
       always_include: [
         "telegram_send_message",
-        "telegram_reply_message",
+        "telegram_quote_reply",
         "telegram_send_photo",
-        "telegram_send_document",
         "journal_*",
         "workspace_*",
         "web_*",
@@ -1329,9 +1328,8 @@ async function runNonInteractiveOnboarding(
       top_k: 25,
       always_include: [
         "telegram_send_message",
-        "telegram_reply_message",
+        "telegram_quote_reply",
         "telegram_send_photo",
-        "telegram_send_document",
         "journal_*",
         "workspace_*",
         "web_*",
