@@ -67,13 +67,13 @@
     "@hono/node-server": "^1.19.11",
     "@huggingface/transformers": "^3.8.1",
     "@inquirer/prompts": "^8.3.2",
-    "@mariozechner/pi-ai": "^0.70.0",
+    "@mariozechner/pi-ai": "^0.73.1",
     "@modelcontextprotocol/sdk": "^1.28.0",
     "@sinclair/typebox": "^0.34.48",
     "@tavily/core": "^0.7.2",
     "@ton/core": "^0.63.1",
     "@ton/crypto": "^3.3.0",
-    "@ton/ton": "^16.2.2",
+    "@ton/ton": "^16.2.4",
     "better-sqlite3": "^12.8.0",
     "chalk": "^5.6.2",
     "chokidar": "^5.0.0",
@@ -92,7 +92,8 @@
   },
   "overrides": {
     "@aws-sdk/xml-builder": "3.972.19",
-    "fast-xml-parser": "5.7.1"
+    "fast-xml-parser": "5.7.1",
+    "axios": ">=1.15.2"
   },
   "devDependencies": {
     "@ston-fi/api": "^0.31.0",
