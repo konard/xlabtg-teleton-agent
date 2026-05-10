@@ -16,7 +16,7 @@ interface DnsBidParams {
 export const dnsBidTool: Tool = {
   name: "dns_bid",
   description:
-    "Place a bid on a .ton domain auction. Bid must be >= 105% of current bid. Use dns_check first.",
+    'Place a bid on a .ton domain auction. Bid must be >= 105% of current bid. Use dns_check first. Examples: domain="alice", amount=5.',
   parameters: Type.Object({
     domain: Type.String({
       description: "Domain name (with or without .ton extension)",

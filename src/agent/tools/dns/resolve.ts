@@ -12,7 +12,7 @@ interface DnsResolveParams {
 export const dnsResolveTool: Tool = {
   name: "dns_resolve",
   description:
-    "Resolve a .ton domain to its wallet address. Only works for owned domains. Use dns_link to associate a wallet.",
+    "Resolve any .ton domain to its linked wallet address. Call this BEFORE web_search whenever the user asks about a .ton address. NOT for checking availability — use dns_check for that. Examples: 1312.ton, durov.ton.",
   category: "data-bearing",
   parameters: Type.Object({
     domain: Type.String({

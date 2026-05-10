@@ -27,7 +27,7 @@ interface SendGifParams {
 export const telegramSendGifTool: Tool = {
   name: "telegram_send_gif",
   description:
-    "Send a GIF via queryId+resultId (from telegram_search_gifs) or a local GIF/MP4 file path.",
+    "Send a GIF via queryId+resultId (from telegram_search_gifs) or a local GIF/MP4 file path. Always call telegram_search_gifs first to get queryId/resultId.",
   parameters: Type.Object({
     chatId: Type.String({
       description: "The chat ID to send the GIF to",

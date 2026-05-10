@@ -19,7 +19,8 @@ interface WorkspaceListParams {
 
 export const workspaceListTool: Tool = {
   name: "workspace_list",
-  description: "List files and directories in the workspace.",
+  description:
+    "List files and directories inside the agent's workspace (~/.teleton/workspace/). Filter by type (files/directories) and list recursively. Use workspace_read to read file contents, workspace_info for usage totals.",
   category: "data-bearing",
   parameters: Type.Object({
     path: Type.Optional(

@@ -28,7 +28,8 @@ interface DnsAuctionsParams {
 }
 export const dnsAuctionsTool: Tool = {
   name: "dns_auctions",
-  description: "List active .ton domain auctions with current bids and end times.",
+  description:
+    "List active .ton domain auctions with current bids and end times. Use dns_bid to bid on a result.",
   category: "data-bearing",
   parameters: Type.Object({
     limit: Type.Optional(

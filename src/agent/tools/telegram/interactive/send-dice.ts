@@ -17,7 +17,7 @@ interface SendDiceParams {
 
 export const telegramSendDiceTool: Tool = {
   name: "telegram_send_dice",
-  description: `Roll an animated dice or game message with a server-determined random result. Emoticon options: \ud83c\udfb2 (dice), \ud83c\udfaf (darts), \ud83c\udfc0 (basketball), \u26bd (football), \ud83c\udfb0 (slots), \ud83c\udfb3 (bowling). Returns the numeric outcome.`,
+  description: `Roll an animated dice or game message with a server-determined random result. Emoticon options: \ud83c\udfb2 (dice), \ud83c\udfaf (darts), \ud83c\udfc0 (basketball), \u26bd (football), \ud83c\udfb0 (slots), \ud83c\udfb3 (bowling). Returns the numeric outcome. Use when user asks 'roll a dice', 'spin the wheel', or 'play dice'.`,
 
   parameters: Type.Object({
     chat_id: Type.String({

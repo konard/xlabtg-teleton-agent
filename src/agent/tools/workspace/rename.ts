@@ -16,7 +16,8 @@ interface WorkspaceRenameParams {
 
 export const workspaceRenameTool: Tool = {
   name: "workspace_rename",
-  description: "Rename or move a file within workspace. Creates parent directories as needed.",
+  description:
+    "Rename or relocate a file within the workspace (files only, not directories). Creates missing parent directories automatically. Use workspace_delete to remove files.",
 
   parameters: Type.Object({
     from: Type.String({

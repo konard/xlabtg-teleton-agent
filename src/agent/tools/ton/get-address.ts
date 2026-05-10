@@ -8,7 +8,8 @@ import { createLogger } from "../../../utils/logger.js";
 const log = createLogger("Tools");
 export const tonGetAddressTool: Tool = {
   name: "ton_get_address",
-  description: "Return your TON wallet address in EQ format. No parameters needed.",
+  description:
+    "Return your TON wallet address in EQ format. No parameters needed. Use this when asked 'what's my TON address?' or 'what wallet is the agent using?'.",
   parameters: Type.Object({}),
 };
 export const tonGetAddressExecutor: ToolExecutor<{}> = async (

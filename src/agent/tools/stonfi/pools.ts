@@ -36,7 +36,8 @@ interface JettonPoolsParams {
 }
 export const stonfiPoolsTool: Tool = {
   name: "stonfi_pools",
-  description: "List STON.fi liquidity pools. Filter by jetton or get top pools by volume.",
+  description:
+    "List STON.fi DEX liquidity pools sorted by 24h volume. Filter by jetton address or get top pools. Returns TVL, APY, and fees. NOT DeDust pools — for those use dedust_pools.",
   category: "data-bearing",
   parameters: Type.Object({
     jetton_address: Type.Optional(

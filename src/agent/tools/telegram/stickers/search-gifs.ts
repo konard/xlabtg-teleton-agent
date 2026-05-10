@@ -22,7 +22,7 @@ interface SearchGifsParams {
 export const telegramSearchGifsTool: Tool = {
   name: "telegram_search_gifs",
   description:
-    "Search for GIFs via @gif bot. Returns queryId + result IDs needed by telegram_send_gif.",
+    "Search for GIFs via @gif bot. Returns queryId + result IDs needed by telegram_send_gif. Examples: 'happy', 'dancing', 'thumbs up'.",
   parameters: Type.Object({
     query: Type.String({
       description: "Search query for GIFs. Example: 'happy', 'dancing', 'thumbs up', 'laughing'",

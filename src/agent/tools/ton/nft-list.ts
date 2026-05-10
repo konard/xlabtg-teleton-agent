@@ -16,7 +16,7 @@ interface NftListParams {
 export const nftListTool: Tool = {
   name: "nft_list",
   description:
-    "Browse NFTs owned by a TON wallet. Defaults to your own wallet. Optionally filter by collection address. Returns name, preview image, and collection metadata per NFT.",
+    "Browse NFTs owned by a TON wallet. Defaults to your own wallet. Optionally filter by collection address. Returns name, preview image, and collection metadata per NFT. Examples: 'show my NFTs', 'list NFTs in DNS collection for EQ...'.",
   parameters: Type.Object({
     address: Type.Optional(
       Type.String({

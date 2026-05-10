@@ -13,7 +13,7 @@ interface DedustTokenInfoParams {
 export const dedustTokenInfoTool: Tool = {
   name: "dedust_token_info",
   description:
-    "Get jetton info from DeDust: metadata, top holders, top traders, largest buys. Accepts address or symbol.",
+    "Get jetton info from DeDust: metadata, top holders, top traders, largest buys. Accepts address or symbol. Examples: 'DUST', 'SCALE', or EQ...address.",
   category: "data-bearing",
   parameters: Type.Object({
     token: Type.String({

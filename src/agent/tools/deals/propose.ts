@@ -33,7 +33,7 @@ interface DealProposeParams {
 export const dealProposeTool: Tool = {
   name: "deal_propose",
   description:
-    "Create a trade deal with Accept/Decline buttons. Sends an inline bot message — do NOT send another message after. Strategy compliance is enforced automatically (will reject bad deals). User always sends first. Expires in 2 minutes.",
+    "Create a TON trade deal (gift↔TON, TON↔gift). Sends a deal card with Accept/Decline buttons. Strategy limits enforced automatically. User ALWAYS sends first. Expires in 2 min. Do NOT send follow-up message after calling this.",
   parameters: Type.Object({
     chatId: Type.String({ description: "Chat ID where to send proposal" }),
     userId: Type.Number({ description: "Telegram user ID" }),

@@ -22,7 +22,8 @@ interface GetCommonChatsParams {
  */
 export const telegramGetCommonChatsTool: Tool = {
   name: "telegram_get_common_chats",
-  description: "Find groups and channels you share with another user.",
+  description:
+    "Find groups and channels you share with another user. Example: 'what groups do we share with @durov?'.",
   category: "data-bearing",
   parameters: Type.Object({
     userId: Type.String({

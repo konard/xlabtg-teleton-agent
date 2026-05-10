@@ -129,6 +129,26 @@ function summarizeToolParams(toolName: string, params: Record<string, unknown>):
   return `(${hint})`;
 }
 
+function enrichRAGQuery(query: string): string {
+  if (!query) return query;
+  const tags: string[] = [];
+  const lower = query.toLowerCase();
+
+  if (/\.ton\b/i.test(query)) tags.push("TON blockchain domain DNS resolution");
+  if (/\b(EQ|UQ)[A-Za-z0-9_-]{46}\b/.test(query)) tags.push("TON wallet address blockchain");
+  if (/\bt\.me\/nft\/\S+/i.test(query)) tags.push("Telegram unique gift collectible NFT");
+  if (/\b(swap|trade|exchange)\b/i.test(query) && /\b(token|jetton|ton|usdt|usdc)\b/i.test(lower)) {
+    tags.push("DEX swap jetton trade");
+  }
+  if (/\bsticker\b/i.test(query)) tags.push("Telegram sticker pack send");
+  if (/\b(invoice|deal|payment|escrow)\b/i.test(query)) tags.push("trade deal invoice");
+  if (/\b(gift|collectible)\b/i.test(query) && /\b(buy|send|transfer|resale)\b/i.test(query)) {
+    tags.push("Telegram gift NFT collectible");
+  }
+
+  return tags.length > 0 ? `${query} ${tags.join(" ")}` : query;
+}
+
 export class AgentRuntime {
   private config: Config;
   private soul: string;
@@ -362,8 +382,12 @@ export class AgentRuntime {
               if (recentUserMsgs.length > 0) {
                 searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
               }
+              const enrichedQuery = enrichRAGQuery(searchQuery);
+              if (enrichedQuery !== searchQuery) {
+                log.debug({ original: searchQuery, enriched: enrichedQuery }, "RAG query enriched");
+              }
               // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by ternary
-              return this.embedder!.embedQuery(searchQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS));
+              return this.embedder!.embedQuery(enrichedQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS));
             })()
           : undefined;
 

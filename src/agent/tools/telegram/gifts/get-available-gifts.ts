@@ -43,7 +43,7 @@ interface CatalogGiftSummary {
 export const telegramGetAvailableGiftsTool: Tool = {
   name: "telegram_get_available_gifts",
   description:
-    "Browse the Star Gift catalog. Use filter='resale' to see collections with active marketplace listings. Returns collection IDs for use with telegram_get_resale_gifts and telegram_send_gift.",
+    "List available Star Gifts from the Telegram catalog (userbot API). Use filter='resale' to find collectible collections with marketplace listings. Returns giftId values for telegram_send_gift and telegram_get_resale_gifts. For the bot API version, use telegram_get_available_gifts_bot.",
   category: "data-bearing",
   parameters: Type.Object({
     filter: Type.Optional(

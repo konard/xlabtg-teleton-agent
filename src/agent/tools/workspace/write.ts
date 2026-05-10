@@ -20,7 +20,7 @@ interface WorkspaceWriteParams {
 export const workspaceWriteTool: Tool = {
   name: "workspace_write",
   description:
-    "Write a file to workspace. Only ~/.teleton/workspace/ is writable. Cannot write to protected locations.",
+    "Create or overwrite a file in the agent's workspace. Supports append mode and base64 for binary. Protected files (SOUL.md, MEMORY.md, etc.) cannot be overwritten. To persist memory, use memory_write instead.",
 
   parameters: Type.Object({
     path: Type.String({

@@ -29,7 +29,7 @@ interface CreatePollParams {
 export const telegramCreatePollTool: Tool = {
   name: "telegram_create_poll",
   description:
-    "Create a poll in a chat. For quizzes with a correct answer, use telegram_create_quiz instead.",
+    "Create a poll in a chat. For quizzes with a correct answer, use telegram_create_quiz instead. Examples: voting on a topic, opinion gathering.",
   parameters: Type.Object({
     chatId: Type.String({
       description: "The chat ID where the poll will be created",

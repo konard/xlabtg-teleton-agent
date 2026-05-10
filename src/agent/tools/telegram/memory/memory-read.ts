@@ -27,7 +27,7 @@ interface MemoryReadParams {
 export const memoryReadTool: Tool = {
   name: "memory_read",
   description:
-    "Read your memory. Use 'core' for structured blocks (identity, preferences, lessons, goals, contacts). Also: persistent (MEMORY.md), daily, recent, list.",
+    "Read the agent's long-term or daily memory files. Use target='core' for structured facts (identity, contacts, goals, lessons). Use 'recent' to check today's session notes. NOT for searching past Telegram chats — use session_search. NOT for business trade history — use journal_query.",
   category: "data-bearing",
   parameters: Type.Object({
     target: Type.String({

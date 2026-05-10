@@ -24,7 +24,7 @@ const PROTECTED_WORKSPACE_FILES = [
 export const workspaceDeleteTool: Tool = {
   name: "workspace_delete",
   description:
-    "Delete a file or directory from workspace. Protected files that cannot be deleted: SOUL.md, MEMORY.md, IDENTITY.md, USER.md, STRATEGY.md, SECURITY.md.",
+    "Delete a file or directory from the workspace. Use recursive=true for non-empty directories. Cannot delete core agent files (SOUL.md, MEMORY.md, etc.). Permanent — no undo.",
 
   parameters: Type.Object({
     path: Type.String({

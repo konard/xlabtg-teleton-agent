@@ -20,7 +20,7 @@ interface BlockUserParams {
 export const telegramBlockUserTool: Tool = {
   name: "telegram_block_user",
   description:
-    "Block a user. They won't be able to message you or add you to groups. Not notified.",
+    "Block a user. They won't be able to message you or add you to groups. Not notified. Example: 'block @spammer'. For unblocking use telegram_unban_user.",
   parameters: Type.Object({
     userId: Type.String({
       description: "The user ID or username to block (e.g., '123456789' or '@username')",

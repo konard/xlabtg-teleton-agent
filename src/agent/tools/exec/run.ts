@@ -12,7 +12,7 @@ interface ExecRunParams {
 export const execRunTool: Tool = {
   name: "exec_run",
   description:
-    "Execute an arbitrary bash command on the host system. Returns stdout, stderr, and exit code. Use for any system administration task: file management, process control, Docker, networking, etc.",
+    "Execute an arbitrary bash command on the host system. Last resort for tasks not covered by exec_install (package installation), exec_service (systemd management), or exec_status (system health). Returns stdout, stderr, exit code. Supports pipes, &&, redirects.",
   parameters: Type.Object({
     command: Type.String({
       description: "The bash command to execute (supports pipes, &&, redirects, etc.)",

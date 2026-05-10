@@ -21,7 +21,7 @@ interface SendMessageParams {
 export const telegramSendMessageTool: Tool = {
   name: "telegram_send_message",
   description:
-    "Send a text message to a Telegram chat. For custom keyboards use telegram_reply_keyboard; for media use telegram_send_photo/gif/sticker.",
+    "Send a text message to a Telegram chat. For inline keyboard buttons use telegram_send_buttons; for custom reply keyboards use telegram_reply_keyboard; for media use telegram_send_photo/gif/sticker.",
   parameters: Type.Object({
     chatId: Type.String({
       description: "The chat ID to send the message to",

@@ -22,9 +22,7 @@ interface BotInlineSendParams {
 export const botInlineSendTool: Tool = {
   name: "bot_inline_send",
   description:
-    "Send an inline bot result from a plugin into a chat. " +
-    "The plugin handles the query and returns styled cards with interactive buttons. " +
-    "The bot must be configured and the plugin must have bot.inline enabled.",
+    "Send a plugin's inline card (with buttons) into the current chat via the bot inline query mechanism. Requires bot_username configured and the named plugin to have an inline handler. NOT a general-purpose send — use telegram_send_buttons for custom buttons or telegram_send_message for text.",
   parameters: Type.Object({
     plugin: Type.String({ description: "Plugin name that handles the inline query (e.g. 'cats')" }),
     query: Type.String({ description: "Query to send to the plugin handler (e.g. 'random')" }),

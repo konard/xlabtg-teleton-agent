@@ -47,7 +47,7 @@ interface MemoryWriteParams {
 export const memoryWriteTool: Tool = {
   name: "memory_write",
   description:
-    "Save to agent memory. Targets: 'core' for structured blocks (identity, preferences, lessons, goals, contacts) — primary long-term storage. 'persistent' for additional facts in MEMORY.md (max 150 lines in prompt). 'daily' for session notes and events. Note: writes are saved to disk but not visible in your prompt until next session. Disabled in group chats.",
+    "Persist facts to agent memory. Use target='core' + block_name for structured long-term storage (identity, contacts, goals, lessons, preferences). Use 'daily' for session notes. Use 'persistent' for free-form markdown additions. Group chats blocked for security. Not visible in current session context — takes effect next session.",
   parameters: Type.Object({
     content: Type.String({
       description:

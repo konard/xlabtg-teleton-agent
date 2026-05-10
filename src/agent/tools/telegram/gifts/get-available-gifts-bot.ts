@@ -4,7 +4,7 @@ import type { ToolEntry } from "../../types.js";
 const tool = {
   name: "telegram_get_available_gifts_bot",
   description:
-    "List all gifts the bot can send to users or channels. Returns gift ID, star cost, upgrade cost, and availability.",
+    "List sendable Star Gifts via the Bot API (requires bot_token). Returns gift ID, Stars cost, upgrade cost, and remaining stock. For the userbot catalog (with resale/collectible info), use telegram_get_available_gifts instead.",
   parameters: Type.Object({}),
 };
 

@@ -4,7 +4,7 @@ import type { ToolEntry } from "../../types.js";
 const tool = {
   name: "telegram_get_user_gifts",
   description:
-    "Get the list of gifts displayed on a user's profile. Returns gift type, sender, date, and value.",
+    "Get gifts publicly displayed on a user's Telegram profile via Bot API (requires bot_token). Only returns gifts the user has chosen to show. For the full received-gifts inventory including private ones, use telegram_get_my_gifts.",
   parameters: Type.Object({
     user_id: Type.Number({ description: "Telegram user ID to look up" }),
   }),

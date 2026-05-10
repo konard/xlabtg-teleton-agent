@@ -10,7 +10,8 @@ const log = createLogger("Tools");
  */
 export const telegramGetMeTool: Tool = {
   name: "telegram_get_me",
-  description: "Fetch your own account profile (user ID, username, name, phone, premium status).",
+  description:
+    "Get the agent's own Telegram profile: account user ID, @username, name, phone number, and premium status. No parameters needed. To look up another user's profile, use telegram_get_user_info.",
   category: "data-bearing",
   parameters: Type.Object({}), // No parameters needed
 };

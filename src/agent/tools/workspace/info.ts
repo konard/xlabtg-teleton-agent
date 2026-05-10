@@ -18,7 +18,8 @@ interface WorkspaceInfoParams {
 
 export const workspaceInfoTool: Tool = {
   name: "workspace_info",
-  description: "Get workspace structure, file counts, sizes, and usage limits.",
+  description:
+    "Show the agent's local workspace: directory structure, file counts per folder (downloads, uploads, memes, temp), total disk usage, and size limits. Use before workspace_list for a high-level overview.",
   category: "data-bearing",
   parameters: Type.Object({
     detailed: Type.Optional(

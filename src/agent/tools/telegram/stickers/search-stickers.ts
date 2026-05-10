@@ -22,7 +22,7 @@ interface SearchStickersParams {
 export const telegramSearchStickersTool: Tool = {
   name: "telegram_search_stickers",
   description:
-    "Search sticker packs globally by keyword or emoji. Returns packs with shortName, count, and install status. For installed-only, use telegram_get_my_stickers.",
+    "Search sticker packs globally by keyword or emoji. Returns packs with shortName, count, and install status. For installed-only, use telegram_get_my_stickers. Examples: 'pepe', 'cats', '🔥'.",
   parameters: Type.Object({
     query: Type.String({
       description:
