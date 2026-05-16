@@ -2,13 +2,16 @@
  * telegram_send_voice - Send voice messages with optional TTS
  *
  * Two modes:
- * 1. voicePath: Send existing audio file
+ * 1. voicePath: Send existing audio file (WAV is auto-converted to OGG/Opus)
  * 2. text: Generate speech using TTS, then send
  */
 
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
-import { unlinkSync } from "fs";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+import { randomUUID } from "crypto";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import {
   generateSpeech,
@@ -17,6 +20,7 @@ import {
   type TTSProvider,
 } from "../../../../services/tts.js";
 import { GROQ_TTS_VOICES } from "../../../../providers/groq/GroqTTSProvider.js";
+import { wavToOggOpus } from "../../../../utils/audio.js";
 import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
@@ -39,7 +43,7 @@ interface SendVoiceParams {
 export const telegramSendVoiceTool: Tool = {
   name: "telegram_send_voice",
   description:
-    "Send a voice message. Either provide voicePath for an existing file, or text for TTS generation. Uses the configured TTS provider and voice from settings. Available providers: piper, edge, openai, elevenlabs, groq.",
+    "Send a voice message. Either provide voicePath for an existing file, or text for TTS generation. WAV inputs (e.g. raw Groq TTS output) are automatically transcoded to OGG/Opus so Telegram renders them as proper voice notes. Uses the configured TTS provider and voice from settings. Available providers: piper, edge, openai, elevenlabs, groq.",
 
   parameters: Type.Object({
     chatId: Type.String({
@@ -47,7 +51,8 @@ export const telegramSendVoiceTool: Tool = {
     }),
     voicePath: Type.Optional(
       Type.String({
-        description: "Local file path to voice/audio file (OGG, MP3). Use this OR text.",
+        description:
+          "Local file path to voice/audio file (OGG/Opus, WAV, MP3). WAV is auto-converted to OGG/Opus before sending (Telegram voice notes require OGG/Opus). Use this OR text.",
       })
     ),
     text: Type.Optional(
@@ -96,6 +101,15 @@ export const telegramSendVoiceTool: Tool = {
   }),
 };
 
+/** Detect a WAV (PCM) container by its RIFF/WAVE magic bytes. */
+function isWavBuffer(buffer: Buffer): boolean {
+  return (
+    buffer.length >= 12 &&
+    buffer.toString("ascii", 0, 4) === "RIFF" &&
+    buffer.toString("ascii", 8, 12) === "WAVE"
+  );
+}
+
 export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
   params,
   context
@@ -141,6 +155,28 @@ export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
           };
         }
         throw error;
+      }
+
+      // Telegram only renders WAV as a generic document. If the caller passes
+      // a WAV file (e.g. raw Groq TTS output saved to disk), transcode it to
+      // OGG/Opus so the message becomes a proper voice note. OGG/Opus and
+      // other formats (MP3, M4A, …) are sent as-is.
+      try {
+        const buffer = readFileSync(audioPath);
+        if (isWavBuffer(buffer)) {
+          const tempDir = join(tmpdir(), "teleton-tts");
+          if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true });
+          const oggPath = join(tempDir, `${randomUUID()}.ogg`);
+          const oggBuffer = wavToOggOpus(buffer);
+          writeFileSync(oggPath, oggBuffer);
+          audioPath = oggPath;
+          generatedFile = oggPath; // Mark transcoded file for cleanup
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error: `Failed to convert WAV voice file to OGG/Opus: ${getErrorMessage(error)}`,
+        };
       }
     }
 
