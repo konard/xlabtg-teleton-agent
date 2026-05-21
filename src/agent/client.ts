@@ -45,14 +45,9 @@ const COCOON_MODELS: Record<string, Model<"openai-completions">> = {};
 /** Register models discovered from a running Cocoon client */
 export async function registerCocoonModels(httpPort: number): Promise<string[]> {
   try {
-    const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 3000);
-    let res: Response;
-    try {
-      res = await fetch(`http://localhost:${httpPort}/v1/models`, { signal: ac.signal });
-    } finally {
-      clearTimeout(timer);
-    }
+    const res = await fetchWithTimeout(`http://localhost:${httpPort}/v1/models`, {
+      timeoutMs: 3000,
+    });
     if (!res.ok) return [];
     const body = (await res.json()) as {
       data?: { id?: string; name?: string }[];
@@ -84,7 +79,7 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
     }
     return ids;
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    if (error instanceof Error && error.name === "TimeoutError") {
       log.warn({ port: httpPort }, "Cocoon /v1/models timed out after 3s, returning empty list");
     }
     return [];
