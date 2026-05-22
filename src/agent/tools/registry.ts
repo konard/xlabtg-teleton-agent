@@ -7,6 +7,7 @@ import type {
   ToolContext,
   ToolEntry,
   ToolExecutor,
+  ToolMode,
   ToolResult,
   ToolScope,
 } from "./types.js";
@@ -39,7 +40,7 @@ export class ToolRegistry {
   private embedderRef: EmbeddingProvider | null = null;
   private onToolsChangedCallbacks: Array<(removed: string[], added: PiAiTool[]) => void> = [];
   private mode: "user" | "bot";
-  private requiredModes: Map<string, "user" | "bot"> = new Map();
+  private toolModes: Map<string, ToolMode> = new Map();
   private toolTags: Map<string, string[]> = new Map();
   private activeToolset: string | null = null; // null = "full" (no filtering)
   private allowFrom: Set<number> = new Set();
@@ -59,7 +60,7 @@ export class ToolRegistry {
     tool: Tool,
     executor: ToolExecutor<TParams>,
     scope?: ToolScope,
-    requiredMode?: "user" | "bot",
+    mode: ToolMode = "both",
     tags?: string[]
   ): void {
     if (this.tools.has(tool.name)) {
@@ -69,9 +70,7 @@ export class ToolRegistry {
     if (scope && scope !== "always" && scope !== "open") {
       this.scopes.set(tool.name, scope);
     }
-    if (requiredMode) {
-      this.requiredModes.set(tool.name, requiredMode);
-    }
+    this.toolModes.set(tool.name, mode);
     if (tags && tags.length > 0) {
       this.toolTags.set(tool.name, tags);
     }
@@ -87,8 +86,8 @@ export class ToolRegistry {
     this.mode = mode;
     this.toolArrayCache = null;
     const count = Array.from(this.tools.values()).filter((rt) => {
-      const reqMode = this.requiredModes.get(rt.tool.name);
-      return !reqMode || reqMode === mode;
+      const toolMode = this.toolModes.get(rt.tool.name);
+      return !toolMode || toolMode === "both" || toolMode === mode;
     }).length;
     log.info(`Mode switched to ${mode}, ${count} tools available`);
   }
@@ -157,11 +156,11 @@ export class ToolRegistry {
     }
 
     // Check mode restriction (defense-in-depth: tools are also filtered from LLM tool list)
-    const reqMode = this.requiredModes.get(toolCall.name);
-    if (reqMode && reqMode !== this.mode) {
+    const toolMode = this.toolModes.get(toolCall.name);
+    if (toolMode && toolMode !== "both" && toolMode !== this.mode) {
       return {
         success: false,
-        error: `Tool "${toolCall.name}" requires ${reqMode} mode (current: ${this.mode})`,
+        error: `Tool "${toolCall.name}" requires ${toolMode} mode (current: ${this.mode})`,
       };
     }
 
@@ -420,6 +419,7 @@ export class ToolRegistry {
       if (scope && scope !== "always" && scope !== "open") {
         this.scopes.set(tool.name, scope);
       }
+      this.toolModes.set(tool.name, "both");
       this.toolModules.set(tool.name, pluginName);
       names.push(tool.name);
     }
@@ -475,6 +475,7 @@ export class ToolRegistry {
       if (scope && scope !== "always" && scope !== "open") {
         this.scopes.set(tool.name, scope);
       }
+      this.toolModes.set(tool.name, "both");
       this.toolModules.set(tool.name, pluginName);
       names.push(tool.name);
     }
@@ -514,6 +515,7 @@ export class ToolRegistry {
       for (const name of tracked) {
         this.tools.delete(name);
         this.scopes.delete(name);
+        this.toolModes.delete(name);
         this.toolModules.delete(name);
       }
       this.pluginToolNames.delete(pluginName);
@@ -561,7 +563,7 @@ export class ToolRegistry {
       tool: registered.tool,
       executor: registered.executor,
       scope: this.getEffectiveScope(name),
-      requiredMode: this.requiredModes.get(name),
+      mode: this.toolModes.get(name) ?? "both",
       tags: this.toolTags.get(name),
     };
   }
@@ -580,8 +582,8 @@ export class ToolRegistry {
     if (!this.tools.has(name)) return false;
 
     // Mode restriction (user vs bot)
-    const reqMode = this.requiredModes.get(name);
-    if (reqMode && reqMode !== this.mode) return false;
+    const toolMode = this.toolModes.get(name);
+    if (toolMode && toolMode !== "both" && toolMode !== this.mode) return false;
 
     // Active toolset profile filter
     if (this.activeToolset) {

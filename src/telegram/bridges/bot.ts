@@ -387,7 +387,9 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async getMessages(_chatId: string, _limit: number): Promise<TelegramMessage[]> {
-    return [];
+    throw new Error(
+      "getMessages is unavailable in bot mode — bots cannot read arbitrary chat history."
+    );
   }
 
   parseMessage(msg: GrammyMessage): TelegramMessage {

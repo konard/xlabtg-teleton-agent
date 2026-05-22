@@ -66,6 +66,6 @@ const executor = async (params: any, context: any) => {
 export const getUserGiftsEntry: ToolEntry = {
   tool,
   executor,
-  requiredMode: "bot",
+  mode: "bot",
   tags: ["finance"],
 };

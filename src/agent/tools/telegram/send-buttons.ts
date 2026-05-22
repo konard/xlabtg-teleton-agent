@@ -58,6 +58,6 @@ export const sendButtonsEntry: ToolEntry = {
   tool,
   executor,
   scope: "always",
-  requiredMode: "bot",
+  mode: "bot",
   tags: ["core", "bot"],
 };

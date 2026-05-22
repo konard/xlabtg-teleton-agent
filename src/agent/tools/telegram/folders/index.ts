@@ -14,19 +14,19 @@ export const tools: ToolEntry[] = [
   {
     tool: telegramGetFoldersTool,
     executor: telegramGetFoldersExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["social"],
   },
   {
     tool: telegramCreateFolderTool,
     executor: telegramCreateFolderExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["social"],
   },
   {
     tool: telegramAddChatToFolderTool,
     executor: telegramAddChatToFolderExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["social"],
   },
 ];

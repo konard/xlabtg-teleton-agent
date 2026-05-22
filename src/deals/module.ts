@@ -50,23 +50,35 @@ const dealsModule: PluginModule = {
 
   tools(config) {
     if (!config.deals?.enabled) return [];
+    // Deals run on the GramJS DealBot — userbot only (skipped in bot mode).
     return [
       {
         tool: dealProposeTool,
         executor: withDealsDb(dealProposeExecutor),
         scope: "dm-only" as const,
+        mode: "user" as const,
       },
       {
         tool: dealVerifyPaymentTool,
         executor: withDealsDb(dealVerifyPaymentExecutor),
         scope: "dm-only" as const,
+        mode: "user" as const,
       },
-      { tool: dealStatusTool, executor: withDealsDb(dealStatusExecutor) },
-      { tool: dealListTool, executor: withDealsDb(dealListExecutor) },
+      {
+        tool: dealStatusTool,
+        executor: withDealsDb(dealStatusExecutor),
+        mode: "user" as const,
+      },
+      {
+        tool: dealListTool,
+        executor: withDealsDb(dealListExecutor),
+        mode: "user" as const,
+      },
       {
         tool: dealCancelTool,
         executor: withDealsDb(dealCancelExecutor),
         scope: "dm-only" as const,
+        mode: "user" as const,
       },
     ];
   },

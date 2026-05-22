@@ -8,6 +8,6 @@ export { webSearchTool, webSearchExecutor };
 export { webFetchTool, webFetchExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: webSearchTool, executor: webSearchExecutor, tags: ["web"] },
-  { tool: webFetchTool, executor: webFetchExecutor, tags: ["web"] },
+  { tool: webSearchTool, executor: webSearchExecutor, mode: "both", tags: ["web"] },
+  { tool: webFetchTool, executor: webFetchExecutor, mode: "both", tags: ["web"] },
 ];

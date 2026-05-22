@@ -97,6 +97,7 @@ export function createTelegramSDK(
     },
 
     async getMessages(chatId, limit): Promise<SimpleMessage[]> {
+      requireUserMode("getMessages");
       requireBridge();
       try {
         const messages = await bridge.getMessages(chatId, limit ?? 50);

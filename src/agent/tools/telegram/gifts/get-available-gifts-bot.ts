@@ -59,6 +59,6 @@ const executor = async (_params: any, context: any) => {
 export const getAvailableGiftsBotEntry: ToolEntry = {
   tool,
   executor,
-  requiredMode: "bot",
+  mode: "bot",
   tags: ["finance"],
 };

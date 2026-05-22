@@ -5,11 +5,11 @@
 
 import { Api } from "telegram";
 import { Type } from "@sinclair/typebox";
-import { randomLong } from "../../../utils/gramjs-bigint.js";
-import type { Tool, ToolExecutor } from "../types.js";
-import { createLogger } from "../../../utils/logger.js";
-import { getErrorMessage } from "../../../utils/errors.js";
-import { getClient } from "../../../sdk/telegram-utils.js";
+import { randomLong } from "../../../../utils/gramjs-bigint.js";
+import type { Tool, ToolExecutor } from "../../types.js";
+import { createLogger } from "../../../../utils/logger.js";
+import { getErrorMessage } from "../../../../utils/errors.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("BotInlineSend");
 

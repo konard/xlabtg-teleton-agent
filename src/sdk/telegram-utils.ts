@@ -13,6 +13,11 @@ export function requireBridge(bridge: ITelegramBridge): void {
 }
 
 export function getClient(bridge: ITelegramBridge) {
+  if (bridge.getMode() !== "user") {
+    throw new Error(
+      "This tool requires user mode — it relies on an MTProto capability the Bot API does not provide."
+    );
+  }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- user-only escape hatch, cast to GramJS client
   return (bridge.getRawClient() as any).getClient();
 }

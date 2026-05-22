@@ -58,6 +58,16 @@ export type ToolScope =
   | "disabled";
 
 /**
+ * Telegram execution mode a tool supports.
+ * - "user": userbot only — relies on an MTProto capability the Bot API lacks
+ * - "bot": Bot API only — relies on a capability exclusive to bots
+ * - "both": works identically in either mode
+ *
+ * Mandatory on every built-in tool: the compiler refuses an undeclared tool.
+ */
+export type ToolMode = "user" | "bot" | "both";
+
+/**
  * Tool definition compatible with pi-ai
  */
 export interface Tool<TParameters extends TSchema = TSchema> {
@@ -96,8 +106,8 @@ export interface ToolEntry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tool executors accept varied param shapes
   executor: ToolExecutor<any>;
   scope?: ToolScope;
-  /** When set to "user", excluded in bot mode. When set to "bot", excluded in user mode. */
-  requiredMode?: "user" | "bot";
+  /** Telegram mode(s) this tool runs in. Mandatory — every tool must declare it. */
+  mode: ToolMode;
   /** Toolset tags for profile-based filtering (e.g. "core", "finance", "social") */
   tags?: string[];
 }
@@ -120,6 +130,8 @@ export interface PluginModule {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tool executors accept varied param shapes
     executor: ToolExecutor<any>;
     scope?: ToolScope;
+    /** Telegram mode(s) this module tool runs in. Defaults to "both" when omitted. */
+    mode?: ToolMode;
   }>;
   /** Start background jobs (polling, timers, etc.) */
   start?(context: PluginContext): Promise<void>;

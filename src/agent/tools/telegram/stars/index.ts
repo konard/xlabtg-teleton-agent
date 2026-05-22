@@ -17,14 +17,14 @@ export const tools: ToolEntry[] = [
     tool: telegramGetStarsBalanceTool,
     executor: telegramGetStarsBalanceExecutor,
     scope: "dm-only",
-    requiredMode: "user",
+    mode: "user",
     tags: ["finance"],
   },
   {
     tool: telegramGetStarsTransactionsTool,
     executor: telegramGetStarsTransactionsExecutor,
     scope: "dm-only",
-    requiredMode: "user",
+    mode: "user",
     tags: ["finance"],
   },
 ];
