@@ -10,6 +10,7 @@ import { sendTon } from "../ton/transfer.js";
 import { formatAsset } from "./utils.js";
 import { JournalStore } from "../memory/journal-store.js";
 import { getErrorMessage } from "../utils/errors.js";
+import { getClient } from "../sdk/telegram-utils.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Deal");
@@ -144,8 +145,7 @@ Thank you for trading! 🎉`,
       );
 
       // Transfer collectible gift using Telegram API
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- user-only MTProto path
-      const gramJsClient = bridge.getRawClient() as any;
+      const gramJsClient = getClient(bridge);
       const Api = (await import("telegram")).Api;
 
       try {

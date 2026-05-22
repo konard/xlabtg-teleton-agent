@@ -1,4 +1,5 @@
 import type { ITelegramBridge } from "../telegram/bridge-interface.js";
+import { isUserBridge } from "../telegram/bridge-guards.js";
 import type { Api } from "telegram";
 import type { SimpleMessage } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
@@ -13,13 +14,12 @@ export function requireBridge(bridge: ITelegramBridge): void {
 }
 
 export function getClient(bridge: ITelegramBridge) {
-  if (bridge.getMode() !== "user") {
+  if (!isUserBridge(bridge)) {
     throw new Error(
       "This tool requires user mode — it relies on an MTProto capability the Bot API does not provide."
     );
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- user-only escape hatch, cast to GramJS client
-  return (bridge.getRawClient() as any).getClient();
+  return bridge.getClient().getClient();
 }
 
 /** Convert a GramJS message to a SimpleMessage */

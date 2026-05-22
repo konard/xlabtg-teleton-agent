@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import type { Deal } from "../../../deals/types.js";
@@ -165,18 +164,17 @@ export const dealVerifyPaymentExecutor: ToolExecutor<DealVerifyPaymentParams> = 
 
       log.info(`[Deal] Checking for gift receipt for deal #${params.dealId}...`);
 
-      // Use GiftDetector to poll for new gifts
-      // Note: We need to pass the agent's own user ID (bot's Telegram ID)
-      const me = (context.bridge.getRawClient() as any).getMe();
+      // Use GiftDetector to poll for new gifts — needs the agent's own Telegram ID
+      const ownUserId = context.bridge.getOwnUserId();
 
-      if (!me) {
+      if (!ownUserId) {
         return {
           success: false,
           error: "Failed to get bot user info. Bot may not be authenticated.",
         };
       }
 
-      const botUserId = Number(me.id);
+      const botUserId = Number(ownUserId);
 
       const giftDetector = new GiftDetector();
       const newGifts = await giftDetector.detectNewGifts(botUserId, context);

@@ -531,14 +531,6 @@ export class GrammyBotBridge implements ITelegramBridge {
     };
   }
 
-  getPeer(_chatId: string): undefined {
-    return undefined;
-  }
-
-  getRawClient(): Bot {
-    return this.bot;
-  }
-
   /** Set callback handler for synthetic message injection (from CallbackRouter) */
   setCallbackHandler(handler: (msg: TelegramMessage) => void): void {
     this.callbackHandler = handler;

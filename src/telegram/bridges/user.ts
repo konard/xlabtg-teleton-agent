@@ -477,12 +477,9 @@ export class GramJSUserBridge implements ITelegramBridge {
     return this.peerCache.get(chatId);
   }
 
-  getRawClient(): unknown {
-    return this.client;
-  }
-
   // --- Non-interface methods (user-bridge specific) ---
 
+  /** The GramJS client wrapper. Reach it through the isUserBridge type guard. */
   getClient(): TelegramUserClient {
     return this.client;
   }

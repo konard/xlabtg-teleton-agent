@@ -187,11 +187,10 @@ export class VerificationPoller {
   ): Promise<{ verified: boolean; giftMsgId?: string }> {
     try {
       // Get agent's own user ID
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- user-only MTProto path
-      const me = (this.bridge.getRawClient() as any)?.getMe?.();
-      if (!me) return { verified: false };
+      const ownUserId = this.bridge.getOwnUserId();
+      if (!ownUserId) return { verified: false };
 
-      const botUserId = Number(me.id);
+      const botUserId = Number(ownUserId);
 
       // Import gift executor
       const { telegramGetMyGiftsExecutor } =

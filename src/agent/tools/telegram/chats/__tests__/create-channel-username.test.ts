@@ -7,7 +7,7 @@ const mockInvoke = vi.fn();
 const mockContext = {
   bridge: {
     getMode: () => "user",
-    getRawClient: () => ({
+    getClient: () => ({
       getClient: () => ({
         invoke: mockInvoke,
       }),

@@ -1,4 +1,5 @@
 import type { ITelegramBridge } from "../bridge-interface.js";
+import { isUserBridge } from "../bridge-guards.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("Telegram");
@@ -68,8 +69,9 @@ export class CallbackQueryHandler {
 
   private async answerCallback(queryId: bigint, message?: string, alert = false): Promise<void> {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- user-only MTProto callback answer
-      await (this.bridge.getRawClient() as any)?.answerCallbackQuery?.(queryId, { message, alert });
+      if (isUserBridge(this.bridge)) {
+        await this.bridge.getClient().answerCallbackQuery(queryId, { message, alert });
+      }
     } catch (error) {
       log.error({ err: error }, "Error answering callback");
     }

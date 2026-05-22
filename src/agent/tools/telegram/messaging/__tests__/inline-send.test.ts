@@ -17,7 +17,7 @@ describe("bot_inline_send", () => {
   const mockBridge = {
     isAvailable: () => true,
     getMode: () => "user",
-    getRawClient: () => ({
+    getClient: () => ({
       getClient: () => mockGramJsClient,
     }),
   };

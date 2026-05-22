@@ -112,8 +112,4 @@ export interface ITelegramBridge {
     filters?: { incoming?: boolean; outgoing?: boolean; chats?: string[] }
   ): void;
   fetchReplyContext(rawMsg: unknown): Promise<ReplyContext | null>;
-
-  // Escape hatches (user-only tools)
-  getPeer(chatId: string): unknown | undefined;
-  getRawClient(): unknown;
 }
