@@ -34,6 +34,10 @@ export class GramJSUserBridge implements ITelegramBridge {
     return "user";
   }
 
+  requiresOffsetDedup(): boolean {
+    return true;
+  }
+
   async connect(): Promise<void> {
     await this.client.connect();
     const me = this.client.getMe();

@@ -11,6 +11,8 @@ const log = createLogger("Telegram");
 import type { ModulePermissions, ModuleLevel } from "../agent/tools/module-permissions.js";
 import type { ToolRegistry } from "../agent/tools/registry.js";
 import { writePluginSecret, deletePluginSecret, listPluginSecretKeys } from "../sdk/secrets.js";
+import { readRawConfig, writeRawConfig, setNestedValue } from "../config/configurable-keys.js";
+import { getErrorMessage } from "../utils/errors.js";
 
 export interface AdminCommand {
   command: string;
@@ -30,17 +32,20 @@ export class AdminHandler {
   private paused = false;
   private permissions: ModulePermissions | null;
   private registry: ToolRegistry | null;
+  private configPath: string;
 
   constructor(
     bridge: ITelegramBridge,
     config: TelegramConfig,
     agent: AgentRuntime,
+    configPath: string,
     permissions?: ModulePermissions,
     registry?: ToolRegistry
   ) {
     this.bridge = bridge;
     this.config = config;
     this.agent = agent;
+    this.configPath = configPath;
     this.permissions = permissions ?? null;
     this.registry = registry ?? null;
   }
@@ -109,6 +114,8 @@ export class AdminHandler {
         return this.handleVerboseCommand();
       case "rag":
         return this.handleRagCommand(command);
+      case "guest":
+        return this.handleGuestCommand(command);
       case "modules":
         return this.handleModulesCommand(command, isGroup ?? false);
       case "plugin":
@@ -320,6 +327,25 @@ export class AdminHandler {
     const next = !cfg.tool_rag.enabled;
     cfg.tool_rag.enabled = next;
     return next ? "🔍 Tool RAG **ON**" : "🔇 Tool RAG **OFF**";
+  }
+
+  private handleGuestCommand(command: AdminCommand): string {
+    const cfg = this.agent.getConfig();
+    const sub = command.args[0]?.toLowerCase();
+    if (sub !== "on" && sub !== "off") {
+      const state = cfg.telegram.guest_mode ? "ON" : "OFF";
+      return `👤 Guest mode: **${state}**\n\nUsage: /guest on|off`;
+    }
+    const enabled = sub === "on";
+    try {
+      const raw = readRawConfig(this.configPath);
+      setNestedValue(raw, "telegram.guest_mode", enabled);
+      writeRawConfig(raw, this.configPath);
+    } catch (error) {
+      return `❌ Error saving config: ${getErrorMessage(error)}`;
+    }
+    cfg.telegram.guest_mode = enabled;
+    return enabled ? "👤 Guest mode **ON**" : "👤 Guest mode **OFF**";
   }
 
   private handleModulesCommand(command: AdminCommand, isGroup: boolean): string {
@@ -557,6 +583,9 @@ Toggle verbose debug logging
 
 **/rag** [status|topk <n>]
 Toggle Tool RAG or view status
+
+**/guest** on|off
+Toggle guest mode (answer queries in non-member chats)
 
 **/pause** / **/resume**
 Pause or resume the agent

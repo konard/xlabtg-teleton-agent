@@ -457,6 +457,17 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     mask: identity,
     parse: (v) => Number(v),
   },
+  "telegram.guest_mode": {
+    type: "boolean",
+    category: "Telegram",
+    label: "Guest Mode",
+    description: "Answer guest queries in chats the bot is not a member of",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
 
   // ─── Embedding ─────────────────────────────────────────────────────
   "embedding.provider": {

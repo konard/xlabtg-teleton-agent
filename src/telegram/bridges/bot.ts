@@ -76,6 +76,10 @@ export class GrammyBotBridge implements ITelegramBridge {
     return "bot";
   }
 
+  requiresOffsetDedup(): boolean {
+    return false;
+  }
+
   isAvailable(): boolean {
     return this.connected;
   }
@@ -514,6 +518,28 @@ export class GrammyBotBridge implements ITelegramBridge {
     });
   }
 
+  /** Register a handler for Bot API 10.0 guest queries. Reply text is sent via answerGuestQuery. */
+  onGuestMessage(handler: (msg: TelegramMessage) => Promise<string>): void {
+    this.bot.on("guest_message", async (ctx) => {
+      const gm = ctx.guestMessage;
+      if (!gm) return;
+      try {
+        const content = await handler(this.parseMessage(gm));
+        const text = content?.trim();
+        if (!text || text === "__SILENT__") return;
+        const html = markdownToTelegramHtml(text).slice(0, TELEGRAM_MAX_MESSAGE_LENGTH);
+        await ctx.answerGuestQuery({
+          type: "article",
+          id: String(gm.message_id),
+          title: this.botInfo?.firstName ?? "Reply",
+          input_message_content: { message_text: html, parse_mode: "HTML" },
+        });
+      } catch (err) {
+        log.error({ err }, "Error in guest message handler");
+      }
+    });
+  }
+
   async fetchReplyContext(rawMsg: unknown): Promise<ReplyContext | null> {
     const msg = rawMsg as GrammyMessage | undefined;
     if (!msg?.reply_to_message) return null;
@@ -549,6 +575,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       { command: "wallet", description: "Check TON wallet balance" },
       { command: "verbose", description: "Toggle verbose logging" },
       { command: "rag", description: "Toggle Tool RAG or view status" },
+      { command: "guest", description: "Toggle guest mode" },
       { command: "pause", description: "Pause the agent" },
       { command: "resume", description: "Resume the agent" },
       { command: "stop", description: "Emergency shutdown" },

@@ -105,6 +105,10 @@ export const TelegramConfigSchema = z
       .describe(
         "Bot streaming mode: replace=each iteration replaces draft (default), all=concatenate all iterations, off=no streaming"
       ),
+    guest_mode: z
+      .boolean()
+      .default(false)
+      .describe("Allow the bot to answer guest queries in chats it is not a member of"),
   })
   .superRefine((data, ctx) => {
     if (data.mode === "user") {

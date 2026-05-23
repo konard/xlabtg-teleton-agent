@@ -207,6 +207,7 @@ export class TeletonApp {
       this.bridge,
       this.config.telegram,
       this.agent,
+      this.configPath,
       modulePermissions,
       this.toolRegistry
     );
@@ -366,6 +367,7 @@ ${blue}  ┌──────────────────────�
         this.bridge,
         this.config.telegram,
         this.agent,
+        this.configPath,
         modulePermissions,
         this.toolRegistry
       );
@@ -609,6 +611,27 @@ ${blue}  ┌──────────────────────�
         void this.debouncer!.enqueue(msg);
       });
       if (firstStart) {
+        this.bridge.onGuestMessage(async (msg) => {
+          if (!this.config.telegram.guest_mode) return "";
+          if (this.adminHandler.isPaused()) return "";
+          const response = await this.agent.processMessage({
+            chatId: `telegram:guest:${msg.chatId}`,
+            userMessage: msg.text,
+            userName: msg.senderFirstName,
+            senderUsername: msg.senderUsername,
+            isGroup: true,
+            isGuest: true,
+            timestamp: msg.timestamp.getTime(),
+            messageId: msg.id,
+            toolContext: {
+              bridge: this.bridge,
+              db: getDatabase().getDb(),
+              senderId: msg.senderId,
+              config: this.config,
+            },
+          });
+          return response.content;
+        });
         this.bridge.startPolling();
       }
       void this.bridge.syncCommands();

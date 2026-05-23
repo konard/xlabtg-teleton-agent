@@ -95,6 +95,7 @@ export interface ProcessMessageOptions {
   messageId?: number;
   replyContext?: { senderName?: string; text: string; isAgent?: boolean };
   isHeartbeat?: boolean;
+  isGuest?: boolean;
   streamToChat?: { chatId: string; bridge: ITelegramBridge; mode: "all" | "replace" | "off" };
 }
 
@@ -660,6 +661,10 @@ export class AgentRuntime {
           toolContext?.senderId
         );
       }
+    }
+
+    if (opts.isGuest && tools) {
+      tools = tools.filter((t) => !TELEGRAM_SEND_TOOLS.has(t.name));
     }
 
     return {
