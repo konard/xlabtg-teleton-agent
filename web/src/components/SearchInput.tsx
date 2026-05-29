@@ -11,6 +11,7 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', style,
     <div style={{ position: 'relative', ...wrapperStyle }}>
       <input
         type="text"
+        aria-label={placeholder}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -28,6 +29,8 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', style,
       />
       {value && (
         <button
+          type="button"
+          aria-label="Clear search"
           onClick={() => onChange('')}
           style={{
             position: 'absolute',

@@ -361,6 +361,7 @@ export function Workspace() {
                       <td style={{ textAlign: 'right', padding: '6px 14px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
                         <button
                           className="icon-button"
+                          aria-label="Rename"
                           onClick={() => { setDialog({ type: 'rename', target: entry.path }); setDialogInput(entry.name); }}
                           title="Rename"
                         >
@@ -368,6 +369,7 @@ export function Workspace() {
                         </button>
                         <button
                           className="icon-button"
+                          aria-label="Delete"
                           onClick={() => deleteEntry(entry)}
                           title="Delete"
                         >

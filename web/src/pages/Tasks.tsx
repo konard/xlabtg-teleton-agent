@@ -96,6 +96,14 @@ export function Tasks() {
     loadTasks();
   }, [loadTasks]);
 
+  // Poll only while a task is active (pending/in_progress), like the Dashboard.
+  const hasActiveTask = tasks.some((t) => t.status === 'pending' || t.status === 'in_progress');
+  useEffect(() => {
+    if (!hasActiveTask) return;
+    const id = setInterval(loadTasks, 5000);
+    return () => clearInterval(id);
+  }, [hasActiveTask, loadTasks]);
+
   // Close clean dropdown on click outside
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -361,11 +369,11 @@ export function Tasks() {
                         onClick={(e) => e.stopPropagation()}
                       >
                         {(task.status === 'pending' || task.status === 'in_progress') && (
-                          <button className="icon-button" onClick={() => cancelTask(task.id)} title="Cancel">
+                          <button className="icon-button" aria-label="Cancel task" onClick={() => cancelTask(task.id)} title="Cancel">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
                           </button>
                         )}
-                        <button className="icon-button" onClick={() => deleteTask(task.id)} title="Delete">
+                        <button className="icon-button" aria-label="Delete task" onClick={() => deleteTask(task.id)} title="Delete">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                         </button>
                       </td>
