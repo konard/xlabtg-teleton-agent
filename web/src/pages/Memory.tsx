@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { api, MemorySourceFile, MemoryChunk } from '../lib/api';
+import { api, MemorySourceFile, MemoryChunk, SearchResult } from '../lib/api';
 import { formatDate } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 
@@ -13,6 +13,11 @@ export function Memory() {
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
   const [chunks, setChunks] = useState<MemoryChunk[]>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
+
+  // Semantic search state (wired to GET /memory/search)
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const query = filter.trim();
 
   const loadSources = useCallback(async () => {
     setLoading(true);
@@ -30,6 +35,31 @@ export function Memory() {
   useEffect(() => {
     loadSources();
   }, [loadSources]);
+
+  // Debounced semantic search across indexed knowledge (hybrid vector + keyword).
+  useEffect(() => {
+    if (!query) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.searchKnowledge(query);
+        if (!cancelled) setResults(res.data ?? []);
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   const toggleSource = async (sourceKey: string) => {
     if (expandedSource === sourceKey) {
@@ -50,11 +80,6 @@ export function Memory() {
     }
   };
 
-  const lowerFilter = filter.toLowerCase();
-  const filtered = lowerFilter
-    ? sources.filter((s) => s.source.toLowerCase().includes(lowerFilter))
-    : sources;
-
   return (
     <div>
       <div className="header">
@@ -68,7 +93,7 @@ export function Memory() {
           <SearchInput
             value={filter}
             onChange={setFilter}
-            placeholder="Filter sources..."
+            placeholder="Search memory content..."
             wrapperStyle={{ flex: 1 }}
             style={{ width: '100%' }}
           />
@@ -88,12 +113,52 @@ export function Memory() {
           </div>
         )}
 
-        {/* Sources table */}
-        {loading ? (
+        {query ? (
+          /* Semantic search results */
+          searching ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>Searching...</div>
+          ) : results.length === 0 ? (
+            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
+              No results for &ldquo;{query}&rdquo;
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 14px' }}>
+              {results.map((r) => (
+                <div
+                  key={r.id}
+                  style={{
+                    padding: '10px 12px',
+                    border: '1px solid var(--border)',
+                    borderRadius: '4px',
+                    backgroundColor: 'var(--bg-glass)',
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '8px', fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                    <span style={{ wordBreak: 'break-all' }}>{r.source}</span>
+                    <span style={{ flexShrink: 0 }}>score {r.score.toFixed(3)}</span>
+                  </div>
+                  <pre style={{
+                    margin: 0,
+                    whiteSpace: 'pre-wrap',
+                    wordBreak: 'break-word',
+                    fontSize: '12px',
+                    fontFamily: 'monospace',
+                    lineHeight: '1.5',
+                    maxHeight: '300px',
+                    overflow: 'auto',
+                    color: 'var(--text-primary)',
+                  }}>
+                    {r.text}
+                  </pre>
+                </div>
+              ))}
+            </div>
+          )
+        ) : loading ? (
           <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : filtered.length === 0 ? (
+        ) : sources.length === 0 ? (
           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            {filter ? 'No matching sources' : 'No memory files indexed'}
+            No memory files indexed
           </div>
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
@@ -105,7 +170,7 @@ export function Memory() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((src) => {
+              {sources.map((src) => {
                 const isExpanded = expandedSource === src.source;
                 return (
                   <React.Fragment key={src.source}>
@@ -123,7 +188,7 @@ export function Memory() {
                     >
                       <td style={{ padding: '6px 14px' }}>
                         <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)', marginRight: '8px' }}>
-                          {isExpanded ? '\u25BC' : '\u25B6'}
+                          {isExpanded ? '▼' : '▶'}
                         </span>
                         {src.source}
                       </td>

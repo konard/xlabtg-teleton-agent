@@ -1213,19 +1213,6 @@ button.btn-sm {
   text-align: center;
 }
 
-/* ---- Shimmer skeleton ---- */
-
-@keyframes shimmer {
-  0% { background-position: -200% 0; }
-  100% { background-position: 200% 0; }
-}
-
-.skeleton {
-  background: linear-gradient(90deg, var(--glass-thin) 25%, var(--glass-regular) 50%, var(--glass-thin) 75%);
-  background-size: 200% 100%;
-  animation: shimmer 1.2s infinite;
-  border-radius: var(--radius-sm);
-}
 
 /* ---- Setup Wizard ---- */
 
