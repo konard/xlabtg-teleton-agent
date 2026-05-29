@@ -330,29 +330,6 @@ describe("ToolRegistry", () => {
     });
   });
 
-  describe("getForProvider()", () => {
-    beforeEach(() => {
-      registry.register(createMockTool("tool1"), createMockExecutor());
-      registry.register(createMockTool("tool2"), createMockExecutor());
-      registry.register(createMockTool("tool3"), createMockExecutor());
-    });
-
-    it("should return all tools when limit is null", () => {
-      const tools = registry.getForProvider(null);
-      expect(tools.length).toBe(3);
-    });
-
-    it("should return all tools when under limit", () => {
-      const tools = registry.getForProvider(10);
-      expect(tools.length).toBe(3);
-    });
-
-    it("should truncate when exceeding limit", () => {
-      const tools = registry.getForProvider(2);
-      expect(tools.length).toBe(2);
-    });
-  });
-
   // ---------- Tool execution ----------
 
   describe("execute()", () => {

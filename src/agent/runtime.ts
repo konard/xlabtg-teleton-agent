@@ -72,7 +72,10 @@ import {
   isTrivialMessage,
   extractContextSummary,
   parseRetryAfterMs,
+  summarizeToolParams,
+  enrichRAGQuery,
 } from "./runtime-utils.js";
+import { isBotBridge } from "../telegram/bridge-guards.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
 
@@ -152,48 +155,6 @@ interface ToolExecResult {
   result: { success: boolean; data?: unknown; error?: string };
   durationMs: number;
   execError?: { message: string; stack?: string };
-}
-
-/** Compact summary of tool params for the iteration log line. */
-function summarizeToolParams(toolName: string, params: Record<string, unknown>): string {
-  const MAX = 60;
-  let hint = "";
-
-  if (toolName === "exec_run" && typeof params.command === "string") {
-    hint = params.command;
-  } else if (toolName === "web_fetch" && typeof params.url === "string") {
-    hint = params.url;
-  } else if (toolName.startsWith("telegram_") && typeof params.message === "string") {
-    hint = params.message;
-  } else if (typeof params.query === "string") {
-    hint = params.query;
-  } else if (typeof params.section === "string") {
-    hint = params.section;
-  }
-
-  if (!hint) return "";
-  if (hint.length > MAX) hint = hint.slice(0, MAX) + "…";
-  return `(${hint})`;
-}
-
-function enrichRAGQuery(query: string): string {
-  if (!query) return query;
-  const tags: string[] = [];
-  const lower = query.toLowerCase();
-
-  if (/\.ton\b/i.test(query)) tags.push("TON blockchain domain DNS resolution");
-  if (/\b(EQ|UQ)[A-Za-z0-9_-]{46}\b/.test(query)) tags.push("TON wallet address blockchain");
-  if (/\bt\.me\/nft\/\S+/i.test(query)) tags.push("Telegram unique gift collectible NFT");
-  if (/\b(swap|trade|exchange)\b/i.test(query) && /\b(token|jetton|ton|usdt|usdc)\b/i.test(lower)) {
-    tags.push("DEX swap jetton trade");
-  }
-  if (/\bsticker\b/i.test(query)) tags.push("Telegram sticker pack send");
-  if (/\b(invoice|deal|payment|escrow)\b/i.test(query)) tags.push("trade deal invoice");
-  if (/\b(gift|collectible)\b/i.test(query) && /\b(buy|send|transfer|resale)\b/i.test(query)) {
-    tags.push("Telegram gift NFT collectible");
-  }
-
-  return tags.length > 0 ? `${query} ${tags.join(" ")}` : query;
 }
 
 export class AgentRuntime {
@@ -694,7 +655,7 @@ export class AgentRuntime {
     let session = turn.session;
     let context = turn.context;
 
-    const maxIterations = this.config.agent.max_agentic_iterations || 5;
+    const maxIterations = Math.max(1, this.config.agent.max_agentic_iterations || 5);
     let iteration = 0;
     let overflowResets = 0;
     let rateLimitRetries = 0;
@@ -730,8 +691,6 @@ export class AgentRuntime {
         streamMode !== "off";
 
       if (shouldStream) {
-        const { isBotBridge } = await import("../telegram/bridge-guards.js");
-
         // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
         const bridge = opts.streamToChat!.bridge;
         if (isBotBridge(bridge)) {
@@ -797,6 +756,18 @@ export class AgentRuntime {
       }
 
       const assistantMsg = response.message;
+
+      // Accumulate usage across all iterations — including errored responses that
+      // get retried, so cost metrics capture tokens spent on failed attempts too.
+      const iterUsage = response.message.usage;
+      if (iterUsage) {
+        accumulatedUsage.input += iterUsage.input;
+        accumulatedUsage.output += iterUsage.output;
+        accumulatedUsage.cacheRead += iterUsage.cacheRead ?? 0;
+        accumulatedUsage.cacheWrite += iterUsage.cacheWrite ?? 0;
+        accumulatedUsage.totalCost += iterUsage.cost?.total ?? 0;
+      }
+
       if (assistantMsg.stopReason === "error") {
         const errorMsg = assistantMsg.errorMessage || "";
 
@@ -900,16 +871,6 @@ export class AgentRuntime {
           log.error(`API error: ${errorMsg}`);
           throw new Error(`API error: ${errorMsg || "Unknown error"}`);
         }
-      }
-
-      // Accumulate usage across all iterations
-      const iterUsage = response.message.usage;
-      if (iterUsage) {
-        accumulatedUsage.input += iterUsage.input;
-        accumulatedUsage.output += iterUsage.output;
-        accumulatedUsage.cacheRead += iterUsage.cacheRead ?? 0;
-        accumulatedUsage.cacheWrite += iterUsage.cacheWrite ?? 0;
-        accumulatedUsage.totalCost += iterUsage.cost?.total ?? 0;
       }
 
       if (response.text) {
@@ -1274,7 +1235,6 @@ export class AgentRuntime {
 
     // Finalize streaming draft — clear bubble, send final message only if no send tool was used
     if (wasStreamed && opts.streamToChat) {
-      const { isBotBridge } = await import("../telegram/bridge-guards.js");
       const bridge = opts.streamToChat.bridge;
       if (isBotBridge(bridge)) {
         if (usedTelegramSendTool) {

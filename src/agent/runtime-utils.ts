@@ -36,6 +36,48 @@ export function isTrivialMessage(text: string): boolean {
   return trivial.test(stripped);
 }
 
+/** Compact summary of tool params for the iteration log line. */
+export function summarizeToolParams(toolName: string, params: Record<string, unknown>): string {
+  const MAX = 60;
+  let hint = "";
+
+  if (toolName === "exec_run" && typeof params.command === "string") {
+    hint = params.command;
+  } else if (toolName === "web_fetch" && typeof params.url === "string") {
+    hint = params.url;
+  } else if (toolName.startsWith("telegram_") && typeof params.message === "string") {
+    hint = params.message;
+  } else if (typeof params.query === "string") {
+    hint = params.query;
+  } else if (typeof params.section === "string") {
+    hint = params.section;
+  }
+
+  if (!hint) return "";
+  if (hint.length > MAX) hint = hint.slice(0, MAX) + "…";
+  return `(${hint})`;
+}
+
+export function enrichRAGQuery(query: string): string {
+  if (!query) return query;
+  const tags: string[] = [];
+  const lower = query.toLowerCase();
+
+  if (/\.ton\b/i.test(query)) tags.push("TON blockchain domain DNS resolution");
+  if (/\b(EQ|UQ)[A-Za-z0-9_-]{46}\b/.test(query)) tags.push("TON wallet address blockchain");
+  if (/\bt\.me\/nft\/\S+/i.test(query)) tags.push("Telegram unique gift collectible NFT");
+  if (/\b(swap|trade|exchange)\b/i.test(query) && /\b(token|jetton|ton|usdt|usdc)\b/i.test(lower)) {
+    tags.push("DEX swap jetton trade");
+  }
+  if (/\bsticker\b/i.test(query)) tags.push("Telegram sticker pack send");
+  if (/\b(invoice|deal|payment|escrow)\b/i.test(query)) tags.push("trade deal invoice");
+  if (/\b(gift|collectible)\b/i.test(query) && /\b(buy|send|transfer|resale)\b/i.test(query)) {
+    tags.push("Telegram gift NFT collectible");
+  }
+
+  return tags.length > 0 ? `${query} ${tags.join(" ")}` : query;
+}
+
 export function extractContextSummary(context: Context, maxMessages: number = 10): string {
   const recentMessages = context.messages.slice(-maxMessages);
   const summaryParts: string[] = [];

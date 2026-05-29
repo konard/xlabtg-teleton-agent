@@ -263,17 +263,6 @@ export class ToolRegistry {
     }
   }
 
-  getForProvider(toolLimit: number | null): PiAiTool[] {
-    const all = this.getAll();
-    if (toolLimit === null || all.length <= toolLimit) {
-      return all;
-    }
-    log.warn(
-      `Provider tool limit: ${toolLimit}, registered: ${all.length}. Truncating to ${toolLimit} tools.`
-    );
-    return all.slice(0, toolLimit);
-  }
-
   getForContext(
     isGroup: boolean,
     toolLimit: number | null,
