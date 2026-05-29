@@ -52,8 +52,6 @@ export function AgentControl() {
   const abortRef = useRef<AbortController | null>(null);
 
   const displayState = error && state === 'stopped' ? 'error' : state;
-  const config = STATE_CONFIG[displayState];
-
   const clearRetry = useCallback(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);

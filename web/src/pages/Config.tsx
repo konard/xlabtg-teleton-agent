@@ -172,7 +172,7 @@ export function Config() {
               <label className="toggle" style={{ margin: 0 }}>
                 <input
                   type="checkbox"
-                  checked={config.getLocal('heartbeat.enabled') === 'true' || config.getLocal('heartbeat.enabled') === true}
+                  checked={config.getLocal('heartbeat.enabled') === 'true'}
                   onChange={async (e) => {
                     const val = e.target.checked;
                     await config.saveConfig('heartbeat.enabled', String(val));
@@ -214,7 +214,7 @@ export function Config() {
                 <label className="toggle" style={{ margin: 0 }}>
                   <input
                     type="checkbox"
-                    checked={config.getLocal('heartbeat.self_configurable') === 'true' || config.getLocal('heartbeat.self_configurable') === true}
+                    checked={config.getLocal('heartbeat.self_configurable') === 'true'}
                     onChange={async (e) => {
                       const val = e.target.checked;
                       await config.saveConfig('heartbeat.self_configurable', String(val));

@@ -128,7 +128,7 @@ export function Dashboard() {
 function LogsPanel({ logs, connected, bottomRef }: {
   logs: Array<{ level: string; timestamp: number; message: string }>;
   connected: boolean;
-  bottomRef: React.RefObject<HTMLDivElement | null>;
+  bottomRef: React.RefObject<HTMLDivElement>;
 }) {
   const [open, setOpen] = useState(true);
   const toggle = useCallback(() => setOpen((v) => !v), []);

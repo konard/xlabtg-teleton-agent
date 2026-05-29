@@ -6,7 +6,6 @@ export function WelcomeStep({ data, onChange }: StepProps) {
   const [status, setStatus] = useState<SetupStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [initDone, setInitDone] = useState(false);
 
   useEffect(() => {
     setup.getStatus()
@@ -14,18 +13,6 @@ export function WelcomeStep({ data, onChange }: StepProps) {
       .catch((err) => setError(err instanceof Error ? err.message : String(err)))
       .finally(() => setLoading(false));
   }, []);
-
-  const handleAccept = async (accepted: boolean) => {
-    onChange({ ...data, riskAccepted: accepted });
-    if (accepted && !initDone) {
-      try {
-        await setup.initWorkspace(data.agentName || undefined);
-        setInitDone(true);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }
-  };
 
   return (
     <div className="step-content">

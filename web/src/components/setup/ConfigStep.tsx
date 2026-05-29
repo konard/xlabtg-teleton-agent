@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { setup, BotValidation } from '../../lib/api';
-import { Select } from '../Select';
 import { Stepper } from '../Stepper';
 import { PasswordInput } from './PasswordInput';
 import type { StepProps } from '../../pages/Setup';
