@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, WalletInfo, WalletTransaction } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { formatDateTime } from '../lib/utils';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -202,7 +202,7 @@ export function Wallet() {
                         {truncateAddress(counterparty)}
                       </td>
                       <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-                        {formatDate(tx.date)}
+                        {formatDateTime(tx.date)}
                       </td>
                     </tr>
                     {isExpanded && (

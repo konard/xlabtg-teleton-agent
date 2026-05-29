@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, TaskData } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { formatDate, formatDateTime } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 
 type TaskStatus = TaskData['status'];
@@ -405,16 +405,16 @@ export function Tasks() {
                             <span>{selected.createdBy || '\u2014'}</span>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Created</span>
-                            <span>{formatDate(selected.createdAt)}</span>
+                            <span>{formatDateTime(selected.createdAt)}</span>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Scheduled for</span>
-                            <span>{formatDate(selected.scheduledFor)}</span>
+                            <span>{formatDateTime(selected.scheduledFor)}</span>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Started</span>
-                            <span>{formatDate(selected.startedAt)}</span>
+                            <span>{formatDateTime(selected.startedAt)}</span>
 
                             <span style={{ color: 'var(--text-secondary)' }}>Completed</span>
-                            <span>{formatDate(selected.completedAt)}</span>
+                            <span>{formatDateTime(selected.completedAt)}</span>
 
                             {selected.dependencies.length > 0 && (
                               <>
