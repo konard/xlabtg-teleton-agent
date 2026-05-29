@@ -71,6 +71,7 @@ import {
   isContextOverflowError,
   isTrivialMessage,
   extractContextSummary,
+  parseRetryAfterMs,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -857,7 +858,9 @@ export class AgentRuntime {
         } else if (errorMsg.toLowerCase().includes("rate") || errorMsg.includes("429")) {
           rateLimitRetries++;
           if (rateLimitRetries <= RATE_LIMIT_MAX_RETRIES) {
-            const delay = 1000 * Math.pow(2, rateLimitRetries - 1);
+            // Respect server Retry-After as a floor; else exponential backoff. Positive jitter de-syncs retries.
+            const base = parseRetryAfterMs(errorMsg) ?? 1000 * Math.pow(2, rateLimitRetries - 1);
+            const delay = base + Math.floor(Math.random() * 500);
             log.warn(
               `Rate limited, retrying in ${delay}ms (attempt ${rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
             );
@@ -880,7 +883,8 @@ export class AgentRuntime {
         ) {
           serverErrorRetries++;
           if (serverErrorRetries <= SERVER_ERROR_MAX_RETRIES) {
-            const delay = 2000 * Math.pow(2, serverErrorRetries - 1);
+            const delay =
+              2000 * Math.pow(2, serverErrorRetries - 1) + Math.floor(Math.random() * 500);
             log.warn(
               `Server error, retrying in ${delay}ms (attempt ${serverErrorRetries}/${SERVER_ERROR_MAX_RETRIES})...`
             );
