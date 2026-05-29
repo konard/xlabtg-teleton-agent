@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, ConversationChat, ConversationMessage } from '../lib/api';
 import { formatDate } from '../lib/utils';
+import { SearchInput } from '../components/SearchInput';
 
 export function Conversations() {
   const [filter, setFilter] = useState('');
@@ -69,12 +70,12 @@ export function Conversations() {
       <div className="card" style={{ padding: 0 }}>
         {/* Search + refresh bar */}
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-          <input
-            type="text"
+          <SearchInput
             value={filter}
-            onChange={(e) => setFilter(e.target.value)}
+            onChange={setFilter}
             placeholder="Filter chats..."
-            style={{ flex: 1, padding: '6px 10px', fontSize: '13px' }}
+            wrapperStyle={{ flex: 1 }}
+            style={{ width: '100%' }}
           />
           <button
             onClick={loadChats}

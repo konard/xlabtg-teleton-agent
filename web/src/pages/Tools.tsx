@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
@@ -115,9 +115,8 @@ export function Tools() {
                 const isBusy = updating === module.name;
 
                 return (
-                  <>
+                  <Fragment key={module.name}>
                     <tr
-                      key={module.name}
                       onClick={() => setExpandedModule(isExpanded ? null : module.name)}
                       onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedModule(isExpanded ? null : module.name); } }}
                       tabIndex={0}
@@ -171,7 +170,7 @@ export function Tools() {
                       </td>
                     </tr>
                     {isExpanded && (
-                      <tr key={`${module.name}-detail`} style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
+                      <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
                         <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
                           <div style={{ display: 'grid', gap: '6px', paddingTop: '6px' }}>
                             {module.tools.map((tool) => (
@@ -181,7 +180,7 @@ export function Tools() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

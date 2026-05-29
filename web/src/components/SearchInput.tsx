@@ -3,11 +3,12 @@ interface SearchInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   style?: React.CSSProperties;
+  wrapperStyle?: React.CSSProperties;
 }
 
-export function SearchInput({ value, onChange, placeholder = 'Search...', style }: SearchInputProps) {
+export function SearchInput({ value, onChange, placeholder = 'Search...', style, wrapperStyle }: SearchInputProps) {
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', ...wrapperStyle }}>
       <input
         type="text"
         placeholder={placeholder}
