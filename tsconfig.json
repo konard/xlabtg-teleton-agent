@@ -12,10 +12,9 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": ".",
-    "paths": {
-      "@/*": ["src/*"]
-    }
+    // tsup force baseUrl pendant le build dts (rollup.js) — deprecie en TS6.
+    // Silence jusqu'a ce que tsup gere TS7. A retirer quand tsup n'injecte plus baseUrl.
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/**/__tests__"]

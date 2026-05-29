@@ -10,7 +10,9 @@
     "rootDir": "src",
     "declaration": true,
     "declarationMap": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    // tsup force baseUrl pendant le build dts (rollup.js) — deprecie en TS6. Silence jusqu'au support TS7 de tsup.
+    "ignoreDeprecations": "6.0"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

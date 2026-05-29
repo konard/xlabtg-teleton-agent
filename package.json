@@ -64,7 +64,7 @@
   },
   "dependencies": {
     "@dedust/sdk": "^0.8.7",
-    "@hono/node-server": "^1.19.11",
+    "@hono/node-server": "^2.0.4",
     "@huggingface/transformers": "^3.8.1",
     "@inquirer/prompts": "^8.3.2",
     "@mariozechner/pi-ai": "^0.73.1",
@@ -96,7 +96,7 @@
     "axios": ">=1.15.2"
   },
   "devDependencies": {
-    "@ston-fi/api": "^0.31.0",
+    "@ston-fi/api": "^0.32.0",
     "@ston-fi/sdk": "^2.7.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
@@ -113,7 +113,7 @@
     "prettier": "^3.8.1",
     "tsup": "^8.5.1",
     "tsx": "^4.21.0",
-    "typescript": "^5.7.0",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.1"
   },
   "engines": {
