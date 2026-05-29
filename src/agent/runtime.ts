@@ -852,6 +852,7 @@ export class AgentRuntime {
           appendToTranscript(session.sessionId, userMsg);
 
           log.info(`Retrying with fresh context...`);
+          iteration--; // recovery retry, not a productive iteration — don't consume the budget
           continue;
         } else if (errorMsg.toLowerCase().includes("rate") || errorMsg.includes("429")) {
           rateLimitRetries++;
@@ -861,6 +862,7 @@ export class AgentRuntime {
               `Rate limited, retrying in ${delay}ms (attempt ${rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
             );
             await new Promise((r) => setTimeout(r, delay));
+            iteration--; // transient retry, not a productive iteration — don't consume the budget
             continue;
           }
           log.error(`Rate limited after ${RATE_LIMIT_MAX_RETRIES} retries: ${errorMsg}`);
@@ -883,6 +885,7 @@ export class AgentRuntime {
               `Server error, retrying in ${delay}ms (attempt ${serverErrorRetries}/${SERVER_ERROR_MAX_RETRIES})...`
             );
             await new Promise((r) => setTimeout(r, delay));
+            iteration--; // transient retry, not a productive iteration — don't consume the budget
             continue;
           }
           log.error(`Server error after ${SERVER_ERROR_MAX_RETRIES} retries: ${errorMsg}`);

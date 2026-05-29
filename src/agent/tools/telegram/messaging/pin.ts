@@ -15,8 +15,6 @@ const log = createLogger("Tools");
 interface PinMessageParams {
   chat_id: string;
   message_id: number;
-  silent?: boolean;
-  both_sides?: boolean;
 }
 
 export const telegramPinMessageTool: Tool = {
@@ -29,16 +27,6 @@ export const telegramPinMessageTool: Tool = {
     message_id: Type.Number({
       description: "ID of the message to pin",
     }),
-    silent: Type.Optional(
-      Type.Boolean({
-        description: "Pin silently without notification (default: false)",
-      })
-    ),
-    both_sides: Type.Optional(
-      Type.Boolean({
-        description: "Pin for both sides in private chats (default: true)",
-      })
-    ),
   }),
 };
 

@@ -1,10 +1,11 @@
 import { Type } from "@sinclair/typebox";
-import type { ToolEntry } from "../../types.js";
+import type { Tool, ToolEntry } from "../../types.js";
 
-const tool = {
+const tool: Tool = {
   name: "telegram_get_available_gifts_bot",
   description:
     "List sendable Star Gifts via the Bot API (requires bot_token). Returns gift ID, Stars cost, upgrade cost, and remaining stock. For the userbot catalog (with resale/collectible info), use telegram_get_available_gifts instead.",
+  category: "data-bearing",
   parameters: Type.Object({}),
 };
 
@@ -43,16 +44,18 @@ const executor = async (_params: any, context: any) => {
   const gifts = data.result?.gifts ?? [];
   return {
     success: true,
-    total: gifts.length,
-    gifts: gifts.map((g) => ({
-      id: g.id,
-      star_count: g.star_count,
-      upgrade_star_count: g.upgrade_star_count ?? null,
-      total_count: g.total_count ?? null,
-      remaining_count: g.remaining_count ?? null,
-      premium_only: g.is_premium || false,
-      emoji: g.sticker?.emoji ?? null,
-    })),
+    data: {
+      total: gifts.length,
+      gifts: gifts.map((g) => ({
+        id: g.id,
+        star_count: g.star_count,
+        upgrade_star_count: g.upgrade_star_count ?? null,
+        total_count: g.total_count ?? null,
+        remaining_count: g.remaining_count ?? null,
+        premium_only: g.is_premium || false,
+        emoji: g.sticker?.emoji ?? null,
+      })),
+    },
   };
 };
 
