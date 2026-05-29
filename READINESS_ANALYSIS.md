@@ -189,10 +189,33 @@ Ordered by (impact × blocking-ness). Each row maps to a GitHub issue in §6.
 
 ## 6. Issues created from this analysis
 
-The P0–P2 backlog above is filed as labelled GitHub issues in
-`xlabtg/teleton-agent` (see the pull request description for the live links).
-New labels introduced to tag them: `readiness`, `seo`, `observability`,
-`performance`, `accessibility`, `testing`, `release`, `i18n`, `devops`.
+The P0–P2 backlog above is filed as **labelled GitHub issues**. New labels
+introduced to tag them: `readiness`, `seo`, `observability`, `performance`,
+`accessibility`, `testing`, `release`, `i18n`, `devops`.
+
+> **Note on issue location.** The automation account has read-only access to the
+> upstream `xlabtg/teleton-agent` repository, so the issues could not be opened
+> there directly. They were created — with the labels above — on the
+> contributor fork [`konard/xlabtg-teleton-agent`](https://github.com/konard/xlabtg-teleton-agent/issues),
+> and are reproduced in full below so a maintainer can transfer or recreate them
+> on the upstream repository.
+
+| ID | Priority | Labels | Issue |
+|----|:--------:|--------|-------|
+| R1 | P0 | `readiness`,`seo` | [Deploy & automate the SEO baseline](https://github.com/konard/xlabtg-teleton-agent/issues/1) |
+| R2 | P0 | `readiness`,`seo`,`enhancement` | [Public marketing landing page](https://github.com/konard/xlabtg-teleton-agent/issues/2) |
+| R3 | P0 | `readiness`,`observability`,`enhancement` | [Health/readiness probes + metrics](https://github.com/konard/xlabtg-teleton-agent/issues/3) |
+| R4 | P0 | `readiness`,`testing` | [Test-coverage gate in CI](https://github.com/konard/xlabtg-teleton-agent/issues/4) |
+| R5 | P0 | `readiness`,`release`,`security` | [1.0 release readiness (SemVer, SBOM, provenance)](https://github.com/konard/xlabtg-teleton-agent/issues/5) |
+| R6 | P1 | `readiness`,`documentation`,`enhancement` | [OpenAPI reference](https://github.com/konard/xlabtg-teleton-agent/issues/6) |
+| R7 | P1 | `readiness`,`testing` | [E2E WebUI test suite](https://github.com/konard/xlabtg-teleton-agent/issues/7) |
+| R8 | P1 | `readiness`,`enhancement` | [Backup / restore tooling](https://github.com/konard/xlabtg-teleton-agent/issues/8) |
+| R9 | P1 | `readiness`,`devops`,`enhancement` | [Deployment artifacts (Docker/compose/Helm)](https://github.com/konard/xlabtg-teleton-agent/issues/9) |
+| R10 | P1 | `readiness`,`accessibility`,`testing` | [Accessibility audit + CI check](https://github.com/konard/xlabtg-teleton-agent/issues/10) |
+| R11 | P2 | `readiness`,`performance` | [Performance & load benchmarks](https://github.com/konard/xlabtg-teleton-agent/issues/11) |
+| R12 | P2 | `readiness`,`i18n`,`enhancement` | [WebUI internationalization](https://github.com/konard/xlabtg-teleton-agent/issues/12) |
+| R13 | P2 | `readiness`,`documentation` | [Community health files](https://github.com/konard/xlabtg-teleton-agent/issues/13) |
+| R14 | P2 | `readiness`,`security`,`devops` | [Continuous SAST + secret scanning](https://github.com/konard/xlabtg-teleton-agent/issues/14) |
 
 ---
 
