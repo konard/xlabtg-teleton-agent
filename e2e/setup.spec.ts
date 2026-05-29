@@ -21,7 +21,13 @@ test("setup wizard completes end to end", async ({ page }) => {
   // ── Step 2: Provider — choose Anthropic and enter an API key. ──
   await expect(page.getByRole("heading", { name: "Choose Your LLM Provider" })).toBeVisible();
   await page.locator(".provider-card", { hasText: "Anthropic" }).click();
+  // Wait for the model list to load before typing the key: selecting a provider
+  // kicks off an async models fetch whose completion writes the default model
+  // into the wizard state. If we filled the key first, that later write could
+  // race and clobber the key, leaving the "Next" button disabled.
+  await expect(page.getByText("Claude Opus 4.8 - Most capable")).toBeVisible();
   await page.getByPlaceholder("sk-ant...").fill("sk-ant-test-key-0123456789");
+  await expect(next).toBeEnabled();
   await next.click();
 
   // ── Step 3: Config — set the admin user id (model is auto-selected). ──
