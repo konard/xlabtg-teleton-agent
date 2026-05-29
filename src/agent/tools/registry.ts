@@ -42,15 +42,7 @@ export class ToolRegistry {
   private mode: "user" | "bot";
   private toolModes: Map<string, ToolMode> = new Map();
   private toolTags: Map<string, string[]> = new Map();
-  private activeToolset: string | null = null; // null = "full" (no filtering)
   private allowFrom: Set<number> = new Set();
-
-  private static readonly TOOLSET_PROFILES: Record<string, string[]> = {
-    minimal: ["core"],
-    standard: ["core", "workspace", "web", "social"],
-    trading: ["core", "workspace", "web", "finance"],
-    full: [], // empty = no filtering
-  };
 
   constructor(mode: "user" | "bot" = "user") {
     this.mode = mode;
@@ -92,27 +84,8 @@ export class ToolRegistry {
     log.info(`Mode switched to ${mode}, ${count} tools available`);
   }
 
-  setActiveToolset(name: string | null): void {
-    if (name && name !== "full" && !ToolRegistry.TOOLSET_PROFILES[name]) {
-      log.warn(`Unknown toolset "${name}", falling back to full`);
-      this.activeToolset = null;
-      return;
-    }
-    this.activeToolset = name === "full" ? null : name;
-    this.toolArrayCache = null;
-    log.info(`Active toolset: ${this.activeToolset ?? "full"}`);
-  }
-
   setAllowFrom(ids: number[]): void {
     this.allowFrom = new Set(ids);
-  }
-
-  getActiveToolset(): string | null {
-    return this.activeToolset;
-  }
-
-  getAvailableToolsets(): string[] {
-    return Object.keys(ToolRegistry.TOOLSET_PROFILES);
   }
 
   getAvailableModules(): string[] {
@@ -573,17 +546,6 @@ export class ToolRegistry {
     // Mode restriction (user vs bot)
     const toolMode = this.toolModes.get(name);
     if (toolMode && toolMode !== "both" && toolMode !== this.mode) return false;
-
-    // Active toolset profile filter
-    if (this.activeToolset) {
-      const allowedTags = ToolRegistry.TOOLSET_PROFILES[this.activeToolset];
-      if (allowedTags && allowedTags.length > 0) {
-        const toolTagList = this.toolTags.get(name);
-        if (toolTagList && toolTagList.length > 0) {
-          if (!toolTagList.some((t) => allowedTags.includes(t))) return false;
-        }
-      }
-    }
 
     // Enabled check
     if (!this.isToolEnabled(name)) return false;

@@ -58,10 +58,6 @@ export const AgentConfigSchema = z.object({
     .number()
     .default(5)
     .describe("Maximum number of agentic loop iterations (tool call → result → tool call cycles)"),
-  toolset: z
-    .string()
-    .default("full")
-    .describe("Active toolset profile: minimal, standard, trading, full"),
   session_reset_policy: SessionResetPolicySchema.default(SessionResetPolicySchema.parse({})),
 });
 
