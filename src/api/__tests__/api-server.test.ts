@@ -46,6 +46,7 @@ import { createAuthRoutes } from "../routes/auth.js";
 import { createApiLogsRoutes } from "../routes/logs.js";
 import { createApiMemoryRoutes } from "../routes/memory.js";
 import { createDepsAdapter } from "../deps.js";
+import { renderMetrics } from "../../services/prometheus.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
@@ -110,6 +111,14 @@ function createTestApp(opts: TestAppOptions = {}) {
       return c.json({ status: "ready", state });
     }
     return c.json({ status: "not_ready", state }, 503);
+  });
+
+  // Prometheus metrics endpoint at root (no auth), mirroring server.ts
+  app.get("/metrics", async (c) => {
+    const body = await renderMetrics();
+    return c.text(body, 200, {
+      "Content-Type": "text/plain; version=0.0.4; charset=utf-8",
+    });
   });
 
   // Auth middleware for /v1/* routes
@@ -588,6 +597,16 @@ describe("Management API", () => {
       const body = await res.json();
       expect(body.status).toBe("not_ready");
       expect(body.state).toBe("stopped");
+    });
+
+    it("GET /metrics returns Prometheus text without auth", async () => {
+      const app = createTestApp();
+      const res = await app.request("/metrics");
+      expect(res.status).toBe(200);
+      expect(res.headers.get("Content-Type")).toContain("text/plain");
+      const body = await res.text();
+      expect(body).toContain("# HELP");
+      expect(body).toContain("# TYPE");
     });
 
     // Test 17

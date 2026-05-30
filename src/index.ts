@@ -10,6 +10,7 @@ import { AdminHandler } from "./telegram/admin.js";
 import { MessageDebouncer } from "./telegram/debounce.js";
 import { MessageDedupCache } from "./telegram/message-dedup-cache.js";
 import { getDatabase, closeDatabase, initializeMemory, type MemorySystem } from "./memory/index.js";
+import { createPreUpgradeBackup } from "./backup/pre-upgrade.js";
 import { getWalletAddress, clearKeyPair } from "./ton/wallet-service.js";
 import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
@@ -214,6 +215,7 @@ export class TeletonApp {
         path: join(TELETON_ROOT, "memory.db"),
         enableVectorSearch: embeddingProvider !== "none",
         vectorDimensions: 384,
+        onBeforeMigrate: (from, to) => createPreUpgradeBackup(from, to),
       },
       embeddings: {
         provider: embeddingProvider,

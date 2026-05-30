@@ -701,7 +701,7 @@ docker run -d \
   -e TELETON_TG_PHONE="+1234567890" \
   -e TELETON_WEBUI_ENABLED="true" \
   -v teleton-data:/data \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 ---

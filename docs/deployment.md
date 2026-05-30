@@ -11,6 +11,7 @@ This guide covers every method of deploying Teleton Agent, from a quick global i
 - [Method 2: Docker](#method-2-docker)
 - [Method 3: Docker Compose](#method-3-docker-compose)
 - [Method 4: From Source](#method-4-from-source)
+- [Method 5: Kubernetes (Helm)](#method-5-kubernetes-helm)
 - [systemd Service (VPS)](#systemd-service-vps)
 - [Remote Management (API)](#remote-management-api)
 - [Environment Variables](#environment-variables)
@@ -61,7 +62,21 @@ On first launch, Telegram will send a login code to your phone. Enter it when pr
 
 ## Method 2: Docker
 
-The official Docker image is available on GitHub Container Registry.
+The official Docker image is published to GitHub Container Registry on every
+release. It is a multi-arch image (`linux/amd64`, `linux/arm64`), so it runs
+natively on both x86 servers and ARM hosts (Apple Silicon, AWS Graviton,
+Raspberry Pi).
+
+### Verify the Signature (optional)
+
+Release images are signed keylessly with [cosign](https://github.com/sigstore/cosign)
+via GitHub OIDC. You can verify the supply-chain provenance before running:
+
+```bash
+cosign verify ghcr.io/xlabtg/teleton-agent:latest \
+  --certificate-identity-regexp '^https://github.com/xlabtg/teleton-agent/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
 
 ### Pull and Run
 
@@ -71,7 +86,7 @@ docker run -d \
   --restart unless-stopped \
   -v teleton-data:/data \
   -p 7777:7777 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 ### Image Details
@@ -94,7 +109,7 @@ Since the first run requires interactive authentication with Telegram, run setup
 # Run setup interactively
 docker run -it --rm \
   -v teleton-data:/data \
-  ghcr.io/tonresistor/teleton-agent setup
+  ghcr.io/xlabtg/teleton-agent setup
 
 # Then start the agent
 docker run -d \
@@ -102,7 +117,7 @@ docker run -d \
   --restart unless-stopped \
   -v teleton-data:/data \
   -p 7777:7777 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 ### Passing Configuration via Environment
@@ -120,7 +135,7 @@ docker run -d \
   -e TELETON_WEBUI_ENABLED="true" \
   -v teleton-data:/data \
   -p 7777:7777 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 Note: A `config.yaml` must still exist in the data volume with at minimum the non-overridden fields. Run `setup` first to create it.
@@ -129,37 +144,71 @@ Note: A `config.yaml` must still exist in the data volume with at minimum the no
 
 ## Method 3: Docker Compose
 
-A practical `docker-compose.yml` for production deployment:
+The repository ships a ready-to-use [`compose.yaml`](../compose.yaml) at the
+project root. From a checkout (or after copying `compose.yaml` and `.env.example`
+to your host) you can bring up the full stack with a single command.
 
-```yaml
-version: "3.8"
+```bash
+# (optional) provide credentials via a local .env file
+cp .env.example .env
+# edit .env
+
+# Initial setup (interactive Telegram login)
+docker compose run --rm agent setup
 
 services:
   teleton:
-    image: ghcr.io/tonresistor/teleton-agent:latest
+    image: ghcr.io/xlabtg/teleton-agent:latest
     container_name: teleton
     restart: unless-stopped
     ports:
       - "7777:7777"  # WebUI (remove if not using)
+      - "7778:7778"  # Management API (health probes + Prometheus metrics)
     volumes:
       - teleton-data:/data
     environment:
       - TELETON_WEBUI_ENABLED=true
       - TELETON_WEBUI_HOST=0.0.0.0  # Bind to all interfaces inside container
+      - TELETON_API_ENABLED=true    # Management API (/healthz, /readyz, /metrics)
+      - LOG_FORMAT=json             # Structured JSON logs for aggregation
       # Optionally override credentials via env vars:
       # - TELETON_API_KEY=sk-ant-...
       # - TELETON_TG_API_ID=12345678
       # - TELETON_TG_API_HASH=0123456789abcdef
       # - TELETON_TG_PHONE=+1234567890
+    # The official image ships a built-in HEALTHCHECK against /healthz, so this
+    # block is optional. It is shown here for clarity / custom images.
+    healthcheck:
+      # Node-based check (the slim image has no curl); skips self-signed cert verification.
+      test:
+        - CMD
+        - node
+        - -e
+        - "const h=require('node:https');h.request({host:'127.0.0.1',port:7778,path:'/healthz',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).end()"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
-volumes:
-  teleton-data:
-    driver: local
+# Start in the background
+docker compose up -d
 ```
+
+The shipped `compose.yaml` configures:
+
+- The published image `ghcr.io/xlabtg/teleton-agent:latest` (override with the
+  `TELETON_IMAGE` variable, or uncomment the `build:` block to build locally)
+- `restart: unless-stopped`
+- A named `teleton-data` volume mounted at `/data`
+- The WebUI enabled and published on host port `7777` (override with
+  `TELETON_WEBUI_PORT`)
+- A `healthcheck` that probes the `/health` endpoint with Node's built-in `fetch`
+- Optional credential overrides loaded from `.env` (see `.env.example`)
 
 ### Using a Host Directory Instead of a Named Volume
 
-If you prefer direct access to the data directory (for easier backups or config editing):
+If you prefer direct access to the data directory (for easier backups or config
+editing), replace the `teleton-data:/data` volume mapping in `compose.yaml` with:
 
 ```yaml
 volumes:
@@ -169,14 +218,8 @@ volumes:
 ### Commands
 
 ```bash
-# Initial setup (interactive)
-docker compose run --rm teleton setup
-
-# Start in background
-docker compose up -d
-
 # View logs
-docker compose logs -f teleton
+docker compose logs -f agent
 
 # Stop
 docker compose down
@@ -233,6 +276,31 @@ The build process (`npm run build`) runs three steps in sequence:
 3. `build:web` -- Compiles the React frontend with Vite to `dist/web/`
 
 The backend must build before the frontend because tsup cleans the output folder.
+
+---
+
+## Method 5: Kubernetes (Helm)
+
+A minimal Helm chart lives in [`helm/teleton-agent/`](../helm/teleton-agent). It
+renders a single-replica `Deployment` (`Recreate` strategy, since the agent owns
+one Telegram session and a SQLite DB on a `ReadWriteOnce` volume), a `Service`, a
+`PersistentVolumeClaim` for `/data`, and an optional `Secret` for credentials.
+
+```bash
+# Install from a checkout of the repository
+helm install teleton ./helm/teleton-agent \
+  --namespace teleton --create-namespace
+
+# First-run setup is interactive — run it inside the pod, then restart
+kubectl exec -it -n teleton deploy/teleton-teleton-agent -- node dist/cli/index.js setup
+kubectl rollout restart -n teleton deploy/teleton-teleton-agent
+```
+
+Provide credentials non-interactively via `--set secrets.TELETON_API_KEY=...` (or
+reference an existing Secret with `--set existingSecret=my-secret`). The WebUI
+`/health` endpoint backs the liveness/readiness probes. See the
+[chart README](../helm/teleton-agent/README.md) and
+[`values.yaml`](../helm/teleton-agent/values.yaml) for all options.
 
 ---
 
@@ -366,7 +434,7 @@ docker run -d \
   -v teleton-data:/data \
   -p 7777:7777 \
   -p 7778:7778 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 ---
@@ -398,27 +466,57 @@ Environment variables always take precedence over `config.yaml` values.
 
 ## Health Check
 
-When the WebUI is enabled, a health endpoint is available:
+The Management API (enable with `TELETON_API_ENABLED=true`) exposes dedicated
+probes on port `7778` (HTTPS, self-signed cert) for orchestrators:
+
+| Endpoint | Purpose | Codes |
+|----------|---------|-------|
+| `GET /healthz` | Liveness — process is alive | `200` |
+| `GET /readyz` | Readiness — agent fully initialised | `200` ready / `503` starting |
+| `GET /metrics` | Prometheus metrics (see [Management API docs](management-api.md#metrics)) | `200` |
 
 ```bash
-curl http://localhost:7777/health
+curl -fk https://localhost:7778/healthz   # {"status":"ok"}
+curl -fk https://localhost:7778/readyz    # 200 when running, 503 during startup
 ```
 
-This can be used in Docker health checks:
+The official Docker image ships a built-in `HEALTHCHECK` against `/healthz`, so
+no extra configuration is needed. To override it (e.g. on a custom image), use a
+Node-based check — the slim runtime image has no `curl`:
 
 ```yaml
 services:
   teleton:
     # ...
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7777/health"]
+      test:
+        - CMD
+        - node
+        - -e
+        - "const h=require('node:https');h.request({host:'127.0.0.1',port:7778,path:'/healthz',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).end()"
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 ```
 
-Or in Kubernetes liveness/readiness probes.
+Or in Kubernetes liveness/readiness probes — map `/healthz` to `livenessProbe`
+and `/readyz` to `readinessProbe`:
+
+```yaml
+livenessProbe:
+  httpGet: { path: /healthz, port: 7778, scheme: HTTPS }
+  initialDelaySeconds: 10
+  periodSeconds: 30
+readinessProbe:
+  httpGet: { path: /readyz, port: 7778, scheme: HTTPS }
+  initialDelaySeconds: 10
+  periodSeconds: 10
+```
+
+> The WebUI also exposes a simpler `GET http://localhost:7777/health` endpoint
+> when enabled, but `/healthz` + `/readyz` on the Management API are preferred
+> for production orchestration.
 
 ---
 
@@ -485,14 +583,14 @@ npm install -g teleton@0.5.2
 ### Docker
 
 ```bash
-docker pull ghcr.io/tonresistor/teleton-agent:latest
+docker pull ghcr.io/xlabtg/teleton-agent:latest
 docker stop teleton && docker rm teleton
 docker run -d \
   --name teleton \
   --restart unless-stopped \
   -v teleton-data:/data \
   -p 7777:7777 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 Or with Docker Compose:
@@ -525,7 +623,7 @@ For production stability, pin to a specific version tag:
 
 ```bash
 # Docker
-ghcr.io/tonresistor/teleton-agent:v0.5.2
+ghcr.io/xlabtg/teleton-agent:v0.5.2
 
 # npm
 npm install -g teleton@0.5.2

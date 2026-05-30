@@ -1,0 +1,44 @@
+{
+  "generatedAt": "2026-05-30T02:17:47.874Z",
+  "wcagTags": [
+    "wcag2a",
+    "wcag2aa",
+    "wcag21a",
+    "wcag21aa"
+  ],
+  "totalBlocking": 1,
+  "totalAdvisory": 0,
+  "pages": [
+    {
+      "page": "Setup",
+      "path": "/setup",
+      "blocking": [
+        {
+          "id": "color-contrast",
+          "impact": "serious",
+          "help": "Elements must meet minimum color contrast ratio thresholds",
+          "helpUrl": "https://dequeuniversity.com/rules/axe/4.11/color-contrast?application=playwright",
+          "nodes": 15,
+          "targets": [
+            ".sidebar-link-disabled:nth-child(1)",
+            ".sidebar-link-disabled:nth-child(2)",
+            ".sidebar-link-disabled:nth-child(3)",
+            ".sidebar-link-disabled:nth-child(4)",
+            ".sidebar-link-disabled:nth-child(5)",
+            ".sidebar-link-disabled:nth-child(6)",
+            ".sidebar-link-disabled:nth-child(7)",
+            ".sidebar-link-disabled:nth-child(8)",
+            ".sidebar-link-disabled:nth-child(9)",
+            ".sidebar-link-disabled:nth-child(10)",
+            ".step-cell:nth-child(2) > .step-label",
+            ".step-cell:nth-child(3) > .step-label",
+            ".step-cell:nth-child(4) > .step-label",
+            ".step-cell:nth-child(5) > .step-label",
+            ".step-cell:nth-child(6) > .step-label"
+          ]
+        }
+      ],
+      "advisory": []
+    }
+  ]
+}

@@ -42,3 +42,9 @@ piper-voices/
 # Benchmark run output (baseline.json is committed, ad-hoc results are not)
 benchmarks/results.json
 
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+

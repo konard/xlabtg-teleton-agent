@@ -25,8 +25,9 @@
   --text-on-accent: #ffffff;
 
   /* ── Accent ── */
-  --accent: #0A84FF;
-  --accent-dim: rgba(10, 132, 255, 0.15);
+  --accent: #0055D4;
+  --accent-dim: rgba(0, 85, 212, 0.15);
+  --accent-text: #4D9FFF;
 
   /* ── Semantic ── */
   --green: #30D158;
@@ -96,8 +97,9 @@
   --text-on-accent: #ffffff;
 
   /* ── Accent ── */
-  --accent: #007AFF;
-  --accent-dim: rgba(0, 122, 255, 0.12);
+  --accent: #0060D3;
+  --accent-dim: rgba(0, 96, 211, 0.12);
+  --accent-text: #0060D3;
 
   /* ── Semantic ── */
   --green: #34C759;
@@ -207,9 +209,9 @@ body {
   color: var(--text-tertiary);
   font-size: 13px;
   font-weight: 500;
-  opacity: 0.4;
   cursor: default;
   user-select: none;
+  pointer-events: none;
 }
 
 .main-wrapper {
@@ -1675,15 +1677,14 @@ button.btn-sm {
 
 .step-label {
   font-size: 10px;
-  color: var(--text-primary);
-  opacity: 0.3;
+  color: var(--text-secondary);
   text-align: center;
   white-space: nowrap;
   margin-top: 6px;
   width: 28px;
   position: relative;
   left: 0;
-  transition: opacity 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 /* Allow label text to overflow the 28px box while staying centered on the dot */
@@ -1694,13 +1695,12 @@ button.btn-sm {
 }
 
 .step-label.active {
-  opacity: 1;
   font-weight: 500;
-  color: var(--accent);
+  color: var(--accent-text);
 }
 
 .step-label.completed {
-  opacity: 0.5;
+  color: var(--text-secondary);
 }
 
 /* ---- Provider Grid ---- */
@@ -3758,4 +3758,27 @@ button.btn-lg {
 
 .autonomous-indeterminate-bar {
   animation: autonomous-indeterminate 1.4s ease-in-out infinite;
+}
+
+/* --- WCAG 2.1 AA fixes (issue #499) --------------------------------------- */
+/* Brighter accent for text on the soft accent background (active nav item).   */
+/* #5b8cff on the blended #1b2136 surface is only 3.86:1; #8fb0ff reaches      */
+/* 5.45:1, clearing the WCAG AA 4.5:1 threshold for normal-size text.          */
+:root {
+  --accent-bright: #8fb0ff;
+}
+.nav-item.active {
+  color: var(--accent-bright);
+}
+/* Respect the reduced-motion preference (WCAG 2.3.3 / 2.2.2) and keep entrance */
+/* animations from interfering with axe colour-contrast sampling.              */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
 }

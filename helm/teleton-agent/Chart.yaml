@@ -1,0 +1,20 @@
+apiVersion: v2
+name: teleton-agent
+description: Personal AI Agent for Telegram — Kubernetes deployment
+type: application
+# Chart version. Bump on every chart change.
+version: 0.1.0
+# Application version tracked by this chart. Matches the published image tag.
+appVersion: "0.8.20"
+keywords:
+  - telegram
+  - ai
+  - agent
+  - ton
+  - userbot
+home: https://github.com/xlabtg/teleton-agent#readme
+sources:
+  - https://github.com/xlabtg/teleton-agent
+maintainers:
+  - name: xlabtg
+    url: https://github.com/xlabtg

@@ -1,0 +1,15 @@
+# Teleton Agent — public landing site (https://teletonagent.dev)
+# Policy: allow crawling of the public marketing surfaces; the private,
+# authenticated operator WebUI is a SEPARATE app and is never served here.
+
+User-agent: *
+Allow: /
+
+# Defensive: even though the operator console is not hosted on this site,
+# keep its conventional control-plane paths out of any index.
+Disallow: /api/
+Disallow: /setup
+Disallow: /setup/
+Disallow: /login
+
+Sitemap: https://teletonagent.dev/sitemap.xml

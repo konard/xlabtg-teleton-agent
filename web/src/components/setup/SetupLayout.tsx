@@ -18,7 +18,7 @@ const DASHBOARD_LINKS = [
 
 function DisabledNav() {
   return (
-    <nav>
+    <nav aria-hidden="true">
       {DASHBOARD_LINKS.map((link) => (
         <span key={link.path} className="sidebar-link-disabled">
           {link.label}

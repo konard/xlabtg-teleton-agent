@@ -1,0 +1,52 @@
+# Docker Compose stack for Teleton Agent.
+#
+# Quick start:
+#   1. cp .env.example .env   # (optional) edit credentials
+#   2. docker compose run --rm agent setup   # interactive first-run setup
+#   3. docker compose up -d                  # start the agent in the background
+#
+# The agent's persistent state (config.yaml, session, SQLite DB, wallet, plugins)
+# lives in the named volume `teleton-data`, mounted at /data inside the container.
+services:
+  agent:
+    image: ${TELETON_IMAGE:-ghcr.io/xlabtg/teleton-agent:latest}
+    # To build the image locally instead of pulling, uncomment the `build` block
+    # and run `docker compose up -d --build`.
+    # build:
+    #   context: .
+    #   dockerfile: Dockerfile
+    container_name: teleton-agent
+    restart: unless-stopped
+    # Load optional overrides (API keys, Telegram credentials) from a local .env file.
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      NODE_ENV: production
+      # Enable the WebUI and bind it to all interfaces inside the container so the
+      # published port is reachable from the host. Remove these two lines to keep
+      # the agent headless.
+      TELETON_WEBUI_ENABLED: "true"
+      TELETON_WEBUI_HOST: 0.0.0.0
+    ports:
+      - "${TELETON_WEBUI_PORT:-7777}:7777" # WebUI (only when TELETON_WEBUI_ENABLED=true)
+    volumes:
+      - teleton-data:/data
+    healthcheck:
+      # The runtime image is built on node:20-slim (no curl), so probe the health
+      # endpoint with Node's built-in fetch instead.
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:7777/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+volumes:
+  teleton-data:
+    driver: local

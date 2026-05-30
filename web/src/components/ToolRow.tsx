@@ -117,7 +117,7 @@ export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search, sel
           className="btn-ghost btn-sm"
           title="View details"
           onClick={() => onInfo(tool.name)}
-          style={{ padding: '3px 7px', fontSize: '13px', lineHeight: 1, opacity: 0.7 }}
+          style={{ padding: '3px 7px', fontSize: '13px', lineHeight: 1 }}
         >
           ⓘ
         </button>

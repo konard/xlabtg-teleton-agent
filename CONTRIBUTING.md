@@ -8,6 +8,9 @@ Thank you for your interest in contributing to Teleton Agent. This guide covers 
 - [Suggesting Features](#suggesting-features)
 - [Development Setup](#development-setup)
 - [Branch Strategy](#branch-strategy)
+- [Commit Conventions](#commit-conventions)
+- [Versioning Policy (SemVer)](#versioning-policy-semver)
+- [Releases](#releases)
 - [Making Changes](#making-changes)
 - [Pull Request Process](#pull-request-process)
 - [Code Style](#code-style)
@@ -69,6 +72,93 @@ All work happens on **`main`**. There is no `dev` branch.
 - External contributors should fork the repo and open PRs against `main`.
 - PRs are squash-merged to keep history clean.
 
+## Commit Conventions
+
+This project follows the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) specification. Commit messages are linted automatically by a Husky `commit-msg` hook (powered by [`@commitlint/config-conventional`](https://github.com/conventional-changelog/commitlint)), and the release tooling derives version bumps and the `CHANGELOG.md` directly from commit history — so the prefix you choose is not cosmetic, it decides the next release version.
+
+Format:
+
+```
+<type>(<optional scope>): <description>
+```
+
+Common types:
+
+| Type | When to use | Release effect (pre‑1.0 → post‑1.0) |
+|------|-------------|-------------------------------------|
+| `feat` | A new user-facing feature | minor → minor |
+| `fix` | A bug fix | patch → patch |
+| `perf` | A performance improvement | patch → patch |
+| `docs` | Documentation only | none |
+| `refactor` | Code change that neither fixes a bug nor adds a feature | none |
+| `test` | Adding or fixing tests | none |
+| `build` / `ci` | Build system or CI changes | none |
+| `chore` | Tooling, deps, housekeeping | none |
+
+**Breaking changes** are flagged with a `!` after the type/scope **or** a `BREAKING CHANGE:` footer:
+
+```
+feat(api)!: rename `sendMessage` to `send`
+
+BREAKING CHANGE: `sendMessage` is removed; use `send` instead.
+```
+
+Examples:
+
+```
+feat: add DNS record caching for faster lookups
+fix(memory): prevent double-send on FloodWaitError retry
+docs: update plugin SDK examples
+feat(config)!: drop deprecated `legacy_proxy` key
+```
+
+## Versioning Policy (SemVer)
+
+Teleton Agent follows [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html): `MAJOR.MINOR.PATCH`.
+
+- **MAJOR** — incompatible / breaking changes to the public surface (CLI commands and flags, `config.yaml` schema, the Plugin SDK, the WebUI HTTP API, and the on-disk database/migration contract). Signalled by a `feat!:` / `BREAKING CHANGE:` commit.
+- **MINOR** — new, backward-compatible functionality (`feat:`).
+- **PATCH** — backward-compatible bug fixes and performance improvements (`fix:`, `perf:`).
+
+**Pre-1.0 caveat:** while the package is `0.x`, the public API is not yet considered stable. During this phase breaking changes bump the **minor** version and features/fixes bump the **patch** version, per the SemVer spec's allowance for initial development.
+
+**What counts as a breaking change:**
+
+- Removing or renaming a CLI command, subcommand, or flag.
+- Removing, renaming, or changing the type of a `config.yaml` key (adding an optional key is **not** breaking).
+- Removing or changing the signature of an exported Plugin SDK symbol or hook.
+- Removing or changing the response shape of a WebUI API endpoint.
+- A database migration that is not backward-compatible with the previous minor version.
+
+Deprecations are announced at least one minor release before removal, kept working in the meantime, and documented in the `CHANGELOG.md` under a `Deprecated` heading.
+
+## Releases
+
+Releases are automated with [release-please](https://github.com/googleapis/release-please-action):
+
+1. Merges to `main` accumulate into a **release PR** that release-please keeps up to date — it computes the next SemVer version from the Conventional Commits and regenerates `CHANGELOG.md`.
+2. Merging that release PR tags the commit (`vX.Y.Z`) and publishes a GitHub Release.
+3. The tag triggers the [`release.yml`](.github/workflows/release.yml) workflow, which builds and tests the package, then:
+   - publishes to npm with [npm provenance](https://docs.npmjs.com/generating-provenance-statements) (`--provenance`),
+   - publishes the Docker image to GHCR with a signed build-provenance attestation,
+   - generates an [SPDX](https://spdx.dev/) **SBOM** (`teleton-agent.spdx.json`) and attaches it to the GitHub Release,
+   - attaches a packed release tarball with a [SLSA Level 1](https://slsa.dev/) build-provenance attestation.
+
+The attestations can be verified with:
+
+```bash
+# release tarball downloaded from the GitHub Release
+gh attestation verify teleton-<version>.tgz --owner xlabtg
+
+# the published Docker image
+gh attestation verify oci://ghcr.io/xlabtg/teleton-agent:<version> --owner xlabtg
+
+# the published npm package
+npm audit signatures
+```
+
+Because the `CHANGELOG.md` is generated from commit history, do **not** edit it by hand — write good Conventional Commit messages instead.
+
 ## Making Changes
 
 1. **Fork** the repository and clone your fork.
@@ -79,7 +169,7 @@ All work happens on **`main`**. There is no `dev` branch.
    git checkout -b feature/my-change
    ```
 3. **Make your changes.** Keep commits focused on a single logical change.
-4. **Write commit messages** in imperative mood, concise and descriptive:
+4. **Write commit messages** following [Conventional Commits](#commit-conventions) — imperative mood, concise and descriptive. The `commit-msg` hook validates them:
    ```
    feat: add DNS record caching for faster lookups
    fix: prevent double-send on FloodWaitError retry

@@ -214,7 +214,7 @@ export function KnowledgeGraph() {
         <button
           onClick={loadGraph}
           disabled={loading}
-          style={{ padding: "4px 12px", fontSize: "12px", opacity: 0.7 }}
+          style={{ padding: "4px 12px", fontSize: "12px" }}
         >
           {loading ? "Loading..." : "Refresh"}
         </button>

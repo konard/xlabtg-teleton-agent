@@ -9,11 +9,13 @@ It runs on port `7778` by default, uses self-signed TLS, and authenticates reque
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [API Reference (OpenAPI)](#api-reference-openapi)
 - [Bootstrap Mode](#bootstrap-mode)
 - [Authentication](#authentication)
 - [TLS Certificates](#tls-certificates)
 - [Endpoints](#endpoints)
   - [Health Probes](#health-probes)
+  - [Metrics](#metrics)
   - [Agent Lifecycle](#agent-lifecycle)
   - [System](#system)
   - [Auth](#auth)
@@ -23,6 +25,7 @@ It runs on port `7778` by default, uses self-signed TLS, and authenticates reque
 - [Rate Limiting](#rate-limiting)
 - [Security](#security)
 - [Configuration](#configuration)
+- [Structured Logging](#structured-logging)
 - [CLI Commands](#cli-commands)
 - [Error Format](#error-format)
 - [Examples](#examples)
@@ -63,6 +66,43 @@ curl -k https://localhost:7778/v1/agent/status \
 ```
 
 > **Note**: `-k` skips TLS verification for self-signed certs. For production, pin the certificate fingerprint instead (see [TLS Certificates](#tls-certificates)).
+
+---
+
+## API Reference (OpenAPI)
+
+The complete, machine-readable API reference is published as an OpenAPI 3.1 document covering **every `/v1` endpoint**. It is generated directly from the live router, so it can never drift from the implementation, and is linted in CI with `redocly lint`.
+
+| Artifact | Location |
+|----------|----------|
+| OpenAPI spec (JSON) | [`docs/api-reference/openapi.json`](api-reference/openapi.json) |
+| OpenAPI spec (YAML) | [`docs/api-reference/openapi.yaml`](api-reference/openapi.yaml) |
+| Static Swagger UI | [`docs/api-reference/index.html`](api-reference/index.html) |
+
+### Interactive docs at runtime
+
+When the server runs in development (`NODE_ENV != production`) or with `api.docs_enabled: true`, interactive Swagger UI is served by the agent itself:
+
+- **`GET /api/docs`** — Swagger UI (unauthenticated)
+- **`GET /api/openapi.json`** — the spec (unauthenticated)
+- **`GET /v1/openapi.json`** — the same spec behind bearer auth
+
+```yaml
+api:
+  enabled: true
+  docs_enabled: true   # serve Swagger UI at /api/docs even in production
+```
+
+> The `/api/docs` and `/api/openapi.json` endpoints are exposed only as documentation plumbing and are intentionally excluded from the spec itself.
+
+### Regenerating the spec
+
+```bash
+npm run generate:openapi   # rewrites docs/api-reference/{openapi.json,openapi.yaml,index.html}
+npm run lint:openapi       # validates the spec with redocly
+```
+
+CI fails if the committed artifacts are out of date, so regenerate and commit whenever routes change.
 
 ---
 
@@ -199,6 +239,50 @@ No authentication required.
     "embeddings_cached": false
   }
 }
+```
+
+### Metrics
+
+No authentication required.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/metrics` | Prometheus text exposition format (`text/plain; version=0.0.4`) |
+
+Scrape it directly with Prometheus, Grafana Agent, VictoriaMetrics, etc.:
+
+```yaml
+# prometheus.yml
+scrape_configs:
+  - job_name: teleton
+    scheme: https
+    tls_config:
+      insecure_skip_verify: true   # self-signed cert; pin the fingerprint in production
+    static_configs:
+      - targets: ["localhost:7778"]
+```
+
+**Exposed metrics:**
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `teleton_tasks_total` | counter | `status` | Autonomous tasks by terminal status (`completed`, `failed`, `cancelled`) |
+| `teleton_llm_requests_total` | counter | `provider`, `model`, `status` | LLM calls by provider/model and outcome (`success`, `error`) |
+| `teleton_llm_duration_seconds` | histogram | `provider`, `model` | LLM request latency |
+| `teleton_memory_items_total` | gauge | — | Vector-memory (knowledge) entry count |
+| `teleton_active_sessions` | gauge | — | Telegram sessions active in the last 30 minutes |
+| `process_*` / `nodejs_*` | various | — | Process uptime, memory, CPU, GC and event-loop metrics via `prom-client` |
+
+**Sample output:**
+
+```text
+# HELP teleton_llm_requests_total Total LLM requests by provider, model and outcome
+# TYPE teleton_llm_requests_total counter
+teleton_llm_requests_total{provider="anthropic",model="claude-opus-4-8",status="success"} 42
+
+# HELP teleton_active_sessions Number of Telegram sessions active in the last 30 minutes
+# TYPE teleton_active_sessions gauge
+teleton_active_sessions 3
 ```
 
 ### Agent Lifecycle
@@ -410,8 +494,73 @@ api:
 | `TELETON_API_ENABLED` | Enable Management API | `false` |
 | `TELETON_API_PORT` | HTTPS port | `7778` |
 | `TELETON_JSON_CREDENTIALS` | Output credentials as JSON on startup | `false` |
+| `LOG_FORMAT` | `json` emits structured JSON logs (see below) | _(pretty)_ |
 
 Environment variables take precedence over `config.yaml`.
+
+---
+
+## Structured Logging
+
+Logs are pretty-printed for interactive use by default. For production deployments
+that ship logs to an aggregator (Loki, ELK, Datadog, …), set `LOG_FORMAT=json` to
+emit one JSON object per line on stdout:
+
+```bash
+LOG_FORMAT=json teleton start
+```
+
+```json
+{"level":30,"time":"2026-05-29T21:46:28.581Z","module":"ManagementAPI","msg":"Management API server running on https://127.0.0.1:7778"}
+```
+
+Secrets (`apiKey`, `password`, `token`, `mnemonic`, …) are automatically redacted as
+`[REDACTED]`. The log level is controlled separately via `TELETON_LOG_LEVEL`
+(`fatal|error|warn|info|debug|trace`) or `logging.level` in `config.yaml`.
+
+### Shipping logs with Promtail (Grafana Loki)
+
+```yaml
+# promtail-config.yaml
+scrape_configs:
+  - job_name: teleton
+    static_configs:
+      - targets: [localhost]
+        labels:
+          job: teleton
+          __path__: /var/log/teleton/*.log
+    pipeline_stages:
+      - json:
+          expressions:
+            level: level
+            module: module
+            msg: msg
+            time: time
+      - timestamp:
+          source: time
+          format: RFC3339
+      - labels:
+          module:
+```
+
+### Shipping logs with Filebeat (ELK)
+
+```yaml
+# filebeat.yml
+filebeat.inputs:
+  - type: filestream
+    paths:
+      - /var/log/teleton/*.log
+    parsers:
+      - ndjson:
+          target: ""
+          overwrite_keys: true
+output.elasticsearch:
+  hosts: ["http://localhost:9200"]
+```
+
+When running under Docker, point your shipper at the container's stdout
+(`docker logs` / the json-file driver) instead of a file path.
 
 ---
 
@@ -536,7 +685,7 @@ docker run -d \
   -v teleton-data:/data \
   -p 7777:7777 \
   -p 7778:7778 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 ### Docker Compose
@@ -544,7 +693,7 @@ docker run -d \
 ```yaml
 services:
   teleton:
-    image: ghcr.io/tonresistor/teleton-agent:latest
+    image: ghcr.io/xlabtg/teleton-agent:latest
     restart: unless-stopped
     ports:
       - "7777:7777"   # WebUI

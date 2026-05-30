@@ -5,6 +5,7 @@ import { mcpAddCommand, mcpRemoveCommand, mcpListCommand } from "./commands/mcp.
 import { configCommand } from "./commands/config.js";
 import { apiRotateKeyCommand, apiFingerprintCommand } from "./commands/api.js";
 import { autonomousCommand } from "./commands/autonomous.js";
+import { backupCommand, restoreCommand } from "./commands/backup.js";
 import {
   configExists,
   getDefaultConfigPath,
@@ -316,6 +317,35 @@ program
   .action(async () => {
     try {
       await apiFingerprintCommand();
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+// Backup & restore commands
+program
+  .command("backup")
+  .description("Create a compressed, integrity-verified backup of all Teleton data")
+  .option("-o, --out <dir>", "Output directory for the archive (default: <data>/backups)")
+  .action(async (options) => {
+    try {
+      await backupCommand({ out: options.out });
+    } catch (error) {
+      console.error("Error:", getErrorMessage(error));
+      process.exit(1);
+    }
+  });
+
+program
+  .command("restore")
+  .description("Restore Teleton data from a backup archive")
+  .option("-f, --file <path>", "Backup archive to restore (default: latest in <data>/backups)")
+  .option("--force", "Allow restoring a backup with a newer schema than this build")
+  .option("-y, --yes", "Skip the interactive confirmation prompt")
+  .action(async (options) => {
+    try {
+      await restoreCommand({ file: options.file, force: options.force, yes: options.yes });
     } catch (error) {
       console.error("Error:", getErrorMessage(error));
       process.exit(1);
