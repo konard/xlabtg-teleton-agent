@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "teleton-agent.fullname" . }}
+  labels:
+    {{- include "teleton-agent.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - name: webui
+      port: {{ .Values.service.port }}
+      targetPort: webui
+      protocol: TCP
+  selector:
+    {{- include "teleton-agent.selectorLabels" . | nindent 4 }}

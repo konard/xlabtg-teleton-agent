@@ -1,0 +1,33 @@
+Teleton Agent has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+1. First-run setup is interactive (Telegram login). Run the setup wizard inside the pod:
+
+   kubectl exec -it -n {{ .Release.Namespace }} \
+     deploy/{{ include "teleton-agent.fullname" . }} -- node dist/cli/index.js setup
+
+   Then restart the deployment so the agent picks up the new config:
+
+   kubectl rollout restart -n {{ .Release.Namespace }} \
+     deploy/{{ include "teleton-agent.fullname" . }}
+
+{{- if .Values.probes.enabled }}
+
+2. The WebUI /health endpoint is used for liveness/readiness probes.
+{{- end }}
+
+{{- if eq .Values.service.type "ClusterIP" }}
+
+3. Reach the WebUI locally via port-forward:
+
+   kubectl port-forward -n {{ .Release.Namespace }} \
+     svc/{{ include "teleton-agent.fullname" . }} {{ .Values.service.port }}:{{ .Values.service.port }}
+
+   Then open http://127.0.0.1:{{ .Values.service.port }}
+{{- end }}
+
+{{- if not .Values.persistence.enabled }}
+
+WARNING: persistence is disabled — the agent's config, session and database live in
+an emptyDir and will be LOST when the pod is rescheduled. Set persistence.enabled=true
+for any real deployment.
+{{- end }}

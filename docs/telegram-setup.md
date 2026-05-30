@@ -104,10 +104,10 @@ For Docker or other environments without an interactive terminal, run the setup 
 
 ```bash
 # Docker
-docker run -it --rm -v teleton-data:/data ghcr.io/tonresistor/teleton-agent setup
+docker run -it --rm -v teleton-data:/data ghcr.io/xlabtg/teleton-agent setup
 
 # Then start normally
-docker run -d -v teleton-data:/data ghcr.io/tonresistor/teleton-agent
+docker run -d -v teleton-data:/data ghcr.io/xlabtg/teleton-agent
 ```
 
 ---
