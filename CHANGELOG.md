@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.21](https://github.com/xlabtg/teleton-agent/compare/v0.8.20...v0.8.21) (2026-05-30)
+
+
+### Features
+
+* **a11y:** accessibility audit WCAG 2.1 AA + CI-проверка для WebUI ([0f8163c](https://github.com/xlabtg/teleton-agent/commit/0f8163c7bf69ba48de0a5994d57fcfb232822034))
+
+
+### Bug Fixes
+
+* **a11y:** исправить контраст .step-label.active на тёмном фоне ([4503f6b](https://github.com/xlabtg/teleton-agent/commit/4503f6b362fdd882922815515c9847874e3e38a1))
+* **a11y:** устранить нарушения контраста WCAG 2.1 AA в WebUI ([c1ee77b](https://github.com/xlabtg/teleton-agent/commit/c1ee77bfec114ff4eebef4949890ba835a6530e4))
+* **ci:** добавить generate:openapi, lint:openapi, compose.yaml и helm-чарт ([7b9736c](https://github.com/xlabtg/teleton-agent/commit/7b9736cbaf9e2b07a0009c3239b11ccc314d12ef))
+
 ## [0.8.20](https://github.com/xlabtg/teleton-agent/compare/v0.8.19...v0.8.20) (2026-05-30)
 
 
