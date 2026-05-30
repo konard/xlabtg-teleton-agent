@@ -22,6 +22,8 @@ servers:
 tags:
   - name: Health
     description: Liveness and readiness probes (no authentication).
+  - name: Metrics
+    description: Operational metrics.
   - name: Agent Lifecycle
     description: Start, stop, restart and observe the agent.
   - name: Managed Agents
@@ -68,8 +70,6 @@ tags:
     description: MCP server configuration.
   - name: Memory
     description: Memory search and management.
-  - name: Metrics
-    description: Operational metrics.
   - name: Agent Network
     description: Agent network registry and delegation routes.
   - name: Notifications
@@ -133,6 +133,23 @@ paths:
                   status:
                     type: string
                     example: ok
+        "500":
+          $ref: "#/components/responses/InternalError"
+      security: []
+  /metrics:
+    get:
+      tags:
+        - Metrics
+      summary: Get /metrics
+      operationId: get_metrics
+      responses:
+        "200":
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
         "500":
           $ref: "#/components/responses/InternalError"
       security: []
