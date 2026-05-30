@@ -162,7 +162,7 @@ function DashboardNav() {
               </>
             )}
           </button>
-          <button onClick={handleLogout} style={{ width: "100%", opacity: 0.7, fontSize: "13px" }}>
+          <button onClick={handleLogout} className="btn-ghost" style={{ width: "100%", fontSize: "13px" }}>
             Logout
           </button>
           <div

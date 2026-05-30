@@ -25,8 +25,8 @@
   --text-on-accent: #ffffff;
 
   /* ── Accent ── */
-  --accent: #0A84FF;
-  --accent-dim: rgba(10, 132, 255, 0.15);
+  --accent: #0055D4;
+  --accent-dim: rgba(0, 85, 212, 0.15);
 
   /* ── Semantic ── */
   --green: #30D158;
@@ -96,8 +96,8 @@
   --text-on-accent: #ffffff;
 
   /* ── Accent ── */
-  --accent: #007AFF;
-  --accent-dim: rgba(0, 122, 255, 0.12);
+  --accent: #0060D3;
+  --accent-dim: rgba(0, 96, 211, 0.12);
 
   /* ── Semantic ── */
   --green: #34C759;
@@ -207,9 +207,9 @@ body {
   color: var(--text-tertiary);
   font-size: 13px;
   font-weight: 500;
-  opacity: 0.4;
   cursor: default;
   user-select: none;
+  pointer-events: none;
 }
 
 .main-wrapper {
@@ -1675,15 +1675,14 @@ button.btn-sm {
 
 .step-label {
   font-size: 10px;
-  color: var(--text-primary);
-  opacity: 0.3;
+  color: var(--text-secondary);
   text-align: center;
   white-space: nowrap;
   margin-top: 6px;
   width: 28px;
   position: relative;
   left: 0;
-  transition: opacity 0.2s ease;
+  transition: color 0.2s ease;
 }
 
 /* Allow label text to overflow the 28px box while staying centered on the dot */
@@ -1694,13 +1693,12 @@ button.btn-sm {
 }
 
 .step-label.active {
-  opacity: 1;
   font-weight: 500;
   color: var(--accent);
 }
 
 .step-label.completed {
-  opacity: 0.5;
+  color: var(--text-secondary);
 }
 
 /* ---- Provider Grid ---- */
