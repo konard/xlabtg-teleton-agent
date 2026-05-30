@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Teleton Agent — XML sitemap for the public landing site (https://teletonagent.dev).
+  Lists only pages actually served by this site, plus the documentation site, the
+  GitHub project, and the TON / crypto ecosystem the agent natively integrates with.
+  The broader ecosystem sitemap lives in /seo/sitemap.xml.
+-->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
+        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+
+  <!-- ===== Landing site (this host) ===== -->
+  <url>
+    <loc>https://teletonagent.dev/</loc>
+    <lastmod>2026-05-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>1.0</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://teletonagent.dev/" />
+    <xhtml:link rel="alternate" hreflang="ru" href="https://teletonagent.dev/ru/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://teletonagent.dev/" />
+  </url>
+  <url>
+    <loc>https://teletonagent.dev/ru/</loc>
+    <lastmod>2026-05-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.9</priority>
+    <xhtml:link rel="alternate" hreflang="en" href="https://teletonagent.dev/" />
+    <xhtml:link rel="alternate" hreflang="ru" href="https://teletonagent.dev/ru/" />
+    <xhtml:link rel="alternate" hreflang="x-default" href="https://teletonagent.dev/" />
+  </url>
+
+  <!-- ===== Documentation ===== -->
+  <url>
+    <loc>https://docs.teletonagent.dev/</loc>
+    <lastmod>2026-05-29</lastmod>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- ===== Source project ===== -->
+  <url>
+    <loc>https://github.com/xlabtg/teleton-agent</loc>
+    <lastmod>2026-05-29</lastmod>
+    <changefreq>daily</changefreq>
+    <priority>0.8</priority>
+  </url>
+
+  <!-- ===== TON / crypto ecosystem the agent integrates with ===== -->
+  <url>
+    <loc>https://ton.org/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://ston.fi/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://dedust.io/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
+    <loc>https://dns.ton.org/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+  </url>
+</urlset>

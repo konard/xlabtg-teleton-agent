@@ -39,3 +39,9 @@ piper-voices/
 # Local Playwright MCP traces / snapshots
 .playwright-mcp/
 
+# Playwright E2E artifacts
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+

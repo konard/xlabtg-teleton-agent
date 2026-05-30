@@ -7,6 +7,7 @@
 <p align="center">
   <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
   <a href="https://nodejs.org/"><img src="https://img.shields.io/badge/node-%3E%3D20.0.0-brightgreen" alt="Node.js"></a>
+  <a href="https://codecov.io/gh/xlabtg/teleton-agent"><img src="https://codecov.io/gh/xlabtg/teleton-agent/branch/main/graph/badge.svg" alt="Coverage"></a>
   <a href="https://www.typescriptlang.org/"><img src="https://img.shields.io/badge/TypeScript-5.7-blue" alt="TypeScript"></a>
   <a href="https://teletonagent.dev"><img src="https://img.shields.io/badge/Website-teletonagent.dev-ff6600" alt="Website"></a>
   <a href="https://docs.teletonagent.dev"><img src="https://img.shields.io/badge/docs-Teleton%20Agents-blue" alt="Documentation"></a>
@@ -41,7 +42,7 @@
 
 ## Current Fork Status
 
-Current fork version: `0.8.19`.
+Current fork version: `0.8.20`.
 
 This README reflects the `xlabtg/teleton-agent` fork through merged PR [#480](https://github.com/xlabtg/teleton-agent/pull/480) / closed issue [#479](https://github.com/xlabtg/teleton-agent/issues/479). It was refreshed from the closed work history available at issue [#481](https://github.com/xlabtg/teleton-agent/issues/481): 236 closed issues and the 200 most recent merged pull requests as of the latest analyzed run.
 
@@ -127,8 +128,18 @@ npm install -g teleton@latest
 
 **Docker:**
 ```bash
-docker run -it -v ~/.teleton:/data ghcr.io/tonresistor/teleton-agent:latest setup
+docker run -it -v ~/.teleton:/data ghcr.io/xlabtg/teleton-agent:latest setup
 ```
+
+**Docker Compose:**
+```bash
+# Interactive first-run setup, then start in the background
+docker compose run --rm agent setup
+docker compose up -d
+```
+The published image is multi-arch (`linux/amd64`, `linux/arm64`) and signed with
+[cosign](https://github.com/sigstore/cosign). See the
+[Deployment Guide](docs/deployment.md) for Docker, Compose and Kubernetes/Helm.
 
 **From source (development):**
 ```bash
@@ -713,11 +724,12 @@ Full documentation is available in the [`docs/`](docs/) directory:
 | Section | Description |
 |---------|-------------|
 | [Configuration Guide](docs/configuration.md) | Complete reference for every config option |
-| [Deployment Guide](docs/deployment.md) | Docker, systemd, docker-compose, VPS |
+| [Deployment Guide](docs/deployment.md) | Docker, Compose, Kubernetes/Helm, systemd, VPS |
 | [Plugin Development](docs/plugins.md) | Step-by-step plugin tutorial |
 | [Telegram Setup](docs/telegram-setup.md) | API credentials, policies, 2FA, admin commands |
 | [TON Wallet](docs/ton-wallet.md) | Wallet setup, DEX trading, security |
 | [Management API](docs/management-api.md) | HTTPS API, bootstrap mode, authentication, endpoints |
+| [API Reference (OpenAPI)](docs/api-reference/) | OpenAPI 3.1 spec for every `/v1` endpoint + interactive Swagger UI |
 | [WebUI User Guide](docs/user-guide/README.md) | Bilingual guide to the current WebUI pages and workflows |
 | [Agent Network](docs/agent-network.md) | Signed inter-agent protocol, trust levels, and ingress setup |
 | [Semantic Memory](docs/semantic-memory.md) | Upstash Vector modes, fallback, prioritization, retention |

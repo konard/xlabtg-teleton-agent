@@ -19,6 +19,13 @@ export interface DatabaseConfig {
   vectorExtensionPath?: string;
   enableVectorSearch: boolean;
   vectorDimensions?: number;
+  /**
+   * Invoked once when an on-disk schema version mismatch is detected, just
+   * before migrations run. Used to create an automatic pre-upgrade backup.
+   * If it throws, initialization is aborted and migrations do NOT run
+   * (safety first — never migrate without a recoverable backup).
+   */
+  onBeforeMigrate?: (from: string, to: string) => void;
 }
 
 export class MemoryDatabase {
@@ -92,6 +99,11 @@ export class MemoryDatabase {
   }
 
   private migrate(from: string, to: string): void {
+    if (this.config.onBeforeMigrate) {
+      // Create a pre-upgrade backup before mutating the schema. A throw here
+      // aborts startup so we never migrate without a recoverable backup.
+      this.config.onBeforeMigrate(from, to);
+    }
     log.info(`Migrating database from ${from} to ${to}...`);
     runMigrations(this.db);
     ensureSchema(this.db);

@@ -1,0 +1,47 @@
+name: SEO validation
+
+# Validate the SEO baseline (sitemap.xml, robots.txt, private-console noindex)
+# on every PR that touches those assets or the validator itself. The check is
+# dependency-free — it runs with nothing but Node, no `npm ci` required.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'seo/**'
+      - 'web/index.html'
+      - 'scripts/validate-seo.mjs'
+      - 'scripts/__tests__/validate-seo.test.mjs'
+      - '.github/workflows/seo-validate.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'seo/**'
+      - 'web/index.html'
+      - 'scripts/validate-seo.mjs'
+      - 'scripts/__tests__/validate-seo.test.mjs'
+      - '.github/workflows/seo-validate.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: seo-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate SEO assets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate SEO assets (sitemap / robots / noindex)
+        run: node scripts/validate-seo.mjs
+
+      - name: Run SEO validator unit tests
+        run: node --test scripts/__tests__/
