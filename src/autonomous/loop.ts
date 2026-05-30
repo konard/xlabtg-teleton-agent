@@ -7,8 +7,16 @@ import type { AutonomousTaskStore } from "../memory/agent/autonomous-tasks.js";
 import { PolicyEngine, DEFAULT_POLICY_CONFIG } from "./policy-engine.js";
 import type { PolicyConfig, PolicyEngineState } from "./policy-engine.js";
 import { createLogger } from "../utils/logger.js";
+import { recordTask } from "../services/prometheus.js";
 
 const log = createLogger("AutonomousLoop");
+
+/** Terminal task statuses worth counting in the teleton_tasks_total metric. */
+const COUNTED_TERMINAL_STATUSES = new Set<AutonomousTaskStatus>([
+  "completed",
+  "failed",
+  "cancelled",
+]);
 
 // Hard safety cap applied regardless of task constraints.maxIterations.
 // Prevents an unbounded loop when evaluateSuccess never returns true and no
@@ -157,6 +165,9 @@ export class AutonomousLoop {
       return false;
     }
     this.store.updateTaskStatus(taskId, status, opts);
+    if (COUNTED_TERMINAL_STATUSES.has(status)) {
+      recordTask(status);
+    }
     return true;
   }
 

@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+> **Note:** Starting from the next release, new entries in this file are
+> generated automatically by [release-please](https://github.com/googleapis/release-please-action)
+> from [Conventional Commits](https://www.conventionalcommits.org/). Do not edit
+> released sections by hand — write good commit messages instead (see
+> [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
+> note are preserved as the historical, manually-maintained record.
+
 ## [Unreleased]
 
 ### Added
@@ -14,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`telegram_schedule_message` agent tool**: Now logs a runtime deprecation warning and surfaces `deprecated: true` plus a `deprecationNotice` field in its result. The tool only queues plain text and cannot execute tools, trading functions, or multi-step workflows when the message is delivered, which silently breaks any automation that relies on it. Use `telegram_create_scheduled_task` (with a `tool_call` or `agent_task` payload) for any automation that must run at a scheduled time. The tool description now leads with `[DEPRECATED — use telegram_create_scheduled_task instead]` so the LLM picks the correct tool by default (closes xlabtg/teleton-agent#459).
 
 ### Added
+- **Backup / restore / migration-rollback tooling**: New `teleton backup` and `teleton restore` CLI commands (plus `npm run backup` / `npm run restore` and `bin/backup.sh` / `bin/restore.sh` wrappers) create and restore a timestamped, integrity-verified `teleton-backup-YYYY-MM-DD-HHMMSS.tar.gz` of all critical data under `TELETON_HOME` — wallet, SQLite databases (captured via consistent `serialize()` snapshots + `integrity_check`, safe to run while the agent is live), sessions, config, and workspace. Each archive carries a `manifest.json` with per-file SHA-256 checksums plus app and schema versions; restore verifies every checksum, refuses to overwrite onto a newer schema unless `--force`, and writes a safety backup of the current state before overwriting. A pre-upgrade hook auto-creates a backup on the first start after a schema-version bump and aborts the migration if the backup fails (never migrate without a recoverable backup). The native, dependency-free POSIX-ustar + gzip archive is readable by system `tar`. Documented in `docs/backup-restore.md` with manual, cron, and systemd procedures and an upgrade-with-rollback runbook (closes xlabtg/teleton-agent#497).
+- **End-to-end WebUI test suite (Playwright)**: New `e2e/` directory with 8 Playwright smoke tests covering the critical WebUI flows — setup wizard completion, dashboard agent-status load, task create/cancel, memory search, pipeline create-and-save, security settings persistence across reload, and the unauthenticated→login redirect. Tests run against the built static frontend (`npm run build:web`) with a deterministic, credential-free network-mock backend (`e2e/fixtures/mock-backend.ts`), so they need no live Telegram/LLM secrets. Added `playwright.config.ts`, an `npm run test:e2e` script, and a CI workflow (`.github/workflows/e2e.yml`) gated behind the `RUN_E2E` repo variable with fork protection and screenshot/report artifact upload on failure (closes xlabtg/teleton-agent#496).
 - **Bot API HTTPS proxy (`mtproto.bot_api_proxy`)**: Optional HTTP/HTTPS or SOCKS5 proxy URL for Telegram Bot API HTTPS calls to `api.telegram.org`. MTProto proxies cannot tunnel HTTPS, so this lets the deals bot reach the Bot API in regions where Telegram is also blocked at the IP level. Wired through to Grammy's `client.baseFetchConfig.agent` via `https-proxy-agent` / `socks-proxy-agent` (closes xlabtg/teleton-agent#439).
 
 ### Fixed

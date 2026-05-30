@@ -91,6 +91,7 @@ import {
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
 import { getMetrics } from "../services/metrics.js";
+import { recordLlmRequest } from "../services/prometheus.js";
 import { getAnalytics } from "../services/analytics.js";
 import { getAnomalyDetector } from "../services/anomaly-detector.js";
 import { getBehaviorTracker } from "../services/behavior-tracker.js";
@@ -853,6 +854,7 @@ export class AgentRuntime {
           }
         );
         let llmResponseEventId: string | null = null;
+        const llmStartTime = Date.now();
         try {
           response = await chatWithContext(this.config.agent, {
             systemPrompt: effectiveSystemPrompt,
@@ -861,7 +863,19 @@ export class AgentRuntime {
             persistTranscript: true,
             tools,
           });
+          recordLlmRequest(
+            provider,
+            this.config.agent.model,
+            (Date.now() - llmStartTime) / 1000,
+            "success"
+          );
         } catch (err) {
+          recordLlmRequest(
+            provider,
+            this.config.agent.model,
+            (Date.now() - llmStartTime) / 1000,
+            "error"
+          );
           this.recordAuditEvent(
             "llm.response",
             {

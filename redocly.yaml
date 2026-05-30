@@ -1,0 +1,21 @@
+# Redocly lint configuration for the Teleton Management API reference.
+# Run with: npm run lint:openapi
+rules:
+  # The spec ships with localhost as the default server URL — operators point
+  # their client at their own host:port. This is intentional for a self-hosted
+  # management API, so silence the example.com/localhost check.
+  no-server-example.com: off
+
+  # The error-response components (NotFound, Conflict, …) are a reusable
+  # catalogue referenced selectively per operation; an unused entry is fine.
+  no-unused-components: off
+
+  # A handful of real routes are structurally ambiguous to a router that
+  # ignores parameter names (e.g. `/v1/dashboards/{id}/export` vs
+  # `/v1/dashboards/templates/{templateId}`). The live Hono router disambiguates
+  # them by registration order, so keep this a warning rather than an error.
+  no-ambiguous-paths: warn
+
+  # Identical paths (differ only by parameter name) ARE merged by the generator
+  # and must never appear — keep this an error.
+  no-identical-paths: error

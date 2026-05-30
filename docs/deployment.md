@@ -156,6 +156,40 @@ cp .env.example .env
 # Initial setup (interactive Telegram login)
 docker compose run --rm agent setup
 
+services:
+  teleton:
+    image: ghcr.io/xlabtg/teleton-agent:latest
+    container_name: teleton
+    restart: unless-stopped
+    ports:
+      - "7777:7777"  # WebUI (remove if not using)
+      - "7778:7778"  # Management API (health probes + Prometheus metrics)
+    volumes:
+      - teleton-data:/data
+    environment:
+      - TELETON_WEBUI_ENABLED=true
+      - TELETON_WEBUI_HOST=0.0.0.0  # Bind to all interfaces inside container
+      - TELETON_API_ENABLED=true    # Management API (/healthz, /readyz, /metrics)
+      - LOG_FORMAT=json             # Structured JSON logs for aggregation
+      # Optionally override credentials via env vars:
+      # - TELETON_API_KEY=sk-ant-...
+      # - TELETON_TG_API_ID=12345678
+      # - TELETON_TG_API_HASH=0123456789abcdef
+      # - TELETON_TG_PHONE=+1234567890
+    # The official image ships a built-in HEALTHCHECK against /healthz, so this
+    # block is optional. It is shown here for clarity / custom images.
+    healthcheck:
+      # Node-based check (the slim image has no curl); skips self-signed cert verification.
+      test:
+        - CMD
+        - node
+        - -e
+        - "const h=require('node:https');h.request({host:'127.0.0.1',port:7778,path:'/healthz',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).end()"
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
 # Start in the background
 docker compose up -d
 ```
@@ -432,27 +466,57 @@ Environment variables always take precedence over `config.yaml` values.
 
 ## Health Check
 
-When the WebUI is enabled, a health endpoint is available:
+The Management API (enable with `TELETON_API_ENABLED=true`) exposes dedicated
+probes on port `7778` (HTTPS, self-signed cert) for orchestrators:
+
+| Endpoint | Purpose | Codes |
+|----------|---------|-------|
+| `GET /healthz` | Liveness — process is alive | `200` |
+| `GET /readyz` | Readiness — agent fully initialised | `200` ready / `503` starting |
+| `GET /metrics` | Prometheus metrics (see [Management API docs](management-api.md#metrics)) | `200` |
 
 ```bash
-curl http://localhost:7777/health
+curl -fk https://localhost:7778/healthz   # {"status":"ok"}
+curl -fk https://localhost:7778/readyz    # 200 when running, 503 during startup
 ```
 
-This can be used in Docker health checks:
+The official Docker image ships a built-in `HEALTHCHECK` against `/healthz`, so
+no extra configuration is needed. To override it (e.g. on a custom image), use a
+Node-based check — the slim runtime image has no `curl`:
 
 ```yaml
 services:
   teleton:
     # ...
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:7777/health"]
+      test:
+        - CMD
+        - node
+        - -e
+        - "const h=require('node:https');h.request({host:'127.0.0.1',port:7778,path:'/healthz',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1)).end()"
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 ```
 
-Or in Kubernetes liveness/readiness probes.
+Or in Kubernetes liveness/readiness probes — map `/healthz` to `livenessProbe`
+and `/readyz` to `readinessProbe`:
+
+```yaml
+livenessProbe:
+  httpGet: { path: /healthz, port: 7778, scheme: HTTPS }
+  initialDelaySeconds: 10
+  periodSeconds: 30
+readinessProbe:
+  httpGet: { path: /readyz, port: 7778, scheme: HTTPS }
+  initialDelaySeconds: 10
+  periodSeconds: 10
+```
+
+> The WebUI also exposes a simpler `GET http://localhost:7777/health` endpoint
+> when enabled, but `/healthz` + `/readyz` on the Management API are preferred
+> for production orchestration.
 
 ---
 

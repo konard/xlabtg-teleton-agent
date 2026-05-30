@@ -124,6 +124,45 @@ jobs:
       - name: Format check
         run: npm run format:check
 
+  # ---- OpenAPI spec ----
+  openapi:
+    name: CI / OpenAPI
+    runs-on: ubuntu-latest
+    if: |
+      github.event_name == 'pull_request' ||
+      (github.event_name == 'pull_request_target' &&
+       github.event.pull_request.head.repo.full_name != github.repository)
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Build SDK (required for spec generation)
+        run: npm run build -w packages/sdk
+
+      - name: Regenerate OpenAPI spec
+        run: npm run generate:openapi
+
+      - name: Verify committed spec is up to date
+        run: |
+          if ! git diff --quiet -- docs/api-reference; then
+            echo "::error::docs/api-reference is out of date. Run 'npm run generate:openapi' and commit the result."
+            git --no-pager diff -- docs/api-reference
+            exit 1
+          fi
+
+      - name: Lint OpenAPI spec
+        run: npm run lint:openapi
+
   # ---- Tests ----
   test:
     name: CI / Test
@@ -158,6 +197,14 @@ jobs:
           name: coverage-${{ github.event.pull_request.head.sha }}
           path: coverage/
           retention-days: 7
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: coverage/lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: false
+        continue-on-error: true
 
       - name: Coverage summary
         run: |

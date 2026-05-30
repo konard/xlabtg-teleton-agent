@@ -4,9 +4,10 @@ on:
   push:
     tags: ["v*"]
 
+# Least-privilege defaults; jobs opt into the extra scopes they need
+# (id-token / attestations for SLSA build provenance, packages for GHCR).
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   # ---- Build & Verify ----
@@ -35,10 +36,29 @@ jobs:
           name: dist
           path: dist/
 
+      # ---- SBOM (Software Bill of Materials) ----
+      # Required by NIST SSDF / EU CRA and common in enterprise procurement.
+      - name: Generate SBOM (SPDX)
+        uses: anchore/sbom-action@v0
+        with:
+          format: spdx-json
+          output-file: teleton-agent.spdx.json
+          artifact-name: teleton-agent.spdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbom
+          path: teleton-agent.spdx.json
+
   # ---- Publish to npm ----
   publish-npm:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # Required for npm to generate and publish provenance attestation.
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -71,7 +91,9 @@ jobs:
           name: dist
           path: dist/
 
-      - run: npm publish --access public
+      # --provenance attaches a signed SLSA provenance statement to the npm
+      # package, verifiable via `npm audit signatures` and on npmjs.com.
+      - run: npm publish --provenance --access public
         if: steps.check.outputs.publish == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -80,6 +102,9 @@ jobs:
   publish-sdk:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
 
@@ -108,7 +133,7 @@ jobs:
 
       - name: Build and publish SDK
         if: steps.check.outputs.publish == 'true'
-        run: npm run build -w packages/sdk && cd packages/sdk && npm publish --access public
+        run: npm run build -w packages/sdk && cd packages/sdk && npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -119,7 +144,9 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write # required for keyless cosign signing
+      # Required for keyless cosign signing and SLSA build provenance attestation.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
 
@@ -151,7 +178,7 @@ jobs:
             type=raw,value=latest
 
       - name: Build and push Docker image (linux/amd64, linux/arm64)
-        id: build
+        id: push
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -170,21 +197,40 @@ jobs:
       - name: Sign the published image (keyless / OIDC)
         env:
           COSIGN_EXPERIMENTAL: "1"
-          DIGEST: ${{ steps.build.outputs.digest }}
+          DIGEST: ${{ steps.push.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           for tag in $TAGS; do
             cosign sign --yes "${tag}@${DIGEST}"
           done
 
+      # SLSA Level 1 build provenance for the published image; verifiable with
+      # `gh attestation verify oci://ghcr.io/<repo>:<version> --owner <owner>`.
+      - name: Attest image build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ghcr.io/${{ steps.meta.outputs.repo }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true
+
   # ---- GitHub Release ----
   create-release:
-    needs: [publish-npm]
+    needs: [build, publish-npm]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      # Required for SLSA build provenance attestation of the release tarball.
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
 
       - name: Check if release already exists
         id: check
@@ -196,6 +242,36 @@ jobs:
           fi
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download dist artifact
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Download SBOM artifact
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/download-artifact@v4
+        with:
+          name: sbom
+
+      - name: Pack release tarball
+        if: steps.check.outputs.exists == 'false'
+        id: pack
+        run: |
+          FILE=$(npm pack --silent)
+          echo "tarball=$FILE" >> "$GITHUB_OUTPUT"
+
+      # SLSA Level 1 build provenance for the release tarball and SBOM.
+      # Verify with: `gh attestation verify <tarball> --owner <owner>`.
+      - name: Attest release artifacts
+        if: steps.check.outputs.exists == 'false'
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            ${{ steps.pack.outputs.tarball }}
+            teleton-agent.spdx.json
 
       - name: Generate changelog
         if: steps.check.outputs.exists == 'false'
@@ -216,6 +292,9 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
+          files: |
+            ${{ steps.pack.outputs.tarball }}
+            teleton-agent.spdx.json
           body: |
             ## Install
 

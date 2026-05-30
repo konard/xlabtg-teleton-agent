@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#0098EA" />
+
+    <title>Teleton Agent — Autonomous AI agent for Telegram, native on TON</title>
+    <meta
+      name="description"
+      content="Teleton Agent is an open-source autonomous AI agent that runs as a real Telegram account or bot. It thinks in an agentic loop, remembers with hybrid RAG, and natively integrates the TON blockchain — wallet, jettons, DEX swaps, NFTs and DNS. 135+ tools, 16 LLM providers, a Plugin SDK."
+    />
+    <meta name="keywords" content="Teleton, Teleton Agent, AI agent, Telegram, TON, TON blockchain, autonomous agent, MTProto, userbot, LLM, DEX, STON.fi, DeDust, TON DNS, crypto agent, AI assistant" />
+    <meta name="author" content="Teleton Agent" />
+    <meta name="robots" content="index, follow" />
+    <link rel="canonical" href="https://teletonagent.dev/" />
+
+    <!-- Localization -->
+    <link rel="alternate" hreflang="en" href="https://teletonagent.dev/" />
+    <link rel="alternate" hreflang="ru" href="https://teletonagent.dev/ru/" />
+    <link rel="alternate" hreflang="x-default" href="https://teletonagent.dev/" />
+
+    <!-- Icons -->
+    <link rel="icon" type="image/svg+xml" href="/assets/favicon.svg" />
+    <link rel="apple-touch-icon" href="/assets/logo_light.png" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Teleton Agent" />
+    <meta property="og:title" content="Teleton Agent — Autonomous AI agent for Telegram, native on TON" />
+    <meta
+      property="og:description"
+      content="Open-source autonomous AI agent that runs as a real Telegram account. Agentic loop, hybrid-RAG memory, native TON wallet, DEX swaps, NFTs and DNS. 135+ tools, 16 LLM providers."
+    />
+    <meta property="og:url" content="https://teletonagent.dev/" />
+    <meta property="og:image" content="https://teletonagent.dev/assets/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Teleton Agent — autonomous AI agent for Telegram on TON" />
+    <meta property="og:locale" content="en_US" />
+    <meta property="og:locale:alternate" content="ru_RU" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Teleton Agent — Autonomous AI agent for Telegram, native on TON" />
+    <meta
+      name="twitter:description"
+      content="Open-source autonomous AI agent for Telegram with native TON blockchain integration. 135+ tools, 16 LLM providers, Plugin SDK."
+    />
+    <meta name="twitter:image" content="https://teletonagent.dev/assets/og-image.png" />
+    <meta name="twitter:image:alt" content="Teleton Agent — autonomous AI agent for Telegram on TON" />
+
+    <!-- Structured data: SoftwareApplication -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Teleton Agent",
+        "description": "Open-source autonomous AI agent platform that operates as a real Telegram user account or bot, with native TON blockchain integration: wallet, jettons, DEX swaps, NFTs and DNS. Ships with 135+ built-in tools, supports 16 LLM providers, and exposes a Plugin SDK.",
+        "url": "https://teletonagent.dev/",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Linux, macOS, Windows (Node.js 20+)",
+        "softwareVersion": "0.8.19",
+        "downloadUrl": "https://www.npmjs.com/package/teleton",
+        "codeRepository": "https://github.com/xlabtg/teleton-agent",
+        "license": "https://opensource.org/licenses/MIT",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "author": {
+          "@type": "Organization",
+          "name": "Teleton Agent",
+          "url": "https://teletonagent.dev/"
+        }
+      }
+    </script>
+
+    <style>
+      :root {
+        --bg: #0a0f1a;
+        --bg-2: #0e1525;
+        --surface: #121a2c;
+        --surface-2: #161f34;
+        --border: #223049;
+        --text: #e7eef8;
+        --muted: #9fb0c8;
+        --ton: #0098ea;
+        --ton-2: #34b6f0;
+        --accent: #ff6600;
+        --radius: 16px;
+        --maxw: 1120px;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        font-family: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        line-height: 1.6;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--ton-2); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      img { max-width: 100%; display: block; }
+      h1, h2, h3 { line-height: 1.2; margin: 0 0 0.5em; letter-spacing: -0.02em; }
+      .wrap { max-width: var(--maxw); margin: 0 auto; padding: 0 24px; }
+      .skip-link {
+        position: absolute; left: -999px; top: 0; background: var(--ton);
+        color: #fff; padding: 10px 16px; border-radius: 0 0 8px 0; z-index: 100;
+      }
+      .skip-link:focus { left: 0; }
+
+      /* Header */
+      header {
+        position: sticky; top: 0; z-index: 50;
+        backdrop-filter: blur(10px);
+        background: rgba(10, 15, 26, 0.78);
+        border-bottom: 1px solid var(--border);
+      }
+      .nav { display: flex; align-items: center; gap: 20px; padding: 14px 24px; max-width: var(--maxw); margin: 0 auto; }
+      .brand { display: flex; align-items: center; gap: 10px; }
+      .brand img { height: 30px; width: auto; }
+      .nav-links { display: flex; gap: 22px; margin-left: auto; align-items: center; }
+      .nav-links a { color: var(--muted); font-weight: 500; }
+      .nav-links a:hover { color: var(--text); text-decoration: none; }
+      .lang { border: 1px solid var(--border); border-radius: 999px; padding: 4px 10px; font-size: 0.85rem; }
+
+      /* Buttons */
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px;
+        padding: 12px 22px; border-radius: 999px; font-weight: 600;
+        border: 1px solid transparent; cursor: pointer; transition: transform 0.08s ease, background 0.2s ease;
+      }
+      .btn:hover { text-decoration: none; transform: translateY(-1px); }
+      .btn-primary { background: var(--ton); color: #fff; }
+      .btn-primary:hover { background: var(--ton-2); }
+      .btn-ghost { background: transparent; color: var(--text); border-color: var(--border); }
+      .btn-ghost:hover { border-color: var(--ton); }
+
+      /* Hero */
+      .hero {
+        position: relative; overflow: hidden;
+        padding: 96px 0 72px;
+        background:
+          radial-gradient(900px 420px at 15% -10%, rgba(0, 152, 234, 0.22), transparent 60%),
+          radial-gradient(700px 380px at 100% 30%, rgba(255, 102, 0, 0.12), transparent 60%);
+      }
+      .hero h1 { font-size: clamp(2.1rem, 5vw, 3.6rem); }
+      .hero .lead { font-size: clamp(1.05rem, 2.2vw, 1.3rem); color: var(--muted); max-width: 720px; }
+      .eyebrow {
+        display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px;
+        font-size: 0.85rem; font-weight: 600; color: var(--ton-2);
+        background: rgba(0, 152, 234, 0.12); border: 1px solid rgba(0, 152, 234, 0.3);
+        padding: 6px 14px; border-radius: 999px;
+      }
+      .cta-row { display: flex; flex-wrap: wrap; gap: 14px; margin: 28px 0 8px; }
+      .badges { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 28px; }
+      .badges span {
+        font-size: 0.82rem; color: var(--muted);
+        border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; background: var(--surface);
+      }
+
+      /* Code / install snippet */
+      .code {
+        display: flex; align-items: center; justify-content: space-between; gap: 12px;
+        background: #060a13; border: 1px solid var(--border); border-radius: 12px;
+        padding: 14px 16px; margin-top: 30px; max-width: 560px;
+        font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+      }
+      .code code { color: var(--ton-2); font-size: 0.95rem; }
+      .code code .prompt { color: #4b5a72; user-select: none; }
+      .copy-btn {
+        background: var(--surface-2); color: var(--text); border: 1px solid var(--border);
+        border-radius: 8px; padding: 6px 12px; font-size: 0.8rem; cursor: pointer; white-space: nowrap;
+      }
+      .copy-btn:hover { border-color: var(--ton); }
+
+      /* Sections */
+      section { padding: 72px 0; }
+      .section-head { text-align: center; max-width: 700px; margin: 0 auto 48px; }
+      .section-head h2 { font-size: clamp(1.6rem, 3.5vw, 2.4rem); }
+      .section-head p { color: var(--muted); margin: 0; }
+
+      /* Feature grid */
+      .grid { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); }
+      .card {
+        background: linear-gradient(180deg, var(--surface), var(--bg-2));
+        border: 1px solid var(--border); border-radius: var(--radius); padding: 26px;
+        transition: border-color 0.2s ease, transform 0.2s ease;
+      }
+      .card:hover { border-color: var(--ton); transform: translateY(-3px); }
+      .card .ico {
+        width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center;
+        background: rgba(0, 152, 234, 0.14); margin-bottom: 16px; font-size: 1.4rem;
+      }
+      .card h3 { font-size: 1.15rem; }
+      .card p { color: var(--muted); margin: 0; font-size: 0.96rem; }
+
+      /* Stats */
+      .stats { background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+      .stats .grid { grid-template-columns: repeat(4, 1fr); gap: 16px; }
+      .stat { text-align: center; }
+      .stat .num { font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 800; color: var(--ton-2); letter-spacing: -0.03em; }
+      .stat .label { color: var(--muted); font-size: 0.92rem; }
+
+      /* Quick start steps */
+      .steps { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); }
+      .step { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+      .step .n {
+        width: 30px; height: 30px; border-radius: 50%; background: var(--ton); color: #fff;
+        display: grid; place-items: center; font-weight: 700; margin-bottom: 14px;
+      }
+      .step h3 { font-size: 1.05rem; }
+      .step p { color: var(--muted); margin: 0; font-size: 0.94rem; }
+      pre {
+        background: #060a13; border: 1px solid var(--border); border-radius: 12px;
+        padding: 16px; overflow-x: auto; margin: 14px 0 0;
+        font-family: "SFMono-Regular", ui-monospace, Menlo, Consolas, monospace;
+        font-size: 0.88rem; color: var(--ton-2);
+      }
+
+      /* Ecosystem */
+      .eco { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+      .eco a {
+        border: 1px solid var(--border); border-radius: 999px; padding: 10px 18px;
+        color: var(--text); font-weight: 500; background: var(--surface);
+      }
+      .eco a:hover { border-color: var(--ton); text-decoration: none; }
+
+      /* CTA band */
+      .cta-band { text-align: center; background:
+          radial-gradient(700px 300px at 50% 0%, rgba(0, 152, 234, 0.18), transparent 70%); }
+
+      /* Footer */
+      footer { border-top: 1px solid var(--border); background: var(--bg-2); padding: 56px 0 40px; }
+      .foot-grid { display: grid; grid-template-columns: 2fr 1fr 1fr 1fr; gap: 32px; }
+      footer h4 { font-size: 0.95rem; color: var(--text); margin: 0 0 14px; }
+      footer ul { list-style: none; padding: 0; margin: 0; }
+      footer li { margin-bottom: 9px; }
+      footer a { color: var(--muted); }
+      footer a:hover { color: var(--text); }
+      .foot-brand img { height: 30px; margin-bottom: 14px; }
+      .foot-brand p { color: var(--muted); font-size: 0.9rem; max-width: 300px; }
+      .foot-bottom {
+        border-top: 1px solid var(--border); margin-top: 40px; padding-top: 24px;
+        display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; color: var(--muted); font-size: 0.85rem;
+      }
+
+      @media (max-width: 860px) {
+        .grid, .steps { grid-template-columns: 1fr 1fr; }
+        .stats .grid { grid-template-columns: 1fr 1fr; }
+        .foot-grid { grid-template-columns: 1fr 1fr; }
+        .nav-links a:not(.lang) { display: none; }
+      }
+      @media (max-width: 560px) {
+        .grid, .steps, .stats .grid { grid-template-columns: 1fr; }
+        .foot-grid { grid-template-columns: 1fr; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        html { scroll-behavior: auto; }
+        .btn:hover, .card:hover { transform: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+
+    <header>
+      <nav class="nav" aria-label="Primary">
+        <a class="brand" href="/" aria-label="Teleton Agent home">
+          <img src="/assets/logo_dark.png" alt="Teleton Agent" />
+        </a>
+        <div class="nav-links">
+          <a href="#features">Features</a>
+          <a href="#quickstart">Quick start</a>
+          <a href="https://docs.teletonagent.dev">Docs</a>
+          <a href="https://github.com/xlabtg/teleton-agent">GitHub</a>
+          <a class="lang" href="/ru/" hreflang="ru">RU</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="main">
+      <!-- Hero -->
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="wrap">
+          <span class="eyebrow">⚡ Open source · MIT · Built on TON</span>
+          <h1 id="hero-title">The autonomous AI agent that lives inside Telegram</h1>
+          <p class="lead">
+            Teleton runs as a real Telegram account or bot. It thinks in an agentic loop, remembers
+            conversations with hybrid RAG, and natively speaks the TON blockchain — send crypto, swap on
+            DEXs, bid on domains and verify payments straight from a chat message.
+          </p>
+
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#quickstart">Get started</a>
+            <a class="btn btn-ghost" href="https://github.com/xlabtg/teleton-agent">⭐ Star on GitHub</a>
+          </div>
+
+          <div class="code">
+            <code><span class="prompt">$ </span>npm install -g teleton@latest</code>
+            <button class="copy-btn" type="button" data-copy="npm install -g teleton@latest">Copy</button>
+          </div>
+
+          <div class="badges" aria-label="Highlights">
+            <span>135+ built-in tools</span>
+            <span>16 LLM providers</span>
+            <span>Hybrid-RAG memory</span>
+            <span>Plugin SDK</span>
+            <span>Local-first WebUI</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- Features -->
+      <section id="features" aria-labelledby="features-title">
+        <div class="wrap">
+          <div class="section-head">
+            <h2 id="features-title">Everything an on-chain Telegram agent needs</h2>
+            <p>One platform for autonomous tasks, persistent memory and native TON blockchain actions.</p>
+          </div>
+          <div class="grid">
+            <article class="card">
+              <div class="ico" aria-hidden="true">💬</div>
+              <h3>Full Telegram access</h3>
+              <p>Operates as a real user via MTProto — not just a bot. Read, reply, send media, manage chats.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🔁</div>
+              <h3>Agentic loop</h3>
+              <p>Think, act, observe, repeat. Schedules tasks and pursues long autonomous goals until done.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🧠</div>
+              <h3>Persistent memory</h3>
+              <p>Hybrid RAG with vector + keyword search and auto-compaction across sessions.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">💎</div>
+              <h3>Native TON blockchain</h3>
+              <p>Wallet, jettons, DEX swaps on STON.fi & DeDust, TON DNS bids and NFTs — from a chat message.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🤖</div>
+              <h3>16 LLM providers</h3>
+              <p>Anthropic, OpenAI, Google, xAI, Groq, Mistral, OpenRouter and more — swap models freely.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🧩</div>
+              <h3>Plugin SDK</h3>
+              <p>Build custom tools with isolated databases, secrets and hooks — no core changes required.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🖥️</div>
+              <h3>Local-first WebUI</h3>
+              <p>A private operator console for agents, pipelines, events, security and network status.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🛡️</div>
+              <h3>Secure by design</h3>
+              <p>Sandboxed execution, signed inter-agent messages, SSRF guards and prompt-injection defense.</p>
+            </article>
+            <article class="card">
+              <div class="ico" aria-hidden="true">🌐</div>
+              <h3>Multi-agent network</h3>
+              <p>Coordinate with other agents through signed, replay-protected messages and trust levels.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- Stats -->
+      <section class="stats" aria-label="Project metrics">
+        <div class="wrap">
+          <div class="grid">
+            <div class="stat"><div class="num">135+</div><div class="label">Built-in tools</div></div>
+            <div class="stat"><div class="num">16</div><div class="label">LLM providers</div></div>
+            <div class="stat"><div class="num">23</div><div class="label">WebUI pages</div></div>
+            <div class="stat"><div class="num">MIT</div><div class="label">Open source</div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Quick start -->
+      <section id="quickstart" aria-labelledby="qs-title">
+        <div class="wrap">
+          <div class="section-head">
+            <h2 id="qs-title">Up and running in three steps</h2>
+            <p>Node.js 20+ and a Telegram account are all you need. No build dependencies.</p>
+          </div>
+          <div class="steps">
+            <div class="step">
+              <div class="n">1</div>
+              <h3>Install</h3>
+              <p>Grab the CLI from npm.</p>
+              <pre><code>npm install -g teleton@latest</code></pre>
+            </div>
+            <div class="step">
+              <div class="n">2</div>
+              <h3>Set up</h3>
+              <p>The wizard handles provider, Telegram auth, policies and wallet.</p>
+              <pre><code>teleton setup --ui</code></pre>
+            </div>
+            <div class="step">
+              <div class="n">3</div>
+              <h3>Run</h3>
+              <p>Start with the dashboard and message your agent.</p>
+              <pre><code>teleton start --webui</code></pre>
+            </div>
+          </div>
+          <p style="text-align: center; margin-top: 32px;">
+            <a class="btn btn-ghost" href="https://docs.teletonagent.dev">Read the documentation →</a>
+          </p>
+        </div>
+      </section>
+
+      <!-- Ecosystem -->
+      <section style="background: var(--bg-2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border);" aria-labelledby="eco-title">
+        <div class="wrap">
+          <div class="section-head">
+            <h2 id="eco-title">Built on the TON ecosystem</h2>
+            <p>Teleton natively integrates the tools and marketplaces of The Open Network.</p>
+          </div>
+          <div class="eco">
+            <a href="https://ton.org" rel="noopener">TON</a>
+            <a href="https://ston.fi" rel="noopener">STON.fi</a>
+            <a href="https://dedust.io" rel="noopener">DeDust</a>
+            <a href="https://dns.ton.org" rel="noopener">TON DNS</a>
+            <a href="https://getgems.io" rel="noopener">Getgems</a>
+            <a href="https://tonviewer.com" rel="noopener">Tonviewer</a>
+          </div>
+        </div>
+      </section>
+
+      <!-- CTA band -->
+      <section class="cta-band" aria-labelledby="cta-title">
+        <div class="wrap">
+          <div class="section-head" style="margin-bottom: 28px;">
+            <h2 id="cta-title">Bring an autonomous agent to your Telegram</h2>
+            <p>Free, open source and self-hosted. Own your keys, your data and your agent.</p>
+          </div>
+          <div class="cta-row" style="justify-content: center;">
+            <a class="btn btn-primary" href="https://github.com/xlabtg/teleton-agent">Get it on GitHub</a>
+            <a class="btn btn-ghost" href="https://t.me/teletonagents">Join the community</a>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <div class="foot-grid">
+          <div class="foot-brand">
+            <img src="/assets/logo_dark.png" alt="Teleton Agent" />
+            <p>Autonomous AI agent platform for Telegram with native TON blockchain integration.</p>
+          </div>
+          <div>
+            <h4>Product</h4>
+            <ul>
+              <li><a href="#features">Features</a></li>
+              <li><a href="#quickstart">Quick start</a></li>
+              <li><a href="https://docs.teletonagent.dev">Documentation</a></li>
+              <li><a href="https://www.npmjs.com/package/teleton">npm package</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4>Community</h4>
+            <ul>
+              <li><a href="https://github.com/xlabtg/teleton-agent">GitHub</a></li>
+              <li><a href="https://t.me/teletonagents">Telegram channel</a></li>
+              <li><a href="https://t.me/teletonagentHQ">Group chat</a></li>
+              <li><a href="https://github.com/xlabtg/teleton-agent/issues">Issues</a></li>
+            </ul>
+          </div>
+          <div>
+            <h4>TON ecosystem</h4>
+            <ul>
+              <li><a href="https://ton.org" rel="noopener">TON</a></li>
+              <li><a href="https://ston.fi" rel="noopener">STON.fi</a></li>
+              <li><a href="https://dedust.io" rel="noopener">DeDust</a></li>
+              <li><a href="https://dns.ton.org" rel="noopener">TON DNS</a></li>
+            </ul>
+          </div>
+        </div>
+        <div class="foot-bottom">
+          <span>© 2026 Teleton Agent · MIT License</span>
+          <span><a href="/ru/" hreflang="ru">Русская версия</a> · Built on <a href="https://ton.org" rel="noopener">TON</a></span>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      document.querySelectorAll(".copy-btn").forEach(function (btn) {
+        btn.addEventListener("click", function () {
+          var text = btn.getAttribute("data-copy");
+          navigator.clipboard.writeText(text).then(function () {
+            var old = btn.textContent;
+            btn.textContent = "Copied!";
+            setTimeout(function () {
+              btn.textContent = old;
+            }, 1600);
+          });
+        });
+      });
+    </script>
+  </body>
+</html>

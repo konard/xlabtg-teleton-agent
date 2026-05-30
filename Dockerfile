@@ -68,6 +68,14 @@ USER node
 
 # WebUI port (when enabled)
 EXPOSE 7777
+# Management API port: health/readiness probes + Prometheus /metrics (when enabled)
+EXPOSE 7778
+
+# Liveness probe against the Management API /healthz endpoint.
+# Uses Node directly (no curl in the slim image); -k equivalent via
+# rejectUnauthorized:false for the self-signed Management API cert.
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "const https=require('node:https');const r=https.request({host:'127.0.0.1',port:7778,path:'/healthz',rejectUnauthorized:false},res=>process.exit(res.statusCode===200?0:1));r.on('error',()=>process.exit(1));r.end()"
 
 ENTRYPOINT ["node", "dist/cli/index.js"]
 CMD ["start"]

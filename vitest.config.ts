@@ -20,12 +20,19 @@ export default defineConfig({
         "**/__tests__/**",
         "**/node_modules/**",
         "**/dist/**",
+        // The web workspace has its own coverage scope; keep it out of the
+        // backend/SDK report (otherwise web/src/lib/api.ts leaks in and skews
+        // the totals the threshold gate runs against).
+        "web/**",
       ],
+      // Baseline thresholds derived from the current measured coverage with a
+      // few points of margin below to absorb V8 variance between Node 20/22.
+      // Ratchet these up over time as coverage improves.
       thresholds: {
-        statements: 18.83,
-        branches: 15.95,
-        functions: 22.5,
-        lines: 18.96,
+        statements: 46,
+        branches: 38,
+        functions: 54,
+        lines: 47,
       },
     },
     // Longer timeout for tests that import heavy deps (GramJS, @ton/ton)

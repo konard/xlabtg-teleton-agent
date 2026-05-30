@@ -1,0 +1,33 @@
+name: Release Please
+
+# Automates SemVer version bumps and CHANGELOG generation from
+# Conventional Commits. On every push to `main` this opens (or updates) a
+# "release PR" that aggregates pending changes. Merging that PR creates the
+# Git tag (`v*`), which in turn triggers `release.yml` to build, attest,
+# generate the SBOM, and publish the package.
+#
+# See CONTRIBUTING.md ("Versioning policy") for the SemVer rules this enforces.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Avoid overlapping release-PR updates racing each other.
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

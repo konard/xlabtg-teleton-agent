@@ -91,7 +91,11 @@ function resolveLevel(): LogLevel {
 // ── Build pino multistream ────────────────────────────────────────────
 const webUIStream = new WebUILogStream();
 
-const usePretty = process.env.TELETON_LOG_PRETTY !== "false";
+// LOG_FORMAT=json forces raw JSON output (for log shippers: Loki, ELK, …),
+// equivalent to TELETON_LOG_PRETTY=false. Pretty output is the default for
+// interactive use.
+const usePretty =
+  process.env.LOG_FORMAT?.toLowerCase() !== "json" && process.env.TELETON_LOG_PRETTY !== "false";
 
 const stdoutStream = usePretty
   ? pino.transport({

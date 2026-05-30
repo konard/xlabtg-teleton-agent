@@ -178,6 +178,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
         host: "127.0.0.1",
         key_hash: "",
         allowed_ips: [],
+        docs_enabled: false,
       };
     config.api.enabled = process.env.TELETON_API_ENABLED === "true";
   }
@@ -190,6 +191,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
         host: "127.0.0.1",
         key_hash: "",
         allowed_ips: [],
+        docs_enabled: false,
       };
     config.api.port = port;
   }

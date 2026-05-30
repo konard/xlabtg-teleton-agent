@@ -501,6 +501,12 @@ const _ApiObject = z.object({
     .array(z.string())
     .default([])
     .describe("IP whitelist (empty = allow all authenticated requests)"),
+  docs_enabled: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Serve interactive Swagger UI at /api/docs (also enabled automatically when NODE_ENV != production)"
+    ),
 });
 export const ApiConfigSchema = _ApiObject.default(_ApiObject.parse({}));
 

@@ -45,6 +45,7 @@ export async function startApiOnly(options: { config?: string; apiPort?: string 
     host: "127.0.0.1",
     key_hash: "",
     allowed_ips: [],
+    docs_enabled: false,
   };
   const server = new ApiServer(deps, apiConfig);
 
