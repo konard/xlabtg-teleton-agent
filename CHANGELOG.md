@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Deployment artifacts (Docker Compose + Helm chart)**: A ready-to-use `compose.yaml` (with `.env.example`) at the repo root brings up the agent with a persistent `teleton-data` volume, `unless-stopped` restart policy, and a Node-based `/health` healthcheck via `docker compose up`. A minimal Helm chart in `helm/teleton-agent/` renders a single-replica `Deployment` (`Recreate`), `Service`, `PersistentVolumeClaim`, and optional credentials `Secret` with `/health` liveness/readiness probes. The release workflow now builds a multi-arch image (`linux/amd64`, `linux/arm64`) via QEMU/Buildx, attaches provenance + SBOM, and signs it keylessly with cosign. `docs/deployment.md` and the README document the Compose and Kubernetes/Helm quick-starts, and a new CI job validates the Compose file and Helm chart (closes xlabtg/teleton-agent#498).
+
 ### Deprecated
 - **`telegram_schedule_message` agent tool**: Now logs a runtime deprecation warning and surfaces `deprecated: true` plus a `deprecationNotice` field in its result. The tool only queues plain text and cannot execute tools, trading functions, or multi-step workflows when the message is delivered, which silently breaks any automation that relies on it. Use `telegram_create_scheduled_task` (with a `tool_call` or `agent_task` payload) for any automation that must run at a scheduled time. The tool description now leads with `[DEPRECATED — use telegram_create_scheduled_task instead]` so the LLM picks the correct tool by default (closes xlabtg/teleton-agent#459).
 

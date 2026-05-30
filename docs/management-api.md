@@ -685,7 +685,7 @@ docker run -d \
   -v teleton-data:/data \
   -p 7777:7777 \
   -p 7778:7778 \
-  ghcr.io/tonresistor/teleton-agent
+  ghcr.io/xlabtg/teleton-agent
 ```
 
 ### Docker Compose
@@ -693,7 +693,7 @@ docker run -d \
 ```yaml
 services:
   teleton:
-    image: ghcr.io/tonresistor/teleton-agent:latest
+    image: ghcr.io/xlabtg/teleton-agent:latest
     restart: unless-stopped
     ports:
       - "7777:7777"   # WebUI

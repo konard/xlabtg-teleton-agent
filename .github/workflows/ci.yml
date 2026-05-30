@@ -273,6 +273,36 @@ jobs:
       - name: Security audit
         run: npm run audit:ci
 
+  # ---- Deployment artifacts (Compose + Helm) ----
+  deploy-artifacts:
+    name: CI / Deploy artifacts
+    runs-on: ubuntu-latest
+    # Skip pull_request_target for same-repo PRs to avoid duplicate runs with pull_request
+    if: |
+      github.event_name != 'pull_request_target' ||
+      github.event.pull_request.head.repo.full_name != github.repository
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Validate Docker Compose file
+        run: docker compose -f compose.yaml config --quiet
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+
+      - name: Lint Helm chart
+        run: helm lint ./helm/teleton-agent
+
+      - name: Render Helm templates (default + credentials)
+        run: |
+          helm template teleton ./helm/teleton-agent > /dev/null
+          helm template teleton ./helm/teleton-agent \
+            --set secrets.TELETON_API_KEY=dummy \
+            --set existingSecret="" > /dev/null
+
   # ---- Push-only quality checks (lint + typecheck + tests on main) ----
   push-quality:
     name: CI / Quality (push)

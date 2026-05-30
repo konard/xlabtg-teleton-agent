@@ -1,0 +1,79 @@
+# Default values for the teleton-agent chart.
+
+image:
+  repository: ghcr.io/xlabtg/teleton-agent
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Number of agent replicas. Keep at 1: the agent owns a single Telegram session
+# and a SQLite database on a ReadWriteOnce volume, so it cannot scale horizontally.
+replicaCount: 1
+
+# The agent stores config, session, SQLite DB and wallet under TELETON_HOME.
+env:
+  TELETON_HOME: /data
+  NODE_ENV: production
+  TELETON_WEBUI_ENABLED: "true"
+  TELETON_WEBUI_HOST: 0.0.0.0
+
+# Extra plain environment variables (non-sensitive).
+extraEnv: []
+#  - name: DEBUG
+#    value: "1"
+
+# Sensitive credentials rendered into a Secret and injected as env vars.
+# Leave empty to manage the Secret yourself (see existingSecret).
+secrets: {}
+#  TELETON_API_KEY: "sk-ant-..."
+#  TELETON_TG_API_ID: "12345678"
+#  TELETON_TG_API_HASH: "0123456789abcdef"
+#  TELETON_TG_PHONE: "+1234567890"
+
+# Reference an existing Secret instead of rendering `secrets` above.
+# All keys in the Secret are exported as environment variables.
+existingSecret: ""
+
+service:
+  type: ClusterIP
+  port: 7777
+
+# Persistent storage for /data (config, session, DB, wallet, plugins).
+persistence:
+  enabled: true
+  # Use an existing PVC instead of creating one.
+  existingClaim: ""
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+  size: 1Gi
+
+# Liveness/readiness probes hit the WebUI /health endpoint (requires
+# TELETON_WEBUI_ENABLED=true). Disable if you run the agent headless.
+probes:
+  enabled: true
+
+resources: {}
+#  limits:
+#    cpu: 1000m
+#    memory: 1Gi
+#  requests:
+#    cpu: 250m
+#    memory: 512Mi
+
+# Run as the non-root `node` user baked into the image (uid/gid 1000).
+podSecurityContext:
+  fsGroup: 1000
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  allowPrivilegeEscalation: false
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+podAnnotations: {}

@@ -128,8 +128,18 @@ npm install -g teleton@latest
 
 **Docker:**
 ```bash
-docker run -it -v ~/.teleton:/data ghcr.io/tonresistor/teleton-agent:latest setup
+docker run -it -v ~/.teleton:/data ghcr.io/xlabtg/teleton-agent:latest setup
 ```
+
+**Docker Compose:**
+```bash
+# Interactive first-run setup, then start in the background
+docker compose run --rm agent setup
+docker compose up -d
+```
+The published image is multi-arch (`linux/amd64`, `linux/arm64`) and signed with
+[cosign](https://github.com/sigstore/cosign). See the
+[Deployment Guide](docs/deployment.md) for Docker, Compose and Kubernetes/Helm.
 
 **From source (development):**
 ```bash
@@ -714,7 +724,7 @@ Full documentation is available in the [`docs/`](docs/) directory:
 | Section | Description |
 |---------|-------------|
 | [Configuration Guide](docs/configuration.md) | Complete reference for every config option |
-| [Deployment Guide](docs/deployment.md) | Docker, systemd, docker-compose, VPS |
+| [Deployment Guide](docs/deployment.md) | Docker, Compose, Kubernetes/Helm, systemd, VPS |
 | [Plugin Development](docs/plugins.md) | Step-by-step plugin tutorial |
 | [Telegram Setup](docs/telegram-setup.md) | API credentials, policies, 2FA, admin commands |
 | [TON Wallet](docs/ton-wallet.md) | Wallet setup, DEX trading, security |
