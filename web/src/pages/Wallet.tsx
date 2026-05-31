@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, WalletInfo, WalletTransaction } from '../lib/api';
-import { formatDateTime } from '../lib/utils';
+import { formatDateTime, errMsg } from '../lib/utils';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -28,7 +28,7 @@ export function Wallet() {
       const res = await api.getWallet();
       setWallet(res.data ?? null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -40,7 +40,7 @@ export function Wallet() {
       const res = await api.getWalletTransactions();
       setTransactions(res.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setTxLoading(false);
     }

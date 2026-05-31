@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, McpServerInfo } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 export function Mcp() {
   const [servers, setServers] = useState<McpServerInfo[]>([]);
@@ -23,7 +24,7 @@ export function Mcp() {
         setLoading(false);
       })
       .catch((err) => {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMsg(err));
         setLoading(false);
       });
   };
@@ -66,7 +67,7 @@ export function Mcp() {
       setShowAdd(false);
       loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setAdding(false);
     }
@@ -81,7 +82,7 @@ export function Mcp() {
       setSuccess(res.data.message);
       loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setRemoving(null);
     }

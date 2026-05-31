@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 interface TriggerEntry {
   id: string;
@@ -42,7 +43,7 @@ export function Hooks() {
       blocklistRef.current = { enabled: bl.enabled, keywords: bl.keywords, message: bl.message };
       setTriggers(trigRes.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -60,7 +61,7 @@ export function Hooks() {
       try {
         await api.updateBlocklist(config);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMsg(err));
       }
     }, 400);
   }, []);
@@ -105,7 +106,7 @@ export function Hooks() {
       setNewKeyword('');
       setNewContext('');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -116,7 +117,7 @@ export function Hooks() {
       await api.deleteTrigger(id);
       setTriggers((prev) => prev.filter((t) => t.id !== id));
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -127,7 +128,7 @@ export function Hooks() {
         prev.map((t) => (t.id === id ? { ...t, enabled: !enabled } : t))
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -150,7 +151,7 @@ export function Hooks() {
       );
       setEditingId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setSaving(false);
     }

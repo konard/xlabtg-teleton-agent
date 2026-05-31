@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { api, FileEntry, WorkspaceInfo } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { formatDate, errMsg } from '../lib/utils';
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-';
@@ -48,7 +48,7 @@ export function Workspace() {
       setEntries(res.data?.entries ?? []);
       setCurrentPath(path);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -106,7 +106,7 @@ export function Workspace() {
         setEditDirty(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -136,7 +136,7 @@ export function Workspace() {
       setEditDirty(false);
       loadDir(currentPath);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -156,7 +156,7 @@ export function Workspace() {
       loadDir(currentPath);
       loadInfo();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -184,7 +184,7 @@ export function Workspace() {
       loadDir(currentPath);
       loadInfo();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 

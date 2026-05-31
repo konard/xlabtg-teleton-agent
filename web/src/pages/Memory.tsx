@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, MemorySourceFile, MemoryChunk, SearchResult } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 
 export function Memory() {
@@ -26,7 +26,7 @@ export function Memory() {
       const res = await api.getMemorySources();
       setSources(res.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -50,7 +50,7 @@ export function Memory() {
         const res = await api.searchKnowledge(query);
         if (!cancelled) setResults(res.data ?? []);
       } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+        if (!cancelled) setError(errMsg(err));
       } finally {
         if (!cancelled) setSearching(false);
       }
@@ -74,7 +74,7 @@ export function Memory() {
       const res = await api.getSourceChunks(sourceKey);
       setChunks(res.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setChunksLoading(false);
     }

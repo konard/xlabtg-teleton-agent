@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
@@ -21,7 +22,7 @@ export function Soul() {
       setContent(res.data.content);
       setSavedContent(res.data.content);
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      setMessage({ type: 'error', text: errMsg(err) });
     } finally {
       setLoading(false);
     }
@@ -35,7 +36,7 @@ export function Soul() {
       setSavedContent(content);
       setMessage({ type: 'success', text: res.data.message });
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      setMessage({ type: 'error', text: errMsg(err) });
     } finally {
       setSaving(false);
     }

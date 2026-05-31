@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { setup, SetupProvider, SetupModelOption, ClaudeCodeKeyDetection } from '../../lib/api';
 import { Select } from '../Select';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
 
 export function ProviderStep({ data, onChange }: StepProps) {
   const [providers, setProviders] = useState<SetupProvider[]>([]);
@@ -20,7 +21,7 @@ export function ProviderStep({ data, onChange }: StepProps) {
   useEffect(() => {
     setup.getProviders()
       .then((p) => setProviders(p))
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => setError(errMsg(err)))
       .finally(() => setLoading(false));
   }, []);
 

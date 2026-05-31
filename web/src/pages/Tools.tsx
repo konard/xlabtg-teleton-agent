@@ -4,6 +4,7 @@ import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
+import { errMsg } from '../lib/utils';
 
 export function Tools() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
@@ -19,7 +20,7 @@ export function Tools() {
         setLoading(false);
       })
       .catch((err) => {
-        tm.setError(err instanceof Error ? err.message : String(err));
+        tm.setError(errMsg(err));
         setLoading(false);
       });
   };

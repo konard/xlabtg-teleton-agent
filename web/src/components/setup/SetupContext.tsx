@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
 import { setup, SetupConfig } from '../../lib/api';
+import { errMsg } from '../../lib/utils';
 
 // ── Step metadata ───────────────────────────────────────────────────
 
@@ -246,7 +247,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       await setup.saveConfig(config);
       setSaved(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -262,7 +263,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       // Redirect to the dashboard with token-based auth
       window.location.href = `/auth/exchange?token=${encodeURIComponent(token)}`;
     } catch (err) {
-      setLaunchError(err instanceof Error ? err.message : String(err));
+      setLaunchError(errMsg(err));
     } finally {
       setLaunching(false);
     }

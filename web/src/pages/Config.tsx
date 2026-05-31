@@ -11,6 +11,7 @@ import { EditableField } from '../components/EditableField';
 import { ConfigSection } from '../components/ConfigSection';
 import { InfoTip } from '../components/InfoTip';
 import { InfoBanner } from '../components/InfoBanner';
+import { errMsg } from '../lib/utils';
 
 const TABS = [
   { id: 'llm', label: 'LLM' },
@@ -66,7 +67,7 @@ export function Config() {
       await api.setConfigKey(key, values);
       config.loadData();
     } catch (err) {
-      config.setError(err instanceof Error ? err.message : String(err));
+      config.setError(errMsg(err));
     }
   };
 
@@ -274,7 +275,7 @@ export function Config() {
                       setProxyStatus(res.data);
                       config.loadData();
                     } catch (err) {
-                      setProxyError(err instanceof Error ? err.message : String(err));
+                      setProxyError(errMsg(err));
                     } finally {
                       setProxyLoading(false);
                     }
@@ -332,7 +333,7 @@ export function Config() {
                         setProxyStatus(res.data);
                         config.loadData();
                       } catch (err) {
-                        setProxyError(err instanceof Error ? err.message : String(err));
+                        setProxyError(errMsg(err));
                       } finally {
                         setProxyLoading(false);
                       }

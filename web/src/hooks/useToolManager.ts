@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 export function useToolManager(reloadFn: () => Promise<void>) {
   const [updating, setUpdating] = useState<string | null>(null);
@@ -11,7 +12,7 @@ export function useToolManager(reloadFn: () => Promise<void>) {
       await api.updateToolConfig(toolName, { enabled: !currentEnabled });
       await reloadFn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setUpdating(null);
     }
@@ -23,7 +24,7 @@ export function useToolManager(reloadFn: () => Promise<void>) {
       await api.updateToolConfig(toolName, { scope: newScope });
       await reloadFn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setUpdating(null);
     }
@@ -39,7 +40,7 @@ export function useToolManager(reloadFn: () => Promise<void>) {
       }
       await reloadFn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setUpdating(null);
     }
@@ -55,7 +56,7 @@ export function useToolManager(reloadFn: () => Promise<void>) {
       }
       await reloadFn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setUpdating(null);
     }

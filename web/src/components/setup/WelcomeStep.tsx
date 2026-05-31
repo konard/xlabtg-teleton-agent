@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { setup, SetupStatusResponse } from '../../lib/api';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
 
 export function WelcomeStep({ data, onChange }: StepProps) {
   const [status, setStatus] = useState<SetupStatusResponse | null>(null);
@@ -10,7 +11,7 @@ export function WelcomeStep({ data, onChange }: StepProps) {
   useEffect(() => {
     setup.getStatus()
       .then((s) => setStatus(s))
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => setError(errMsg(err)))
       .finally(() => setLoading(false));
   }, []);
 

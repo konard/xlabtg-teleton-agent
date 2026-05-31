@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api, ConversationChat, ConversationMessage } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 
 export function Conversations() {
@@ -21,7 +21,7 @@ export function Conversations() {
       const res = await api.getConversations();
       setChats(res.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -44,7 +44,7 @@ export function Conversations() {
       const res = await api.getConversationMessages(chatId);
       setMessages(res.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setMessagesLoading(false);
     }

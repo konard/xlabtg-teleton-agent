@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { api, TaskData } from '../lib/api';
-import { formatDate, formatDateTime } from '../lib/utils';
+import { formatDate, formatDateTime, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 
 type TaskStatus = TaskData['status'];
@@ -86,7 +86,7 @@ export function Tasks() {
         return all.find((t: Task) => t.id === prev.id) ?? null;
       });
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -126,7 +126,7 @@ export function Tasks() {
       loadTasks();
       setSelected(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -137,7 +137,7 @@ export function Tasks() {
       loadTasks();
       if (selected?.id === id) setSelected(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -148,7 +148,7 @@ export function Tasks() {
       loadTasks();
       if (selected?.id === id) setSelected(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 

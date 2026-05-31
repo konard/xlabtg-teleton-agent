@@ -4,6 +4,7 @@ import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
+import { errMsg } from '../lib/utils';
 
 type Tab = 'installed' | 'marketplace';
 
@@ -88,7 +89,7 @@ export function Plugins() {
         setSecretValues({});
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -101,7 +102,7 @@ export function Plugins() {
       await api.uninstallPlugin(id);
       await Promise.all([loadMarketplace(), loadData()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -113,7 +114,7 @@ export function Plugins() {
       await api.updatePlugin(id);
       await Promise.all([loadMarketplace(), loadData()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -126,7 +127,7 @@ export function Plugins() {
       try {
         await api.updatePlugin(plugin.id);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        setError(errMsg(err));
         break;
       }
     }
@@ -147,7 +148,7 @@ export function Plugins() {
       setExpandedSecrets(pluginId);
       setEditingSecret(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -160,7 +161,7 @@ export function Plugins() {
       const res = await api.getPluginSecrets(pluginId);
       setSecretsInfo(res.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -170,7 +171,7 @@ export function Plugins() {
       const res = await api.getPluginSecrets(pluginId);
       setSecretsInfo(res.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -578,7 +579,7 @@ export function Plugins() {
                     }
                     setSecretsWizard(null);
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : String(err));
+                    setError(errMsg(err));
                   } finally {
                     setSavingSecrets(false);
                   }
