@@ -6,6 +6,11 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Session");
 
+/** Build the DB session key for a chat. Centralised so the prefix can't drift. */
+function sessionKeyFor(chatId: string): string {
+  return `telegram:${chatId}`;
+}
+
 export interface SessionEntry {
   sessionId: string;
   chatId: string;
@@ -123,7 +128,7 @@ export function saveSessionStore(store: SessionStore): void {
 }
 export function getOrCreateSession(chatId: string): SessionEntry {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   const row = db.prepare("SELECT * FROM sessions WHERE chat_id = ?").get(sessionKey) as
     | SessionRow
@@ -169,7 +174,7 @@ export function updateSession(
   update: Partial<Omit<SessionEntry, "chatId" | "createdAt">>
 ): SessionEntry {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   const existing = db.prepare("SELECT * FROM sessions WHERE chat_id = ?").get(sessionKey) as
     | SessionRow
@@ -247,7 +252,7 @@ export function updateSession(
 }
 export function incrementMessageCount(chatId: string): void {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   const result = db
     .prepare(
@@ -265,7 +270,7 @@ export function incrementMessageCount(chatId: string): void {
 }
 export function getSession(chatId: string): SessionEntry | null {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
   const row = db.prepare("SELECT * FROM sessions WHERE chat_id = ?").get(sessionKey) as
     | SessionRow
     | undefined;
@@ -290,7 +295,7 @@ export function resetSession(chatId: string): SessionEntry {
   };
 
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   db.prepare(
     `
