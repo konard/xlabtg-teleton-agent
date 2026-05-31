@@ -34,6 +34,7 @@ import {
   type StyledButtonDef,
 } from "./services/styled-keyboard.js";
 import { parseHtml, stripCustomEmoji } from "./services/html-parser.js";
+import { editInlineViaGramJS } from "./services/inline-transport.js";
 import { GramJSBotClient } from "./gramjs-bot.js";
 import { getWalletAddress } from "../ton/wallet-service.js";
 import { createLogger } from "../utils/logger.js";
@@ -399,14 +400,17 @@ export class DealBot {
 
     if (this.gramjsBot?.isConnected()) {
       try {
-        await this.editViaGramJS(inlineMsgId, text, buttons);
+        await editInlineViaGramJS({
+          gramjsBot: this.gramjsBot,
+          inlineMessageId: inlineMsgId,
+          html: text,
+          buttons,
+        });
         return;
       } catch (error: unknown) {
-        const errMsg = getGramJSErrorMessage(error);
-        if (errMsg === "MESSAGE_NOT_MODIFIED") return;
         log.warn(
           { err: error },
-          `[Bot] GramJS edit failed, falling back to Grammy: ${errMsg || error}`
+          `[Bot] GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
         );
       }
     }
@@ -432,14 +436,17 @@ export class DealBot {
   ): Promise<void> {
     if (this.gramjsBot?.isConnected() && buttons) {
       try {
-        await this.editViaGramJS(inlineMessageId, text, buttons);
+        await editInlineViaGramJS({
+          gramjsBot: this.gramjsBot,
+          inlineMessageId,
+          html: text,
+          buttons,
+        });
         return;
       } catch (error: unknown) {
-        const errMsg = getGramJSErrorMessage(error);
-        if (errMsg === "MESSAGE_NOT_MODIFIED") return;
         log.warn(
           { err: error },
-          `[Bot] GramJS edit failed, falling back to Grammy: ${errMsg || error}`
+          `[Bot] GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
         );
       }
     }

@@ -9,8 +9,10 @@ import type { GramJSBotClient } from "../bot/gramjs-bot.js";
 import type { Bot } from "grammy";
 import type { PluginRateLimiter } from "../bot/rate-limiter.js";
 import { toTLMarkup, toGrammyKeyboard, prefixButtons } from "../bot/services/styled-keyboard.js";
-import { stripCustomEmoji, parseHtml } from "../bot/services/html-parser.js";
+import { stripCustomEmoji } from "../bot/services/html-parser.js";
+import { editInlineViaGramJS } from "../bot/services/inline-transport.js";
 import { compileGlob } from "../bot/inline-router.js";
+import { getGramJSErrorMessage } from "../utils/errors.js";
 
 export function createBotSDK(
   router: InlineRouter | null,
@@ -90,23 +92,15 @@ export function createBotSDK(
       // Try GramJS first (styled buttons)
       if (gramjsBot?.isConnected() && keyboard) {
         try {
-          const strippedHtml = stripCustomEmoji(text);
-          const { text: plainText, entities } = parseHtml(strippedHtml);
-          const markup = toTLMarkup(keyboard);
-
-          await gramjsBot.editInlineMessageByStringId({
+          await editInlineViaGramJS({
+            gramjsBot,
             inlineMessageId,
-            text: plainText,
-            entities: entities.length > 0 ? entities : undefined,
-            replyMarkup: markup,
+            html: stripCustomEmoji(text),
+            buttons: keyboard,
           });
           return;
         } catch (error: unknown) {
-          const grammJsErr = error as { errorMessage?: string };
-          if (grammJsErr.errorMessage === "MESSAGE_NOT_MODIFIED") return;
-          log.warn(
-            `GramJS edit failed, falling back to Grammy: ${grammJsErr.errorMessage || error}`
-          );
+          log.warn(`GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`);
         }
       }
 

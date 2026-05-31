@@ -18,8 +18,9 @@ import type {
 } from "@teleton-agent/sdk";
 import type { GramJSBotClient } from "./gramjs-bot.js";
 import { createLogger } from "../utils/logger.js";
-import { toGrammyKeyboard, toTLMarkup, prefixButtons } from "./services/styled-keyboard.js";
-import { stripCustomEmoji, parseHtml } from "./services/html-parser.js";
+import { toGrammyKeyboard, prefixButtons } from "./services/styled-keyboard.js";
+import { stripCustomEmoji } from "./services/html-parser.js";
+import { editInlineViaGramJS } from "./services/inline-transport.js";
 
 const log = createLogger("InlineRouter");
 
@@ -234,21 +235,17 @@ export class InlineRouter {
           const inlineMsgId = ctx.callbackQuery?.inline_message_id;
           if (inlineMsgId && gramjsBotRef?.isConnected() && styledButtons) {
             try {
-              const strippedHtml = stripCustomEmoji(text);
-              const { text: plainText, entities } = parseHtml(strippedHtml);
-              const markup = toTLMarkup(styledButtons);
-
-              await gramjsBotRef.editInlineMessageByStringId({
+              await editInlineViaGramJS({
+                gramjsBot: gramjsBotRef,
                 inlineMessageId: inlineMsgId,
-                text: plainText,
-                entities: entities.length > 0 ? entities : undefined,
-                replyMarkup: markup,
+                html: stripCustomEmoji(text),
+                buttons: styledButtons,
               });
               return;
             } catch (error: unknown) {
-              const errMsg = getGramJSErrorMessage(error);
-              if (errMsg === "MESSAGE_NOT_MODIFIED") return;
-              log.debug(`GramJS edit failed, falling back to Grammy: ${errMsg || error}`);
+              log.debug(
+                `GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
+              );
             }
           }
 
