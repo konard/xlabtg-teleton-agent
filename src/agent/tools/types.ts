@@ -101,6 +101,14 @@ export type ToolExecutor<TParams = unknown> = (
 export interface RegisteredTool {
   tool: Tool;
   executor: ToolExecutor;
+  /** Declared non-trivial scope (undefined for the default always/open). */
+  scope?: ToolScope;
+  /** Telegram mode this tool runs in. */
+  mode: ToolMode;
+  /** Module this tool belongs to (name prefix for built-ins, plugin name otherwise). */
+  module: string;
+  /** Toolset tags (e.g. "core", "finance"). */
+  tags?: string[];
 }
 
 /**

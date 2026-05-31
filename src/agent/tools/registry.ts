@@ -40,20 +40,17 @@ type AccessDenial =
   | { kind: "module-admin"; module: string };
 
 export class ToolRegistry {
+  // Single source of tool state — tool/executor + declared scope/mode/module/tags.
   private tools: Map<string, RegisteredTool> = new Map();
-  private scopes: Map<string, ToolScope> = new Map();
-  private toolModules: Map<string, string> = new Map();
   private permissions: ModulePermissions | null = null;
   private toolArrayCache: PiAiTool[] | null = null;
-  private toolConfigs: Map<string, ToolConfig> = new Map(); // Runtime tool configurations
+  private toolConfigs: Map<string, ToolConfig> = new Map(); // Runtime tool configurations (DB-backed)
   private db: Database.Database | null = null;
   private pluginToolNames: Map<string, string[]> = new Map();
   private toolIndex: ToolIndex | null = null;
   private embedderRef: EmbeddingProvider | null = null;
   private onToolsChangedCallbacks: Array<(removed: string[], added: PiAiTool[]) => void> = [];
   private mode: RuntimeMode;
-  private toolModes: Map<string, ToolMode> = new Map();
-  private toolTags: Map<string, string[]> = new Map();
   private allowFrom: Set<number> = new Set();
 
   constructor(mode: RuntimeMode = "user") {
@@ -76,15 +73,15 @@ export class ToolRegistry {
       tags?: string[];
     }
   ): void {
-    this.tools.set(name, { tool: entry.tool, executor: entry.executor });
-    if (entry.scope && entry.scope !== "always" && entry.scope !== "open") {
-      this.scopes.set(name, entry.scope);
-    }
-    this.toolModes.set(name, entry.mode);
-    if (entry.tags && entry.tags.length > 0) {
-      this.toolTags.set(name, entry.tags);
-    }
-    this.toolModules.set(name, entry.module);
+    this.tools.set(name, {
+      tool: entry.tool,
+      executor: entry.executor,
+      scope:
+        entry.scope && entry.scope !== "always" && entry.scope !== "open" ? entry.scope : undefined,
+      mode: entry.mode,
+      module: entry.module,
+      tags: entry.tags && entry.tags.length > 0 ? entry.tags : undefined,
+    });
   }
 
   register<TParams = unknown>(
@@ -116,7 +113,7 @@ export class ToolRegistry {
     this.mode = mode;
     this.toolArrayCache = null;
     const count = Array.from(this.tools.values()).filter((rt) => {
-      const toolMode = this.toolModes.get(rt.tool.name);
+      const toolMode = this.tools.get(rt.tool.name)?.mode;
       return !toolMode || toolMode === "both" || toolMode === mode;
     }).length;
     log.info(`Mode switched to ${mode}, ${count} tools available`);
@@ -127,22 +124,22 @@ export class ToolRegistry {
   }
 
   getAvailableModules(): string[] {
-    const modules = new Set(this.toolModules.values());
+    const modules = new Set(Array.from(this.tools.values()).map((rt) => rt.module));
     return Array.from(modules).sort();
   }
 
   getModuleToolCount(module: string): number {
     let count = 0;
-    for (const mod of this.toolModules.values()) {
-      if (mod === module) count++;
+    for (const rt of this.tools.values()) {
+      if (rt.module === module) count++;
     }
     return count;
   }
 
   getModuleTools(module: string): Array<{ name: string; scope: ToolScope }> {
     const result: Array<{ name: string; scope: ToolScope }> = [];
-    for (const [name, mod] of this.toolModules) {
-      if (mod === module) {
+    for (const [name, rt] of this.tools) {
+      if (rt.module === module) {
         result.push({ name, scope: this.getEffectiveScope(name) });
       }
     }
@@ -165,7 +162,7 @@ export class ToolRegistry {
     name: string,
     ctx: { isGroup: boolean; isAdmin: boolean; senderId?: number; chatId?: string }
   ): { ok: true } | { ok: false; reason: AccessDenial } {
-    const toolMode = this.toolModes.get(name);
+    const toolMode = this.tools.get(name)?.mode;
     if (toolMode && toolMode !== "both" && toolMode !== this.mode) {
       return { ok: false, reason: { kind: "mode", mode: toolMode } };
     }
@@ -188,7 +185,7 @@ export class ToolRegistry {
     }
 
     if (ctx.isGroup && ctx.chatId && this.permissions) {
-      const module = this.toolModules.get(name);
+      const module = this.tools.get(name)?.module;
       if (module) {
         const level = this.permissions.getLevel(ctx.chatId, module);
         if (level === "disabled") return { ok: false, reason: { kind: "module-disabled", module } };
@@ -322,7 +319,7 @@ export class ToolRegistry {
     let seeded = false;
     for (const name of names) {
       if (!this.toolConfigs.has(name)) {
-        const defaultScope = this.scopes.get(name) ?? "always";
+        const defaultScope = this.tools.get(name)?.scope ?? "always";
         initializeToolConfig(this.db, name, true, defaultScope);
         seeded = true;
       }
@@ -349,7 +346,7 @@ export class ToolRegistry {
     if (config?.scope !== null && config?.scope !== undefined) {
       return config.scope === "always" ? "open" : config.scope;
     }
-    const codeScope = this.scopes.get(toolName) ?? "open";
+    const codeScope = this.tools.get(toolName)?.scope ?? "open";
     return codeScope === "always" ? "open" : codeScope;
   }
 
@@ -368,7 +365,7 @@ export class ToolRegistry {
     if (!this.tools.has(toolName) || !this.db) return false;
 
     const currentConfig = this.toolConfigs.get(toolName);
-    const scope = currentConfig?.scope ?? this.scopes.get(toolName) ?? "always";
+    const scope = currentConfig?.scope ?? this.tools.get(toolName)?.scope ?? "always";
 
     saveToolConfig(this.db, toolName, enabled, scope, updatedBy);
 
@@ -405,7 +402,7 @@ export class ToolRegistry {
 
     const config = this.toolConfigs.get(toolName);
     const enabled = config?.enabled ?? true;
-    const scope = config?.scope ?? this.scopes.get(toolName) ?? "always";
+    const scope = config?.scope ?? this.tools.get(toolName)?.scope ?? "always";
 
     return { enabled, scope };
   }
@@ -497,9 +494,8 @@ export class ToolRegistry {
     if (tracked) {
       for (const name of tracked) {
         this.tools.delete(name);
-        this.scopes.delete(name);
-        this.toolModes.delete(name);
-        this.toolModules.delete(name);
+        // Also drop the runtime config so removed plugin tools don't leak (prev. omitted)
+        this.toolConfigs.delete(name);
       }
       this.pluginToolNames.delete(pluginName);
     }
@@ -546,8 +542,8 @@ export class ToolRegistry {
       tool: registered.tool,
       executor: registered.executor,
       scope: this.getEffectiveScope(name),
-      mode: this.toolModes.get(name) ?? "both",
-      tags: this.toolTags.get(name),
+      mode: this.tools.get(name)?.mode ?? "both",
+      tags: this.tools.get(name)?.tags,
     };
   }
 
@@ -578,7 +574,7 @@ export class ToolRegistry {
   ): PiAiTool[] {
     return Array.from(this.tools.entries())
       .filter(([name]) => {
-        const tags = this.toolTags.get(name);
+        const tags = this.tools.get(name)?.tags;
         if (!tags?.includes("core")) return false;
         return this.passesFilters(name, isGroup, chatId, isAdmin, senderId);
       })
