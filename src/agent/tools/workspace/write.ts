@@ -5,7 +5,7 @@ import { writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs";
 import { dirname } from "path";
 import { MAX_WRITE_SIZE } from "../../../constants/limits.js";
 import type { Tool, ToolExecutor } from "../types.js";
-import { validateWritePath } from "../../../workspace/index.js";
+import { validateWritePath, MEMORY_SCAN_FILES } from "../../../workspace/index.js";
 import { withToolErrors } from "../wrap.js";
 import { scanMemoryContent } from "../../../utils/memory-guard.js";
 
@@ -61,12 +61,9 @@ export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> =
       mkdirSync(parentDir, { recursive: true });
     }
 
-    // SECURITY: Scan memory-sensitive files for injection attempts
+    // SECURITY: Scan memory-sensitive files (and anything under memory/) for injection
     const isMemoryFile =
-      validated.relativePath === "MEMORY.md" ||
-      validated.relativePath === "HEARTBEAT.md" ||
-      validated.relativePath === "USER.md" ||
-      validated.relativePath === "IDENTITY.md" ||
+      MEMORY_SCAN_FILES.includes(validated.relativePath) ||
       validated.relativePath.startsWith("memory/");
     if (isMemoryFile && encoding !== "base64") {
       const scan = scanMemoryContent(content);

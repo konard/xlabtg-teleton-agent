@@ -3,7 +3,7 @@
 import { Type } from "@sinclair/typebox";
 import { readFileSync, lstatSync } from "fs";
 import type { Tool, ToolExecutor } from "../types.js";
-import { validateReadPath } from "../../../workspace/index.js";
+import { validateReadPath, TEXT_FILE_EXTENSIONS } from "../../../workspace/index.js";
 import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceReadParams {
@@ -53,22 +53,7 @@ export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> =
     }
 
     // Check if it's a text file or binary
-    const textExtensions = [
-      ".md",
-      ".txt",
-      ".json",
-      ".csv",
-      ".yaml",
-      ".yml",
-      ".xml",
-      ".html",
-      ".css",
-      ".js",
-      ".ts",
-      ".py",
-      ".sh",
-    ];
-    const isTextFile = textExtensions.includes(validated.extension);
+    const isTextFile = TEXT_FILE_EXTENSIONS.includes(validated.extension);
 
     if (!isTextFile && encoding === "utf-8") {
       // Return metadata only for binary files

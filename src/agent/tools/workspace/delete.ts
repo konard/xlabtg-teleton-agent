@@ -3,23 +3,13 @@
 import { Type } from "@sinclair/typebox";
 import { unlinkSync, rmdirSync, readdirSync, rmSync } from "fs";
 import type { Tool, ToolExecutor } from "../types.js";
-import { validatePath } from "../../../workspace/index.js";
+import { validatePath, PROTECTED_WORKSPACE_FILES } from "../../../workspace/index.js";
 import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceDeleteParams {
   path: string;
   recursive?: boolean;
 }
-
-// Files that cannot be deleted (core workspace files)
-const PROTECTED_WORKSPACE_FILES = [
-  "SOUL.md",
-  "STRATEGY.md",
-  "SECURITY.md",
-  "MEMORY.md",
-  "IDENTITY.md",
-  "USER.md",
-];
 
 export const workspaceDeleteTool: Tool = {
   name: "workspace_delete",
