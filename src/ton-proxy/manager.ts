@@ -19,6 +19,7 @@ import { join } from "path";
 import { pipeline } from "stream/promises";
 import { createLogger } from "../utils/logger.js";
 import { TELETON_ROOT } from "../workspace/paths.js";
+import type { TonProxyConfig } from "../config/schema.js";
 
 const log = createLogger("TonProxy");
 
@@ -28,12 +29,6 @@ const PID_FILE = join(TELETON_ROOT, "ton-proxy.pid");
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 const HEALTH_CHECK_TIMEOUT_MS = 5_000;
 const KILL_GRACE_MS = 5_000;
-
-export interface TonProxyConfig {
-  enabled: boolean;
-  port: number;
-  binary_path?: string;
-}
 
 export class TonProxyManager {
   private process: ChildProcess | null = null;
