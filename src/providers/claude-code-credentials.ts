@@ -13,6 +13,7 @@ import { execSync } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import { createLogger } from "../utils/logger.js";
+import { createTokenCache } from "./token-cache.js";
 
 const log = createLogger("ClaudeCodeCreds");
 
@@ -35,8 +36,7 @@ interface ClaudeOAuthCredentials {
 
 // ── Module-level cache ─────────────────────────────────────────────────
 
-let cachedToken: string | null = null;
-let cachedExpiresAt = 0;
+const tokenCache = createTokenCache();
 let cachedRefreshToken: string | null = null;
 
 // ── Internal helpers ───────────────────────────────────────────────────
@@ -125,8 +125,8 @@ function extractToken(creds: ClaudeOAuthCredentials): {
  */
 export function getClaudeCodeApiKey(fallbackKey?: string): string {
   // Fast path: cached and valid
-  if (cachedToken && Date.now() < cachedExpiresAt) {
-    return cachedToken;
+  if (tokenCache.isValid()) {
+    return tokenCache.get() as string;
   }
 
   // Read from disk
@@ -134,11 +134,10 @@ export function getClaudeCodeApiKey(fallbackKey?: string): string {
   if (creds) {
     const extracted = extractToken(creds);
     if (extracted) {
-      cachedToken = extracted.token;
-      cachedExpiresAt = extracted.expiresAt;
+      tokenCache.set(extracted.token, extracted.expiresAt);
       cachedRefreshToken = extracted.refreshToken ?? null;
       log.debug("Claude Code credentials loaded successfully");
-      return cachedToken;
+      return extracted.token;
     }
   }
 
@@ -208,12 +207,11 @@ async function performOAuthRefresh(refreshToken: string): Promise<string | null>
     }
 
     // Update in-memory cache
-    cachedToken = data.access_token;
-    cachedExpiresAt = newExpiresAt;
+    tokenCache.set(data.access_token, newExpiresAt);
     cachedRefreshToken = newRefreshToken;
 
     log.info("Claude Code OAuth token refreshed successfully");
-    return cachedToken;
+    return data.access_token;
   } catch (error) {
     log.warn({ err: error }, "OAuth token refresh request failed");
     return null;
@@ -227,8 +225,7 @@ async function performOAuthRefresh(refreshToken: string): Promise<string | null>
  */
 export async function refreshClaudeCodeApiKey(): Promise<string | null> {
   // Clear access token cache (keep refresh token for OAuth attempt)
-  cachedToken = null;
-  cachedExpiresAt = 0;
+  tokenCache.reset();
 
   // Populate refresh token from disk if not already cached
   if (!cachedRefreshToken) {
@@ -251,11 +248,10 @@ export async function refreshClaudeCodeApiKey(): Promise<string | null> {
   if (creds) {
     const extracted = extractToken(creds);
     if (extracted) {
-      cachedToken = extracted.token;
-      cachedExpiresAt = extracted.expiresAt;
+      tokenCache.set(extracted.token, extracted.expiresAt);
       cachedRefreshToken = extracted.refreshToken ?? null;
       log.info("Claude Code credentials refreshed from disk");
-      return cachedToken;
+      return extracted.token;
     }
   }
 
@@ -265,12 +261,11 @@ export async function refreshClaudeCodeApiKey(): Promise<string | null> {
 
 /** Check if the currently cached token is still valid */
 export function isClaudeCodeTokenValid(): boolean {
-  return cachedToken !== null && Date.now() < cachedExpiresAt;
+  return tokenCache.isValid();
 }
 
 /** Reset internal cache — exposed for testing only */
 export function _resetCache(): void {
-  cachedToken = null;
-  cachedExpiresAt = 0;
+  tokenCache.reset();
   cachedRefreshToken = null;
 }

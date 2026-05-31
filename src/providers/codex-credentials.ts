@@ -14,6 +14,8 @@ import { readFileSync, existsSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { createLogger } from "../utils/logger.js";
+import { extractJwtExpiry } from "../utils/jwt.js";
+import { createTokenCache } from "./token-cache.js";
 
 const log = createLogger("CodexCreds");
 
@@ -33,8 +35,7 @@ interface CodexAuthFile {
 
 // ── Module-level cache ─────────────────────────────────────────────────
 
-let cachedToken: string | null = null;
-let cachedExpiresAt = 0;
+const tokenCache = createTokenCache();
 
 // ── Internal helpers ───────────────────────────────────────────────────
 
@@ -57,18 +58,6 @@ function readAuthFile(): CodexAuthFile | null {
   } catch (error) {
     log.warn({ err: error, path: filePath }, "Failed to parse Codex auth file");
     return null;
-  }
-}
-
-/** Extract expiry from a JWT token (exp claim in seconds) */
-function extractJwtExpiry(token: string): number {
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return 0;
-    const payload = JSON.parse(Buffer.from(parts[1], "base64url").toString());
-    return (payload.exp ?? 0) * 1000; // Convert seconds → ms
-  } catch {
-    return 0;
   }
 }
 
@@ -103,8 +92,8 @@ function extractToken(auth: CodexAuthFile): { token: string; expiresAt: number }
  */
 export function getCodexApiKey(fallbackKey?: string): string {
   // Fast path: cached and valid
-  if (cachedToken && Date.now() < cachedExpiresAt) {
-    return cachedToken;
+  if (tokenCache.isValid()) {
+    return tokenCache.get() as string;
   }
 
   // Read from disk
@@ -112,10 +101,9 @@ export function getCodexApiKey(fallbackKey?: string): string {
   if (auth) {
     const extracted = extractToken(auth);
     if (extracted) {
-      cachedToken = extracted.token;
-      cachedExpiresAt = extracted.expiresAt;
+      tokenCache.set(extracted.token, extracted.expiresAt);
       log.debug("Codex credentials loaded successfully");
-      return cachedToken;
+      return extracted.token;
     }
   }
 
@@ -136,17 +124,15 @@ export function getCodexApiKey(fallbackKey?: string): string {
  * in case the CLI has already refreshed the token.
  */
 export async function refreshCodexApiKey(): Promise<string | null> {
-  cachedToken = null;
-  cachedExpiresAt = 0;
+  tokenCache.reset();
 
   const auth = readAuthFile();
   if (auth) {
     const extracted = extractToken(auth);
     if (extracted) {
-      cachedToken = extracted.token;
-      cachedExpiresAt = extracted.expiresAt;
+      tokenCache.set(extracted.token, extracted.expiresAt);
       log.info("Codex credentials refreshed from disk");
-      return cachedToken;
+      return extracted.token;
     }
   }
 
@@ -156,11 +142,10 @@ export async function refreshCodexApiKey(): Promise<string | null> {
 
 /** Check if the currently cached token is still valid */
 export function isCodexTokenValid(): boolean {
-  return cachedToken !== null && Date.now() < cachedExpiresAt;
+  return tokenCache.isValid();
 }
 
 /** Reset internal cache — exposed for testing only */
 export function _resetCache(): void {
-  cachedToken = null;
-  cachedExpiresAt = 0;
+  tokenCache.reset();
 }
