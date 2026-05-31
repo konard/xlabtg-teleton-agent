@@ -103,6 +103,34 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Prompt for an optional integration key: ask to enable, show a note, then
+ * collect+validate the key. Returns the entered value, or undefined if skipped.
+ * Callers handle assignment and `extras.push` based on the return value.
+ */
+async function promptOptionalKey(opts: {
+  confirmMsg: string;
+  note: string;
+  noteTitle: string;
+  inputMsg: string;
+  validate: (value: string) => true | string;
+}): Promise<string | undefined> {
+  const enable = await confirm({
+    message: opts.confirmMsg,
+    default: false,
+    theme,
+  });
+
+  if (!enable) return undefined;
+
+  noteBox(opts.note, opts.noteTitle, TON);
+  return input({
+    message: opts.inputMsg,
+    theme,
+    validate: (v = "") => opts.validate(v),
+  });
+}
+
 // Model catalog imported from shared source (see src/config/model-catalog.ts)
 
 /**
@@ -189,9 +217,6 @@ async function runInteractiveOnboarding(
   let apiHash = "";
   let phone = "";
   let userId = 0;
-  let tonapiKey: string | undefined;
-  let toncenterApiKey: string | undefined;
-  let tavilyApiKey: string | undefined;
   let telegramMode: "user" | "bot" = "user";
   let botToken: string | undefined;
   let botUsername: string | undefined;
@@ -714,96 +739,54 @@ async function runInteractiveOnboarding(
   }
 
   // TonAPI key
-  const setupTonapi = await confirm({
-    message: `Add a TonAPI key? ${DIM("(strongly recommended for TON features)")}`,
-    default: false,
-    theme,
-  });
-
-  if (setupTonapi) {
-    noteBox(
+  const tonapiKey = await promptOptionalKey({
+    confirmMsg: `Add a TonAPI key? ${DIM("(strongly recommended for TON features)")}`,
+    note:
       "Blockchain data — jettons, NFTs, prices, transaction history.\n" +
-        "Without key: 1 req/s (you WILL hit rate limits)\n" +
-        "With free key: 5 req/s\n" +
-        "\n" +
-        "Open @tonapibot on Telegram → mini app → generate a server key",
-      "TonAPI",
-      TON
-    );
-    const keyInput = await input({
-      message: "TonAPI key",
-      theme,
-      validate: (v) => {
-        if (!v || v.length < 10) return "Key too short";
-        return true;
-      },
-    });
-    tonapiKey = keyInput;
-    extras.push("TonAPI");
-  }
+      "Without key: 1 req/s (you WILL hit rate limits)\n" +
+      "With free key: 5 req/s\n" +
+      "\n" +
+      "Open @tonapibot on Telegram → mini app → generate a server key",
+    noteTitle: "TonAPI",
+    inputMsg: "TonAPI key",
+    validate: (v) => (!v || v.length < 10 ? "Key too short" : true),
+  });
+  if (tonapiKey) extras.push("TonAPI");
 
   // TonCenter key
-  const setupToncenter = await confirm({
-    message: `Add a TonCenter API key? ${DIM("(optional, dedicated RPC endpoint)")}`,
-    default: false,
-    theme,
-  });
-
-  if (setupToncenter) {
-    noteBox(
+  const toncenterApiKey = await promptOptionalKey({
+    confirmMsg: `Add a TonCenter API key? ${DIM("(optional, dedicated RPC endpoint)")}`,
+    note:
       "Blockchain RPC — send transactions, check balances.\n" +
-        "Without key: falls back to ORBS network (decentralized, slower)\n" +
-        "With free key: dedicated RPC endpoint\n" +
-        "\n" +
-        "Go to https://toncenter.com → get a free API key (instant, no signup)",
-      "TonCenter",
-      TON
-    );
-    const keyInput = await input({
-      message: "TonCenter API key",
-      theme,
-      validate: (v) => {
-        if (!v || v.length < 10) return "Key too short";
-        return true;
-      },
-    });
-    toncenterApiKey = keyInput;
-    extras.push("TonCenter");
-  }
+      "Without key: falls back to ORBS network (decentralized, slower)\n" +
+      "With free key: dedicated RPC endpoint\n" +
+      "\n" +
+      "Go to https://toncenter.com → get a free API key (instant, no signup)",
+    noteTitle: "TonCenter",
+    inputMsg: "TonCenter API key",
+    validate: (v) => (!v || v.length < 10 ? "Key too short" : true),
+  });
+  if (toncenterApiKey) extras.push("TonCenter");
 
   // Tavily key
-  const setupTavily = await confirm({
-    message: `Enable web search? ${DIM("(free Tavily key — 1,000 req/month)")}`,
-    default: false,
-    theme,
-  });
-
-  if (setupTavily) {
-    noteBox(
+  const tavilyApiKey = await promptOptionalKey({
+    confirmMsg: `Enable web search? ${DIM("(free Tavily key — 1,000 req/month)")}`,
+    note:
       "Web search lets your agent search the internet and read web pages.\n" +
-        "\n" +
-        "To get your free API key (takes 30 seconds):\n" +
-        "\n" +
-        "  1. Go to https://app.tavily.com/sign-in\n" +
-        "  2. Create an account (email or Google/GitHub)\n" +
-        "  3. Your API key is displayed on the dashboard\n" +
-        "     (starts with tvly-)\n" +
-        "\n" +
-        "Free plan: 1,000 requests/month — no credit card required.",
-      "Tavily — Web Search API",
-      TON
-    );
-    const keyInput = await input({
-      message: "Tavily API key (starts with tvly-)",
-      theme,
-      validate: (v) => {
-        if (!v || !v.startsWith("tvly-")) return "Should start with tvly-";
-        return true;
-      },
-    });
-    tavilyApiKey = keyInput;
-    extras.push("Tavily");
-  }
+      "\n" +
+      "To get your free API key (takes 30 seconds):\n" +
+      "\n" +
+      "  1. Go to https://app.tavily.com/sign-in\n" +
+      "  2. Create an account (email or Google/GitHub)\n" +
+      "  3. Your API key is displayed on the dashboard\n" +
+      "     (starts with tvly-)\n" +
+      "\n" +
+      "Free plan: 1,000 requests/month — no credit card required.",
+    noteTitle: "Tavily — Web Search API",
+    inputMsg: "Tavily API key (starts with tvly-)",
+    validate: (v) => (!v || !v.startsWith("tvly-") ? "Should start with tvly-" : true),
+  });
+  if (tavilyApiKey) extras.push("Tavily");
 
   STEPS[3].value = extras.length ? extras.join(", ") : "defaults";
 
