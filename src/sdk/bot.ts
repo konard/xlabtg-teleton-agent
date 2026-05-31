@@ -8,10 +8,14 @@ import type { InlineRouter, PluginBotHandlers } from "../bot/inline-router.js";
 import type { GramJSBotClient } from "../bot/gramjs-bot.js";
 import type { Bot } from "grammy";
 import type { PluginRateLimiter } from "../bot/rate-limiter.js";
-import { toTLMarkup, toGrammyKeyboard, prefixButtons } from "../bot/services/styled-keyboard.js";
-import { stripCustomEmoji } from "../bot/services/html-parser.js";
+import {
+  toTLMarkup,
+  toGrammyKeyboard,
+  prefixButtons,
+  stripCustomEmoji,
+  compileGlob,
+} from "./formatting.js";
 import { editInlineViaGramJS } from "../bot/services/inline-transport.js";
-import { compileGlob } from "../bot/inline-router.js";
 import { getGramJSErrorMessage } from "../utils/errors.js";
 
 export function createBotSDK(

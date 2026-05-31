@@ -8,9 +8,7 @@
  */
 
 import type { GramJSBotClient } from "../gramjs-bot.js";
-import type { StyledButtonDef } from "./styled-keyboard.js";
-import { toTLMarkup, hasStyledButtons } from "./styled-keyboard.js";
-import { parseHtml } from "./html-parser.js";
+import { toTLMarkup, hasStyledButtons, parseHtml, type StyledButtonDef } from "../../sdk/formatting.js";
 import { getGramJSErrorMessage } from "../../utils/errors.js";
 
 /**

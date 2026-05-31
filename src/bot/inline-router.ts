@@ -18,9 +18,11 @@ import type {
 } from "@teleton-agent/sdk";
 import type { GramJSBotClient } from "./gramjs-bot.js";
 import { createLogger } from "../utils/logger.js";
-import { toGrammyKeyboard, prefixButtons } from "./services/styled-keyboard.js";
-import { stripCustomEmoji } from "./services/html-parser.js";
+import { toGrammyKeyboard, prefixButtons, stripCustomEmoji } from "../sdk/formatting.js";
 import { editInlineViaGramJS } from "./services/inline-transport.js";
+
+// Re-exported for callers that import the router's glob compiler (now shared).
+export { compileGlob } from "../sdk/formatting.js";
 
 const log = createLogger("InlineRouter");
 
@@ -40,15 +42,6 @@ export interface PluginBotHandlers {
 }
 
 /**
- * Compile a glob-like pattern to a RegExp.
- * Supports `*` as wildcard matching any sequence of characters.
- */
-export function compileGlob(pattern: string): RegExp {
-  const regexStr = "^" + pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replace(/\*/g, "(.*)") + "$";
-  return new RegExp(regexStr);
-}
-
-/**
  * Match a pre-compiled glob regex against a string.
  * Returns match groups (the parts matched by `*`) or null.
  */
@@ -57,8 +50,6 @@ function globMatch(regex: RegExp, input: string): string[] | null {
   if (!match) return null;
   return match.slice(1);
 }
-
-// prefixButtons imported from shared styled-keyboard.ts
 
 export class InlineRouter {
   private plugins = new Map<string, PluginBotHandlers>();

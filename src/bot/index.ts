@@ -31,9 +31,10 @@ import {
   toGrammyKeyboard,
   toTLMarkup,
   hasStyledButtons,
+  parseHtml,
+  stripCustomEmoji,
   type StyledButtonDef,
-} from "./services/styled-keyboard.js";
-import { parseHtml, stripCustomEmoji } from "./services/html-parser.js";
+} from "../sdk/formatting.js";
 import { editInlineViaGramJS } from "./services/inline-transport.js";
 import { GramJSBotClient } from "./gramjs-bot.js";
 import { getWalletAddress } from "../ton/wallet-service.js";

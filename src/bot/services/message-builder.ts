@@ -8,7 +8,7 @@
  */
 
 import type { DealContext } from "../types.js";
-import type { StyledButtonDef, DealMessage } from "./styled-keyboard.js";
+import type { StyledButtonDef, DealMessage } from "../../sdk/formatting.js";
 
 /**
  * Escape HTML special characters
