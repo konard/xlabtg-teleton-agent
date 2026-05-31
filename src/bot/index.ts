@@ -4,7 +4,6 @@
  */
 
 import { Bot, type MiddlewareFn, type Context } from "grammy";
-import { Api } from "telegram";
 import type Database from "better-sqlite3";
 import { getGramJSErrorMessage, getGrammyErrorDescription } from "../utils/errors.js";
 import type { BotConfig, DealContext } from "./types.js";
@@ -29,13 +28,15 @@ import {
 } from "./services/message-builder.js";
 import {
   toGrammyKeyboard,
-  toTLMarkup,
   hasStyledButtons,
-  parseHtml,
   stripCustomEmoji,
   type StyledButtonDef,
 } from "../sdk/formatting.js";
-import { editInlineViaGramJS } from "./services/inline-transport.js";
+import {
+  answerInlineQueryStyled,
+  editInlineViaGramJS,
+  editInlineViaGramJSStrict,
+} from "./services/inline-transport.js";
 import { GramJSBotClient } from "./gramjs-bot.js";
 import { getWalletAddress } from "../ton/wallet-service.js";
 import { createLogger } from "../utils/logger.js";
@@ -125,7 +126,15 @@ export class DealBot {
 
       if (this.gramjsBot?.isConnected() && hasStyledButtons(buttons)) {
         try {
-          await this.answerInlineQueryStyled(queryId, dealId, deal, text, buttons);
+          await answerInlineQueryStyled({
+            gramjsBot: this.gramjsBot,
+            queryId,
+            resultId: dealId,
+            title: `📋 Deal #${dealId}`,
+            description: this.formatShortDescription(deal),
+            html: text,
+            buttons,
+          });
           return;
         } catch (error) {
           log.warn({ err: error }, "[Bot] GramJS styled answer failed, falling back to Grammy");
@@ -172,7 +181,12 @@ export class DealBot {
           let edited = false;
           if (this.gramjsBot?.isConnected()) {
             try {
-              await this.editViaGramJS(inlineMessageId, text, buttons);
+              await editInlineViaGramJSStrict({
+                gramjsBot: this.gramjsBot,
+                inlineMessageId,
+                html: text,
+                buttons,
+              });
               edited = true;
             } catch (error: unknown) {
               const errMsg = getGramJSErrorMessage(error);
@@ -267,43 +281,6 @@ export class DealBot {
 
     this.bot.catch((err) => {
       log.error({ err }, "[Bot] Error");
-    });
-  }
-
-  /**
-   * Answer inline query via GramJS with styled buttons.
-   * Custom emojis stripped (SetInlineBotResults doesn't support them).
-   */
-  private async answerInlineQueryStyled(
-    queryId: string,
-    dealId: string,
-    deal: DealContext,
-    htmlText: string,
-    buttons: StyledButtonDef[][]
-  ): Promise<void> {
-    if (!this.gramjsBot) throw new Error("GramJS bot not available");
-
-    const strippedHtml = stripCustomEmoji(htmlText);
-    const { text: plainText, entities } = parseHtml(strippedHtml);
-    const markup = hasStyledButtons(buttons) ? toTLMarkup(buttons) : undefined;
-
-    await this.gramjsBot.answerInlineQuery({
-      queryId,
-      results: [
-        new Api.InputBotInlineResult({
-          id: dealId,
-          type: "article",
-          title: `📋 Deal #${dealId}`,
-          description: this.formatShortDescription(deal),
-          sendMessage: new Api.InputBotInlineMessageText({
-            message: plainText,
-            entities: entities.length > 0 ? entities : undefined,
-            noWebpage: true,
-            replyMarkup: markup,
-          }),
-        }),
-      ],
-      cacheTime: 0,
     });
   }
 
@@ -462,24 +439,6 @@ export class DealBot {
     } catch (error) {
       log.error({ err: error }, "[Bot] Failed to edit message by inline ID");
     }
-  }
-
-  private async editViaGramJS(
-    inlineMessageId: string,
-    htmlText: string,
-    buttons: StyledButtonDef[][]
-  ): Promise<void> {
-    if (!this.gramjsBot) throw new Error("GramJS bot not available");
-
-    const { text: plainText, entities } = parseHtml(htmlText);
-    const markup = hasStyledButtons(buttons) ? toTLMarkup(buttons) : undefined;
-
-    await this.gramjsBot.editInlineMessageByStringId({
-      inlineMessageId,
-      text: plainText,
-      entities: entities.length > 0 ? entities : undefined,
-      replyMarkup: markup,
-    });
   }
 
   private formatShortDescription(deal: DealContext): string {
