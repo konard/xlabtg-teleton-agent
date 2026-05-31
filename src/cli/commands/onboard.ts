@@ -243,6 +243,143 @@ async function importWalletFlow(spinner: ReturnType<typeof ora>): Promise<Wallet
   return wallet;
 }
 
+type Policy = "open" | "allowlist" | "admin-only" | "disabled";
+
+/** Variable inputs for {@link buildConfig}; everything else is a centralized default. */
+interface BuildConfigInput {
+  provider: SupportedProvider;
+  apiKey: string;
+  baseUrl?: string;
+  model: string;
+  maxAgenticIterations: number;
+  telegramMode: "user" | "bot";
+  apiId: number;
+  apiHash: string;
+  phone: string;
+  userId: number;
+  dmPolicy: Policy;
+  groupPolicy: Policy;
+  requireMention: boolean;
+  execMode: "off" | "yolo";
+  botToken?: string;
+  botUsername?: string;
+  tonapiKey?: string;
+  toncenterApiKey?: string;
+  tavilyApiKey?: string;
+  cocoonPort?: number;
+  sessionPath: string;
+  workspaceRoot: string;
+}
+
+/**
+ * Build the full Config object from the variable wizard inputs, centralizing
+ * every schema default in one place. Called by both the interactive and the
+ * non-interactive flows so they can never silently diverge.
+ */
+function buildConfig(input: BuildConfigInput): Config {
+  return {
+    meta: {
+      version: "1.0.0",
+      created_at: new Date().toISOString(),
+      onboard_command: "teleton setup",
+    },
+    agent: {
+      provider: input.provider,
+      api_key: input.apiKey,
+      ...(input.baseUrl ? { base_url: input.baseUrl } : {}),
+      model: input.model,
+      max_tokens: 4096,
+      temperature: 0.7,
+      system_prompt: null,
+      max_agentic_iterations: input.maxAgenticIterations,
+      session_reset_policy: {
+        daily_reset_enabled: true,
+        daily_reset_hour: 4,
+        idle_expiry_enabled: true,
+        idle_expiry_minutes: 1440,
+      },
+    },
+    telegram: {
+      mode: input.telegramMode,
+      api_id: input.telegramMode === "user" ? input.apiId : 0,
+      api_hash: input.telegramMode === "user" ? input.apiHash : "",
+      phone: input.telegramMode === "user" ? input.phone : "",
+      session_name: "teleton_session",
+      session_path: input.sessionPath,
+      dm_policy: input.dmPolicy,
+      allow_from: [],
+      group_policy: input.groupPolicy,
+      group_allow_from: [],
+      require_mention: input.requireMention,
+      max_message_length: TELEGRAM_MAX_MESSAGE_LENGTH,
+      typing_simulation: true,
+      rate_limit_messages_per_second: 1.0,
+      rate_limit_groups_per_minute: 20,
+      admin_ids: [input.userId],
+      owner_id: input.userId,
+      agent_channel: null,
+      debounce_ms: 1500,
+      bot_token: input.botToken,
+      bot_username: input.botUsername,
+      stream_mode: "all",
+      guest_mode: false,
+    },
+    storage: {
+      sessions_file: `${input.workspaceRoot}/sessions.json`,
+      memory_file: `${input.workspaceRoot}/memory.json`,
+      history_limit: 100,
+    },
+    embedding: { provider: "local" },
+    deals: DealsConfigSchema.parse({ enabled: !!input.botToken }),
+    webui: {
+      enabled: false,
+      port: 7777,
+      host: "127.0.0.1",
+      cors_origins: ["http://localhost:5173", "http://localhost:7777"],
+      log_requests: false,
+    },
+    dev: { hot_reload: false },
+    tool_rag: {
+      enabled: true,
+      top_k: 25,
+      always_include: [
+        "telegram_send_message",
+        "telegram_quote_reply",
+        "telegram_send_photo",
+        "journal_*",
+        "workspace_*",
+        "web_*",
+      ],
+      skip_unlimited_providers: false,
+    },
+    logging: { level: "info", pretty: true },
+    mcp: { servers: {} },
+    capabilities: {
+      exec: {
+        mode: input.execMode,
+        scope: "admin-only",
+        allowlist: [],
+        limits: { timeout: 120, max_output: 50000 },
+        audit: { log_commands: true },
+      },
+    },
+    ton_proxy: { enabled: false, port: 8080 },
+    heartbeat: {
+      enabled: true,
+      interval_ms: 3_600_000,
+      prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.",
+      self_configurable: false,
+    },
+    plugins: {},
+    ...(input.provider === "cocoon" && input.cocoonPort
+      ? { cocoon: { port: input.cocoonPort } }
+      : {}),
+    tonapi_key: input.tonapiKey,
+    toncenter_api_key: input.toncenterApiKey,
+    tavily_api_key: input.tavilyApiKey,
+  };
+}
+
 // Model catalog imported from shared source (see src/config/model-catalog.ts)
 
 /**
@@ -1046,106 +1183,31 @@ async function runInteractiveOnboarding(
   // ════════════════════════════════════════════════════════════════════
   redraw(6);
 
-  // Build config
-  const config: Config = {
-    meta: {
-      version: "1.0.0",
-      created_at: new Date().toISOString(),
-      onboard_command: "teleton setup",
-    },
-    agent: {
-      provider: selectedProvider,
-      api_key: apiKey,
-      ...(selectedProvider === "local" && localBaseUrl ? { base_url: localBaseUrl } : {}),
-      model: selectedModel,
-      max_tokens: 4096,
-      temperature: 0.7,
-      system_prompt: null,
-      max_agentic_iterations: parseInt(maxAgenticIterations, 10),
-      session_reset_policy: {
-        daily_reset_enabled: true,
-        daily_reset_hour: 4,
-        idle_expiry_enabled: true,
-        idle_expiry_minutes: 1440,
-      },
-    },
-    telegram: {
-      mode: telegramMode,
-      api_id: telegramMode === "user" ? apiId : 0,
-      api_hash: telegramMode === "user" ? apiHash : "",
-      phone: telegramMode === "user" ? phone : "",
-      session_name: "teleton_session",
-      session_path: workspace.sessionPath,
-      dm_policy: dmPolicy,
-      allow_from: [],
-      group_policy: groupPolicy,
-      group_allow_from: [],
-      require_mention: requireMention,
-      max_message_length: TELEGRAM_MAX_MESSAGE_LENGTH,
-      typing_simulation: true,
-      rate_limit_messages_per_second: 1.0,
-      rate_limit_groups_per_minute: 20,
-      admin_ids: [userId],
-      owner_id: userId,
-      agent_channel: null,
-      debounce_ms: 1500,
-      bot_token: botToken,
-      bot_username: botUsername,
-      stream_mode: "all",
-      guest_mode: false,
-    },
-    storage: {
-      sessions_file: `${workspace.root}/sessions.json`,
-      memory_file: `${workspace.root}/memory.json`,
-      history_limit: 100,
-    },
-    embedding: { provider: "local" },
-    deals: DealsConfigSchema.parse({ enabled: !!botToken }),
-    webui: {
-      enabled: false,
-      port: 7777,
-      host: "127.0.0.1",
-      cors_origins: ["http://localhost:5173", "http://localhost:7777"],
-      log_requests: false,
-    },
-    dev: { hot_reload: false },
-    tool_rag: {
-      enabled: true,
-      top_k: 25,
-      always_include: [
-        "telegram_send_message",
-        "telegram_quote_reply",
-        "telegram_send_photo",
-        "journal_*",
-        "workspace_*",
-        "web_*",
-      ],
-      skip_unlimited_providers: false,
-    },
-    logging: { level: "info", pretty: true },
-    mcp: { servers: {} },
-    capabilities: {
-      exec: {
-        mode: execMode,
-        scope: "admin-only",
-        allowlist: [],
-        limits: { timeout: 120, max_output: 50000 },
-        audit: { log_commands: true },
-      },
-    },
-    ton_proxy: { enabled: false, port: 8080 },
-    heartbeat: {
-      enabled: true,
-      interval_ms: 3_600_000,
-      prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.",
-      self_configurable: false,
-    },
-    plugins: {},
-    ...(selectedProvider === "cocoon" ? { cocoon: { port: cocoonInstance } } : {}),
-    tonapi_key: tonapiKey,
-    toncenter_api_key: toncenterApiKey,
-    tavily_api_key: tavilyApiKey,
-  };
+  // Build config (shared with the non-interactive flow via buildConfig)
+  const config = buildConfig({
+    provider: selectedProvider,
+    apiKey,
+    baseUrl: selectedProvider === "local" ? localBaseUrl : undefined,
+    model: selectedModel,
+    maxAgenticIterations: parseInt(maxAgenticIterations, 10),
+    telegramMode,
+    apiId,
+    apiHash,
+    phone,
+    userId,
+    dmPolicy,
+    groupPolicy,
+    requireMention,
+    execMode,
+    botToken,
+    botUsername,
+    tonapiKey,
+    toncenterApiKey,
+    tavilyApiKey,
+    cocoonPort: selectedProvider === "cocoon" ? cocoonInstance : undefined,
+    sessionPath: workspace.sessionPath,
+    workspaceRoot: workspace.root,
+  });
 
   // Save config
   spinner.start(DIM("Saving configuration..."));
@@ -1258,102 +1320,27 @@ async function runNonInteractiveOnboarding(
 
   const providerMeta = getProviderMetadata(selectedProvider);
 
-  const config: Config = {
-    meta: {
-      version: "1.0.0",
-      created_at: new Date().toISOString(),
-      onboard_command: "teleton setup",
-    },
-    agent: {
-      provider: selectedProvider,
-      api_key: options.apiKey || "",
-      ...(options.baseUrl ? { base_url: options.baseUrl } : {}),
-      model: providerMeta.defaultModel,
-      max_tokens: 4096,
-      temperature: 0.7,
-      system_prompt: null,
-      max_agentic_iterations: 5,
-      session_reset_policy: {
-        daily_reset_enabled: true,
-        daily_reset_hour: 4,
-        idle_expiry_enabled: true,
-        idle_expiry_minutes: 1440,
-      },
-    },
-    telegram: {
-      mode: nonInteractiveMode,
-      api_id: nonInteractiveMode === "user" ? (options.apiId ?? 0) : 0,
-      api_hash: nonInteractiveMode === "user" ? (options.apiHash ?? "") : "",
-      phone: nonInteractiveMode === "user" ? (options.phone ?? "") : "",
-      session_name: "teleton_session",
-      session_path: workspace.sessionPath,
-      dm_policy: "admin-only",
-      allow_from: [],
-      group_policy: "admin-only",
-      group_allow_from: [],
-      require_mention: true,
-      max_message_length: TELEGRAM_MAX_MESSAGE_LENGTH,
-      typing_simulation: true,
-      rate_limit_messages_per_second: 1.0,
-      rate_limit_groups_per_minute: 20,
-      admin_ids: [options.userId ?? 0],
-      owner_id: options.userId ?? 0,
-      agent_channel: null,
-      debounce_ms: 1500,
-      bot_token: nonInteractiveMode === "bot" ? options.botToken : undefined,
-      bot_username: undefined,
-      stream_mode: "all",
-      guest_mode: false,
-    },
-    storage: {
-      sessions_file: `${workspace.root}/sessions.json`,
-      memory_file: `${workspace.root}/memory.json`,
-      history_limit: 100,
-    },
-    embedding: { provider: "local" },
-    deals: DealsConfigSchema.parse({}),
-    webui: {
-      enabled: false,
-      port: 7777,
-      host: "127.0.0.1",
-      cors_origins: ["http://localhost:5173", "http://localhost:7777"],
-      log_requests: false,
-    },
-    dev: { hot_reload: false },
-    tool_rag: {
-      enabled: true,
-      top_k: 25,
-      always_include: [
-        "telegram_send_message",
-        "telegram_quote_reply",
-        "telegram_send_photo",
-        "journal_*",
-        "workspace_*",
-        "web_*",
-      ],
-      skip_unlimited_providers: false,
-    },
-    logging: { level: "info", pretty: true },
-    capabilities: {
-      exec: {
-        mode: "off",
-        scope: "admin-only",
-        allowlist: [],
-        limits: { timeout: 120, max_output: 50000 },
-        audit: { log_commands: true },
-      },
-    },
-    ton_proxy: { enabled: false, port: 8080 },
-    heartbeat: {
-      enabled: true,
-      interval_ms: 3_600_000,
-      prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.",
-      self_configurable: false,
-    },
-    mcp: { servers: {} },
-    plugins: {},
-    tavily_api_key: options.tavilyApiKey,
-  };
+  const config = buildConfig({
+    provider: selectedProvider,
+    apiKey: options.apiKey || "",
+    baseUrl: options.baseUrl,
+    model: providerMeta.defaultModel,
+    maxAgenticIterations: 5,
+    telegramMode: nonInteractiveMode,
+    apiId: options.apiId ?? 0,
+    apiHash: options.apiHash ?? "",
+    phone: options.phone ?? "",
+    userId: options.userId ?? 0,
+    dmPolicy: "admin-only",
+    groupPolicy: "admin-only",
+    requireMention: true,
+    execMode: "off",
+    botToken: nonInteractiveMode === "bot" ? options.botToken : undefined,
+    botUsername: undefined,
+    tavilyApiKey: options.tavilyApiKey,
+    sessionPath: workspace.sessionPath,
+    workspaceRoot: workspace.root,
+  });
 
   const configYaml = YAML.stringify(config);
   writeFileSync(workspace.configPath, configYaml, { encoding: "utf-8", mode: 0o600 });
