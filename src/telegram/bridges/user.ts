@@ -104,20 +104,7 @@ export class GramJSUserBridge implements ITelegramBridge {
       let msg: Api.Message;
 
       if (options.inlineKeyboard && options.inlineKeyboard.length > 0) {
-        const buttons = new Api.ReplyInlineMarkup({
-          rows: options.inlineKeyboard.map(
-            (row) =>
-              new Api.KeyboardButtonRow({
-                buttons: row.map(
-                  (btn) =>
-                    new Api.KeyboardButtonCallback({
-                      text: btn.text,
-                      data: Buffer.from(btn.callback_data),
-                    })
-                ),
-              })
-          ),
-        });
+        const buttons = this.buildInlineMarkup(options.inlineKeyboard);
 
         const gramJsClient = this.client.getClient();
         msg = await withFloodRetry(
@@ -151,26 +138,33 @@ export class GramJSUserBridge implements ITelegramBridge {
     }
   }
 
+  /** Build a GramJS inline-keyboard markup from the bridge's button rows. */
+  private buildInlineMarkup(
+    inlineKeyboard: Array<Array<{ text: string; callback_data: string }>>
+  ): Api.ReplyInlineMarkup {
+    return new Api.ReplyInlineMarkup({
+      rows: inlineKeyboard.map(
+        (row) =>
+          new Api.KeyboardButtonRow({
+            buttons: row.map(
+              (btn) =>
+                new Api.KeyboardButtonCallback({
+                  text: btn.text,
+                  data: Buffer.from(btn.callback_data),
+                })
+            ),
+          })
+      ),
+    });
+  }
+
   async editMessage(options: EditMessageOptions): Promise<SentMessage> {
     try {
       const peer = this.peerCache.get(options.chatId) || options.chatId;
 
       let buttons: Api.ReplyInlineMarkup | undefined;
       if (options.inlineKeyboard && options.inlineKeyboard.length > 0) {
-        buttons = new Api.ReplyInlineMarkup({
-          rows: options.inlineKeyboard.map(
-            (row) =>
-              new Api.KeyboardButtonRow({
-                buttons: row.map(
-                  (btn) =>
-                    new Api.KeyboardButtonCallback({
-                      text: btn.text,
-                      data: Buffer.from(btn.callback_data),
-                    })
-                ),
-              })
-          ),
-        });
+        buttons = this.buildInlineMarkup(options.inlineKeyboard);
       }
 
       const gramJsClient = this.client.getClient();
