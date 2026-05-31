@@ -154,6 +154,34 @@ async function getDedustQuote(
   }
 }
 
+type SwapWallet = ReturnType<typeof WalletContractV5R1.create>;
+
+/**
+ * Thin wallet-provisioning wrapper shared by the STON.fi and DeDust swap paths:
+ * runs `fn` under the tx lock with a freshly derived key and opened V5R1 contract.
+ * The divergent txParams cores stay in each caller's `fn`.
+ */
+async function withSwapWallet<T>(
+  tonClient: Awaited<ReturnType<typeof getCachedTonClient>>,
+  fn: (ctx: {
+    keyPair: NonNullable<Awaited<ReturnType<typeof getKeyPair>>>;
+    wallet: SwapWallet;
+    walletContract: OpenedContract<SwapWallet>;
+  }) => Promise<T>
+): Promise<T> {
+  return withTxLock(async () => {
+    const keyPair = await getKeyPair();
+    if (!keyPair) {
+      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+    }
+
+    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
+    const walletContract = tonClient.open(wallet);
+
+    return fn({ keyPair, wallet, walletContract });
+  });
+}
+
 async function executeSTONfiSwap(
   params: DexSwapParams,
   _log: PluginLogger
@@ -190,14 +218,7 @@ async function executeSTONfiSwap(
   const contracts = dexFactory(routerInfo);
   const router = tonClient.open(contracts.Router.create(routerInfo.address));
 
-  return withTxLock(async () => {
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
-      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
-    }
-
-    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const walletContract = tonClient.open(wallet);
+  return withSwapWallet(tonClient, async ({ keyPair, walletContract }) => {
     const seqno = await walletContract.getSeqno();
     const proxyTon = contracts.pTON.create(routerInfo.ptonMasterAddress);
 
@@ -295,14 +316,7 @@ async function executeDedustSwap(
   });
   const minAmountOut = amountOut - (amountOut * BigInt(Math.floor(slippage * 10000))) / 10000n;
 
-  return withTxLock(async () => {
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
-      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
-    }
-
-    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const walletContract = tonClient.open(wallet);
+  return withSwapWallet(tonClient, async ({ keyPair, walletContract }) => {
     const sender = walletContract.sender(keyPair.secretKey);
 
     if (isTonInput) {
