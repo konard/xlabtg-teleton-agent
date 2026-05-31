@@ -608,6 +608,7 @@ export class AgentRuntime {
           toolContext?.senderId
         );
         log.info(`Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
+        log.debug(`Tool RAG selected: ${tools.map((t) => t.name).join(", ")}`);
       } else {
         tools = this.toolRegistry?.getForContext(
           effectiveIsGroup,
@@ -659,6 +660,7 @@ export class AgentRuntime {
     const accumulatedTexts: string[] = [];
     const accumulatedUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalCost: 0 };
     const seenToolSignatures = new Set<string>();
+    let consecutiveStalls = 0;
     let wasStreamed = false;
     let streamAccumulatedText = ""; // For "all" mode: concatenate text across iterations
 
@@ -1050,7 +1052,9 @@ export class AgentRuntime {
 
       log.info(`${iteration}/${maxIterations} → ${iterationToolNames.join(", ")}`);
 
-      // Stall detection: break early if all tool calls are duplicates from prior iterations
+      // Stall detection: break only after 2 *consecutive* iterations where every tool
+      // call (name + sorted args) was already seen — a single fully-repeated batch can
+      // be a legitimate step (e.g. re-checking), so give the model a chance to recover.
       const iterSignatures = toolPlans.map(
         (p) => `${p.block.name}:${JSON.stringify(p.params, Object.keys(p.params).sort())}`
       );
@@ -1058,9 +1062,10 @@ export class AgentRuntime {
         iterSignatures.length > 0 && iterSignatures.every((sig) => seenToolSignatures.has(sig));
       for (const sig of iterSignatures) seenToolSignatures.add(sig);
 
-      if (allDuplicates) {
+      consecutiveStalls = allDuplicates ? consecutiveStalls + 1 : 0;
+      if (consecutiveStalls >= 2) {
         log.warn(
-          `Loop stall detected: all ${iterSignatures.length} tool call(s) are repeats — breaking early`
+          `Loop stall detected: ${consecutiveStalls} consecutive fully-repeated iterations — breaking early`
         );
         finalResponse = response;
         break;
