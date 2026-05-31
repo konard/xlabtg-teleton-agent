@@ -32,6 +32,11 @@ function formatResult(result: CheckResult): string {
   return `${icon} ${result.name}: ${result.message}`;
 }
 
+/** Read and YAML-parse the config file (shared by the config-dependent checks). */
+function readAndParseConfig(configPath: string) {
+  return parse(readFileSync(configPath, "utf-8"));
+}
+
 async function checkConfig(workspaceDir: string): Promise<CheckResult> {
   const configPath = join(workspaceDir, "config.yaml");
 
@@ -44,8 +49,7 @@ async function checkConfig(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const raw = parse(content);
+    const raw = readAndParseConfig(configPath);
     const result = ConfigSchema.safeParse(raw);
 
     if (!result.success) {
@@ -82,8 +86,7 @@ async function checkTelegramCredentials(workspaceDir: string): Promise<CheckResu
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     if (!config.telegram?.api_id || !config.telegram?.api_hash) {
       return {
@@ -127,8 +130,7 @@ async function checkApiKey(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     const provider = (config.agent?.provider || "anthropic") as SupportedProvider;
     const apiKey = config.agent?.api_key;
@@ -334,8 +336,7 @@ async function checkModel(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     const provider = (config.agent?.provider || "anthropic") as SupportedProvider;
     let model = config.agent?.model;
@@ -373,8 +374,7 @@ async function checkAdmins(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     const admins = config.telegram?.admin_ids || [];
 
