@@ -34,6 +34,7 @@ import { writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { TelegramUserClient } from "../../telegram/client.js";
+import { maskSecret } from "../../utils/mask.js";
 import YAML from "yaml";
 import { type Config, DealsConfigSchema } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
@@ -387,7 +388,7 @@ async function runInteractiveOnboarding(
       const valid = isClaudeCodeTokenValid();
       apiKey = ""; // Don't store in config — auto-detected at runtime
       detected = true;
-      const masked = key.length > 16 ? key.slice(0, 12) + "..." + key.slice(-4) : "***";
+      const masked = maskSecret(key, 12, 4);
       noteBox(
         `Credentials auto-detected from Claude Code\n` +
           `Key: ${masked}\n` +
@@ -428,7 +429,7 @@ async function runInteractiveOnboarding(
     if (detected) {
       STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
     } else {
-      const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
+      const maskedKey = maskSecret(apiKey);
       STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
     }
   } else if (selectedProvider === "codex") {
@@ -439,7 +440,7 @@ async function runInteractiveOnboarding(
       const valid = isCodexTokenValid();
       apiKey = ""; // Don't store in config — auto-detected at runtime
       detected = true;
-      const masked = key.length > 16 ? key.slice(0, 12) + "..." + key.slice(-4) : "***";
+      const masked = maskSecret(key, 12, 4);
       noteBox(
         `Credentials auto-detected from Codex CLI\n` +
           `Key: ${masked}\n` +
@@ -480,7 +481,7 @@ async function runInteractiveOnboarding(
     if (detected) {
       STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
     } else {
-      const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
+      const maskedKey = maskSecret(apiKey);
       STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
     }
   } else {
@@ -514,7 +515,7 @@ async function runInteractiveOnboarding(
       });
     }
 
-    const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
+    const maskedKey = maskSecret(apiKey);
     STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
   }
 
