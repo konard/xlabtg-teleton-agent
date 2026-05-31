@@ -35,7 +35,10 @@ export const journalUpdateTool: Tool = {
           Type.Literal("neutral"),
           Type.Literal("cancelled"),
         ],
-        { description: "Update outcome status" }
+        {
+          description:
+            "P&L result — must be EXACTLY one of: 'pending', 'profit' (use when pnl_ton > 0), 'loss' (pnl_ton < 0), 'neutral' (break-even), 'cancelled'. This is the profit/loss outcome, NOT a completion status — do not use 'closed'/'completed'/'success'/'done'. Setting it to a non-pending value auto-closes the entry.",
+        }
       )
     ),
     pnl_ton: Type.Optional(

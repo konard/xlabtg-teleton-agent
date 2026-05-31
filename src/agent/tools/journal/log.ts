@@ -65,7 +65,10 @@ export const journalLogTool: Tool = {
           Type.Literal("neutral"),
           Type.Literal("cancelled"),
         ],
-        { description: "Outcome status (default: 'pending')" }
+        {
+          description:
+            "P&L result (default: 'pending'). Must be EXACTLY one of: 'pending' (still open), 'profit', 'loss', 'neutral' (break-even), 'cancelled'. This is the profit/loss outcome, NOT a completion status — do not use 'closed'/'completed'/'success'/'done'. Leave as 'pending' for in-progress operations and close them later with journal_update.",
+        }
       )
     ),
     tx_hash: Type.Optional(
