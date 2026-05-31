@@ -15,8 +15,9 @@ import { StonApiClient } from "@ston-fi/api";
 import { dexFactory } from "@ston-fi/sdk";
 import { Factory, Asset, PoolType, ReadinessStatus, JettonRoot, VaultJetton } from "@dedust/sdk";
 import type { Pool } from "@dedust/sdk";
-import { DEDUST_FACTORY_MAINNET, DEDUST_GAS } from "../agent/tools/dedust/constants.js";
-import { getDecimals, toUnits, fromUnits } from "../agent/tools/dedust/asset-cache.js";
+import { DEDUST_FACTORY_MAINNET, DEDUST_GAS } from "../ton/dex-constants.js";
+import { getDecimals } from "../ton/dedust-assets.js";
+import { toUnits, fromUnits } from "../ton/units.js";
 import { withTxLock } from "../ton/tx-lock.js";
 import { STONFI_PTON_ADDRESS } from "../ton/dex-constants.js";
 
