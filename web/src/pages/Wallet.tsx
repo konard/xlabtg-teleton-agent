@@ -7,13 +7,127 @@ import { expandableRowProps } from '../lib/a11y';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
-  return `${addr.slice(0, 6)}\u2026${addr.slice(-6)}`;
+  return `${addr.slice(0, 6)}…${addr.slice(-6)}`;
 }
 
 function truncateHash(hash: string): string {
   if (hash.length <= 16) return hash;
-  return `${hash.slice(0, 8)}\u2026${hash.slice(-8)}`;
+  return `${hash.slice(0, 8)}…${hash.slice(-8)}`;
 }
+
+function getDirection(type: string): 'in' | 'out' | 'other' {
+  if (type.includes('received') || type === 'gas_refund') return 'in';
+  if (type.includes('sent')) return 'out';
+  return 'other';
+}
+
+// ── TransactionRow ─────────────────────────────────────────────────────────
+
+interface TransactionRowProps {
+  tx: WalletTransaction;
+  isExpanded: boolean;
+  onToggle: (hash: string) => void;
+}
+
+function TransactionRow({ tx, isExpanded, onToggle }: TransactionRowProps) {
+  const dir = getDirection(tx.type);
+  const counterparty = tx.from || tx.to || tx.jettonWallet || '—';
+
+  return (
+    <React.Fragment>
+      <tr
+        onClick={() => onToggle(tx.hash)}
+        {...expandableRowProps(() => onToggle(tx.hash))}
+        style={{
+          cursor: 'pointer',
+          borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
+          backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
+        }}
+        className="file-row"
+      >
+        <td style={{ padding: '6px 14px', fontSize: '16px' }}>
+          <span style={{
+            color: dir === 'in' ? 'var(--green)' : dir === 'out' ? 'var(--red)' : 'var(--text-secondary)',
+          }}>
+            {dir === 'in' ? '↓' : dir === 'out' ? '↑' : '•'}
+          </span>
+        </td>
+        <td style={{ padding: '6px 14px' }}>
+          <span style={{
+            display: 'inline-block',
+            padding: '1px 6px',
+            fontSize: '11px',
+            borderRadius: '3px',
+            backgroundColor: dir === 'in' ? 'var(--green-dim)' : dir === 'out' ? 'var(--red-dim)' : 'var(--bg-muted)',
+            color: dir === 'in' ? 'var(--green)' : dir === 'out' ? 'var(--red)' : 'var(--text-secondary)',
+          }}>
+            {tx.type.replace(/_/g, ' ')}
+          </span>
+        </td>
+        <td style={{
+          textAlign: 'right',
+          padding: '6px 14px',
+          fontWeight: 500,
+          color: dir === 'in' ? 'var(--green)' : 'var(--text-primary)',
+        }}>
+          {tx.amount ? `${dir === 'in' ? '+' : dir === 'out' ? '-' : ''}${tx.amount}` : '—'}
+        </td>
+        <td style={{ padding: '6px 14px', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>
+          {truncateAddress(counterparty)}
+        </td>
+        <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
+          {formatDateTime(tx.date)}
+        </td>
+      </tr>
+      {isExpanded && (
+        <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
+          <td colSpan={5} style={{ padding: '0 14px 14px 14px' }}>
+            <div style={{
+              padding: '10px 12px',
+              border: '1px solid var(--border)',
+              borderRadius: '4px',
+              backgroundColor: 'var(--bg-glass)',
+              marginTop: '8px',
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Hash</span>
+                  <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{truncateHash(tx.hash)}</code>
+                </div>
+                {tx.from && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>From</span>
+                    <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '11px' }}>{tx.from}</code>
+                  </div>
+                )}
+                {tx.to && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>To</span>
+                    <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '11px' }}>{tx.to}</code>
+                  </div>
+                )}
+                {tx.comment && (
+                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                    <span style={{ color: 'var(--text-secondary)' }}>Comment</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{tx.comment}</span>
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span style={{ color: 'var(--text-secondary)' }}>Explorer</span>
+                  <a href={tx.explorer} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '12px' }}>
+                    View on TonViewer
+                  </a>
+                </div>
+              </div>
+            </div>
+          </td>
+        </tr>
+      )}
+    </React.Fragment>
+  );
+}
+
+// ── Wallet page ────────────────────────────────────────────────────────────
 
 export function Wallet() {
   const { data: wallet, loading, error, reload: reloadWallet, setError } =
@@ -46,12 +160,6 @@ export function Wallet() {
 
   const toggleTx = (hash: string) => {
     setExpandedTx(expandedTx === hash ? null : hash);
-  };
-
-  const getDirection = (type: string): 'in' | 'out' | 'other' => {
-    if (type.includes('received') || type === 'gas_refund') return 'in';
-    if (type.includes('sent')) return 'out';
-    return 'other';
   };
 
   return (
@@ -127,103 +235,14 @@ export function Wallet() {
               </tr>
             </thead>
             <tbody>
-              {(transactions ?? []).map((tx) => {
-                const dir = getDirection(tx.type);
-                const isExpanded = expandedTx === tx.hash;
-                const counterparty = tx.from || tx.to || tx.jettonWallet || '\u2014';
-                return (
-                  <React.Fragment key={tx.hash}>
-                    <tr
-                      onClick={() => toggleTx(tx.hash)}
-                      {...expandableRowProps(() => toggleTx(tx.hash))}
-                      style={{
-                        cursor: 'pointer',
-                        borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                        backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                      }}
-                      className="file-row"
-                    >
-                      <td style={{ padding: '6px 14px', fontSize: '16px' }}>
-                        <span style={{
-                          color: dir === 'in' ? 'var(--green)' : dir === 'out' ? 'var(--red)' : 'var(--text-secondary)',
-                        }}>
-                          {dir === 'in' ? '\u2193' : dir === 'out' ? '\u2191' : '\u2022'}
-                        </span>
-                      </td>
-                      <td style={{ padding: '6px 14px' }}>
-                        <span style={{
-                          display: 'inline-block',
-                          padding: '1px 6px',
-                          fontSize: '11px',
-                          borderRadius: '3px',
-                          backgroundColor: dir === 'in' ? 'var(--green-dim)' : dir === 'out' ? 'var(--red-dim)' : 'var(--bg-muted)',
-                          color: dir === 'in' ? 'var(--green)' : dir === 'out' ? 'var(--red)' : 'var(--text-secondary)',
-                        }}>
-                          {tx.type.replace(/_/g, ' ')}
-                        </span>
-                      </td>
-                      <td style={{
-                        textAlign: 'right',
-                        padding: '6px 14px',
-                        fontWeight: 500,
-                        color: dir === 'in' ? 'var(--green)' : 'var(--text-primary)',
-                      }}>
-                        {tx.amount ? `${dir === 'in' ? '+' : dir === 'out' ? '-' : ''}${tx.amount}` : '\u2014'}
-                      </td>
-                      <td style={{ padding: '6px 14px', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>
-                        {truncateAddress(counterparty)}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-                        {formatDateTime(tx.date)}
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                        <td colSpan={5} style={{ padding: '0 14px 14px 14px' }}>
-                          <div style={{
-                            padding: '10px 12px',
-                            border: '1px solid var(--border)',
-                            borderRadius: '4px',
-                            backgroundColor: 'var(--bg-glass)',
-                            marginTop: '8px',
-                          }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span style={{ color: 'var(--text-secondary)' }}>Hash</span>
-                                <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{truncateHash(tx.hash)}</code>
-                              </div>
-                              {tx.from && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <span style={{ color: 'var(--text-secondary)' }}>From</span>
-                                  <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '11px' }}>{tx.from}</code>
-                                </div>
-                              )}
-                              {tx.to && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <span style={{ color: 'var(--text-secondary)' }}>To</span>
-                                  <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '11px' }}>{tx.to}</code>
-                                </div>
-                              )}
-                              {tx.comment && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                  <span style={{ color: 'var(--text-secondary)' }}>Comment</span>
-                                  <span style={{ color: 'var(--text-primary)' }}>{tx.comment}</span>
-                                </div>
-                              )}
-                              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                                <span style={{ color: 'var(--text-secondary)' }}>Explorer</span>
-                                <a href={tx.explorer} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '12px' }}>
-                                  View on TonViewer
-                                </a>
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
+              {(transactions ?? []).map((tx) => (
+                <TransactionRow
+                  key={tx.hash}
+                  tx={tx}
+                  isExpanded={expandedTx === tx.hash}
+                  onToggle={toggleTx}
+                />
+              ))}
             </tbody>
           </table>
         )}
