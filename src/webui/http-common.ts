@@ -1,7 +1,6 @@
 import type { Hono } from "hono";
 import type { Context, MiddlewareHandler } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import type { Server as HttpServer } from "node:http";
 
 /** Shared body-size limit for all HTTP servers (2 MB). */
 const BODY_LIMIT_BYTES = 2 * 1024 * 1024;
@@ -37,15 +36,4 @@ export function applySecurityMiddleware(
  */
 export function sharedBodyLimit(onError: (c: Context) => Response): MiddlewareHandler {
   return bodyLimit({ maxSize: BODY_LIMIT_BYTES, onError });
-}
-
-/**
- * Gracefully stop a `@hono/node-server` instance: force-close keep-alive
- * connections (so we don't wait ~30s for them to drain) then close the server.
- */
-export function closeServer(server: HttpServer): Promise<void> {
-  return new Promise((resolve) => {
-    server.closeAllConnections();
-    server.close(() => resolve());
-  });
 }

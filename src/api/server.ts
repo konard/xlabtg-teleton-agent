@@ -1,10 +1,9 @@
 import { Hono } from "hono";
 import { timeout } from "hono/timeout";
-import { serve, type ServerType } from "@hono/node-server";
+import type { serve, ServerType } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
 import { createServer as createHttpsServer } from "node:https";
 import { randomBytes } from "node:crypto";
-import type { Server as HttpServer } from "node:http";
 
 import { HTTPException } from "hono/http-exception";
 import { existsSync, statSync } from "node:fs";
@@ -17,7 +16,8 @@ import type { ApiServerDeps } from "./deps.js";
 import { createDepsAdapter } from "./deps.js";
 import type { ApiConfig } from "../config/schema.js";
 import { createLifecycleSSE } from "../webui/lifecycle-sse.js";
-import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "../webui/http-common.js";
+import { applySecurityMiddleware, sharedBodyLimit } from "../webui/http-common.js";
+import { startHonoServer, stopHonoServer } from "../utils/http-server.js";
 import { createProblem } from "./schemas/common.js";
 
 // Middleware
@@ -358,44 +358,32 @@ export class ApiServer {
     this.setupMiddleware();
     this.setupRoutes();
 
-    return new Promise((resolve, reject) => {
-      try {
-        this.server = serve(
-          {
-            fetch: this.app.fetch as Parameters<typeof serve>[0]["fetch"],
-            port: this.config.port,
-            createServer: createHttpsServer,
-            serverOptions: {
-              cert: tls.cert,
-              key: tls.key,
-            },
-          },
-          (info) => {
-            (this.server as HttpServer).maxConnections = 20;
-            log.info(`Management API server running on https://localhost:${info.port}`);
-            if (this.apiKey) {
-              log.info(
-                `API key: ${KEY_PREFIX}${this.apiKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 4)}...`
-              );
-            }
-            log.info(`TLS fingerprint: ${tls.fingerprint.slice(0, 16)}...`);
-            resolve();
+    try {
+      this.server = await startHonoServer({
+        fetch: this.app.fetch as Parameters<typeof serve>[0]["fetch"],
+        port: this.config.port,
+        createServer: createHttpsServer,
+        serverOptions: { cert: tls.cert, key: tls.key },
+        maxConnections: 20,
+        onListen: (info) => {
+          log.info(`Management API server running on https://localhost:${info.port}`);
+          if (this.apiKey) {
+            log.info(
+              `API key: ${KEY_PREFIX}${this.apiKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 4)}...`
+            );
           }
-        );
-
-        (this.server as HttpServer).on("error", (err: Error) => {
-          log.error({ err }, "Management API server error");
-          reject(err);
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
+          log.info(`TLS fingerprint: ${tls.fingerprint.slice(0, 16)}...`);
+        },
+      });
+    } catch (err) {
+      log.error({ err }, "Management API server error");
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {
     if (this.server) {
-      await closeServer(this.server as HttpServer);
+      await stopHonoServer(this.server);
       log.info("Management API server stopped");
     }
   }

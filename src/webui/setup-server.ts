@@ -7,19 +7,19 @@
  */
 
 import { Hono } from "hono";
-import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { createSetupRoutes } from "./routes/setup.js";
-import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "./http-common.js";
+import { applySecurityMiddleware, sharedBodyLimit } from "./http-common.js";
 import { findWebDist, createStaticHandler } from "./static-serving.js";
+import { startHonoServer, stopHonoServer } from "../utils/http-server.js";
 import { randomBytes } from "node:crypto";
 import YAML from "yaml";
 import { TELETON_ROOT } from "../workspace/paths.js";
-import type { Server as HttpServer } from "node:http";
 import { createLogger } from "../utils/logger.js";
 import { getErrorMessage } from "../utils/errors.js";
 
@@ -46,7 +46,7 @@ function autoOpenBrowser(url: string): void {
 
 export class SetupServer {
   private app: Hono;
-  private server: ReturnType<typeof serve> | null = null;
+  private server: ServerType | null = null;
   private launchResolve: ((token: string) => void) | null = null;
   private launchPromise: Promise<string>;
 
@@ -153,30 +153,21 @@ export class SetupServer {
   }
 
   async start(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        this.server = serve(
-          {
-            fetch: this.app.fetch,
-            hostname: "127.0.0.1",
-            port: this.port,
-          },
-          () => {
-            const url = `http://localhost:${this.port}/setup`;
-            log.info(`Setup wizard: ${url}`);
-            autoOpenBrowser(url);
-            resolve();
-          }
-        );
-      } catch (error: unknown) {
-        reject(error);
-      }
+    this.server = await startHonoServer({
+      fetch: this.app.fetch,
+      hostname: "127.0.0.1",
+      port: this.port,
+      onListen: () => {
+        const url = `http://localhost:${this.port}/setup`;
+        log.info(`Setup wizard: ${url}`);
+        autoOpenBrowser(url);
+      },
     });
   }
 
   async stop(): Promise<void> {
     if (this.server) {
-      await closeServer(this.server as unknown as HttpServer);
+      await stopHonoServer(this.server);
       log.info("Setup server stopped");
     }
   }

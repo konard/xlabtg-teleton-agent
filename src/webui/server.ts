@@ -1,12 +1,12 @@
 import { Hono } from "hono";
-import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { cors } from "hono/cors";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
-import type { Server as HttpServer } from "node:http";
 import type { WebUIServerDeps } from "./types.js";
 import { createLifecycleSSE } from "./lifecycle-sse.js";
-import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "./http-common.js";
+import { applySecurityMiddleware, sharedBodyLimit } from "./http-common.js";
 import { findWebDist, createStaticHandler } from "./static-serving.js";
+import { startHonoServer, stopHonoServer } from "../utils/http-server.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("WebUI");
@@ -37,7 +37,7 @@ import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
 
 export class WebUIServer {
   private app: Hono;
-  private server: ReturnType<typeof serve> | null = null;
+  private server: ServerType | null = null;
   private deps: WebUIServerDeps;
   private authToken: string;
 
@@ -352,37 +352,31 @@ export class WebUIServer {
   }
 
   async start(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        // Install log interceptor
-        logInterceptor.install();
+    // Install log interceptor
+    logInterceptor.install();
 
-        // Start HTTP server
-        this.server = serve(
-          {
-            fetch: this.app.fetch,
-            hostname: this.deps.config.host,
-            port: this.deps.config.port,
-          },
-          (info) => {
-            const url = `http://${info.address}:${info.port}`;
+    try {
+      this.server = await startHonoServer({
+        fetch: this.app.fetch,
+        hostname: this.deps.config.host,
+        port: this.deps.config.port,
+        onListen: (info) => {
+          const url = `http://${info.address}:${info.port}`;
 
-            log.info(`WebUI server running`);
-            log.info(`URL: ${url}/auth/exchange?token=${this.authToken}`);
-            log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
-            resolve();
-          }
-        );
-      } catch (error) {
-        logInterceptor.uninstall();
-        reject(error);
-      }
-    });
+          log.info(`WebUI server running`);
+          log.info(`URL: ${url}/auth/exchange?token=${this.authToken}`);
+          log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
+        },
+      });
+    } catch (error) {
+      logInterceptor.uninstall();
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
     if (this.server) {
-      await closeServer(this.server as HttpServer);
+      await stopHonoServer(this.server);
       logInterceptor.uninstall();
       log.info("WebUI server stopped");
     }
