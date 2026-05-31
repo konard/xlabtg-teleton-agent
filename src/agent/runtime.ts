@@ -37,7 +37,14 @@ import {
   resetSessionWithPolicy,
 } from "../session/store.js";
 import { transcriptExists, archiveTranscript, appendToTranscript } from "../session/transcript.js";
-import type { Context, Tool as PiAiTool, UserMessage, ToolCall } from "@mariozechner/pi-ai";
+import type {
+  Context,
+  Tool as PiAiTool,
+  UserMessage,
+  ToolCall,
+  AssistantMessage,
+  Message,
+} from "@mariozechner/pi-ai";
 import { CompactionManager, DEFAULT_COMPACTION_CONFIG } from "../memory/compaction.js";
 import { maskOldToolResults } from "../memory/observation-masking.js";
 import { ContextBuilder } from "../memory/search/context.js";
@@ -756,6 +763,308 @@ export class AgentRuntime {
     return { response, streamed: true, streamAccumulatedText };
   }
 
+  /**
+   * Handle an LLM error response: fire the response:error hook, then classify and
+   * recover. Context-overflow resets the session (returning the fresh session/context);
+   * rate-limit and server errors back off. Mutates the `retry` counters. Throws on the
+   * terminal cases (persistent overflow, retries exhausted, unknown error). When it
+   * returns, the caller must `iteration--; continue` — every non-throw path is a retry.
+   */
+  private async handleLlmError(
+    assistantMsg: AssistantMessage,
+    retry: { overflowResets: number; rateLimitRetries: number; serverErrorRetries: number },
+    ctx: {
+      session: ReturnType<typeof getOrCreateSession>;
+      context: Context;
+      chatId: string;
+      effectiveIsGroup: boolean;
+      provider: SupportedProvider;
+      processStartTime: number;
+      userMsg: UserMessage;
+    }
+  ): Promise<{ session: ReturnType<typeof getOrCreateSession>; context: Context }> {
+    let session = ctx.session;
+    let context = ctx.context;
+    const errorMsg = assistantMsg.errorMessage || "";
+    const errorClass = classifyLlmError(errorMsg);
+
+    // Hook: response:error — fire on all LLM errors
+    if (this.hookRunner) {
+      const errorCode = errorClass.code;
+      const responseErrorEvent: ResponseErrorEvent = {
+        chatId: ctx.chatId,
+        sessionId: session.sessionId,
+        isGroup: ctx.effectiveIsGroup,
+        error: errorMsg,
+        errorCode,
+        provider: ctx.provider,
+        model: this.config.agent.model,
+        retryCount: retry.rateLimitRetries + retry.serverErrorRetries,
+        durationMs: Date.now() - ctx.processStartTime,
+      };
+      await this.hookRunner.runObservingHook("response:error", responseErrorEvent);
+    }
+
+    if (errorClass.kind === "context_overflow") {
+      retry.overflowResets++;
+      if (retry.overflowResets > 1) {
+        throw new Error(
+          "Context overflow persists after session reset. Message may be too large for the model's context window."
+        );
+      }
+      log.error(`Context overflow detected: ${errorMsg}`);
+
+      log.info(`Saving session memory before reset...`);
+      const summary = extractContextSummary(context, CONTEXT_OVERFLOW_SUMMARY_MESSAGES);
+      appendToDailyLog(summary);
+      log.info(`Memory saved to daily log`);
+
+      const archived = archiveTranscript(session.sessionId);
+      if (!archived) {
+        log.error(
+          `Failed to archive transcript ${session.sessionId}, proceeding with reset anyway`
+        );
+      }
+
+      log.info(`Resetting session due to context overflow...`);
+      session = resetSession(ctx.chatId);
+
+      context = { messages: [ctx.userMsg] };
+
+      appendToTranscript(session.sessionId, ctx.userMsg);
+
+      log.info(`Retrying with fresh context...`);
+      return { session, context };
+    } else if (errorClass.kind === "rate_limit") {
+      retry.rateLimitRetries++;
+      if (retry.rateLimitRetries <= RATE_LIMIT_MAX_RETRIES) {
+        // Respect server Retry-After as a floor; else exponential backoff. Positive jitter de-syncs retries.
+        const base = parseRetryAfterMs(errorMsg) ?? 1000 * Math.pow(2, retry.rateLimitRetries - 1);
+        const delay = base + Math.floor(Math.random() * 500);
+        log.warn(
+          `Rate limited, retrying in ${delay}ms (attempt ${retry.rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        return { session, context };
+      }
+      log.error(`Rate limited after ${RATE_LIMIT_MAX_RETRIES} retries: ${errorMsg}`);
+      throw new Error(
+        `API rate limited after ${RATE_LIMIT_MAX_RETRIES} retries. Please try again later.`
+      );
+    } else if (errorClass.kind === "server_error") {
+      retry.serverErrorRetries++;
+      if (retry.serverErrorRetries <= SERVER_ERROR_MAX_RETRIES) {
+        const delay =
+          2000 * Math.pow(2, retry.serverErrorRetries - 1) + Math.floor(Math.random() * 500);
+        log.warn(
+          `Server error, retrying in ${delay}ms (attempt ${retry.serverErrorRetries}/${SERVER_ERROR_MAX_RETRIES})...`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        return { session, context };
+      }
+      log.error(`Server error after ${SERVER_ERROR_MAX_RETRIES} retries: ${errorMsg}`);
+      throw new Error(
+        `API server error after ${SERVER_ERROR_MAX_RETRIES} retries. The provider may be experiencing issues.`
+      );
+    } else {
+      log.error(`API error: ${errorMsg}`);
+      throw new Error(`API error: ${errorMsg || "Unknown error"}`);
+    }
+  }
+
+  /**
+   * Phases 1-2 of a tool batch: run tool:before hooks sequentially to build the plans,
+   * then execute the (non-blocked) tools with a bounded concurrency pool. Returns the
+   * plans and their results in original order.
+   */
+  private async executeToolBatch(
+    toolCalls: ToolCall[],
+    fullContext: ToolContext,
+    chatId: string,
+    effectiveIsGroup: boolean
+  ): Promise<{ toolPlans: ToolPlan[]; execResults: ToolExecResult[] }> {
+    // Phase 1: Run tool:before hooks sequentially (hooks may cross-reference)
+    const toolPlans: ToolPlan[] = [];
+
+    for (const block of toolCalls) {
+      if (block.type !== "toolCall") continue;
+
+      let toolParams = (block.arguments ?? {}) as Record<string, unknown>;
+      let blocked = false;
+      let blockReason = "";
+
+      if (this.hookRunner) {
+        const beforeEvent: BeforeToolCallEvent = {
+          toolName: block.name,
+          params: structuredClone(toolParams),
+          chatId,
+          isGroup: effectiveIsGroup,
+          block: false,
+          blockReason: "",
+        };
+        await this.hookRunner.runModifyingHook("tool:before", beforeEvent);
+        if (beforeEvent.block) {
+          blocked = true;
+          blockReason = beforeEvent.blockReason || "Blocked by plugin hook";
+        } else {
+          toolParams = structuredClone(beforeEvent.params) as Record<string, unknown>;
+        }
+      }
+
+      toolPlans.push({ block, blocked, blockReason, params: toolParams });
+    }
+
+    // Phase 2: Execute tools with concurrency limit (blocked tools resolve instantly)
+    const execResults: ToolExecResult[] = new Array(toolPlans.length);
+    {
+      let cursor = 0;
+      const runWorker = async (): Promise<void> => {
+        while (cursor < toolPlans.length) {
+          const idx = cursor++;
+          const plan = toolPlans[idx];
+
+          if (plan.blocked) {
+            execResults[idx] = {
+              result: { success: false, error: plan.blockReason },
+              durationMs: 0,
+            };
+            continue;
+          }
+
+          const startTime = Date.now();
+          try {
+            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- registry checked by caller
+            const result = await this.toolRegistry!.execute(
+              { ...plan.block, arguments: plan.params },
+              fullContext
+            );
+            execResults[idx] = { result, durationMs: Date.now() - startTime };
+          } catch (execErr) {
+            const errMsg = getErrorMessage(execErr);
+            const errStack = execErr instanceof Error ? execErr.stack : undefined;
+            execResults[idx] = {
+              result: { success: false, error: errMsg },
+              durationMs: Date.now() - startTime,
+              execError: { message: errMsg, stack: errStack },
+            };
+          }
+        }
+      };
+      const workers = Math.min(TOOL_CONCURRENCY_LIMIT, toolPlans.length);
+      await Promise.all(Array.from({ length: workers }, () => runWorker()));
+    }
+
+    return { toolPlans, execResults };
+  }
+
+  /**
+   * Phase 3 of a tool batch: fire tool:error/tool:after observing hooks, log + record
+   * each call, and build the tool-result messages (appending them to the transcript).
+   * Mutates the passed `totalToolCalls`/`iterationToolNames` sinks and returns the
+   * ordered result messages for the caller to push onto the live context.
+   */
+  private async recordToolResults(
+    toolPlans: ToolPlan[],
+    execResults: ToolExecResult[],
+    sink: {
+      totalToolCalls: Array<{ name: string; input: Record<string, unknown> }>;
+      iterationToolNames: string[];
+      sessionId: string;
+      chatId: string;
+      effectiveIsGroup: boolean;
+      provider: SupportedProvider;
+    }
+  ): Promise<Message[]> {
+    const resultMessages: Message[] = [];
+    const observingHookPromises: Promise<void>[] = [];
+
+    for (let i = 0; i < toolPlans.length; i++) {
+      const plan = toolPlans[i];
+      const { block } = plan;
+      const exec = execResults[i];
+
+      // Hook: tool:error (if execution threw) — fire-and-forget (observing)
+      if (exec.execError && this.hookRunner) {
+        const errorEvent: ToolErrorEvent = {
+          toolName: block.name,
+          params: structuredClone(plan.params),
+          error: exec.execError.message,
+          stack: exec.execError.stack,
+          chatId: sink.chatId,
+          isGroup: sink.effectiveIsGroup,
+          durationMs: exec.durationMs,
+        };
+        observingHookPromises.push(this.hookRunner.runObservingHook("tool:error", errorEvent));
+      }
+
+      // Hook: tool:after (fires for all cases including blocks) — fire-and-forget (observing)
+      if (this.hookRunner) {
+        const afterEvent: AfterToolCallEvent = {
+          toolName: block.name,
+          params: structuredClone(plan.params),
+          result: {
+            success: exec.result.success,
+            data: exec.result.data,
+            error: exec.result.error,
+          },
+          durationMs: exec.durationMs,
+          chatId: sink.chatId,
+          isGroup: sink.effectiveIsGroup,
+          ...(plan.blocked ? { blocked: true, blockReason: plan.blockReason } : {}),
+        };
+        observingHookPromises.push(this.hookRunner.runObservingHook("tool:after", afterEvent));
+      }
+
+      const toolHint = summarizeToolParams(block.name, plan.params);
+      log.debug(`${block.name}: ${exec.result.success ? "✓" : "✗"} ${exec.result.error || ""}`);
+      sink.iterationToolNames.push(
+        `${block.name}${toolHint} ${exec.result.success ? "✓" : "✗"}`
+      );
+
+      sink.totalToolCalls.push({
+        name: block.name,
+        input: plan.params,
+      });
+
+      const resultText = truncateToolResult(exec.result, MAX_TOOL_RESULT_SIZE);
+      if (resultText.includes('"_truncated":true')) {
+        log.warn(`Tool result too large, truncated to ${resultText.length} chars`);
+      }
+
+      const { buildToolResultMessage } = await import("../cocoon/tool-adapter.js");
+      const resultMsg = buildToolResultMessage(
+        sink.provider,
+        block,
+        resultText,
+        !exec.result.success
+      );
+      resultMessages.push(resultMsg);
+      appendToTranscript(sink.sessionId, resultMsg);
+    }
+
+    // Await all observing hooks from Phase 3 (non-blocking during result processing)
+    if (observingHookPromises.length > 0) {
+      await Promise.allSettled(observingHookPromises);
+    }
+
+    return resultMessages;
+  }
+
+  /**
+   * Whether this iteration's tool batch was fully seen before (every name+sorted-args
+   * signature already in `seen`). Records the new signatures into `seen`. The caller
+   * tracks how many consecutive stalls have occurred.
+   */
+  private detectStall(toolPlans: ToolPlan[], seen: Set<string>): boolean {
+    const iterSignatures = toolPlans.map(
+      (p) => `${p.block.name}:${JSON.stringify(p.params, Object.keys(p.params).sort())}`
+    );
+    const allDuplicates =
+      iterSignatures.length > 0 && iterSignatures.every((sig) => seen.has(sig));
+    for (const sig of iterSignatures) seen.add(sig);
+    return allDuplicates;
+  }
+
   private async runAgenticLoop(
     turn: TurnContext,
     opts: ProcessMessageOptions
@@ -768,9 +1077,7 @@ export class AgentRuntime {
 
     const maxIterations = Math.max(1, this.config.agent.max_agentic_iterations || 5);
     let iteration = 0;
-    let overflowResets = 0;
-    let rateLimitRetries = 0;
-    let serverErrorRetries = 0;
+    const retry = { overflowResets: 0, rateLimitRetries: 0, serverErrorRetries: 0 };
     let finalResponse: ChatResponse | null = null;
     const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
     const accumulatedTexts: string[] = [];
@@ -815,94 +1122,21 @@ export class AgentRuntime {
       }
 
       if (assistantMsg.stopReason === "error") {
-        const errorMsg = assistantMsg.errorMessage || "";
-        const errorClass = classifyLlmError(errorMsg);
-
-        // Hook: response:error — fire on all LLM errors
-        if (this.hookRunner) {
-          const errorCode = errorClass.code;
-          const responseErrorEvent: ResponseErrorEvent = {
-            chatId,
-            sessionId: session.sessionId,
-            isGroup: effectiveIsGroup,
-            error: errorMsg,
-            errorCode,
-            provider: provider,
-            model: this.config.agent.model,
-            retryCount: rateLimitRetries + serverErrorRetries,
-            durationMs: Date.now() - processStartTime,
-          };
-          await this.hookRunner.runObservingHook("response:error", responseErrorEvent);
-        }
-
-        if (errorClass.kind === "context_overflow") {
-          overflowResets++;
-          if (overflowResets > 1) {
-            throw new Error(
-              "Context overflow persists after session reset. Message may be too large for the model's context window."
-            );
-          }
-          log.error(`Context overflow detected: ${errorMsg}`);
-
-          log.info(`Saving session memory before reset...`);
-          const summary = extractContextSummary(context, CONTEXT_OVERFLOW_SUMMARY_MESSAGES);
-          appendToDailyLog(summary);
-          log.info(`Memory saved to daily log`);
-
-          const archived = archiveTranscript(session.sessionId);
-          if (!archived) {
-            log.error(
-              `Failed to archive transcript ${session.sessionId}, proceeding with reset anyway`
-            );
-          }
-
-          log.info(`Resetting session due to context overflow...`);
-          session = resetSession(chatId);
-
-          context = { messages: [userMsg] };
-
-          appendToTranscript(session.sessionId, userMsg);
-
-          log.info(`Retrying with fresh context...`);
-          iteration--; // recovery retry, not a productive iteration — don't consume the budget
-          continue;
-        } else if (errorClass.kind === "rate_limit") {
-          rateLimitRetries++;
-          if (rateLimitRetries <= RATE_LIMIT_MAX_RETRIES) {
-            // Respect server Retry-After as a floor; else exponential backoff. Positive jitter de-syncs retries.
-            const base = parseRetryAfterMs(errorMsg) ?? 1000 * Math.pow(2, rateLimitRetries - 1);
-            const delay = base + Math.floor(Math.random() * 500);
-            log.warn(
-              `Rate limited, retrying in ${delay}ms (attempt ${rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
-            );
-            await new Promise((r) => setTimeout(r, delay));
-            iteration--; // transient retry, not a productive iteration — don't consume the budget
-            continue;
-          }
-          log.error(`Rate limited after ${RATE_LIMIT_MAX_RETRIES} retries: ${errorMsg}`);
-          throw new Error(
-            `API rate limited after ${RATE_LIMIT_MAX_RETRIES} retries. Please try again later.`
-          );
-        } else if (errorClass.kind === "server_error") {
-          serverErrorRetries++;
-          if (serverErrorRetries <= SERVER_ERROR_MAX_RETRIES) {
-            const delay =
-              2000 * Math.pow(2, serverErrorRetries - 1) + Math.floor(Math.random() * 500);
-            log.warn(
-              `Server error, retrying in ${delay}ms (attempt ${serverErrorRetries}/${SERVER_ERROR_MAX_RETRIES})...`
-            );
-            await new Promise((r) => setTimeout(r, delay));
-            iteration--; // transient retry, not a productive iteration — don't consume the budget
-            continue;
-          }
-          log.error(`Server error after ${SERVER_ERROR_MAX_RETRIES} retries: ${errorMsg}`);
-          throw new Error(
-            `API server error after ${SERVER_ERROR_MAX_RETRIES} retries. The provider may be experiencing issues.`
-          );
-        } else {
-          log.error(`API error: ${errorMsg}`);
-          throw new Error(`API error: ${errorMsg || "Unknown error"}`);
-        }
+        // Recover from LLM errors (overflow reset / rate-limit / server backoff) or throw
+        // on terminal cases. When it returns, this is a retry that must not consume budget.
+        const recovered = await this.handleLlmError(assistantMsg, retry, {
+          session,
+          context,
+          chatId,
+          effectiveIsGroup,
+          provider,
+          processStartTime,
+          userMsg,
+        });
+        session = recovered.session;
+        context = recovered.context;
+        iteration--; // recovery retry, not a productive iteration — don't consume the budget
+        continue;
       }
 
       if (response.text) {
@@ -935,139 +1169,25 @@ export class AgentRuntime {
         isGroup: effectiveIsGroup,
       };
 
-      // Phase 1: Run tool:before hooks sequentially (hooks may cross-reference)
-      const toolPlans: ToolPlan[] = [];
+      // Phases 1-2: build the tool plans (tool:before hooks) and execute them.
+      const { toolPlans, execResults } = await this.executeToolBatch(
+        toolCalls,
+        fullContext,
+        chatId,
+        effectiveIsGroup
+      );
 
-      for (const block of toolCalls) {
-        if (block.type !== "toolCall") continue;
-
-        let toolParams = (block.arguments ?? {}) as Record<string, unknown>;
-        let blocked = false;
-        let blockReason = "";
-
-        if (this.hookRunner) {
-          const beforeEvent: BeforeToolCallEvent = {
-            toolName: block.name,
-            params: structuredClone(toolParams),
-            chatId,
-            isGroup: effectiveIsGroup,
-            block: false,
-            blockReason: "",
-          };
-          await this.hookRunner.runModifyingHook("tool:before", beforeEvent);
-          if (beforeEvent.block) {
-            blocked = true;
-            blockReason = beforeEvent.blockReason || "Blocked by plugin hook";
-          } else {
-            toolParams = structuredClone(beforeEvent.params) as Record<string, unknown>;
-          }
-        }
-
-        toolPlans.push({ block, blocked, blockReason, params: toolParams });
-      }
-
-      // Phase 2: Execute tools with concurrency limit (blocked tools resolve instantly)
-      const execResults: ToolExecResult[] = new Array(toolPlans.length);
-      {
-        let cursor = 0;
-        const runWorker = async (): Promise<void> => {
-          while (cursor < toolPlans.length) {
-            const idx = cursor++;
-            const plan = toolPlans[idx];
-
-            if (plan.blocked) {
-              execResults[idx] = {
-                result: { success: false, error: plan.blockReason },
-                durationMs: 0,
-              };
-              continue;
-            }
-
-            const startTime = Date.now();
-            try {
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- registry checked at line 687
-              const result = await this.toolRegistry!.execute(
-                { ...plan.block, arguments: plan.params },
-                fullContext
-              );
-              execResults[idx] = { result, durationMs: Date.now() - startTime };
-            } catch (execErr) {
-              const errMsg = getErrorMessage(execErr);
-              const errStack = execErr instanceof Error ? execErr.stack : undefined;
-              execResults[idx] = {
-                result: { success: false, error: errMsg },
-                durationMs: Date.now() - startTime,
-                execError: { message: errMsg, stack: errStack },
-              };
-            }
-          }
-        };
-        const workers = Math.min(TOOL_CONCURRENCY_LIMIT, toolPlans.length);
-        await Promise.all(Array.from({ length: workers }, () => runWorker()));
-      }
-
-      // Phase 3: Process results in original order (hooks, context, transcript)
-      const observingHookPromises: Promise<void>[] = [];
-      for (let i = 0; i < toolPlans.length; i++) {
-        const plan = toolPlans[i];
-        const { block } = plan;
-        const exec = execResults[i];
-
-        // Hook: tool:error (if execution threw) — fire-and-forget (observing)
-        if (exec.execError && this.hookRunner) {
-          const errorEvent: ToolErrorEvent = {
-            toolName: block.name,
-            params: structuredClone(plan.params),
-            error: exec.execError.message,
-            stack: exec.execError.stack,
-            chatId,
-            isGroup: effectiveIsGroup,
-            durationMs: exec.durationMs,
-          };
-          observingHookPromises.push(this.hookRunner.runObservingHook("tool:error", errorEvent));
-        }
-
-        // Hook: tool:after (fires for all cases including blocks) — fire-and-forget (observing)
-        if (this.hookRunner) {
-          const afterEvent: AfterToolCallEvent = {
-            toolName: block.name,
-            params: structuredClone(plan.params),
-            result: {
-              success: exec.result.success,
-              data: exec.result.data,
-              error: exec.result.error,
-            },
-            durationMs: exec.durationMs,
-            chatId,
-            isGroup: effectiveIsGroup,
-            ...(plan.blocked ? { blocked: true, blockReason: plan.blockReason } : {}),
-          };
-          observingHookPromises.push(this.hookRunner.runObservingHook("tool:after", afterEvent));
-        }
-
-        const toolHint = summarizeToolParams(block.name, plan.params);
-        log.debug(`${block.name}: ${exec.result.success ? "✓" : "✗"} ${exec.result.error || ""}`);
-        iterationToolNames.push(`${block.name}${toolHint} ${exec.result.success ? "✓" : "✗"}`);
-
-        totalToolCalls.push({
-          name: block.name,
-          input: plan.params,
-        });
-
-        const resultText = truncateToolResult(exec.result, MAX_TOOL_RESULT_SIZE);
-        if (resultText.includes('"_truncated":true')) {
-          log.warn(`Tool result too large, truncated to ${resultText.length} chars`);
-        }
-
-        const { buildToolResultMessage } = await import("../cocoon/tool-adapter.js");
-        const resultMsg = buildToolResultMessage(provider, block, resultText, !exec.result.success);
+      // Phase 3: record results + observing hooks; push the returned messages in order.
+      const resultMessages = await this.recordToolResults(toolPlans, execResults, {
+        totalToolCalls,
+        iterationToolNames,
+        sessionId: session.sessionId,
+        chatId,
+        effectiveIsGroup,
+        provider,
+      });
+      for (const resultMsg of resultMessages) {
         context.messages.push(resultMsg);
-        appendToTranscript(session.sessionId, resultMsg);
-      }
-
-      // Await all observing hooks from Phase 3 (non-blocking during result processing)
-      if (observingHookPromises.length > 0) {
-        await Promise.allSettled(observingHookPromises);
       }
 
       // Mid-loop tool injection: when tool_search returns discoveries, inject schemas
@@ -1107,12 +1227,7 @@ export class AgentRuntime {
       // Stall detection: break only after 2 *consecutive* iterations where every tool
       // call (name + sorted args) was already seen — a single fully-repeated batch can
       // be a legitimate step (e.g. re-checking), so give the model a chance to recover.
-      const iterSignatures = toolPlans.map(
-        (p) => `${p.block.name}:${JSON.stringify(p.params, Object.keys(p.params).sort())}`
-      );
-      const allDuplicates =
-        iterSignatures.length > 0 && iterSignatures.every((sig) => seenToolSignatures.has(sig));
-      for (const sig of iterSignatures) seenToolSignatures.add(sig);
+      const allDuplicates = this.detectStall(toolPlans, seenToolSignatures);
 
       consecutiveStalls = allDuplicates ? consecutiveStalls + 1 : 0;
       if (consecutiveStalls >= 2) {
