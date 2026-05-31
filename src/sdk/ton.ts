@@ -46,6 +46,7 @@ import {
   WalletContractV5R1,
   internal,
 } from "@ton/ton";
+import type { OpenedContract } from "@ton/ton";
 import { Address as TonAddress, beginCell, SendMode, storeMessage } from "@ton/core";
 import type { TupleItem, Cell as TonCell } from "@ton/core";
 import { withTxLock } from "../ton/tx-lock.js";
@@ -135,6 +136,97 @@ async function fetchJettonMeta(
       image: data.preview || metadata.image || undefined,
     },
   };
+}
+
+/** Seconds a signed transfer remains valid (`validUntil` window). */
+const TX_VALID_UNTIL_SECONDS = 120;
+
+type WalletKeyPair = NonNullable<Awaited<ReturnType<typeof getKeyPair>>>;
+type WalletV5R1 = ReturnType<typeof WalletContractV5R1.create>;
+
+/**
+ * Build the V5R1 wallet, opened contract and current seqno for `keyPair`.
+ * Single source for the create → getCachedTonClient → open → getSeqno sequence.
+ */
+async function buildWalletContext(keyPair: WalletKeyPair): Promise<{
+  wallet: WalletV5R1;
+  contract: OpenedContract<WalletV5R1>;
+  seqno: number;
+}> {
+  const wallet = WalletContractV5R1.create({
+    workchain: 0,
+    publicKey: keyPair.publicKey,
+  });
+  const client = await getCachedTonClient();
+  const contract = client.open(wallet);
+  const seqno = await contract.getSeqno();
+  return { wallet, contract, seqno };
+}
+
+/** Wrap a signed transfer cell into a broadcastable external-in BOC (base64). */
+function wrapExternalMessage(wallet: WalletV5R1, transferCell: TonCell, seqno: number): string {
+  const extMsg = beginCell()
+    .store(
+      storeMessage({
+        info: {
+          type: "external-in" as const,
+          dest: wallet.address,
+          importFee: 0n,
+        },
+        init: seqno === 0 ? wallet.init : undefined,
+        body: transferCell,
+      })
+    )
+    .endCell();
+
+  return extMsg.toBoc().toString("base64");
+}
+
+/**
+ * Internal core shared by `send` (1 message) and `sendMessages` (N messages):
+ * derive key, build wallet context under the tx lock, broadcast and map errors.
+ */
+async function signAndSend(
+  messages: TonMessage[],
+  opts: { sendMode?: number; label: string; errorPrefix: string }
+): Promise<TonTransferResult> {
+  const keyPair = await getKeyPair();
+  if (!keyPair) {
+    throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+  }
+
+  try {
+    const seqno = await withTxLock(async () => {
+      const { contract, seqno: seq } = await buildWalletContext(keyPair);
+
+      await contract.sendTransfer({
+        seqno: seq,
+        secretKey: keyPair.secretKey,
+        sendMode: opts.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
+        messages: messages.map((m) =>
+          internal({
+            to: TonAddress.parse(m.to),
+            value: tonToNano(m.value.toString()),
+            body: m.body,
+            bounce: m.bounce ?? true,
+            init: m.stateInit,
+          })
+        ),
+      });
+
+      return seq;
+    });
+
+    return { hash: `${seqno}_${Date.now()}_${opts.label}`, seqno };
+  } catch (error) {
+    const httpErr = isHttpError(error) ? error : undefined;
+    const status = httpErr?.status || httpErr?.response?.status;
+    if (status === 429 || (status !== undefined && status >= 500)) {
+      invalidateTonClientCache();
+    }
+    if (error instanceof PluginSDKError) throw error;
+    throw new PluginSDKError(`${opts.errorPrefix}: ${getErrorMessage(error)}`, "OPERATION_FAILED");
+  }
 }
 
 function cleanupOldTransactions(
@@ -495,14 +587,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
 
           for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
             try {
-              const wallet = WalletContractV5R1.create({
-                workchain: 0,
-                publicKey: keyPair.publicKey,
-              });
-
-              const client = await getCachedTonClient();
-              const walletContract = client.open(wallet);
-              const seq = await walletContract.getSeqno();
+              const { contract: walletContract, seqno: seq } = await buildWalletContext(keyPair);
 
               await walletContract.sendTransfer({
                 seqno: seq,
@@ -602,15 +687,9 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         }
 
         const txResult = await withTxLock(async () => {
-          const wallet = WalletContractV5R1.create({
-            workchain: 0,
-            publicKey: keyPair.publicKey,
-          });
-          const client = await getCachedTonClient();
-          const contract = client.open(wallet);
-          const seqno = await contract.getSeqno();
+          const { wallet, seqno } = await buildWalletContext(keyPair);
 
-          const validUntil = Math.floor(Date.now() / 1000) + 120;
+          const validUntil = Math.floor(Date.now() / 1000) + TX_VALID_UNTIL_SECONDS;
 
           const transferCell = wallet.createTransfer({
             seqno,
@@ -627,22 +706,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
             ],
           });
 
-          // Wrap in external message (broadcastable BOC)
-          const extMsg = beginCell()
-            .store(
-              storeMessage({
-                info: {
-                  type: "external-in" as const,
-                  dest: wallet.address,
-                  importFee: 0n,
-                },
-                init: seqno === 0 ? wallet.init : undefined,
-                body: transferCell,
-              })
-            )
-            .endCell();
-
-          const boc = extMsg.toBoc().toString("base64");
+          const boc = wrapExternalMessage(wallet, transferCell, seqno);
           return { boc, seqno, validUntil, walletAddress: wallet.address.toRawString() };
         });
 
@@ -753,15 +817,9 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         }
 
         const txResult = await withTxLock(async () => {
-          const wallet = WalletContractV5R1.create({
-            workchain: 0,
-            publicKey: keyPair.publicKey,
-          });
-          const client = await getCachedTonClient();
-          const walletContract = client.open(wallet);
-          const seqno = await walletContract.getSeqno();
+          const { wallet, seqno } = await buildWalletContext(keyPair);
 
-          const validUntil = Math.floor(Date.now() / 1000) + 120;
+          const validUntil = Math.floor(Date.now() / 1000) + TX_VALID_UNTIL_SECONDS;
 
           const transferCell = wallet.createTransfer({
             seqno,
@@ -778,22 +836,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
             ],
           });
 
-          // Wrap in external message (broadcastable BOC)
-          const extMsg = beginCell()
-            .store(
-              storeMessage({
-                info: {
-                  type: "external-in" as const,
-                  dest: wallet.address,
-                  importFee: 0n,
-                },
-                init: seqno === 0 ? wallet.init : undefined,
-                body: transferCell,
-              })
-            )
-            .endCell();
-
-          const boc = extMsg.toBoc().toString("base64");
+          const boc = wrapExternalMessage(wallet, transferCell, seqno);
           return { boc, seqno, validUntil, walletAddress: wallet.address.toRawString() };
         });
 
@@ -1062,13 +1105,8 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
         }
 
-        const wallet = WalletContractV5R1.create({
-          workchain: 0,
-          publicKey: keyPair.publicKey,
-        });
-        const client = await getCachedTonClient();
-        const contract = client.open(wallet);
-        return await contract.getSeqno();
+        const { seqno } = await buildWalletContext(keyPair);
+        return seqno;
       } catch (error) {
         const httpErr = isHttpError(error) ? error : undefined;
         const status = httpErr?.status || httpErr?.response?.status;
@@ -1152,49 +1190,10 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         throw new PluginSDKError("Unsafe sendMode", "OPERATION_FAILED");
       }
 
-      const keyPair = await getKeyPair();
-      if (!keyPair) {
-        throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
-      }
-
-      try {
-        const seqno = await withTxLock(async () => {
-          const wallet = WalletContractV5R1.create({
-            workchain: 0,
-            publicKey: keyPair.publicKey,
-          });
-          const client = await getCachedTonClient();
-          const contract = client.open(wallet);
-          const seq = await contract.getSeqno();
-
-          await contract.sendTransfer({
-            seqno: seq,
-            secretKey: keyPair.secretKey,
-            sendMode: opts?.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
-            messages: [
-              internal({
-                to: TonAddress.parse(to),
-                value: tonToNano(value.toString()),
-                body: opts?.body,
-                bounce: opts?.bounce ?? true,
-                init: opts?.stateInit,
-              }),
-            ],
-          });
-
-          return seq;
-        });
-
-        return { hash: `${seqno}_${Date.now()}_send`, seqno };
-      } catch (error) {
-        const httpErr = isHttpError(error) ? error : undefined;
-        const status = httpErr?.status || httpErr?.response?.status;
-        if (status === 429 || (status !== undefined && status >= 500)) {
-          invalidateTonClientCache();
-        }
-        if (error instanceof PluginSDKError) throw error;
-        throw new PluginSDKError(`Failed to send: ${getErrorMessage(error)}`, "OPERATION_FAILED");
-      }
+      return signAndSend(
+        [{ to, value, body: opts?.body, bounce: opts?.bounce, stateInit: opts?.stateInit }],
+        { sendMode: opts?.sendMode, label: "send", errorPrefix: "Failed to send" }
+      );
     },
 
     async sendMessages(messages: TonMessage[], opts?: TonSendOptions): Promise<TonTransferResult> {
@@ -1227,52 +1226,11 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         }
       }
 
-      const keyPair = await getKeyPair();
-      if (!keyPair) {
-        throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
-      }
-
-      try {
-        const seqno = await withTxLock(async () => {
-          const wallet = WalletContractV5R1.create({
-            workchain: 0,
-            publicKey: keyPair.publicKey,
-          });
-          const client = await getCachedTonClient();
-          const contract = client.open(wallet);
-          const seq = await contract.getSeqno();
-
-          await contract.sendTransfer({
-            seqno: seq,
-            secretKey: keyPair.secretKey,
-            sendMode: opts?.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
-            messages: messages.map((m) =>
-              internal({
-                to: TonAddress.parse(m.to),
-                value: tonToNano(m.value.toString()),
-                body: m.body,
-                bounce: m.bounce ?? true,
-                init: m.stateInit,
-              })
-            ),
-          });
-
-          return seq;
-        });
-
-        return { hash: `${seqno}_${Date.now()}_sendMessages`, seqno };
-      } catch (error) {
-        const httpErr = isHttpError(error) ? error : undefined;
-        const status = httpErr?.status || httpErr?.response?.status;
-        if (status === 429 || (status !== undefined && status >= 500)) {
-          invalidateTonClientCache();
-        }
-        if (error instanceof PluginSDKError) throw error;
-        throw new PluginSDKError(
-          `Failed to send messages: ${getErrorMessage(error)}`,
-          "OPERATION_FAILED"
-        );
-      }
+      return signAndSend(messages, {
+        sendMode: opts?.sendMode,
+        label: "sendMessages",
+        errorPrefix: "Failed to send messages",
+      });
     },
 
     async createSender(): Promise<TonSender> {
