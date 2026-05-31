@@ -60,10 +60,40 @@ export interface CallbackData {
   dealId: string;
 }
 
+/**
+ * Split a `prefix:rest` string on its first colon.
+ * Returns null if there is no colon, or the colon is the first character
+ * (i.e. there is no non-empty prefix). The `rest` may itself contain colons.
+ *
+ * Shared routing primitive: the inline-router uses this to peel a plugin prefix
+ * off inline queries / callback data / chosen-result ids before dispatch.
+ */
+export function splitPrefix(raw: string): { prefix: string; rest: string } | null {
+  const colonIdx = raw.indexOf(":");
+  if (colonIdx <= 0) return null;
+  return { prefix: raw.slice(0, colonIdx), rest: raw.slice(colonIdx + 1) };
+}
+
 export function encodeCallback(data: CallbackData): string {
   return `${data.action}:${data.dealId}`;
 }
 
+/**
+ * Callback-data routing contract (Grammy `callback_query:data` middleware chain).
+ *
+ * Two prefix conventions co-route in the same Grammy dispatch, distinguished by
+ * the first `:`-delimited segment:
+ *
+ *   - DealBot RESERVES these six action prefixes, decoded here as `action:dealId`
+ *     (exactly one colon): accept · decline · sent · copy_addr · copy_memo · refresh.
+ *     decodeCallback returns null for anything else, so DealBot ignores it.
+ *   - Every OTHER prefix belongs to a registered plugin and is claimed by the
+ *     InlineRouter middleware (installed BEFORE DealBot) via its `prefix:rest`
+ *     split; unmatched prefixes fall through to DealBot.
+ *
+ * New DealBot actions must be added to BOTH the union below and the whitelist in
+ * decodeCallback; plugins must avoid these reserved prefixes to prevent collisions.
+ */
 export function decodeCallback(raw: string): CallbackData | null {
   const parts = raw.split(":");
   if (parts.length !== 2) return null;

@@ -17,6 +17,7 @@ import type {
   ButtonDef,
 } from "@teleton-agent/sdk";
 import type { GramJSBotClient } from "./gramjs-bot.js";
+import { splitPrefix } from "./types.js";
 import { createLogger } from "../utils/logger.js";
 import { toGrammyKeyboard, prefixButtons, stripCustomEmoji } from "../sdk/formatting.js";
 import { editInlineViaGramJS } from "./services/inline-transport.js";
@@ -74,17 +75,24 @@ export class InlineRouter {
     return this.plugins.has(name);
   }
 
+  // ── Prefix routing contract ──────────────────────────────────────────────
+  // This middleware is installed BEFORE DealBot in the Grammy chain. It peels a
+  // `prefix:rest` segment off inline queries / callback data / chosen-result ids
+  // (via splitPrefix) and dispatches to the matching registered plugin.
+  //
+  // A prefix is RESERVED for DealBot — accept · decline · sent · copy_addr ·
+  // copy_memo · refresh (see decodeCallback in types.ts) — and plugins must not
+  // register those names. Any prefix without a registered plugin handler (or no
+  // colon at all) falls through via next() to DealBot's own handlers.
   middleware(): MiddlewareFn<Context> {
     return async (ctx, next) => {
       // ── Inline Query ─────────────────────────────────
       if (ctx.inlineQuery) {
-        const rawQuery = ctx.inlineQuery.query.trim();
-        const colonIdx = rawQuery.indexOf(":");
-        if (colonIdx > 0) {
-          const prefix = rawQuery.slice(0, colonIdx);
-          const plugin = this.plugins.get(prefix);
+        const split = splitPrefix(ctx.inlineQuery.query.trim());
+        if (split) {
+          const plugin = this.plugins.get(split.prefix);
           if (plugin?.onInlineQuery) {
-            await this.handleInlineQuery(ctx, prefix, rawQuery.slice(colonIdx + 1), plugin);
+            await this.handleInlineQuery(ctx, split.prefix, split.rest, plugin);
             return; // handled, don't fall through
           }
         }
@@ -94,14 +102,11 @@ export class InlineRouter {
 
       // ── Callback Query ───────────────────────────────
       if (ctx.callbackQuery?.data) {
-        const data = ctx.callbackQuery.data;
-        const colonIdx = data.indexOf(":");
-        if (colonIdx > 0) {
-          const prefix = data.slice(0, colonIdx);
-          const plugin = this.plugins.get(prefix);
+        const split = splitPrefix(ctx.callbackQuery.data);
+        if (split) {
+          const plugin = this.plugins.get(split.prefix);
           if (plugin?.onCallback) {
-            const strippedData = data.slice(colonIdx + 1);
-            await this.handleCallback(ctx, prefix, strippedData, plugin);
+            await this.handleCallback(ctx, split.prefix, split.rest, plugin);
             return;
           }
         }
@@ -110,13 +115,11 @@ export class InlineRouter {
 
       // ── Chosen Inline Result ─────────────────────────
       if (ctx.chosenInlineResult) {
-        const resultId = ctx.chosenInlineResult.result_id;
-        const colonIdx = resultId.indexOf(":");
-        if (colonIdx > 0) {
-          const prefix = resultId.slice(0, colonIdx);
-          const plugin = this.plugins.get(prefix);
+        const split = splitPrefix(ctx.chosenInlineResult.result_id);
+        if (split) {
+          const plugin = this.plugins.get(split.prefix);
           if (plugin?.onChosenResult) {
-            await this.handleChosenResult(ctx, prefix, plugin);
+            await this.handleChosenResult(ctx, split.prefix, plugin);
             return;
           }
         }
@@ -282,8 +285,7 @@ export class InlineRouter {
       if (!chosenResult || !plugin.onChosenResult) return;
 
       const resultId = chosenResult.result_id;
-      const colonIdx = resultId.indexOf(":");
-      const strippedResultId = colonIdx > 0 ? resultId.slice(colonIdx + 1) : resultId;
+      const strippedResultId = splitPrefix(resultId)?.rest ?? resultId;
 
       const crCtx: ChosenResultContext = {
         resultId: strippedResultId,
