@@ -4,6 +4,59 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Memory");
 
+// ── Shared DDL ─────────────────────────────────────────────────────────
+// Single source for table DDL that is otherwise duplicated verbatim between
+// ensureSchema (fresh DB) and a historical migration (existing DB). Only tables
+// whose inline and migration DDL were already byte-identical are factored here.
+// Tables whose two definitions diverge (exec_audit) or whose migration replaces
+// rather than creates (tg_messages FTS triggers: DROP+CREATE vs CREATE IF NOT
+// EXISTS) are deliberately left inline to avoid changing applied-migration
+// semantics on existing databases.
+
+const DDL_TASK_DEPENDENCIES = `
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      task_id TEXT NOT NULL,
+      depends_on_task_id TEXT NOT NULL,
+      PRIMARY KEY (task_id, depends_on_task_id),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
+`;
+
+const DDL_EMBEDDING_CACHE = `
+    CREATE TABLE IF NOT EXISTS embedding_cache (
+      hash TEXT NOT NULL,
+      model TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      dims INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      accessed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (hash, model, provider)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_embedding_cache_accessed ON embedding_cache(accessed_at);
+`;
+
+const DDL_PLUGIN_CONFIG = `
+    CREATE TABLE IF NOT EXISTS plugin_config (
+      plugin_name TEXT PRIMARY KEY,
+      priority INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+`;
+
+const DDL_USER_HOOK_CONFIG = `
+    CREATE TABLE IF NOT EXISTS user_hook_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+`;
+
 /**
  * Idempotent ALTER TABLE ... ADD COLUMN: swallows the "duplicate column name"
  * error so migrations can re-run. Single definition shared by all migrations.
@@ -154,16 +207,7 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by) WHERE created_by IS NOT NULL;
 
     -- Task Dependencies (for chained tasks)
-    CREATE TABLE IF NOT EXISTS task_dependencies (
-      task_id TEXT NOT NULL,
-      depends_on_task_id TEXT NOT NULL,
-      PRIMARY KEY (task_id, depends_on_task_id),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
-    CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
+    ${DDL_TASK_DEPENDENCIES}
 
     -- ============================================
     -- TELEGRAM FEED
@@ -262,18 +306,7 @@ export function ensureSchema(db: Database.Database): void {
     -- EMBEDDING CACHE
     -- ============================================
 
-    CREATE TABLE IF NOT EXISTS embedding_cache (
-      hash TEXT NOT NULL,
-      model TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      embedding BLOB NOT NULL,
-      dims INTEGER NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      accessed_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      PRIMARY KEY (hash, model, provider)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_embedding_cache_accessed ON embedding_cache(accessed_at);
+    ${DDL_EMBEDDING_CACHE}
 
     -- =====================================================
     -- EXEC AUDIT (Command Execution History)
@@ -303,21 +336,13 @@ export function ensureSchema(db: Database.Database): void {
     -- PLUGIN CONFIG (Plugin Priority Order)
     -- =====================================================
 
-    CREATE TABLE IF NOT EXISTS plugin_config (
-      plugin_name TEXT PRIMARY KEY,
-      priority INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    ${DDL_PLUGIN_CONFIG}
 
     -- =====================================================
     -- USER HOOK CONFIG (Keyword Blocklist + Context Triggers)
     -- =====================================================
 
-    CREATE TABLE IF NOT EXISTS user_hook_config (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    ${DDL_USER_HOOK_CONFIG}
 
     -- =====================================================
     -- JOURNAL (Trading & Business Operations)
@@ -412,18 +437,7 @@ export function runMigrations(db: Database.Database): void {
         `CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_for) WHERE scheduled_for IS NOT NULL`
       );
 
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS task_dependencies (
-          task_id TEXT NOT NULL,
-          depends_on_task_id TEXT NOT NULL,
-          PRIMARY KEY (task_id, depends_on_task_id),
-          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-          FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
-        CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
-      `);
+      db.exec(DDL_TASK_DEPENDENCIES);
 
       log.info("Migration 1.1.0 complete: Scheduled tasks support added");
     } catch (error) {
@@ -471,19 +485,7 @@ export function runMigrations(db: Database.Database): void {
     log.info("Running migration 1.9.0: Upgrade embedding_cache to BLOB storage");
     try {
       db.exec(`DROP TABLE IF EXISTS embedding_cache`);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS embedding_cache (
-          hash TEXT NOT NULL,
-          model TEXT NOT NULL,
-          provider TEXT NOT NULL,
-          embedding BLOB NOT NULL,
-          dims INTEGER NOT NULL,
-          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-          accessed_at INTEGER NOT NULL DEFAULT (unixepoch()),
-          PRIMARY KEY (hash, model, provider)
-        );
-        CREATE INDEX IF NOT EXISTS idx_embedding_cache_accessed ON embedding_cache(accessed_at);
-      `);
+      db.exec(DDL_EMBEDDING_CACHE);
       log.info("Migration 1.9.0 complete: embedding_cache upgraded to BLOB storage");
     } catch (error) {
       log.error({ err: error }, "Migration 1.9.0 failed");
@@ -620,13 +622,7 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.14.0")) {
     log.info("Running migration 1.14.0: Add plugin_config table for plugin priority");
     try {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS plugin_config (
-          plugin_name TEXT PRIMARY KEY,
-          priority INTEGER NOT NULL DEFAULT 0,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-      `);
+      db.exec(DDL_PLUGIN_CONFIG);
       log.info("Migration 1.14.0 complete: plugin_config table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.14.0 failed");
@@ -637,13 +633,7 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.15.0")) {
     log.info("Running migration 1.15.0: Add user_hook_config table");
     try {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS user_hook_config (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-      `);
+      db.exec(DDL_USER_HOOK_CONFIG);
       log.info("Migration 1.15.0 complete: user_hook_config table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.15.0 failed");
