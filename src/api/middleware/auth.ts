@@ -1,7 +1,8 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { timingSafeEqual } from "node:crypto";
 import type { MiddlewareHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { createProblemResponse } from "../schemas/common.js";
+import { hashApiKey } from "../../utils/crypto-tokens.js";
 
 interface FailedAttempt {
   count: number;
@@ -15,10 +16,6 @@ const BLOCK_MS = 15 * 60 * 1000; // 15 minutes
 function normalizeIp(ip: string): string {
   if (ip.startsWith("::ffff:")) return ip.slice(7);
   return ip;
-}
-
-function hashApiKey(key: string): string {
-  return createHash("sha256").update(key).digest("hex");
 }
 
 export function createAuthMiddleware(config: {
