@@ -4,7 +4,7 @@ import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
-import { getClient } from "../../../../sdk/telegram-utils.js";
+import { getClient, resolveChannel } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -59,18 +59,7 @@ export const telegramInviteToChannelExecutor: ToolExecutor<InviteToChannelParams
     }
 
     const gramJsClient = getClient(context.bridge);
-
-    // Get channel entity
-    const channelEntity = await gramJsClient.getEntity(channelId);
-
-    if (channelEntity.className !== "Channel") {
-      return {
-        success: false,
-        error: `Entity is not a channel/group (got ${channelEntity.className})`,
-      };
-    }
-
-    const channel = channelEntity as Api.Channel;
+    const channel = await resolveChannel(context.bridge, channelId);
 
     // Resolve all users
     const users: Api.TypeInputUser[] = [];

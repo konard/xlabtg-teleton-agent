@@ -50,6 +50,22 @@ export function validateChannelUsername(
   return { ok: true, clean };
 }
 
+/**
+ * Resolve a channel/group entity and narrow it to Api.Channel. Throws a readable
+ * Error (caught by the executor's existing catch) when the entity isn't a channel.
+ */
+export async function resolveChannel(
+  bridge: ITelegramBridge,
+  channelId: string
+): Promise<Api.Channel> {
+  const client = getClient(bridge);
+  const entity = await client.getEntity(channelId);
+  if (entity.className !== "Channel") {
+    throw new Error(`Entity is not a channel/group (got ${entity.className})`);
+  }
+  return entity as Api.Channel;
+}
+
 /** Convert a GramJS message to a SimpleMessage */
 export function toSimpleMessage(msg: Api.Message): SimpleMessage {
   const fromId = msg.fromId;
