@@ -6,12 +6,13 @@
 import { Type } from "@sinclair/typebox";
 import { getDatabase } from "../../../memory/database.js";
 import { JournalStore } from "../../../memory/journal-store.js";
+import type { JournalOutcome } from "../../../memory/journal-store.js";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import { outcomeEmoji, formatAssetFlow, formatTxHash } from "./format.js";
 
 interface JournalUpdateParams {
   id: number;
-  outcome?: "pending" | "profit" | "loss" | "neutral" | "cancelled";
+  outcome?: JournalOutcome;
   pnl_ton?: number;
   pnl_pct?: number;
   tx_hash?: string;

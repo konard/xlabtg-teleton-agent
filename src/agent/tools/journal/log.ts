@@ -6,11 +6,12 @@
 import { Type } from "@sinclair/typebox";
 import { getDatabase } from "../../../memory/database.js";
 import { JournalStore } from "../../../memory/journal-store.js";
+import type { JournalType, JournalOutcome } from "../../../memory/journal-store.js";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import { formatAssetFlow, formatTxHash } from "./format.js";
 
 interface JournalLogParams {
-  type: "trade" | "gift" | "middleman" | "kol";
+  type: JournalType;
   action: string;
   asset_from?: string;
   asset_to?: string;
@@ -20,7 +21,7 @@ interface JournalLogParams {
   counterparty?: string;
   platform?: string;
   reasoning: string;
-  outcome?: "pending" | "profit" | "loss" | "neutral" | "cancelled";
+  outcome?: JournalOutcome;
   tx_hash?: string;
 }
 
