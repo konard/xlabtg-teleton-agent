@@ -106,6 +106,9 @@ export function enrichRAGQuery(query: string): string {
   if (/\b(swap|trade|exchange)\b/i.test(query) && /\b(token|jetton|ton|usdt|usdc)\b/i.test(lower)) {
     tags.push("DEX swap jetton trade");
   }
+  if (/\b(holdings?|portfolio|balances?|net\s*worth|avoirs?|solde)\b/i.test(query)) {
+    tags.push("jetton token balance holdings portfolio wallet TON net worth value");
+  }
   if (/\bsticker\b/i.test(query)) tags.push("Telegram sticker pack send");
   if (/\b(invoice|deal|payment|escrow)\b/i.test(query)) tags.push("trade deal invoice");
   if (/\b(gift|collectible)\b/i.test(query) && /\b(buy|send|transfer|resale)\b/i.test(query)) {
