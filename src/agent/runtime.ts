@@ -37,13 +37,7 @@ import {
   resetSessionWithPolicy,
 } from "../session/store.js";
 import { transcriptExists, archiveTranscript, appendToTranscript } from "../session/transcript.js";
-import type {
-  Context,
-  Tool as PiAiTool,
-  UserMessage,
-  ToolResultMessage,
-  ToolCall,
-} from "@mariozechner/pi-ai";
+import type { Context, Tool as PiAiTool, UserMessage, ToolCall } from "@mariozechner/pi-ai";
 import { CompactionManager, DEFAULT_COMPACTION_CONFIG } from "../memory/compaction.js";
 import { maskOldToolResults } from "../memory/observation-masking.js";
 import { ContextBuilder } from "../memory/search/context.js";
@@ -1013,37 +1007,10 @@ export class AgentRuntime {
           log.warn(`Tool result too large, truncated to ${resultText.length} chars`);
         }
 
-        if (provider === "cocoon") {
-          const { wrapToolResult } = await import("../cocoon/tool-adapter.js");
-          const cocoonResultMsg: UserMessage = {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: wrapToolResult(resultText),
-              },
-            ],
-            timestamp: Date.now(),
-          };
-          context.messages.push(cocoonResultMsg);
-          appendToTranscript(session.sessionId, cocoonResultMsg);
-        } else {
-          const toolResultMsg: ToolResultMessage = {
-            role: "toolResult",
-            toolCallId: block.id,
-            toolName: block.name,
-            content: [
-              {
-                type: "text",
-                text: resultText,
-              },
-            ],
-            isError: !exec.result.success,
-            timestamp: Date.now(),
-          };
-          context.messages.push(toolResultMsg);
-          appendToTranscript(session.sessionId, toolResultMsg);
-        }
+        const { buildToolResultMessage } = await import("../cocoon/tool-adapter.js");
+        const resultMsg = buildToolResultMessage(provider, block, resultText, !exec.result.success);
+        context.messages.push(resultMsg);
+        appendToTranscript(session.sessionId, resultMsg);
       }
 
       // Await all observing hooks from Phase 3 (non-blocking during result processing)
