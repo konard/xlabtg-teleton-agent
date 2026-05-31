@@ -1,4 +1,26 @@
-import type { Context, TextContent, ToolCall } from "@mariozechner/pi-ai";
+import type { Context, TextContent, ToolCall, Usage } from "@mariozechner/pi-ai";
+
+/** Per-turn usage accumulator (input/output/cache + cost), summed across loop iterations. */
+export interface UsageAccumulator {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
+  totalCost: number;
+}
+
+/**
+ * Accumulate a single iteration's usage into the running per-turn accumulator.
+ * Mutates and returns `acc`. Missing cache/cost fields default to 0.
+ */
+export function addUsage(acc: UsageAccumulator, usage: Usage): UsageAccumulator {
+  acc.input += usage.input;
+  acc.output += usage.output;
+  acc.cacheRead += usage.cacheRead ?? 0;
+  acc.cacheWrite += usage.cacheWrite ?? 0;
+  acc.totalCost += usage.cost?.total ?? 0;
+  return acc;
+}
 
 export function isContextOverflowError(errorMessage?: string): boolean {
   if (!errorMessage) return false;

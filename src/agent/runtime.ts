@@ -68,7 +68,9 @@ import {
   summarizeToolParams,
   enrichRAGQuery,
   classifyLlmError,
+  addUsage,
 } from "./runtime-utils.js";
+import type { UsageAccumulator } from "./runtime-utils.js";
 import { isBotBridge } from "../telegram/bridge-guards.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -128,13 +130,7 @@ interface LoopResult {
   context: Context;
   totalToolCalls: Array<{ name: string; input: Record<string, unknown> }>;
   accumulatedTexts: string[];
-  accumulatedUsage: {
-    input: number;
-    output: number;
-    cacheRead: number;
-    cacheWrite: number;
-    totalCost: number;
-  };
+  accumulatedUsage: UsageAccumulator;
   wasStreamed: boolean;
 }
 
@@ -763,11 +759,7 @@ export class AgentRuntime {
       // get retried, so cost metrics capture tokens spent on failed attempts too.
       const iterUsage = response.message.usage;
       if (iterUsage) {
-        accumulatedUsage.input += iterUsage.input;
-        accumulatedUsage.output += iterUsage.output;
-        accumulatedUsage.cacheRead += iterUsage.cacheRead ?? 0;
-        accumulatedUsage.cacheWrite += iterUsage.cacheWrite ?? 0;
-        accumulatedUsage.totalCost += iterUsage.cost?.total ?? 0;
+        addUsage(accumulatedUsage, iterUsage);
       }
 
       if (assistantMsg.stopReason === "error") {
