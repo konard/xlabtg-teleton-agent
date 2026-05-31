@@ -319,7 +319,11 @@ interface APIResponse<T> {
 
 // ── Fetch helpers ───────────────────────────────────────────────────
 
-async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  endpoint: string,
+  options: RequestInit | undefined,
+  opts: { credentials?: boolean; unwrapData?: boolean }
+): Promise<T> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options?.headers,
@@ -328,6 +332,7 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
+    ...(opts.credentials ? { credentials: 'include' } : {}), // send HttpOnly cookie automatically
   });
 
   if (!response.ok) {
@@ -336,27 +341,15 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   }
 
   const json = await response.json();
-  return json.data !== undefined ? json.data : json;
+  return opts.unwrapData ? (json.data !== undefined ? json.data : json) : json;
+}
+
+async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  return fetchJson<T>(endpoint, options, { unwrapData: true });
 }
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options?.headers,
-  };
-
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-    credentials: 'include', // send HttpOnly cookie automatically
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-
-  return response.json();
+  return fetchJson<T>(endpoint, options, { credentials: true });
 }
 
 // ── Auth ────────────────────────────────────────────────────────────
