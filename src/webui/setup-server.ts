@@ -9,13 +9,13 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join, dirname, resolve, relative } from "node:path";
-import { fileURLToPath } from "node:url";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { createSetupRoutes } from "./routes/setup.js";
 import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "./http-common.js";
+import { findWebDist, createStaticHandler } from "./static-serving.js";
 import { randomBytes } from "node:crypto";
 import YAML from "yaml";
 import { TELETON_ROOT } from "../workspace/paths.js";
@@ -24,19 +24,6 @@ import { createLogger } from "../utils/logger.js";
 import { getErrorMessage } from "../utils/errors.js";
 
 const log = createLogger("Setup");
-
-function findWebDist(): string | null {
-  const candidates = [resolve("dist/web"), resolve("web")];
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  candidates.push(resolve(__dirname, "web"), resolve(__dirname, "../dist/web"));
-
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, "index.html"))) {
-      return candidate;
-    }
-  }
-  return null;
-}
 
 function autoOpenBrowser(url: string): void {
   const os = platform();
@@ -162,49 +149,7 @@ export class SetupServer {
   private setupStaticServing(): void {
     const webDist = findWebDist();
     if (!webDist) return;
-
-    const indexHtml = readFileSync(join(webDist, "index.html"), "utf-8");
-
-    const mimeTypes: Record<string, string> = {
-      js: "application/javascript",
-      css: "text/css",
-      svg: "image/svg+xml",
-      png: "image/png",
-      jpg: "image/jpeg",
-      jpeg: "image/jpeg",
-      ico: "image/x-icon",
-      json: "application/json",
-      woff2: "font/woff2",
-      woff: "font/woff",
-    };
-
-    this.app.get("*", (c) => {
-      const filePath = resolve(join(webDist, c.req.path));
-      // Prevent path traversal
-      const rel = relative(webDist, filePath);
-      if (rel.startsWith("..") || resolve(filePath) !== filePath) {
-        return c.html(indexHtml);
-      }
-
-      try {
-        const content = readFileSync(filePath);
-        const ext = filePath.split(".").pop() || "";
-        if (mimeTypes[ext]) {
-          const immutable = c.req.path.startsWith("/assets/");
-          return c.body(content, 200, {
-            "Content-Type": mimeTypes[ext],
-            "Cache-Control": immutable
-              ? "public, max-age=31536000, immutable"
-              : "public, max-age=3600",
-          });
-        }
-      } catch {
-        // File not found — fall through to SPA
-      }
-
-      // SPA fallback
-      return c.html(indexHtml);
-    });
+    this.app.get("*", createStaticHandler(webDist, { async: false }));
   }
 
   async start(): Promise<void> {
