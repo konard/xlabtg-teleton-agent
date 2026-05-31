@@ -1,9 +1,8 @@
 import { Type } from "@sinclair/typebox";
-import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
-import { getClient } from "../../../../sdk/telegram-utils.js";
+import { transcribeAudio } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -27,78 +26,29 @@ export const telegramTranscribeAudioTool: Tool = {
   }),
 };
 
-const POLL_INTERVAL_MS = 1500;
-const MAX_POLL_RETRIES = 15;
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 export const telegramTranscribeAudioExecutor: ToolExecutor<TranscribeAudioParams> = async (
   params,
   context
 ): Promise<ToolResult> => {
   try {
-    const { chatId, messageId } = params;
-
-    const gramJsClient = getClient(context.bridge);
-    const entity = await gramJsClient.getEntity(chatId);
-
-    let result = await gramJsClient.invoke(
-      new Api.messages.TranscribeAudio({
-        peer: entity,
-        msgId: messageId,
-      })
-    );
-
-    // Poll if transcription is still pending
-    let retries = 0;
-    while (result.pending && retries < MAX_POLL_RETRIES) {
-      retries++;
-      log.debug(`⏳ Transcription pending, polling (${retries}/${MAX_POLL_RETRIES})...`);
-      await sleep(POLL_INTERVAL_MS);
-
-      try {
-        result = await gramJsClient.invoke(
-          new Api.messages.TranscribeAudio({
-            peer: entity,
-            msgId: messageId,
-          })
-        );
-      } catch (pollError: unknown) {
-        // On transient errors (FLOOD_WAIT, network), keep polling
-        log.warn(`Transcription poll ${retries} failed: ${getErrorMessage(pollError)}`);
-        continue;
-      }
-    }
+    const result = await transcribeAudio(context.bridge, params.chatId, params.messageId);
 
     if (result.pending) {
-      log.warn(`Transcription still pending after ${MAX_POLL_RETRIES} retries`);
+      log.warn(`Transcription still pending after polling`);
       return {
         success: true,
         data: {
-          transcriptionId: result.transcriptionId?.toString(),
-          text: result.text || null,
+          transcriptionId: result.transcriptionId,
+          text: result.text,
           pending: true,
           message: "Transcription is still processing. Try again later.",
         },
       };
     }
 
-    log.info(`transcribe_audio: msg ${messageId} → "${result.text?.substring(0, 50)}..."`);
+    log.info(`transcribe_audio: msg ${params.messageId} → "${result.text?.substring(0, 50)}..."`);
 
-    return {
-      success: true,
-      data: {
-        transcriptionId: result.transcriptionId?.toString(),
-        text: result.text,
-        pending: false,
-        ...(result.trialRemainsNum !== undefined && {
-          trialRemainsNum: result.trialRemainsNum,
-          trialRemainsUntilDate: result.trialRemainsUntilDate,
-        }),
-      },
-    };
+    return { success: true, data: result };
   } catch (error: unknown) {
     // Handle specific Telegram errors
     const errMsg = getErrorMessage(error);

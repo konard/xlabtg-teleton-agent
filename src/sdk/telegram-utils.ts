@@ -4,6 +4,9 @@ import type { Api } from "telegram";
 import type { SimpleMessage } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
 import { getErrorMessage } from "../utils/errors.js";
+import { createLogger } from "../utils/logger.js";
+
+const log = createLogger("Telegram");
 
 /**
  * Canonical friendly messages for known Telegram/GramJS error codes. Shared so a
@@ -124,4 +127,61 @@ export async function getApi(): Promise<typeof Api> {
     _Api = (await import("telegram")).Api;
   }
   return _Api;
+}
+
+export interface TranscribeResult {
+  transcriptionId?: string;
+  text: string | null;
+  pending: boolean;
+  trialRemainsNum?: number;
+  trialRemainsUntilDate?: number;
+}
+
+const TRANSCRIBE_POLL_INTERVAL_MS = 1500;
+const TRANSCRIBE_MAX_POLL_RETRIES = 15;
+
+/**
+ * Server-side transcription of a voice/audio message, polling until it completes.
+ * Core shared by the telegram_transcribe_audio tool and the auto-transcribe path
+ * in the message handler (so the bridge layer no longer imports a tool executor).
+ * Throws on Telegram errors (PREMIUM_ACCOUNT_REQUIRED, MSG_ID_INVALID, …).
+ */
+export async function transcribeAudio(
+  bridge: ITelegramBridge,
+  chatId: string,
+  messageId: number
+): Promise<TranscribeResult> {
+  const ApiNs = await getApi();
+  const client = getClient(bridge);
+  const entity = await client.getEntity(chatId);
+
+  let result = await client.invoke(
+    new ApiNs.messages.TranscribeAudio({ peer: entity, msgId: messageId })
+  );
+
+  let retries = 0;
+  while (result.pending && retries < TRANSCRIBE_MAX_POLL_RETRIES) {
+    retries++;
+    log.debug(`⏳ Transcription pending, polling (${retries}/${TRANSCRIBE_MAX_POLL_RETRIES})...`);
+    await new Promise((resolve) => setTimeout(resolve, TRANSCRIBE_POLL_INTERVAL_MS));
+    try {
+      result = await client.invoke(
+        new ApiNs.messages.TranscribeAudio({ peer: entity, msgId: messageId })
+      );
+    } catch (pollError: unknown) {
+      // On transient errors (FLOOD_WAIT, network), keep polling
+      log.warn(`Transcription poll ${retries} failed: ${getErrorMessage(pollError)}`);
+      continue;
+    }
+  }
+
+  return {
+    transcriptionId: result.transcriptionId?.toString(),
+    text: result.text ?? null,
+    pending: result.pending ?? false,
+    ...(result.trialRemainsNum !== undefined && {
+      trialRemainsNum: result.trialRemainsNum,
+      trialRemainsUntilDate: result.trialRemainsUntilDate,
+    }),
+  };
 }

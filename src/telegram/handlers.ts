@@ -10,7 +10,7 @@ import { PendingHistory } from "../memory/pending-history.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import { isSilentReply } from "../constants/tokens.js";
-import { telegramTranscribeAudioExecutor } from "../agent/tools/telegram/media/transcribe-audio.js";
+import { transcribeAudio } from "../sdk/telegram-utils.js";
 import { TYPING_REFRESH_MS } from "../constants/timeouts.js";
 import { createLogger } from "../utils/logger.js";
 import { getErrorMessage } from "../utils/errors.js";
@@ -429,20 +429,13 @@ export class MessageHandler {
           let transcriptionText: string | null = null;
           if (message.mediaType === "voice" || message.mediaType === "audio") {
             try {
-              const transcribeResult = await telegramTranscribeAudioExecutor(
-                { chatId: message.chatId, messageId: message.id },
-                {
-                  bridge: this.bridge,
-                  db: this.db,
-                  chatId: message.chatId,
-                  senderId: message.senderId,
-                  isGroup: message.isGroup,
-                  config: this.fullConfig,
-                }
+              const transcribeResult = await transcribeAudio(
+                this.bridge,
+                message.chatId,
+                message.id
               );
-              const transcribeData = transcribeResult.data as Record<string, unknown> | undefined;
-              if (transcribeResult.success && transcribeData?.text) {
-                transcriptionText = transcribeData.text as string;
+              if (transcribeResult.text) {
+                transcriptionText = transcribeResult.text;
                 log.info(
                   `Auto-transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
                 );
