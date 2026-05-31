@@ -20,6 +20,9 @@ export type { TelegramMessage, InlineButton, SendMessageOptions } from "../bridg
 
 const log = createLogger("Telegram");
 
+/** Max time to wait for getSender() before giving up (deleted accounts, timeouts). */
+const SENDER_RESOLVE_TIMEOUT_MS = 5000;
+
 export class GramJSUserBridge implements ITelegramBridge {
   private client: TelegramUserClient;
   private ownUserId?: bigint;
@@ -513,6 +516,35 @@ export class GramJSUserBridge implements ITelegramBridge {
     });
   }
 
+  /** Resolve sender username/firstName/bot flag with a timeout; non-fatal on failure. */
+  private async resolveSender(
+    msg: Api.Message | Api.MessageService
+  ): Promise<{ senderUsername?: string; senderFirstName?: string; isBot: boolean }> {
+    let senderUsername: string | undefined;
+    let senderFirstName: string | undefined;
+    let isBot = false;
+    try {
+      const sender = await Promise.race([
+        msg.getSender(),
+        new Promise<undefined>((resolve) =>
+          setTimeout(() => resolve(undefined), SENDER_RESOLVE_TIMEOUT_MS)
+        ),
+      ]);
+      if (sender && "username" in sender) {
+        senderUsername = sender.username ?? undefined;
+      }
+      if (sender && "firstName" in sender) {
+        senderFirstName = sender.firstName ?? undefined;
+      }
+      if (sender instanceof Api.User) {
+        isBot = sender.bot ?? false;
+      }
+    } catch {
+      // getSender() can fail on deleted accounts, timeouts, etc. — non-critical
+    }
+    return { senderUsername, senderFirstName, isBot };
+  }
+
   private async parseMessage(msg: Api.Message): Promise<TelegramMessage> {
     const chatId = msg.chatId?.toString() ?? msg.peerId?.toString() ?? "unknown";
     const senderIdBig = msg.senderId ? BigInt(msg.senderId.toString()) : BigInt(0);
@@ -534,26 +566,7 @@ export class GramJSUserBridge implements ITelegramBridge {
       }
     }
 
-    let senderUsername: string | undefined;
-    let senderFirstName: string | undefined;
-    let isBot = false;
-    try {
-      const sender = await Promise.race([
-        msg.getSender(),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
-      ]);
-      if (sender && "username" in sender) {
-        senderUsername = sender.username ?? undefined;
-      }
-      if (sender && "firstName" in sender) {
-        senderFirstName = sender.firstName ?? undefined;
-      }
-      if (sender instanceof Api.User) {
-        isBot = sender.bot ?? false;
-      }
-    } catch {
-      // getSender() can fail on deleted accounts, timeouts, etc.
-    }
+    const { senderUsername, senderFirstName, isBot } = await this.resolveSender(msg);
 
     const hasMedia = !!(
       msg.photo ||
@@ -634,26 +647,7 @@ export class GramJSUserBridge implements ITelegramBridge {
     const senderIdBig = msg.senderId ? BigInt(msg.senderId.toString()) : BigInt(0);
     const senderId = Number(senderIdBig);
 
-    let senderUsername: string | undefined;
-    let senderFirstName: string | undefined;
-    let isBot = false;
-    try {
-      const sender = await Promise.race([
-        msg.getSender(),
-        new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), 5000)),
-      ]);
-      if (sender && "username" in sender) {
-        senderUsername = sender.username ?? undefined;
-      }
-      if (sender && "firstName" in sender) {
-        senderFirstName = sender.firstName ?? undefined;
-      }
-      if (sender instanceof Api.User) {
-        isBot = sender.bot ?? false;
-      }
-    } catch {
-      // getSender() can fail — non-critical
-    }
+    const { senderUsername, senderFirstName, isBot } = await this.resolveSender(msg);
 
     let text = "";
 
