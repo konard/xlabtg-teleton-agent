@@ -8,8 +8,9 @@ import {
 } from "../../../ton/wallet-service.js";
 import { WalletContractV5R1, toNano, fromNano } from "@ton/ton";
 import { Address } from "@ton/core";
-import { Factory, Asset, PoolType, ReadinessStatus, JettonRoot, VaultJetton } from "@dedust/sdk";
+import { Factory, Asset, ReadinessStatus, JettonRoot, VaultJetton } from "@dedust/sdk";
 import { DEDUST_FACTORY_MAINNET, DEDUST_GAS, NATIVE_TON_ADDRESS } from "./constants.js";
+import { findDedustPool } from "./pool.js";
 import { getDecimals, toUnits, fromUnits } from "./asset-cache.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
 import { getErrorMessage, isHttpError } from "../../../utils/errors.js";
@@ -109,17 +110,20 @@ export const dedustSwapExecutor: ToolExecutor<DedustSwapParams> = async (
     const fromAssetObj = isTonInput ? Asset.native() : Asset.jetton(Address.parse(fromAssetAddr));
     const toAssetObj = isTonOutput ? Asset.native() : Asset.jetton(Address.parse(toAssetAddr));
 
-    const poolTypeEnum = pool_type === "stable" ? PoolType.STABLE : PoolType.VOLATILE;
-
-    const pool = tonClient.open(await factory.getPool(poolTypeEnum, [fromAssetObj, toAssetObj]));
-
-    const readinessStatus = await pool.getReadinessStatus();
-    if (readinessStatus !== ReadinessStatus.READY) {
+    const poolMatch = await findDedustPool(
+      tonClient,
+      factory,
+      fromAssetObj,
+      toAssetObj,
+      pool_type === "stable" ? "stable" : "volatile"
+    );
+    if (!poolMatch) {
       return {
         success: false,
-        error: `Pool not ready. Status: ${readinessStatus}. Try the other pool type (${pool_type === "volatile" ? "stable" : "volatile"}) or check if the pool exists.`,
+        error: "No DeDust pool ready for this pair (tried volatile and stable).",
       };
     }
+    const pool = poolMatch.pool;
 
     // Resolve correct decimals using normalized addresses (friendly format)
     const fromDecimals = await getDecimals(isTonInput ? "ton" : fromAssetAddr);

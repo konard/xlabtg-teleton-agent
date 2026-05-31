@@ -4,8 +4,9 @@ import type { TonClient } from "@ton/ton";
 import { Address } from "@ton/core";
 import { getCachedTonClient } from "../../../ton/wallet-service.js";
 import { StonApiClient } from "@ston-fi/api";
-import { Factory, Asset, PoolType, ReadinessStatus } from "@dedust/sdk";
+import { Factory, Asset } from "@dedust/sdk";
 import { DEDUST_FACTORY_MAINNET, NATIVE_TON_ADDRESS } from "../dedust/constants.js";
+import { findDedustPool } from "../dedust/pool.js";
 import { getDecimals, toUnits, fromUnits } from "../dedust/asset-cache.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
@@ -148,39 +149,19 @@ async function getDedustQuote(
     const fromAssetObj = isTonInput ? Asset.native() : Asset.jetton(Address.parse(fromAsset));
     const toAssetObj = isTonOutput ? Asset.native() : Asset.jetton(Address.parse(toAsset));
 
-    // Try volatile pool first, then stable
-    let pool;
-    let poolType = "volatile";
-
-    try {
-      pool = tonClient.open(await factory.getPool(PoolType.VOLATILE, [fromAssetObj, toAssetObj]));
-      const status = await pool.getReadinessStatus();
-      if (status !== ReadinessStatus.READY) {
-        // Try stable pool
-        pool = tonClient.open(await factory.getPool(PoolType.STABLE, [fromAssetObj, toAssetObj]));
-        const stableStatus = await pool.getReadinessStatus();
-        if (stableStatus !== ReadinessStatus.READY) {
-          return {
-            dex: "DeDust",
-            expectedOutput: 0,
-            minOutput: 0,
-            rate: 0,
-            available: false,
-            error: "No pool available",
-          };
-        }
-        poolType = "stable";
-      }
-    } catch {
+    // Find the best pool (volatile first, then stable fallback)
+    const poolMatch = await findDedustPool(tonClient, factory, fromAssetObj, toAssetObj);
+    if (!poolMatch) {
       return {
         dex: "DeDust",
         expectedOutput: 0,
         minOutput: 0,
         rate: 0,
         available: false,
-        error: "Pool lookup failed",
+        error: "No pool available",
       };
     }
+    const { pool, poolType } = poolMatch;
 
     // Resolve correct decimals
     const fromDecimals = await getDecimals(isTonInput ? "ton" : fromAsset);
