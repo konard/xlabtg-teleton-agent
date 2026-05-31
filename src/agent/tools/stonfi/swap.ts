@@ -13,6 +13,7 @@ import { StonApiClient } from "@ston-fi/api";
 import { withTxLock } from "../../../ton/tx-lock.js";
 import { getErrorMessage, isHttpError } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
+import { toUnits } from "../../../ton/units.js";
 
 const log = createLogger("Tools");
 
@@ -90,12 +91,7 @@ export const stonfiSwapExecutor: ToolExecutor<JettonSwapParams> = async (
     // Fetch decimals for accurate conversion (TON=9, USDT=6, WBTC=8, etc.)
     const fromAssetInfo = await stonApiClient.getAsset(fromAddress);
     const fromDecimals = fromAssetInfo?.decimals ?? 9;
-    // String-based conversion to avoid float precision loss with high-decimal tokens
-    const amountStr = amount.toFixed(fromDecimals);
-    const [whole, frac = ""] = amountStr.split(".");
-    const offerUnits = BigInt(
-      whole + (frac + "0".repeat(fromDecimals)).slice(0, fromDecimals)
-    ).toString();
+    const offerUnits = toUnits(amount, fromDecimals).toString();
 
     log.info(`Simulating swap: ${amount} ${fromAddress} → ${toAddress}`);
     const simulationResult = await stonApiClient.simulateSwap({

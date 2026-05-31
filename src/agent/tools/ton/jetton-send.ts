@@ -7,6 +7,7 @@ import { tonapiFetch } from "../../../constants/api-endpoints.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { toUnits } from "../../../ton/units.js";
 
 const log = createLogger("Tools");
 
@@ -103,9 +104,7 @@ export const jettonSendExecutor: ToolExecutor<JettonSendParams> = async (
     const currentBalance = BigInt(jettonBalance.balance);
 
     // Convert amount to blockchain units (string-based to avoid float precision loss)
-    const amountStr = amount.toFixed(decimals);
-    const [whole, frac = ""] = amountStr.split(".");
-    const amountInUnits = BigInt(whole + (frac + "0".repeat(decimals)).slice(0, decimals));
+    const amountInUnits = toUnits(amount, decimals);
 
     // Check sufficient balance
     if (amountInUnits > currentBalance) {

@@ -3,6 +3,7 @@ import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import { StonApiClient } from "@ston-fi/api";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
+import { toUnits } from "../../../ton/units.js";
 
 const log = createLogger("Tools");
 
@@ -59,11 +60,7 @@ export const stonfiQuoteExecutor: ToolExecutor<JettonQuoteParams> = async (
     // Fetch decimals for accurate conversion (TON=9, USDT=6, WBTC=8, etc.)
     const fromAssetInfo = await stonApiClient.getAsset(fromAddress);
     const fromDecimals = fromAssetInfo?.decimals ?? 9;
-    const amountStr = amount.toFixed(fromDecimals);
-    const [whole, frac = ""] = amountStr.split(".");
-    const offerUnits = BigInt(
-      whole + (frac + "0".repeat(fromDecimals)).slice(0, fromDecimals)
-    ).toString();
+    const offerUnits = toUnits(amount, fromDecimals).toString();
 
     const simulationResult = await stonApiClient.simulateSwap({
       offerAddress: fromAddress,
