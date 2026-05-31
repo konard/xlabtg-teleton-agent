@@ -24,6 +24,18 @@ import { getCodexApiKey, refreshCodexApiKey } from "../providers/codex-credentia
 
 const log = createLogger("LLM");
 
+/** 401/Unauthorized detection for the one-shot credential-refresh retry. */
+function isUnauthorizedError(errorMessage?: string): boolean {
+  if (!errorMessage) return false;
+  return errorMessage.includes("401") || errorMessage.toLowerCase().includes("unauthorized");
+}
+
+/** Providers whose credentials can be refreshed once on a 401, then the call retried. */
+const RETRY_401_PROVIDERS: { provider: string; refresh: () => Promise<string | null> }[] = [
+  { provider: "claude-code", refresh: refreshClaudeCodeApiKey },
+  { provider: "codex", refresh: refreshCodexApiKey },
+];
+
 export function isOAuthToken(apiKey: string, provider?: string): boolean {
   if (provider && provider !== "anthropic" && provider !== "claude-code") return false;
   return apiKey.startsWith("sk-ant-oat01-");
@@ -280,32 +292,11 @@ export async function chatWithContext(
 
   let response = await complete(model, context, completeOptions as ProviderStreamOptions);
 
-  // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials
-  if (
-    provider === "claude-code" &&
-    response.stopReason === "error" &&
-    response.errorMessage &&
-    (response.errorMessage.includes("401") ||
-      response.errorMessage.toLowerCase().includes("unauthorized"))
-  ) {
-    log.warn("Claude Code token rejected (401), refreshing credentials and retrying...");
-    const refreshedKey = await refreshClaudeCodeApiKey();
-    if (refreshedKey) {
-      completeOptions.apiKey = refreshedKey;
-      response = await complete(model, context, completeOptions as ProviderStreamOptions);
-    }
-  }
-
-  // Codex provider: retry once on 401/Unauthorized by re-reading credentials
-  if (
-    provider === "codex" &&
-    response.stopReason === "error" &&
-    response.errorMessage &&
-    (response.errorMessage.includes("401") ||
-      response.errorMessage.toLowerCase().includes("unauthorized"))
-  ) {
-    log.warn("Codex token rejected (401), re-reading credentials and retrying...");
-    const refreshedKey = await refreshCodexApiKey();
+  // Refreshable providers: retry once on 401/Unauthorized by refreshing credentials
+  const retry401 = RETRY_401_PROVIDERS.find((e) => e.provider === provider);
+  if (retry401 && response.stopReason === "error" && isUnauthorizedError(response.errorMessage)) {
+    log.warn(`${provider} token rejected (401), refreshing credentials and retrying...`);
+    const refreshedKey = await retry401.refresh();
     if (refreshedKey) {
       completeOptions.apiKey = refreshedKey;
       response = await complete(model, context, completeOptions as ProviderStreamOptions);
