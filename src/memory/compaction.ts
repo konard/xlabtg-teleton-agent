@@ -16,6 +16,7 @@ import {
   DEFAULT_CONTEXT_WINDOW,
   DEFAULT_MAX_SUMMARY_TOKENS,
   MEMORY_FLUSH_RECENT_MESSAGES,
+  CHARS_PER_TOKEN_ESTIMATE,
 } from "../constants/limits.js";
 
 const COMPACTION_PREFIX = "[Auto-compacted";
@@ -65,7 +66,7 @@ function estimateContextTokens(context: Context): number {
     }
   }
 
-  return Math.ceil(charCount / 4);
+  return Math.ceil(charCount / CHARS_PER_TOKEN_ESTIMATE);
 }
 
 export function shouldFlushMemory(
