@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Bot, InlineKeyboard, InputFile, type Context } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../constants/limits.js";
@@ -458,6 +457,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       mediaType,
       timestamp: new Date(msg.date * 1000),
       replyToId: msg.reply_to_message?.message_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bot mode stores a Grammy message where the interface types a GramJS Api.Message
       _rawMessage: msg.reply_to_message ? (msg as any) : undefined,
     };
   }
