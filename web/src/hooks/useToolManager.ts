@@ -6,10 +6,11 @@ export function useToolManager(reloadFn: () => Promise<void>) {
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const toggleEnabled = async (toolName: string, currentEnabled: boolean) => {
-    setUpdating(toolName);
+  // Shared envelope: mark `key` updating, run the mutation, reload, surface errors.
+  const runUpdate = async (key: string, body: () => Promise<unknown>) => {
+    setUpdating(key);
     try {
-      await api.updateToolConfig(toolName, { enabled: !currentEnabled });
+      await body();
       await reloadFn();
     } catch (err) {
       setError(errMsg(err));
@@ -18,49 +19,29 @@ export function useToolManager(reloadFn: () => Promise<void>) {
     }
   };
 
-  const updateScope = async (toolName: string, newScope: ToolInfo['scope']) => {
-    setUpdating(toolName);
-    try {
-      await api.updateToolConfig(toolName, { scope: newScope });
-      await reloadFn();
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setUpdating(null);
-    }
-  };
+  const toggleEnabled = (toolName: string, currentEnabled: boolean) =>
+    runUpdate(toolName, () => api.updateToolConfig(toolName, { enabled: !currentEnabled }));
 
-  const bulkToggle = async (module: ModuleInfo, enabled: boolean) => {
-    setUpdating(module.name);
-    try {
+  const updateScope = (toolName: string, newScope: ToolInfo['scope']) =>
+    runUpdate(toolName, () => api.updateToolConfig(toolName, { scope: newScope }));
+
+  const bulkToggle = (module: ModuleInfo, enabled: boolean) =>
+    runUpdate(module.name, async () => {
       for (const tool of module.tools) {
         if (tool.enabled !== enabled) {
           await api.updateToolConfig(tool.name, { enabled });
         }
       }
-      await reloadFn();
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setUpdating(null);
-    }
-  };
+    });
 
-  const bulkScope = async (module: ModuleInfo, scope: ToolInfo['scope']) => {
-    setUpdating(module.name);
-    try {
+  const bulkScope = (module: ModuleInfo, scope: ToolInfo['scope']) =>
+    runUpdate(module.name, async () => {
       for (const tool of module.tools) {
         if (tool.scope !== scope) {
           await api.updateToolConfig(tool.name, { scope });
         }
       }
-      await reloadFn();
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setUpdating(null);
-    }
-  };
+    });
 
   return { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope };
 }
