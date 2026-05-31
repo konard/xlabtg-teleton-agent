@@ -92,6 +92,51 @@ function findJettonBalance(
   });
 }
 
+/** Normalized jetton metadata from the TonAPI `/jettons/{addr}` endpoint. */
+interface JettonMeta {
+  address: string;
+  decimals: number;
+  symbol: string;
+  name: string;
+  totalSupply: string;
+  holdersCount: number;
+  verified: boolean;
+  description?: string;
+  image?: string;
+}
+
+/**
+ * Fetch jetton metadata from TonAPI `/jettons/{addr}` with a SINGLE decimals parse.
+ * Returns the HTTP `ok`/`status` so each caller keeps its own graceful error policy;
+ * `meta` is only populated when the response was ok.
+ */
+async function fetchJettonMeta(
+  jettonAddress: string
+): Promise<{ ok: boolean; status: number; meta: JettonMeta | null }> {
+  const response = await tonapiFetch(`/jettons/${encodeURIComponent(jettonAddress)}`);
+  if (!response.ok) {
+    return { ok: false, status: response.status, meta: null };
+  }
+
+  const data = await response.json();
+  const metadata = data.metadata || {};
+  return {
+    ok: true,
+    status: response.status,
+    meta: {
+      address: metadata.address || jettonAddress,
+      decimals: parseInt(metadata.decimals || "9"),
+      symbol: metadata.symbol || "UNKNOWN",
+      name: metadata.name || "Unknown",
+      totalSupply: data.total_supply || "0",
+      holdersCount: data.holders_count || 0,
+      verified: data.verification === "whitelist",
+      description: metadata.description || undefined,
+      image: data.preview || metadata.image || undefined,
+    },
+  };
+}
+
 function cleanupOldTransactions(
   db: Database.Database,
   retentionDays: number,
@@ -335,27 +380,23 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
 
     async getJettonInfo(jettonAddress: string): Promise<JettonInfo | null> {
       try {
-        const response = await tonapiFetch(`/jettons/${encodeURIComponent(jettonAddress)}`);
-        if (response.status === 404) return null;
-        if (!response.ok) {
-          log.error(`ton.getJettonInfo() TonAPI error: ${response.status}`);
+        const { ok, status, meta } = await fetchJettonMeta(jettonAddress);
+        if (status === 404) return null;
+        if (!ok || !meta) {
+          log.error(`ton.getJettonInfo() TonAPI error: ${status}`);
           return null;
         }
 
-        const data = await response.json();
-        const metadata = data.metadata || {};
-        const decimals = parseInt(metadata.decimals || "9");
-
         return {
-          address: metadata.address || jettonAddress,
-          name: metadata.name || "Unknown",
-          symbol: metadata.symbol || "UNKNOWN",
-          decimals,
-          totalSupply: data.total_supply || "0",
-          holdersCount: data.holders_count || 0,
-          verified: data.verification === "whitelist",
-          description: metadata.description || undefined,
-          image: data.preview || metadata.image || undefined,
+          address: meta.address,
+          name: meta.name,
+          symbol: meta.symbol,
+          decimals: meta.decimals,
+          totalSupply: meta.totalSupply,
+          holdersCount: meta.holdersCount,
+          verified: meta.verified,
+          description: meta.description,
+          image: meta.image,
         };
       } catch (error) {
         log.error("ton.getJettonInfo() failed:", error);
@@ -895,11 +936,11 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         const effectiveLimit = Math.min(limit ?? 10, 100);
 
         // Parallel fetch: holders + decimals info
-        const [holdersResponse, infoResponse] = await Promise.all([
+        const [holdersResponse, info] = await Promise.all([
           tonapiFetch(
             `/jettons/${encodeURIComponent(jettonAddress)}/holders?limit=${effectiveLimit}`
           ),
-          tonapiFetch(`/jettons/${encodeURIComponent(jettonAddress)}`),
+          fetchJettonMeta(jettonAddress),
         ]);
 
         if (!holdersResponse.ok) {
@@ -910,11 +951,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
         const data = await holdersResponse.json();
         const addresses = data.addresses || [];
 
-        let decimals = 9;
-        if (infoResponse.ok) {
-          const infoData = await infoResponse.json();
-          decimals = parseInt(infoData.metadata?.decimals || "9");
-        }
+        const decimals = info.meta?.decimals ?? 9;
 
         return addresses.map((h: TonApiJettonHolder, index: number) => {
           return {
