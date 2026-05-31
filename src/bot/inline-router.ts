@@ -8,6 +8,7 @@
 
 import type { Context, MiddlewareFn } from "grammy";
 import type { InlineQueryResult } from "@grammyjs/types";
+import { getGramJSErrorMessage } from "../utils/errors.js";
 import type {
   InlineQueryContext,
   InlineResult,
@@ -245,7 +246,7 @@ export class InlineRouter {
               });
               return;
             } catch (error: unknown) {
-              const errMsg = (error as Record<string, unknown>)?.errorMessage;
+              const errMsg = getGramJSErrorMessage(error);
               if (errMsg === "MESSAGE_NOT_MODIFIED") return;
               log.debug(`GramJS edit failed, falling back to Grammy: ${errMsg || error}`);
             }

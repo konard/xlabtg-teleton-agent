@@ -6,6 +6,7 @@
 import { Bot, type MiddlewareFn, type Context } from "grammy";
 import { Api } from "telegram";
 import type Database from "better-sqlite3";
+import { getGramJSErrorMessage, getGrammyErrorDescription } from "../utils/errors.js";
 import type { BotConfig, DealContext } from "./types.js";
 import { DEAL_VERIFICATION_WINDOW_SECONDS } from "../constants/limits.js";
 import { decodeCallback } from "./types.js";
@@ -172,7 +173,7 @@ export class DealBot {
               await this.editViaGramJS(inlineMessageId, text, buttons);
               edited = true;
             } catch (error: unknown) {
-              const errMsg = (error as Record<string, unknown>)?.errorMessage;
+              const errMsg = getGramJSErrorMessage(error);
               log.warn(
                 { err: error },
                 `[Bot] chosen_inline_result GramJS edit failed: ${errMsg || error}`
@@ -189,7 +190,7 @@ export class DealBot {
                 reply_markup: keyboard,
               });
             } catch (error: unknown) {
-              const errDesc = (error as Record<string, unknown>)?.description;
+              const errDesc = getGrammyErrorDescription(error);
               log.error(
                 { err: error },
                 `[Bot] chosen_inline_result Grammy fallback failed: ${errDesc || error}`
@@ -401,7 +402,7 @@ export class DealBot {
         await this.editViaGramJS(inlineMsgId, text, buttons);
         return;
       } catch (error: unknown) {
-        const errMsg = (error as Record<string, unknown>)?.errorMessage;
+        const errMsg = getGramJSErrorMessage(error);
         if (errMsg === "MESSAGE_NOT_MODIFIED") return;
         log.warn(
           { err: error },
@@ -418,7 +419,7 @@ export class DealBot {
         reply_markup: keyboard,
       });
     } catch (error: unknown) {
-      const desc = (error as Record<string, string>)?.description;
+      const desc = getGrammyErrorDescription(error);
       if (desc?.includes("message is not modified")) return;
       log.error({ err: error }, "[Bot] Failed to edit inline message");
     }
@@ -434,7 +435,7 @@ export class DealBot {
         await this.editViaGramJS(inlineMessageId, text, buttons);
         return;
       } catch (error: unknown) {
-        const errMsg = (error as Record<string, unknown>)?.errorMessage;
+        const errMsg = getGramJSErrorMessage(error);
         if (errMsg === "MESSAGE_NOT_MODIFIED") return;
         log.warn(
           { err: error },
