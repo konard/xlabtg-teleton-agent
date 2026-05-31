@@ -14,6 +14,43 @@ export function isContextOverflowError(errorMessage?: string): boolean {
   );
 }
 
+export function isRateLimitError(errorMessage?: string): boolean {
+  if (!errorMessage) return false;
+  return errorMessage.includes("429") || errorMessage.toLowerCase().includes("rate");
+}
+
+export function isServerError(errorMessage?: string): boolean {
+  if (!errorMessage) return false;
+  return (
+    errorMessage.includes("500") ||
+    errorMessage.includes("502") ||
+    errorMessage.includes("503") ||
+    errorMessage.includes("529") ||
+    errorMessage.includes("overloaded") ||
+    errorMessage.includes("Internal server error") ||
+    errorMessage.includes("api_error")
+  );
+}
+
+export type LlmErrorKind = "context_overflow" | "rate_limit" | "server_error" | "unknown";
+
+/**
+ * Single source of truth for LLM error classification. Both the response:error
+ * hook (errorCode) and the retry-dispatch switch consume this, so a 529/overloaded
+ * can no longer be reported as UNKNOWN to the hook while being retried internally.
+ * Precedence matches the control-flow dispatch: overflow → rate-limit → server.
+ */
+export function classifyLlmError(errorMessage?: string): {
+  kind: LlmErrorKind;
+  code: "CONTEXT_OVERFLOW" | "RATE_LIMIT" | "PROVIDER_ERROR" | "UNKNOWN";
+} {
+  if (isContextOverflowError(errorMessage))
+    return { kind: "context_overflow", code: "CONTEXT_OVERFLOW" };
+  if (isRateLimitError(errorMessage)) return { kind: "rate_limit", code: "RATE_LIMIT" };
+  if (isServerError(errorMessage)) return { kind: "server_error", code: "PROVIDER_ERROR" };
+  return { kind: "unknown", code: "UNKNOWN" };
+}
+
 /**
  * Parse a Retry-After hint (in seconds) from a provider error string, if present.
  * Mirrors the precedent in flood-retry.ts. Returns milliseconds (capped at 60s), or null.

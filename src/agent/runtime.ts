@@ -68,12 +68,12 @@ import type {
   PromptAfterEvent,
 } from "../sdk/hooks/types.js";
 import {
-  isContextOverflowError,
   isTrivialMessage,
   extractContextSummary,
   parseRetryAfterMs,
   summarizeToolParams,
   enrichRAGQuery,
+  classifyLlmError,
 } from "./runtime-utils.js";
 import { isBotBridge } from "../telegram/bridge-guards.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
@@ -770,17 +770,11 @@ export class AgentRuntime {
 
       if (assistantMsg.stopReason === "error") {
         const errorMsg = assistantMsg.errorMessage || "";
+        const errorClass = classifyLlmError(errorMsg);
 
         // Hook: response:error — fire on all LLM errors
         if (this.hookRunner) {
-          const errorCode =
-            errorMsg.includes("429") || errorMsg.toLowerCase().includes("rate")
-              ? "RATE_LIMIT"
-              : isContextOverflowError(errorMsg)
-                ? "CONTEXT_OVERFLOW"
-                : errorMsg.includes("500") || errorMsg.includes("502") || errorMsg.includes("503")
-                  ? "PROVIDER_ERROR"
-                  : "UNKNOWN";
+          const errorCode = errorClass.code;
           const responseErrorEvent: ResponseErrorEvent = {
             chatId,
             sessionId: session.sessionId,
@@ -795,7 +789,7 @@ export class AgentRuntime {
           await this.hookRunner.runObservingHook("response:error", responseErrorEvent);
         }
 
-        if (isContextOverflowError(errorMsg)) {
+        if (errorClass.kind === "context_overflow") {
           overflowResets++;
           if (overflowResets > 1) {
             throw new Error(
@@ -826,7 +820,7 @@ export class AgentRuntime {
           log.info(`Retrying with fresh context...`);
           iteration--; // recovery retry, not a productive iteration — don't consume the budget
           continue;
-        } else if (errorMsg.toLowerCase().includes("rate") || errorMsg.includes("429")) {
+        } else if (errorClass.kind === "rate_limit") {
           rateLimitRetries++;
           if (rateLimitRetries <= RATE_LIMIT_MAX_RETRIES) {
             // Respect server Retry-After as a floor; else exponential backoff. Positive jitter de-syncs retries.
@@ -843,15 +837,7 @@ export class AgentRuntime {
           throw new Error(
             `API rate limited after ${RATE_LIMIT_MAX_RETRIES} retries. Please try again later.`
           );
-        } else if (
-          errorMsg.includes("500") ||
-          errorMsg.includes("502") ||
-          errorMsg.includes("503") ||
-          errorMsg.includes("529") ||
-          errorMsg.includes("overloaded") ||
-          errorMsg.includes("Internal server error") ||
-          errorMsg.includes("api_error")
-        ) {
+        } else if (errorClass.kind === "server_error") {
           serverErrorRetries++;
           if (serverErrorRetries <= SERVER_ERROR_MAX_RETRIES) {
             const delay =
