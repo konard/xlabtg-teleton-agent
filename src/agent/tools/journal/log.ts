@@ -7,6 +7,7 @@ import { Type } from "@sinclair/typebox";
 import { getDatabase } from "../../../memory/database.js";
 import { JournalStore } from "../../../memory/journal-store.js";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
+import { formatAssetFlow, formatTxHash } from "./format.js";
 
 interface JournalLogParams {
   type: "trade" | "gift" | "middleman" | "kol";
@@ -104,12 +105,9 @@ export const journalLogExecutor: ToolExecutor<JournalLogParams> = async (
     `**Action**: ${entry.action}`,
   ];
 
-  if (entry.asset_from || entry.asset_to) {
-    const fromStr = entry.asset_from
-      ? `${entry.amount_from?.toFixed(4) ?? "?"} ${entry.asset_from}`
-      : "—";
-    const toStr = entry.asset_to ? `${entry.amount_to?.toFixed(4) ?? "?"} ${entry.asset_to}` : "—";
-    lines.push(`**Assets**: ${fromStr} → ${toStr}`);
+  const assetFlow = formatAssetFlow(entry);
+  if (assetFlow) {
+    lines.push(`**Assets**: ${assetFlow}`);
   }
 
   if (entry.price_ton) {
@@ -128,7 +126,7 @@ export const journalLogExecutor: ToolExecutor<JournalLogParams> = async (
   lines.push(`**Reasoning**: ${entry.reasoning}`);
 
   if (entry.tx_hash) {
-    lines.push(`**TX**: \`${entry.tx_hash.slice(0, 16)}...\``);
+    lines.push(`**TX**: ${formatTxHash(entry.tx_hash)}`);
   }
 
   lines.push(``, `_Logged at ${new Date(entry.created_at * 1000).toISOString()}_`);

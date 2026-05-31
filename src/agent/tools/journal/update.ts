@@ -7,6 +7,7 @@ import { Type } from "@sinclair/typebox";
 import { getDatabase } from "../../../memory/database.js";
 import { JournalStore } from "../../../memory/journal-store.js";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
+import { outcomeEmoji, formatAssetFlow, formatTxHash } from "./format.js";
 
 interface JournalUpdateParams {
   id: number;
@@ -87,28 +88,12 @@ export const journalUpdateExecutor: ToolExecutor<JournalUpdateParams> = async (
     `**Type**: ${updated.type} - ${updated.action}`,
   ];
 
-  if (updated.asset_from || updated.asset_to) {
-    const fromStr = updated.asset_from
-      ? `${updated.amount_from?.toFixed(4) ?? "?"} ${updated.asset_from}`
-      : "—";
-    const toStr = updated.asset_to
-      ? `${updated.amount_to?.toFixed(4) ?? "?"} ${updated.asset_to}`
-      : "—";
-    lines.push(`**Assets**: ${fromStr} → ${toStr}`);
+  const assetFlow = formatAssetFlow(updated);
+  if (assetFlow) {
+    lines.push(`**Assets**: ${assetFlow}`);
   }
 
-  const outcomeEmoji =
-    updated.outcome === "profit"
-      ? "✅"
-      : updated.outcome === "loss"
-        ? "❌"
-        : updated.outcome === "pending"
-          ? "⏳"
-          : updated.outcome === "cancelled"
-            ? "🚫"
-            : "➖";
-
-  lines.push(`**Outcome**: ${outcomeEmoji} ${updated.outcome}`);
+  lines.push(`**Outcome**: ${outcomeEmoji(updated.outcome)} ${updated.outcome}`);
 
   if (updated.pnl_ton !== null && updated.pnl_ton !== undefined) {
     const sign = updated.pnl_ton >= 0 ? "+" : "";
@@ -118,7 +103,7 @@ export const journalUpdateExecutor: ToolExecutor<JournalUpdateParams> = async (
   }
 
   if (updated.tx_hash) {
-    lines.push(`**TX**: \`${updated.tx_hash.slice(0, 16)}...\``);
+    lines.push(`**TX**: ${formatTxHash(updated.tx_hash)}`);
   }
 
   if (updated.closed_at) {
