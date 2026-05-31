@@ -19,6 +19,7 @@ import {
 } from "./middleware/auth.js";
 import { logInterceptor } from "./log-interceptor.js";
 import { SHARED_ROUTE_FACTORIES } from "./routes/shared.js";
+import { createAgentRoutes } from "../api/routes/agent.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createWalletRoutes } from "./routes/wallet.js";
 import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
@@ -166,56 +167,13 @@ export class WebUIServer {
     this.app.route("/api/conversations", createConversationRoutes(this.deps));
     this.app.route("/api/wallet", createWalletRoutes(this.deps));
 
-    // Agent lifecycle routes
-    this.app.post("/api/agent/start", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      const state = lifecycle.getState();
-      if (state === "running") {
-        return c.json({ state: "running" }, 409);
-      }
-      if (state === "stopping") {
-        return c.json({ error: "Agent is currently stopping, please wait" }, 409);
-      }
-      // Fire-and-forget: start is async, we return immediately
-      lifecycle.start().catch((err: Error) => {
-        log.error({ err }, "Agent start failed");
-      });
-      return c.json({ state: "starting" });
-    });
-
-    this.app.post("/api/agent/stop", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      const state = lifecycle.getState();
-      if (state === "stopped") {
-        return c.json({ state: "stopped" }, 409);
-      }
-      if (state === "starting") {
-        return c.json({ error: "Agent is currently starting, please wait" }, 409);
-      }
-      // Fire-and-forget: stop is async, we return immediately
-      lifecycle.stop().catch((err: Error) => {
-        log.error({ err }, "Agent stop failed");
-      });
-      return c.json({ state: "stopping" });
-    });
-
-    this.app.get("/api/agent/status", (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      return c.json({
-        state: lifecycle.getState(),
-        uptime: lifecycle.getUptime(),
-        error: lifecycle.getError() ?? null,
-      });
-    });
+    // Agent lifecycle routes (start/stop/status/restart) with WebUI error envelope
+    this.app.route(
+      "/api/agent",
+      createAgentRoutes(this.deps.lifecycle, {
+        errorResponse: (c, status, _title, detail) => c.json({ error: detail }, status as 503),
+      })
+    );
 
     this.app.get("/api/agent/mode", (c) => {
       const raw = readRawConfig(this.deps.configPath);
