@@ -399,12 +399,18 @@ export class ToolRegistry {
    */
   registerPluginTools(
     pluginName: string,
-    tools: Array<{ tool: Tool; executor: ToolExecutor; scope?: ToolScope }>
+    tools: Array<{ tool: Tool; executor: ToolExecutor; scope?: ToolScope; mode?: ToolMode }>
   ): number {
     const names: string[] = [];
-    for (const { tool, executor, scope } of tools) {
+    for (const { tool, executor, scope, mode } of tools) {
       if (this.tools.has(tool.name)) continue;
-      this.insertTool(tool.name, { tool, executor, scope, mode: "both", module: pluginName });
+      this.insertTool(tool.name, {
+        tool,
+        executor,
+        scope,
+        mode: mode ?? "both",
+        module: pluginName,
+      });
       names.push(tool.name);
     }
     this.pluginToolNames.set(pluginName, names);
@@ -441,13 +447,13 @@ export class ToolRegistry {
    */
   replacePluginTools(
     pluginName: string,
-    newTools: Array<{ tool: Tool; executor: ToolExecutor; scope?: ToolScope }>
+    newTools: Array<{ tool: Tool; executor: ToolExecutor; scope?: ToolScope; mode?: ToolMode }>
   ): void {
     // Collect old tool names before removal (allowed to re-register these)
     const previousNames = new Set(this.pluginToolNames.get(pluginName) ?? []);
     this.removePluginTools(pluginName);
     const names: string[] = [];
-    for (const { tool, executor, scope } of newTools) {
+    for (const { tool, executor, scope, mode } of newTools) {
       // Prevent overwriting core/other-plugin tools
       if (this.tools.has(tool.name) && !previousNames.has(tool.name)) {
         log.warn(
@@ -455,7 +461,13 @@ export class ToolRegistry {
         );
         continue;
       }
-      this.insertTool(tool.name, { tool, executor, scope, mode: "both", module: pluginName });
+      this.insertTool(tool.name, {
+        tool,
+        executor,
+        scope,
+        mode: mode ?? "both",
+        module: pluginName,
+      });
       names.push(tool.name);
     }
     this.pluginToolNames.set(pluginName, names);
