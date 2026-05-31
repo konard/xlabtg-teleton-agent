@@ -2,17 +2,17 @@ import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import {
   loadWallet,
-  getKeyPair,
   getCachedTonClient,
   invalidateTonClientCache,
 } from "../../../ton/wallet-service.js";
-import { WalletContractV5R1, toNano, fromNano } from "@ton/ton";
+import { toNano, fromNano } from "@ton/ton";
 import { Address } from "@ton/core";
 import { Factory, Asset, ReadinessStatus, JettonRoot, VaultJetton } from "@dedust/sdk";
 import { DEDUST_FACTORY_MAINNET, DEDUST_GAS, NATIVE_TON_ADDRESS } from "./constants.js";
 import { findDedustPool } from "./pool.js";
 import { getDecimals, toUnits, fromUnits } from "./asset-cache.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { openWallet } from "../../../ton/wallet-open.js";
 import { getErrorMessage, isHttpError } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 
@@ -143,15 +143,11 @@ export const dedustSwapExecutor: ToolExecutor<DedustSwapParams> = async (
     // Prepare wallet and sender — wrapped in tx lock to prevent seqno races
     // with concurrent StonFi or other DeDust swaps
     return withTxLock(async () => {
-      const keyPair = await getKeyPair();
-      if (!keyPair) {
+      const opened = await openWallet(tonClient);
+      if (!opened) {
         return { success: false, error: "Wallet key derivation failed." };
       }
-      const wallet = WalletContractV5R1.create({
-        workchain: 0,
-        publicKey: keyPair.publicKey,
-      });
-      const walletContract = tonClient.open(wallet);
+      const { keyPair, contract: walletContract } = opened;
       const sender = walletContract.sender(keyPair.secretKey);
 
       if (isTonInput) {

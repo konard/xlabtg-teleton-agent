@@ -2,15 +2,15 @@ import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import {
   loadWallet,
-  getKeyPair,
   getCachedTonClient,
   invalidateTonClientCache,
 } from "../../../ton/wallet-service.js";
-import { WalletContractV5R1, fromNano, internal } from "@ton/ton";
+import { fromNano, internal } from "@ton/ton";
 import { SendMode } from "@ton/core";
 import { dexFactory } from "@ston-fi/sdk";
 import { StonApiClient } from "@ston-fi/api";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { openWallet } from "../../../ton/wallet-open.js";
 import { getErrorMessage, isHttpError } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { toUnits } from "../../../ton/units.js";
@@ -111,15 +111,11 @@ export const stonfiSwapExecutor: ToolExecutor<JettonSwapParams> = async (
     const router = tonClient.open(contracts.Router.create(routerInfo.address));
 
     return withTxLock(async () => {
-      const keyPair = await getKeyPair();
-      if (!keyPair) {
+      const opened = await openWallet(tonClient);
+      if (!opened) {
         return { success: false, error: "Wallet key derivation failed." };
       }
-      const wallet = WalletContractV5R1.create({
-        workchain: 0,
-        publicKey: keyPair.publicKey,
-      });
-      const walletContract = tonClient.open(wallet);
+      const { keyPair, wallet, contract: walletContract } = opened;
       const seqno = await walletContract.getSeqno();
 
       let txParams;

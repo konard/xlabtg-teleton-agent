@@ -1,11 +1,12 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { loadWallet, getKeyPair, getCachedTonClient } from "../../../ton/wallet-service.js";
-import { WalletContractV5R1, toNano, internal, beginCell } from "@ton/ton";
+import { loadWallet } from "../../../ton/wallet-service.js";
+import { toNano, internal, beginCell } from "@ton/ton";
 import { Address, SendMode } from "@ton/core";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { openWallet } from "../../../ton/wallet-open.js";
 
 const log = createLogger("Tools");
 
@@ -62,18 +63,11 @@ export const dnsStartAuctionExecutor: ToolExecutor<DnsStartAuctionParams> = asyn
       };
     }
 
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
+    const opened = await openWallet();
+    if (!opened) {
       return { success: false, error: "Wallet key derivation failed." };
     }
-
-    const wallet = WalletContractV5R1.create({
-      workchain: 0,
-      publicKey: keyPair.publicKey,
-    });
-
-    const client = await getCachedTonClient();
-    const contract = client.open(wallet);
+    const { keyPair, contract } = opened;
 
     await withTxLock(async () => {
       const seqno = await contract.getSeqno();
