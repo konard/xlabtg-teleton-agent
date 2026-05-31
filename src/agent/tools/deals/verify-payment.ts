@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import type { Deal } from "../../../deals/types.js";
+import { loadDealForActor } from "./load-deal.js";
 import { verifyPayment } from "../../../ton/payment-verifier.js";
 import { GiftDetector } from "../../../deals/gift-detector.js";
 import { getWalletAddress } from "../../../ton/wallet-service.js";
@@ -28,26 +28,19 @@ export const dealVerifyPaymentExecutor: ToolExecutor<DealVerifyPaymentParams> = 
   context
 ): Promise<ToolResult> => {
   try {
-    // Load deal from database
-    const deal = context.db.prepare(`SELECT * FROM deals WHERE id = ?`).get(params.dealId) as
-      | Deal
-      | undefined;
-
-    if (!deal) {
-      return {
-        success: false,
-        error: `Deal #${params.dealId} not found`,
-      };
-    }
-
-    // User-scoping: only deal owner or admins can verify payment
+    // Load deal + enforce owner/admin access
     const adminIds = context.config?.telegram.admin_ids ?? [];
-    if (context.senderId !== deal.user_telegram_id && !adminIds.includes(context.senderId)) {
-      return {
-        success: false,
-        error: `⛔ You can only verify payment for your own deals.`,
-      };
+    const loaded = loadDealForActor(
+      context.db,
+      params.dealId,
+      context.senderId,
+      adminIds,
+      "verify payment for"
+    );
+    if (!loaded.ok) {
+      return { success: false, error: loaded.error };
     }
+    const deal = loaded.deal;
 
     // Check deal status
     if (deal.status !== "accepted") {
