@@ -3,11 +3,9 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
-import { getClient } from "../../../../sdk/telegram-utils.js";
+import { getClient, validateChannelUsername } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
-
-const USERNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$/;
 
 interface SetChannelUsernameParams {
   channelId: string;
@@ -37,15 +35,11 @@ export const telegramSetChannelUsernameExecutor: ToolExecutor<SetChannelUsername
 ): Promise<ToolResult> => {
   try {
     const { channelId, username } = params;
-    const clean = username.replace(/^@/, "");
-
-    if (clean.length > 0 && !USERNAME_REGEX.test(clean)) {
-      return {
-        success: false,
-        error:
-          "Invalid username format. Must be 5-32 characters, alphanumeric and underscores only, cannot start/end with underscore.",
-      };
+    const validation = validateChannelUsername(username, { allowEmpty: true });
+    if (!validation.ok) {
+      return { success: false, error: validation.error };
     }
+    const clean = validation.clean;
 
     const gramJsClient = getClient(context.bridge);
     const entity = await gramJsClient.getEntity(channelId);

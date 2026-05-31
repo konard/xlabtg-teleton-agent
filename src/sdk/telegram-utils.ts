@@ -22,6 +22,34 @@ export function getClient(bridge: ITelegramBridge) {
   return bridge.getClient().getClient();
 }
 
+/** Canonical public-username rule for channels/groups (5-32 chars, no leading/trailing underscore). */
+const CHANNEL_USERNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$/;
+
+/** Strip a leading "@" from a username. */
+export function cleanUsername(input: string): string {
+  return input.replace(/^@/, "");
+}
+
+/**
+ * Validate a channel/group public username against the canonical Telegram rule.
+ * Pass `allowEmpty` when an empty value is meaningful (e.g. removing a username).
+ */
+export function validateChannelUsername(
+  input: string,
+  options: { allowEmpty?: boolean } = {}
+): { ok: true; clean: string } | { ok: false; error: string } {
+  const clean = cleanUsername(input);
+  const invalid = clean.length === 0 ? !options.allowEmpty : !CHANNEL_USERNAME_REGEX.test(clean);
+  if (invalid) {
+    return {
+      ok: false,
+      error:
+        "Invalid username format. Must be 5-32 characters, alphanumeric and underscores only, cannot start/end with underscore.",
+    };
+  }
+  return { ok: true, clean };
+}
+
 /** Convert a GramJS message to a SimpleMessage */
 export function toSimpleMessage(msg: Api.Message): SimpleMessage {
   const fromId = msg.fromId;
