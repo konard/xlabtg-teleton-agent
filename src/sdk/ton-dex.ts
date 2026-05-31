@@ -18,6 +18,7 @@ import type { Pool } from "@dedust/sdk";
 import { DEDUST_FACTORY_MAINNET, DEDUST_GAS } from "../agent/tools/dedust/constants.js";
 import { getDecimals, toUnits, fromUnits } from "../agent/tools/dedust/asset-cache.js";
 import { withTxLock } from "../ton/tx-lock.js";
+import { STONFI_PTON_ADDRESS } from "../ton/dex-constants.js";
 
 import type { OpenedContract } from "@ton/ton";
 
@@ -43,7 +44,7 @@ async function findDedustPool(
   }
 }
 
-const STONFI_NATIVE_TON = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
+const STONFI_NATIVE_TON = STONFI_PTON_ADDRESS;
 
 const stonApiClient = new StonApiClient();
 

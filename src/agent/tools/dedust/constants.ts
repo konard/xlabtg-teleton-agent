@@ -2,6 +2,8 @@
  * DeDust DEX constants
  */
 
+import { STONFI_PTON_ADDRESS } from "../../../ton/dex-constants.js";
+
 // Factory contract address on mainnet
 export const DEDUST_FACTORY_MAINNET = "EQBfBWT7X2BHg9tXAxzhz2aKiNTU1tpt5NsiK0uSDW_YAJ67";
 
@@ -20,5 +22,5 @@ export const DEDUST_GAS = {
   FORWARD_GAS: "0.2",
 };
 
-// Native TON address (zero address used in DeDust)
-export const NATIVE_TON_ADDRESS = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
+// pTON proxy address (shared with STON.fi); re-exported from the neutral source
+export const NATIVE_TON_ADDRESS = STONFI_PTON_ADDRESS;

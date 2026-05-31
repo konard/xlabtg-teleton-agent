@@ -4,11 +4,9 @@ import { StonApiClient } from "@ston-fi/api";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { toUnits } from "../../../ton/units.js";
+import { STONFI_PTON_ADDRESS as NATIVE_TON_ADDRESS } from "../../../ton/dex-constants.js";
 
 const log = createLogger("Tools");
-
-// Native TON address used by STON.fi API
-const NATIVE_TON_ADDRESS = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
 interface JettonQuoteParams {
   from_asset: string;
   to_asset: string;
