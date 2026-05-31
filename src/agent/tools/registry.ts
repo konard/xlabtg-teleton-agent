@@ -3,6 +3,7 @@ import type { Tool as PiAiTool, ToolCall } from "@mariozechner/pi-ai";
 import type { TSchema } from "@sinclair/typebox";
 import type {
   RegisteredTool,
+  RuntimeMode,
   Tool,
   ToolContext,
   ToolEntry,
@@ -39,12 +40,12 @@ export class ToolRegistry {
   private toolIndex: ToolIndex | null = null;
   private embedderRef: EmbeddingProvider | null = null;
   private onToolsChangedCallbacks: Array<(removed: string[], added: PiAiTool[]) => void> = [];
-  private mode: "user" | "bot";
+  private mode: RuntimeMode;
   private toolModes: Map<string, ToolMode> = new Map();
   private toolTags: Map<string, string[]> = new Map();
   private allowFrom: Set<number> = new Set();
 
-  constructor(mode: "user" | "bot" = "user") {
+  constructor(mode: RuntimeMode = "user") {
     this.mode = mode;
   }
 
@@ -74,7 +75,7 @@ export class ToolRegistry {
     this.permissions = mp;
   }
 
-  setMode(mode: "user" | "bot"): void {
+  setMode(mode: RuntimeMode): void {
     this.mode = mode;
     this.toolArrayCache = null;
     const count = Array.from(this.tools.values()).filter((rt) => {

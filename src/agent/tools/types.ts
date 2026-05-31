@@ -68,6 +68,12 @@ export type ToolScope =
 export type ToolMode = "user" | "bot" | "both";
 
 /**
+ * The two runtime bridge modes a registry can operate in. A tool's "both" is a
+ * declaration, not a runtime mode — the registry itself is always user or bot.
+ */
+export type RuntimeMode = Exclude<ToolMode, "both">;
+
+/**
  * Tool definition compatible with pi-ai
  */
 export interface Tool<TParameters extends TSchema = TSchema> {
