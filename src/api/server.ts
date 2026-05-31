@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { timeout } from "hono/timeout";
-import { streamSSE } from "hono/streaming";
 import { serve, type ServerType } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
 import { createServer as createHttpsServer } from "node:https";
@@ -17,7 +16,7 @@ import { ensureTlsCert, type TlsCert } from "./tls.js";
 import type { ApiServerDeps } from "./deps.js";
 import { createDepsAdapter } from "./deps.js";
 import type { ApiConfig } from "../config/schema.js";
-import type { StateChangeEvent } from "../agent/lifecycle.js";
+import { createLifecycleSSE } from "../webui/lifecycle-sse.js";
 import { createProblem } from "./schemas/common.js";
 
 // Middleware
@@ -333,51 +332,7 @@ export class ApiServer {
         );
       }
 
-      return streamSSE(c, async (stream) => {
-        let aborted = false;
-
-        stream.onAbort(() => {
-          aborted = true;
-        });
-
-        const now = Date.now();
-        await stream.writeSSE({
-          event: "status",
-          id: String(now),
-          data: JSON.stringify({
-            state: lifecycle.getState(),
-            error: lifecycle.getError() ?? null,
-            timestamp: now,
-          }),
-          retry: 3000,
-        });
-
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
-        lifecycle.on("stateChange", onStateChange);
-
-        while (!aborted) {
-          await stream.sleep(30_000);
-          if (aborted) break;
-          await stream.writeSSE({
-            event: "ping",
-            data: "",
-          });
-        }
-
-        lifecycle.off("stateChange", onStateChange);
-      });
+      return createLifecycleSSE(c, lifecycle);
     });
 
     // New API-only routes under /v1/

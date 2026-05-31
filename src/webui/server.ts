@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { streamSSE } from "hono/streaming";
 import { bodyLimit } from "hono/body-limit";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 import type { Server as HttpServer } from "node:http";
@@ -10,7 +9,7 @@ import { readFile } from "node:fs/promises";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WebUIServerDeps } from "./types.js";
-import type { StateChangeEvent } from "../agent/lifecycle.js";
+import { createLifecycleSSE } from "./lifecycle-sse.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("WebUI");
@@ -360,54 +359,7 @@ export class WebUIServer {
         return c.json({ error: "Agent lifecycle not available" }, 503);
       }
 
-      return streamSSE(c, async (stream) => {
-        let aborted = false;
-
-        stream.onAbort(() => {
-          aborted = true;
-        });
-
-        // Push current state immediately on connection
-        const now = Date.now();
-        await stream.writeSSE({
-          event: "status",
-          id: String(now),
-          data: JSON.stringify({
-            state: lifecycle.getState(),
-            error: lifecycle.getError() ?? null,
-            timestamp: now,
-          }),
-          retry: 3000,
-        });
-
-        // Listen for state changes
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
-        lifecycle.on("stateChange", onStateChange);
-
-        // Heartbeat loop + keep connection alive
-        while (!aborted) {
-          await stream.sleep(30_000);
-          if (aborted) break;
-          await stream.writeSSE({
-            event: "ping",
-            data: "",
-          });
-        }
-
-        lifecycle.off("stateChange", onStateChange);
-      });
+      return createLifecycleSSE(c, lifecycle);
     });
 
     // Serve static files in production (if built)
