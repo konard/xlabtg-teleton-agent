@@ -104,6 +104,72 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
+ * Auto-detect provider credentials (Claude Code / Codex), with a manual
+ * API-key fallback. Returns the resolved api key (empty when auto-detected,
+ * since it is read at runtime) and the STEPS[1].value status string.
+ */
+async function handleAutoDetectedProvider(opts: {
+  getKey: () => string;
+  isValid: () => boolean;
+  displayName: string;
+  noteTitle: string;
+  detectedFromMsg: string;
+  statusExpiredMsg: string;
+  noteFooterMsg: string;
+  notFoundHint: string;
+  fallbackKeyLabel: string;
+  prompter: ReturnType<typeof createPrompter>;
+}): Promise<{ apiKey: string; stepValue: string }> {
+  let apiKey = "";
+  let detected = false;
+  try {
+    const key = opts.getKey();
+    const valid = opts.isValid();
+    apiKey = ""; // Don't store in config — auto-detected at runtime
+    detected = true;
+    const masked = maskSecret(key, 12, 4);
+    noteBox(
+      `${opts.detectedFromMsg}\n` +
+        `Key: ${masked}\n` +
+        `Status: ${valid ? GREEN("valid ✓") : opts.statusExpiredMsg}\n` +
+        opts.noteFooterMsg,
+      opts.noteTitle,
+      TON
+    );
+    await confirm({
+      message: "Continue with auto-detected credentials?",
+      default: true,
+      theme,
+    });
+  } catch (error) {
+    if (error instanceof CancelledError) throw error;
+    opts.prompter.warn(opts.notFoundHint);
+    const useFallback = await confirm({
+      message: "Enter an API key manually instead?",
+      default: true,
+      theme,
+    });
+    if (useFallback) {
+      apiKey = await password({
+        message: opts.fallbackKeyLabel,
+        theme,
+        validate: (value = "") => {
+          if (!value || value.trim().length === 0) return "API key is required";
+          return true;
+        },
+      });
+    } else {
+      throw new CancelledError();
+    }
+  }
+
+  const stepValue = detected
+    ? `${opts.displayName}  ${DIM("auto-detected ✓")}`
+    : `${opts.displayName}  ${DIM(maskSecret(apiKey))}`;
+  return { apiKey, stepValue };
+}
+
+/**
  * Prompt for an optional integration key: ask to enable, show a note, then
  * collect+validate the key. Returns the entered value, or undefined if skipped.
  * Callers handle assignment and `extras.push` based on the return value.
@@ -407,108 +473,37 @@ async function runInteractiveOnboarding(
     STEPS[1].value = `${providerMeta.displayName}  ${DIM(localBaseUrl)}`;
   } else if (selectedProvider === "claude-code") {
     // Claude Code — auto-detect credentials, fallback to manual key
-    let detected = false;
-    try {
-      const key = getClaudeCodeApiKey();
-      const valid = isClaudeCodeTokenValid();
-      apiKey = ""; // Don't store in config — auto-detected at runtime
-      detected = true;
-      const masked = maskSecret(key, 12, 4);
-      noteBox(
-        `Credentials auto-detected from Claude Code\n` +
-          `Key: ${masked}\n` +
-          `Status: ${valid ? GREEN("valid ✓") : "expired (will refresh on use)"}\n` +
-          `Token will auto-refresh when it expires.`,
-        "Claude Code",
-        TON
-      );
-      await confirm({
-        message: "Continue with auto-detected credentials?",
-        default: true,
-        theme,
-      });
-    } catch (error) {
-      if (error instanceof CancelledError) throw error;
-      prompter.warn(
-        "Claude Code credentials not found. Make sure Claude Code is installed and authenticated (claude login)."
-      );
-      const useFallback = await confirm({
-        message: "Enter an API key manually instead?",
-        default: true,
-        theme,
-      });
-      if (useFallback) {
-        apiKey = await password({
-          message: `Anthropic API Key (fallback)`,
-          theme,
-          validate: (value = "") => {
-            if (!value || value.trim().length === 0) return "API key is required";
-            return true;
-          },
-        });
-      } else {
-        throw new CancelledError();
-      }
-    }
-
-    if (detected) {
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
-    } else {
-      const maskedKey = maskSecret(apiKey);
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
-    }
+    const result = await handleAutoDetectedProvider({
+      getKey: getClaudeCodeApiKey,
+      isValid: isClaudeCodeTokenValid,
+      displayName: providerMeta.displayName,
+      noteTitle: "Claude Code",
+      detectedFromMsg: "Credentials auto-detected from Claude Code",
+      statusExpiredMsg: "expired (will refresh on use)",
+      noteFooterMsg: "Token will auto-refresh when it expires.",
+      notFoundHint:
+        "Claude Code credentials not found. Make sure Claude Code is installed and authenticated (claude login).",
+      fallbackKeyLabel: "Anthropic API Key (fallback)",
+      prompter,
+    });
+    apiKey = result.apiKey;
+    STEPS[1].value = result.stepValue;
   } else if (selectedProvider === "codex") {
     // Codex — auto-detect credentials from ~/.codex/auth.json
-    let detected = false;
-    try {
-      const key = getCodexApiKey();
-      const valid = isCodexTokenValid();
-      apiKey = ""; // Don't store in config — auto-detected at runtime
-      detected = true;
-      const masked = maskSecret(key, 12, 4);
-      noteBox(
-        `Credentials auto-detected from Codex CLI\n` +
-          `Key: ${masked}\n` +
-          `Status: ${valid ? GREEN("valid ✓") : "expired (run codex to re-authenticate)"}\n` +
-          `Token read from ~/.codex/auth.json`,
-        "Codex",
-        TON
-      );
-      await confirm({
-        message: "Continue with auto-detected credentials?",
-        default: true,
-        theme,
-      });
-    } catch (error) {
-      if (error instanceof CancelledError) throw error;
-      prompter.warn(
-        "Codex credentials not found. Make sure Codex CLI is installed and authenticated."
-      );
-      const useFallback = await confirm({
-        message: "Enter an OpenAI API key manually instead?",
-        default: true,
-        theme,
-      });
-      if (useFallback) {
-        apiKey = await password({
-          message: `OpenAI API Key (fallback)`,
-          theme,
-          validate: (value = "") => {
-            if (!value || value.trim().length === 0) return "API key is required";
-            return true;
-          },
-        });
-      } else {
-        throw new CancelledError();
-      }
-    }
-
-    if (detected) {
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
-    } else {
-      const maskedKey = maskSecret(apiKey);
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
-    }
+    const result = await handleAutoDetectedProvider({
+      getKey: getCodexApiKey,
+      isValid: isCodexTokenValid,
+      displayName: providerMeta.displayName,
+      noteTitle: "Codex",
+      detectedFromMsg: "Credentials auto-detected from Codex CLI",
+      statusExpiredMsg: "expired (run codex to re-authenticate)",
+      noteFooterMsg: "Token read from ~/.codex/auth.json",
+      notFoundHint: "Codex credentials not found. Make sure Codex CLI is installed and authenticated.",
+      fallbackKeyLabel: "OpenAI API Key (fallback)",
+      prompter,
+    });
+    apiKey = result.apiKey;
+    STEPS[1].value = result.stepValue;
   } else {
     // Standard providers — API key required
     const envApiKey = process.env.TELETON_API_KEY;
