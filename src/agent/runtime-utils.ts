@@ -1,4 +1,5 @@
-import type { Context, TextContent, ToolCall, Usage } from "@mariozechner/pi-ai";
+import type { Context, TextContent, Usage } from "@mariozechner/pi-ai";
+import { extractToolNames, stripEnvelopePrefix, truncate } from "../utils/pi-message.js";
 
 /** Per-turn usage accumulator (input/output/cache + cost), summed across loop iterations. */
 export interface UsageAccumulator {
@@ -149,23 +150,19 @@ export function extractContextSummary(context: Context, maxMessages: number = 10
   for (const msg of recentMessages) {
     if (msg.role === "user") {
       const content = typeof msg.content === "string" ? msg.content : "[complex]";
-      const bodyMatch = content.match(/\] (.+)/s);
-      const body = bodyMatch ? bodyMatch[1] : content;
-      summaryParts.push(`- **User**: ${body.substring(0, 150)}${body.length > 150 ? "..." : ""}`);
+      const body = stripEnvelopePrefix(content);
+      summaryParts.push(`- **User**: ${truncate(body, 150)}`);
     } else if (msg.role === "assistant") {
       const textBlocks = msg.content.filter((b): b is TextContent => b.type === "text");
-      const toolBlocks = msg.content.filter((b): b is ToolCall => b.type === "toolCall");
+      const toolNames = extractToolNames(msg);
 
       if (textBlocks.length > 0) {
         const text = textBlocks[0].text || "";
-        summaryParts.push(
-          `- **Agent**: ${text.substring(0, 150)}${text.length > 150 ? "..." : ""}`
-        );
+        summaryParts.push(`- **Agent**: ${truncate(text, 150)}`);
       }
 
-      if (toolBlocks.length > 0) {
-        const toolNames = toolBlocks.map((b) => b.name).join(", ");
-        summaryParts.push(`  - *Tools used: ${toolNames}*`);
+      if (toolNames.length > 0) {
+        summaryParts.push(`  - *Tools used: ${toolNames.join(", ")}*`);
       }
     } else if (msg.role === "toolResult") {
       const status = msg.isError ? "ERROR" : "OK";

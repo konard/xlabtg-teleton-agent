@@ -1,4 +1,5 @@
 import type { Context, Message, TextContent } from "@mariozechner/pi-ai";
+import { truncate } from "../utils/pi-message.js";
 import { appendToTranscript, readTranscript } from "../session/transcript.js";
 import { randomUUID } from "crypto";
 import { writeSummaryToDailyLog } from "./daily-logs.js";
@@ -98,12 +99,12 @@ function flushMemoryToDailyLog(context: Context): void {
   for (const msg of recentMessages) {
     if (msg.role === "user") {
       const content = typeof msg.content === "string" ? msg.content : "[complex content]";
-      summary.push(`- User: ${content.substring(0, 100)}${content.length > 100 ? "..." : ""}`);
+      summary.push(`- User: ${truncate(content, 100)}`);
     } else if (msg.role === "assistant") {
       const textBlocks = msg.content.filter((b): b is TextContent => b.type === "text");
       if (textBlocks.length > 0) {
         const text = textBlocks[0].text || "";
-        summary.push(`- Assistant: ${text.substring(0, 100)}${text.length > 100 ? "..." : ""}`);
+        summary.push(`- Assistant: ${truncate(text, 100)}`);
       }
     }
   }
