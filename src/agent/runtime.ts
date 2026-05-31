@@ -333,7 +333,7 @@ export class AgentRuntime {
         }
       }
 
-      session = resetSessionWithPolicy(chatId, resetPolicy);
+      session = resetSessionWithPolicy(chatId);
       clearMemorySnapshot(); // New session will capture a fresh snapshot
     }
 

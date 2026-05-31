@@ -345,7 +345,7 @@ export function shouldResetSession(session: SessionEntry, policy: SessionResetPo
 
   return false;
 }
-export function resetSessionWithPolicy(chatId: string, _policy: SessionResetPolicy): SessionEntry {
+export function resetSessionWithPolicy(chatId: string): SessionEntry {
   resetSession(chatId);
   const today = new Date().toISOString().split("T")[0];
 
