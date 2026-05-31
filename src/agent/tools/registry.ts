@@ -28,6 +28,17 @@ import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("Registry");
 
+/** Reason a tool is denied for a context — mapped to a user message by execute(). */
+type AccessDenial =
+  | { kind: "mode"; mode: ToolMode }
+  | { kind: "disabled" }
+  | { kind: "dm-only" }
+  | { kind: "group-only" }
+  | { kind: "admin-only" }
+  | { kind: "allowlist" }
+  | { kind: "module-disabled"; module: string }
+  | { kind: "module-admin"; module: string };
+
 export class ToolRegistry {
   private tools: Map<string, RegisteredTool> = new Map();
   private scopes: Map<string, ToolScope> = new Map();
@@ -145,6 +156,72 @@ export class ToolRegistry {
     return this.toolArrayCache;
   }
 
+  /**
+   * Single authorization grid (mode → enabled → scope → group module perms).
+   * Shared by execute() (maps the denial to a message) and passesFilters() (uses
+   * only .ok), so the two can no longer drift. `isAdmin` is passed in by the caller.
+   */
+  private checkAccess(
+    name: string,
+    ctx: { isGroup: boolean; isAdmin: boolean; senderId?: number; chatId?: string }
+  ): { ok: true } | { ok: false; reason: AccessDenial } {
+    const toolMode = this.toolModes.get(name);
+    if (toolMode && toolMode !== "both" && toolMode !== this.mode) {
+      return { ok: false, reason: { kind: "mode", mode: toolMode } };
+    }
+
+    if (!this.isToolEnabled(name)) {
+      return { ok: false, reason: { kind: "disabled" } };
+    }
+
+    const scope = this.getEffectiveScope(name);
+    if (scope === "disabled") return { ok: false, reason: { kind: "disabled" } };
+    if (scope === "dm-only" && ctx.isGroup) return { ok: false, reason: { kind: "dm-only" } };
+    if (scope === "group-only" && !ctx.isGroup)
+      return { ok: false, reason: { kind: "group-only" } };
+    if (scope === "admin-only" && !ctx.isAdmin)
+      return { ok: false, reason: { kind: "admin-only" } };
+    if (scope === "allowlist" && !ctx.isAdmin) {
+      if (!ctx.senderId || !this.allowFrom.has(ctx.senderId)) {
+        return { ok: false, reason: { kind: "allowlist" } };
+      }
+    }
+
+    if (ctx.isGroup && ctx.chatId && this.permissions) {
+      const module = this.toolModules.get(name);
+      if (module) {
+        const level = this.permissions.getLevel(ctx.chatId, module);
+        if (level === "disabled") return { ok: false, reason: { kind: "module-disabled", module } };
+        if (level === "admin" && !ctx.isAdmin) {
+          return { ok: false, reason: { kind: "module-admin", module } };
+        }
+      }
+    }
+
+    return { ok: true };
+  }
+
+  private denialMessage(name: string, reason: AccessDenial): string {
+    switch (reason.kind) {
+      case "mode":
+        return `Tool "${name}" requires ${reason.mode} mode (current: ${this.mode})`;
+      case "disabled":
+        return `Tool "${name}" is currently disabled`;
+      case "dm-only":
+        return `Tool "${name}" is not available in group chats`;
+      case "group-only":
+        return `Tool "${name}" is only available in group chats`;
+      case "admin-only":
+        return `Tool "${name}" is restricted to admin users`;
+      case "allowlist":
+        return `Tool "${name}" is restricted to allowed users`;
+      case "module-disabled":
+        return `Module "${reason.module}" is disabled in this group`;
+      case "module-admin":
+        return `Module "${reason.module}" is restricted to admins in this group`;
+    }
+  }
+
   async execute(toolCall: ToolCall, context: ToolContext): Promise<ToolResult> {
     const registered = this.tools.get(toolCall.name);
 
@@ -155,83 +232,16 @@ export class ToolRegistry {
       };
     }
 
-    // Check mode restriction (defense-in-depth: tools are also filtered from LLM tool list)
-    const toolMode = this.toolModes.get(toolCall.name);
-    if (toolMode && toolMode !== "both" && toolMode !== this.mode) {
-      return {
-        success: false,
-        error: `Tool "${toolCall.name}" requires ${toolMode} mode (current: ${this.mode})`,
-      };
-    }
-
-    // Check if tool is enabled
-    if (!this.isToolEnabled(toolCall.name)) {
-      return {
-        success: false,
-        error: `Tool "${toolCall.name}" is currently disabled`,
-      };
-    }
-
-    const scope = this.getEffectiveScope(toolCall.name);
-    if (scope === "disabled") {
-      return {
-        success: false,
-        error: `Tool "${toolCall.name}" is currently disabled`,
-      };
-    }
-    if (scope === "dm-only" && context.isGroup) {
-      return {
-        success: false,
-        error: `Tool "${toolCall.name}" is not available in group chats`,
-      };
-    }
-    if (scope === "group-only" && !context.isGroup) {
-      return {
-        success: false,
-        error: `Tool "${toolCall.name}" is only available in group chats`,
-      };
-    }
-    if (scope === "admin-only") {
-      const isAdmin = context.config?.telegram.admin_ids.includes(context.senderId) ?? false;
-      if (!isAdmin) {
-        return {
-          success: false,
-          error: `Tool "${toolCall.name}" is restricted to admin users`,
-        };
-      }
-    }
-    if (scope === "allowlist") {
-      const isAdmin = context.config?.telegram.admin_ids.includes(context.senderId) ?? false;
-      if (!isAdmin) {
-        if (!this.allowFrom.has(context.senderId)) {
-          return {
-            success: false,
-            error: `Tool "${toolCall.name}" is restricted to allowed users`,
-          };
-        }
-      }
-    }
-
-    if (context.isGroup && this.permissions) {
-      const module = this.toolModules.get(toolCall.name);
-      if (module) {
-        const level = this.permissions.getLevel(context.chatId, module);
-        if (level === "disabled") {
-          return {
-            success: false,
-            error: `Module "${module}" is disabled in this group`,
-          };
-        }
-        if (level === "admin") {
-          const isAdmin = context.config?.telegram.admin_ids.includes(context.senderId) ?? false;
-          if (!isAdmin) {
-            return {
-              success: false,
-              error: `Module "${module}" is restricted to admins in this group`,
-            };
-          }
-        }
-      }
+    // Defense-in-depth authorization (tools are also filtered from the LLM tool list)
+    const isAdmin = context.config?.telegram.admin_ids.includes(context.senderId) ?? false;
+    const access = this.checkAccess(toolCall.name, {
+      isGroup: context.isGroup,
+      isAdmin,
+      senderId: context.senderId,
+      chatId: context.chatId,
+    });
+    if (!access.ok) {
+      return { success: false, error: this.denialMessage(toolCall.name, access.reason) };
     }
 
     try {
@@ -553,36 +563,7 @@ export class ToolRegistry {
     senderId?: number
   ): boolean {
     if (!this.tools.has(name)) return false;
-
-    // Mode restriction (user vs bot)
-    const toolMode = this.toolModes.get(name);
-    if (toolMode && toolMode !== "both" && toolMode !== this.mode) return false;
-
-    // Enabled check
-    if (!this.isToolEnabled(name)) return false;
-
-    const effectiveScope = this.getEffectiveScope(name);
-    if (effectiveScope === "disabled") return false;
-
-    const excluded = isGroup ? "dm-only" : "group-only";
-    if (effectiveScope === excluded) return false;
-
-    if (effectiveScope === "admin-only" && !isAdmin) return false;
-
-    if (effectiveScope === "allowlist" && !isAdmin) {
-      if (!senderId || !this.allowFrom.has(senderId)) return false;
-    }
-
-    if (isGroup && chatId && this.permissions) {
-      const module = this.toolModules.get(name);
-      if (module) {
-        const level = this.permissions.getLevel(chatId, module);
-        if (level === "disabled") return false;
-        if (level === "admin" && !isAdmin) return false;
-      }
-    }
-
-    return true;
+    return this.checkAccess(name, { isGroup, isAdmin: isAdmin ?? false, senderId, chatId }).ok;
   }
 
   /**
