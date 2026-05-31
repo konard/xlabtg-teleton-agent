@@ -224,6 +224,100 @@ export class AgentRuntime {
     }
   }
 
+  /**
+   * Compute the RAG query embedding for the turn, concurrently with other prep work.
+   * Returns a pending embedding promise, or `undefined` when embedding is disabled or
+   * the message is trivial — preserving the caller's concurrent Promise.all wiring.
+   */
+  private computeRagEmbedding(
+    effectiveMessage: string,
+    context: Context
+  ): Promise<number[]> | undefined {
+    const isNonTrivial = !isTrivialMessage(effectiveMessage);
+    if (!this.embedder || !isNonTrivial) return undefined;
+
+    return (async () => {
+      let searchQuery = effectiveMessage;
+      const recentUserMsgs = context.messages
+        .filter((m) => m.role === "user" && typeof m.content === "string")
+        .slice(-3)
+        .map((m) => {
+          const text = m.content as string;
+          const bodyMatch = text.match(/\] (.+)/s);
+          return (bodyMatch ? bodyMatch[1] : text).trim();
+        })
+        .filter((t) => t.length > 0);
+      if (recentUserMsgs.length > 0) {
+        searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
+      }
+      const enrichedQuery = enrichRAGQuery(searchQuery);
+      if (enrichedQuery !== searchQuery) {
+        log.debug({ original: searchQuery, enriched: enrichedQuery }, "RAG query enriched");
+      }
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded above
+      return this.embedder!.embedQuery(enrichedQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS));
+    })();
+  }
+
+  /**
+   * Select the tool set for the turn: ToolSearch core-only, RAG pre-selection (+ the
+   * tool_search escape hatch), or the plain context-filtered set. The guest-mode filter
+   * is applied by the caller, not here.
+   */
+  private async selectTools(
+    effectiveMessage: string,
+    effectiveIsGroup: boolean,
+    chatId: string,
+    isAdmin: boolean,
+    senderId: number | undefined,
+    toolLimit: number | null,
+    queryEmbedding: number[] | undefined
+  ): Promise<PiAiTool[] | undefined> {
+    const toolIndex = this.toolRegistry?.getToolIndex();
+    const useRAG =
+      toolIndex?.isIndexed &&
+      this.config.tool_rag?.enabled !== false &&
+      !isTrivialMessage(effectiveMessage) &&
+      !(toolLimit === null && this.config.tool_rag?.skip_unlimited_providers !== false);
+
+    if (this.config.tool_search?.enabled && this.toolRegistry) {
+      // ToolSearch mode: always start with core tools only.
+      // The LLM discovers additional tools on demand via the tool_search meta-tool.
+      const tools = this.toolRegistry.getCoreTools(effectiveIsGroup, chatId, isAdmin, senderId);
+      log.info(
+        `ToolSearch: ${tools.length} core tools (${this.toolRegistry.count} total available)`
+      );
+      return tools;
+    } else if (useRAG && this.toolRegistry && queryEmbedding) {
+      const tools = await this.toolRegistry.getForContextWithRAG(
+        effectiveMessage,
+        queryEmbedding,
+        effectiveIsGroup,
+        toolLimit,
+        chatId,
+        isAdmin,
+        senderId
+      );
+      // Hybrid: always offer the tool_search escape hatch so the agent can discover
+      // tools the RAG pre-selection missed (the mid-loop injection handles results).
+      const searchTool = this.toolRegistry.getAll().find((t) => t.name === "tool_search");
+      if (searchTool && !tools.some((t) => t.name === "tool_search")) {
+        tools.push(searchTool);
+      }
+      log.info(`Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
+      log.debug(`Tool RAG selected: ${tools.map((t) => t.name).join(", ")}`);
+      return tools;
+    } else {
+      return this.toolRegistry?.getForContext(
+        effectiveIsGroup,
+        toolLimit,
+        chatId,
+        isAdmin,
+        senderId
+      );
+    }
+  }
+
   private async buildTurnContext(
     opts: ProcessMessageOptions,
     processStartTime: number
@@ -390,30 +484,7 @@ export class AgentRuntime {
     const isNonTrivial = !isTrivialMessage(effectiveMessage);
 
     // Start embedding computation concurrently with session:start hook
-    const embeddingPromise =
-      this.embedder && isNonTrivial
-        ? (async () => {
-            let searchQuery = effectiveMessage;
-            const recentUserMsgs = context.messages
-              .filter((m) => m.role === "user" && typeof m.content === "string")
-              .slice(-3)
-              .map((m) => {
-                const text = m.content as string;
-                const bodyMatch = text.match(/\] (.+)/s);
-                return (bodyMatch ? bodyMatch[1] : text).trim();
-              })
-              .filter((t) => t.length > 0);
-            if (recentUserMsgs.length > 0) {
-              searchQuery = recentUserMsgs.join(" ") + " " + effectiveMessage;
-            }
-            const enrichedQuery = enrichRAGQuery(searchQuery);
-            if (enrichedQuery !== searchQuery) {
-              log.debug({ original: searchQuery, enriched: enrichedQuery }, "RAG query enriched");
-            }
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by ternary
-            return this.embedder!.embedQuery(enrichedQuery.slice(0, EMBEDDING_QUERY_MAX_CHARS));
-          })()
-        : undefined;
+    const embeddingPromise = this.computeRagEmbedding(effectiveMessage, context);
 
     // Await both session:start and embedding in parallel
     const [, embeddingResult] = await Promise.all([
@@ -569,58 +640,15 @@ export class AgentRuntime {
     const providerMeta = getProviderMetadata(provider);
     const isAdmin = toolContext?.config?.telegram.admin_ids.includes(toolContext.senderId) ?? false;
 
-    let tools: PiAiTool[] | undefined;
-    {
-      const toolIndex = this.toolRegistry?.getToolIndex();
-      const useRAG =
-        toolIndex?.isIndexed &&
-        this.config.tool_rag?.enabled !== false &&
-        !isTrivialMessage(effectiveMessage) &&
-        !(
-          providerMeta.toolLimit === null &&
-          this.config.tool_rag?.skip_unlimited_providers !== false
-        );
-
-      if (this.config.tool_search?.enabled && this.toolRegistry) {
-        // ToolSearch mode: always start with core tools only.
-        // The LLM discovers additional tools on demand via the tool_search meta-tool.
-        tools = this.toolRegistry.getCoreTools(
-          effectiveIsGroup,
-          chatId,
-          isAdmin,
-          toolContext?.senderId
-        );
-        log.info(
-          `ToolSearch: ${tools.length} core tools (${this.toolRegistry.count} total available)`
-        );
-      } else if (useRAG && this.toolRegistry && queryEmbedding) {
-        tools = await this.toolRegistry.getForContextWithRAG(
-          effectiveMessage,
-          queryEmbedding,
-          effectiveIsGroup,
-          providerMeta.toolLimit,
-          chatId,
-          isAdmin,
-          toolContext?.senderId
-        );
-        // Hybrid: always offer the tool_search escape hatch so the agent can discover
-        // tools the RAG pre-selection missed (the mid-loop injection handles results).
-        const searchTool = this.toolRegistry.getAll().find((t) => t.name === "tool_search");
-        if (searchTool && !tools.some((t) => t.name === "tool_search")) {
-          tools.push(searchTool);
-        }
-        log.info(`Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
-        log.debug(`Tool RAG selected: ${tools.map((t) => t.name).join(", ")}`);
-      } else {
-        tools = this.toolRegistry?.getForContext(
-          effectiveIsGroup,
-          providerMeta.toolLimit,
-          chatId,
-          isAdmin,
-          toolContext?.senderId
-        );
-      }
-    }
+    let tools = await this.selectTools(
+      effectiveMessage,
+      effectiveIsGroup,
+      chatId,
+      isAdmin,
+      toolContext?.senderId,
+      providerMeta.toolLimit,
+      queryEmbedding
+    );
 
     if (opts.isGuest && tools) {
       tools = tools.filter((t) => !TELEGRAM_SEND_TOOLS.has(t.name));
