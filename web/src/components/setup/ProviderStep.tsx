@@ -3,6 +3,7 @@ import { setup, SetupProvider, SetupModelOption, ClaudeCodeKeyDetection } from '
 import { Select } from '../Select';
 import type { StepProps } from '../../pages/Setup';
 import { errMsg } from '../../lib/utils';
+import { Loading } from '../Loading';
 
 export function ProviderStep({ data, onChange }: StepProps) {
   const [providers, setProviders] = useState<SetupProvider[]>([]);
@@ -98,7 +99,7 @@ export function ProviderStep({ data, onChange }: StepProps) {
     }
   };
 
-  if (loading) return <div className="loading">Loading providers...</div>;
+  if (loading) return <Loading text='Loading providers...' />;
   if (error) return <div className="alert error">{error}</div>;
 
   return (

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { setup, WalletStatus } from '../../lib/api';
 import type { StepProps } from '../../pages/Setup';
 import { errMsg } from '../../lib/utils';
+import { Loading } from '../Loading';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -63,7 +64,7 @@ export function WalletStep({ data, onChange }: StepProps) {
     }
   };
 
-  if (loading) return <div className="loading">Checking wallet...</div>;
+  if (loading) return <Loading text='Checking wallet...' />;
 
   const showMnemonic = mnemonicWords.length > 0;
   const actionNeeded = data.walletAction !== 'keep' && !showMnemonic;

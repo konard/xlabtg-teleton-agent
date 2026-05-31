@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
 import { errMsg } from '../lib/utils';
+import { Loading } from '../components/Loading';
 
 interface TriggerEntry {
   id: string;
@@ -157,7 +158,7 @@ export function Hooks() {
     }
   };
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <Loading />;
 
   return (
     <div>

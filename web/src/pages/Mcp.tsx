@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, McpServerInfo } from '../lib/api';
 import { errMsg } from '../lib/utils';
+import { Loading } from '../components/Loading';
 
 export function Mcp() {
   const [servers, setServers] = useState<McpServerInfo[]>([]);
@@ -88,7 +89,7 @@ export function Mcp() {
     }
   };
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <Loading />;
 
   const connectedCount = servers.filter((s) => s.connected).length;
 

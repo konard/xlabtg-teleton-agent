@@ -5,6 +5,7 @@ import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
 import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
+import { Loading } from '../components/Loading';
 
 function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
@@ -56,7 +57,7 @@ export function Dashboard() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <Loading />;
   if (!status || !stats) return <div className="alert error">Failed to load dashboard data</div>;
 
   const s = currentStatus ?? status;

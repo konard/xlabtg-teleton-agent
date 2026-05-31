@@ -5,6 +5,7 @@ import { Select } from '../components/Select';
 import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
 import { errMsg } from '../lib/utils';
+import { Loading } from '../components/Loading';
 
 export function Tools() {
   const [modules, setModules] = useState<ModuleInfo[]>([]);
@@ -32,7 +33,7 @@ export function Tools() {
     loadTools();
   }, []);
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <Loading />;
 
   const builtIn = modules.filter((m) => !m.isPlugin);
   const builtInCount = builtIn.reduce((sum, m) => sum + m.toolCount, 0);

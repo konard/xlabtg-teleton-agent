@@ -5,6 +5,7 @@ import { Select } from '../components/Select';
 import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
 import { errMsg } from '../lib/utils';
+import { Loading } from '../components/Loading';
 
 type Tab = 'installed' | 'marketplace';
 
@@ -192,7 +193,7 @@ export function Plugins() {
   const allTags = Array.from(new Set(marketplace.flatMap((p) => p.tags))).sort();
   const updatableCount = marketplace.filter((p) => p.status === 'updatable').length;
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) return <Loading />;
 
   // Filter installed plugins
   const filteredInstalled = manifests.filter((plugin) => {
