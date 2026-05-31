@@ -642,6 +642,92 @@ export class AgentRuntime {
     };
   }
 
+  /**
+   * Run a single LLM iteration, streaming the draft to a bot bridge when enabled.
+   * Encapsulates the reset/stream/clear-draft + "all"-mode prefix bookkeeping.
+   * `streamAccumulatedText` is threaded in and out so the loop keeps cross-iteration
+   * text for "all" mode. Returns whether the response was produced via the stream path.
+   */
+  private async streamIteration(
+    opts: ProcessMessageOptions,
+    maskedContext: Context,
+    systemPrompt: string,
+    sessionId: string,
+    tools: PiAiTool[] | undefined,
+    streamAccumulatedText: string
+  ): Promise<{ response: ChatResponse; streamed: boolean; streamAccumulatedText: string }> {
+    const streamMode = opts.streamToChat?.mode;
+    const shouldStream =
+      opts.streamToChat?.bridge.streamResponse && streamMode !== undefined && streamMode !== "off";
+
+    if (!shouldStream) {
+      const response = await chatWithContext(this.config.agent, {
+        systemPrompt,
+        context: maskedContext,
+        sessionId,
+        persistTranscript: true,
+        tools,
+      });
+      return { response, streamed: false, streamAccumulatedText };
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
+    const bridge = opts.streamToChat!.bridge;
+    if (!isBotBridge(bridge)) {
+      const response = await chatWithContext(this.config.agent, {
+        systemPrompt,
+        context: maskedContext,
+        sessionId,
+        persistTranscript: true,
+        tools,
+      });
+      return { response, streamed: true, streamAccumulatedText };
+    }
+
+    if (streamMode === "replace") {
+      // Reset draft for each iteration (new draft bubble)
+      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream
+      bridge.resetDraft(opts.streamToChat!.chatId);
+      streamAccumulatedText = "";
+    }
+
+    const { textStream, result } = streamWithContext(this.config.agent, {
+      systemPrompt,
+      context: maskedContext,
+      sessionId,
+      persistTranscript: true,
+      tools,
+    });
+
+    // "all" mode: prepend accumulated text from previous iterations
+    const prefix = streamMode === "all" ? streamAccumulatedText : "";
+    async function* prefixedStream(): AsyncIterable<string> {
+      let first = true;
+      for await (const chunk of textStream) {
+        if (first && prefix) {
+          yield prefix + chunk;
+          first = false;
+        } else {
+          yield chunk;
+        }
+      }
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
+    const draftText = await bridge.streamDraft(opts.streamToChat!.chatId, prefixedStream());
+    if (streamMode === "all") {
+      if (draftText.length === 0 && streamAccumulatedText.length > 0) {
+        // LLM produced only tool calls — clear the stale draft bubble
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream
+        await bridge.clearDraft(opts.streamToChat!.chatId);
+      }
+      streamAccumulatedText = draftText + "\n\n";
+    }
+
+    const response = await result;
+    return { response, streamed: true, streamAccumulatedText };
+  }
+
   private async runAgenticLoop(
     turn: TurnContext,
     opts: ProcessMessageOptions
@@ -679,79 +765,17 @@ export class AgentRuntime {
       });
       const maskedContext: Context = { ...context, messages: maskedMessages };
 
-      let response: ChatResponse;
-      let streamed = false;
-
-      const streamMode = opts.streamToChat?.mode;
-      const shouldStream =
-        opts.streamToChat?.bridge.streamResponse &&
-        streamMode !== undefined &&
-        streamMode !== "off";
-
-      if (shouldStream) {
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
-        const bridge = opts.streamToChat!.bridge;
-        if (isBotBridge(bridge)) {
-          if (streamMode === "replace") {
-            // Reset draft for each iteration (new draft bubble)
-            // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream
-            bridge.resetDraft(opts.streamToChat!.chatId);
-            streamAccumulatedText = "";
-          }
-
-          const { textStream, result } = streamWithContext(this.config.agent, {
-            systemPrompt,
-            context: maskedContext,
-            sessionId: session.sessionId,
-            persistTranscript: true,
-            tools,
-          });
-
-          // "all" mode: prepend accumulated text from previous iterations
-          const prefix = streamMode === "all" ? streamAccumulatedText : "";
-          async function* prefixedStream(): AsyncIterable<string> {
-            let first = true;
-            for await (const chunk of textStream) {
-              if (first && prefix) {
-                yield prefix + chunk;
-                first = false;
-              } else {
-                yield chunk;
-              }
-            }
-          }
-
-          // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
-          const draftText = await bridge.streamDraft(opts.streamToChat!.chatId, prefixedStream());
-          if (streamMode === "all") {
-            if (draftText.length === 0 && streamAccumulatedText.length > 0) {
-              // LLM produced only tool calls — clear the stale draft bubble
-              // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream
-              await bridge.clearDraft(opts.streamToChat!.chatId);
-            }
-            streamAccumulatedText = draftText + "\n\n";
-          }
-
-          response = await result;
-        } else {
-          response = await chatWithContext(this.config.agent, {
-            systemPrompt,
-            context: maskedContext,
-            sessionId: session.sessionId,
-            persistTranscript: true,
-            tools,
-          });
-        }
-        streamed = true;
-      } else {
-        response = await chatWithContext(this.config.agent, {
-          systemPrompt,
-          context: maskedContext,
-          sessionId: session.sessionId,
-          persistTranscript: true,
-          tools,
-        });
-      }
+      const iterationResult = await this.streamIteration(
+        opts,
+        maskedContext,
+        systemPrompt,
+        session.sessionId,
+        tools,
+        streamAccumulatedText
+      );
+      const response = iterationResult.response;
+      const streamed = iterationResult.streamed;
+      streamAccumulatedText = iterationResult.streamAccumulatedText;
 
       const assistantMsg = response.message;
 
