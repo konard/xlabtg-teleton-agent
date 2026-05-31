@@ -3,6 +3,40 @@ import { isUserBridge } from "../telegram/bridge-guards.js";
 import type { Api } from "telegram";
 import type { SimpleMessage } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
+import { getErrorMessage } from "../utils/errors.js";
+
+/**
+ * Canonical friendly messages for known Telegram/GramJS error codes. Shared so a
+ * single code does not drift into several different wordings across executors.
+ */
+const TELEGRAM_ERROR_MESSAGES: Record<string, string> = {
+  USERNAME_OCCUPIED: "Username is already taken. Please choose another.",
+  CHAT_ADMIN_REQUIRED: "You need admin rights to change this channel's username.",
+  CHANNELS_ADMIN_PUBLIC_TOO_MUCH:
+    "You admin too many public channels. Make some channels private first.",
+};
+
+/**
+ * Map a Telegram/GramJS error to a failed ToolResult using the shared friendly-
+ * message table. Pass `overrides` for codes that need tool-specific (often dynamic)
+ * text; unknown codes fall back to the raw error message.
+ *
+ * Only handles error→failure mapping. Executors that turn a code into a *success*
+ * (e.g. USERNAME_NOT_MODIFIED) must keep that branch before calling this.
+ */
+export function mapTelegramError(
+  error: unknown,
+  overrides?: Record<string, string>
+): { success: false; error: string } {
+  const msg = getErrorMessage(error);
+  const table = overrides ? { ...TELEGRAM_ERROR_MESSAGES, ...overrides } : TELEGRAM_ERROR_MESSAGES;
+  for (const code of Object.keys(table)) {
+    if (msg.includes(code)) {
+      return { success: false, error: table[code] };
+    }
+  }
+  return { success: false, error: msg };
+}
 
 export function requireBridge(bridge: ITelegramBridge): void {
   if (!bridge.isAvailable()) {

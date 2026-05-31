@@ -7,6 +7,8 @@ import {
   getClient,
   validateChannelUsername,
   resolveChannel,
+  cleanUsername,
+  mapTelegramError,
 } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
@@ -65,16 +67,8 @@ export const telegramSetChannelUsernameExecutor: ToolExecutor<SetChannelUsername
   } catch (error: unknown) {
     log.error({ err: error }, "Error setting channel username");
 
-    const msg = getErrorMessage(error);
-
-    if (msg.includes("USERNAME_OCCUPIED")) {
-      return {
-        success: false,
-        error: "Username is already taken. Please choose another.",
-      };
-    }
-
-    if (msg.includes("USERNAME_NOT_MODIFIED")) {
+    // USERNAME_NOT_MODIFIED is a no-op success, not an error
+    if (getErrorMessage(error).includes("USERNAME_NOT_MODIFIED")) {
       return {
         success: true,
         data: {
@@ -83,37 +77,9 @@ export const telegramSetChannelUsernameExecutor: ToolExecutor<SetChannelUsername
       };
     }
 
-    if (msg.includes("CHAT_ADMIN_REQUIRED")) {
-      return {
-        success: false,
-        error: "You need admin rights to change this channel's username.",
-      };
-    }
-
-    if (msg.includes("CHANNELS_ADMIN_PUBLIC_TOO_MUCH")) {
-      return {
-        success: false,
-        error: "You admin too many public channels. Make some channels private first.",
-      };
-    }
-
-    if (msg.includes("USERNAME_INVALID")) {
-      return {
-        success: false,
-        error: `Invalid username format: "${params.username}"`,
-      };
-    }
-
-    if (msg.includes("USERNAME_PURCHASE_AVAILABLE")) {
-      return {
-        success: false,
-        error: `Username @${params.username.replace(/^@/, "")} is available for purchase on fragment.com, not for free assignment.`,
-      };
-    }
-
-    return {
-      success: false,
-      error: msg,
-    };
+    return mapTelegramError(error, {
+      USERNAME_INVALID: `Invalid username format: "${params.username}"`,
+      USERNAME_PURCHASE_AVAILABLE: `Username @${cleanUsername(params.username)} is available for purchase on fragment.com, not for free assignment.`,
+    });
   }
 };

@@ -7,6 +7,8 @@ import {
   getClient,
   validateChannelUsername,
   resolveChannel,
+  cleanUsername,
+  mapTelegramError,
 } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
@@ -62,29 +64,13 @@ export const telegramCheckChannelUsernameExecutor: ToolExecutor<
   } catch (error: unknown) {
     log.error({ err: error }, "Error checking channel username");
 
-    const msg = getErrorMessage(error);
-
-    if (msg.includes("USERNAME_INVALID")) {
-      return {
-        success: false,
-        error: `Invalid username format: "${params.username}"`,
-      };
-    }
-
-    if (msg.includes("CHANNELS_ADMIN_PUBLIC_TOO_MUCH")) {
-      return {
-        success: false,
-        error:
-          "You admin too many public channels. Make some channels private before assigning a new public username.",
-      };
-    }
-
-    if (msg.includes("USERNAME_PURCHASE_AVAILABLE")) {
+    // USERNAME_PURCHASE_AVAILABLE is reported as an available-for-purchase result, not an error
+    if (getErrorMessage(error).includes("USERNAME_PURCHASE_AVAILABLE")) {
       return {
         success: true,
         data: {
           channelId: params.channelId,
-          username: params.username.replace(/^@/, ""),
+          username: cleanUsername(params.username),
           available: false,
           purchaseAvailable: true,
           message: "This username is available for purchase on fragment.com",
@@ -92,9 +78,8 @@ export const telegramCheckChannelUsernameExecutor: ToolExecutor<
       };
     }
 
-    return {
-      success: false,
-      error: msg,
-    };
+    return mapTelegramError(error, {
+      USERNAME_INVALID: `Invalid username format: "${params.username}"`,
+    });
   }
 };
