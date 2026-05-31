@@ -607,6 +607,12 @@ export class AgentRuntime {
           isAdmin,
           toolContext?.senderId
         );
+        // Hybrid: always offer the tool_search escape hatch so the agent can discover
+        // tools the RAG pre-selection missed (the mid-loop injection handles results).
+        const searchTool = this.toolRegistry.getAll().find((t) => t.name === "tool_search");
+        if (searchTool && !tools.some((t) => t.name === "tool_search")) {
+          tools.push(searchTool);
+        }
         log.info(`Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
         log.debug(`Tool RAG selected: ${tools.map((t) => t.name).join(", ")}`);
       } else {
@@ -1022,7 +1028,9 @@ export class AgentRuntime {
 
       // Mid-loop tool injection: when tool_search returns discoveries, inject schemas
       // into the live tools[] so the LLM can call them in the next iteration (D4).
-      if (this.config.tool_search?.enabled && tools) {
+      // Runs whenever tools exist (ToolSearch mode AND the RAG hybrid escape hatch);
+      // it's a no-op unless a tool_search call actually returned results.
+      if (tools) {
         let injected = 0;
         for (let i = 0; i < toolPlans.length; i++) {
           const plan = toolPlans[i];
