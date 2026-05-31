@@ -49,6 +49,33 @@ export class ToolRegistry {
     this.mode = mode;
   }
 
+  /**
+   * Centralised insertion into the parallel registry Maps — single source for the
+   * tool/scope/mode/tags/module bookkeeping shared by register() and the plugin
+   * (re)registration paths. Callers own collision policy and cache invalidation.
+   */
+  private insertTool(
+    name: string,
+    entry: {
+      tool: Tool;
+      executor: ToolExecutor;
+      scope?: ToolScope;
+      mode: ToolMode;
+      module: string;
+      tags?: string[];
+    }
+  ): void {
+    this.tools.set(name, { tool: entry.tool, executor: entry.executor });
+    if (entry.scope && entry.scope !== "always" && entry.scope !== "open") {
+      this.scopes.set(name, entry.scope);
+    }
+    this.toolModes.set(name, entry.mode);
+    if (entry.tags && entry.tags.length > 0) {
+      this.toolTags.set(name, entry.tags);
+    }
+    this.toolModules.set(name, entry.module);
+  }
+
   register<TParams = unknown>(
     tool: Tool,
     executor: ToolExecutor<TParams>,
@@ -59,15 +86,14 @@ export class ToolRegistry {
     if (this.tools.has(tool.name)) {
       throw new Error(`Tool "${tool.name}" is already registered`);
     }
-    this.tools.set(tool.name, { tool, executor: executor as ToolExecutor });
-    if (scope && scope !== "always" && scope !== "open") {
-      this.scopes.set(tool.name, scope);
-    }
-    this.toolModes.set(tool.name, mode);
-    if (tags && tags.length > 0) {
-      this.toolTags.set(tool.name, tags);
-    }
-    this.toolModules.set(tool.name, tool.name.split("_")[0]);
+    this.insertTool(tool.name, {
+      tool,
+      executor: executor as ToolExecutor,
+      scope,
+      mode,
+      module: tool.name.split("_")[0],
+      tags,
+    });
     this.toolArrayCache = null;
   }
 
@@ -378,12 +404,7 @@ export class ToolRegistry {
     const names: string[] = [];
     for (const { tool, executor, scope } of tools) {
       if (this.tools.has(tool.name)) continue;
-      this.tools.set(tool.name, { tool, executor });
-      if (scope && scope !== "always" && scope !== "open") {
-        this.scopes.set(tool.name, scope);
-      }
-      this.toolModes.set(tool.name, "both");
-      this.toolModules.set(tool.name, pluginName);
+      this.insertTool(tool.name, { tool, executor, scope, mode: "both", module: pluginName });
       names.push(tool.name);
     }
     this.pluginToolNames.set(pluginName, names);
@@ -434,12 +455,7 @@ export class ToolRegistry {
         );
         continue;
       }
-      this.tools.set(tool.name, { tool, executor });
-      if (scope && scope !== "always" && scope !== "open") {
-        this.scopes.set(tool.name, scope);
-      }
-      this.toolModes.set(tool.name, "both");
-      this.toolModules.set(tool.name, pluginName);
+      this.insertTool(tool.name, { tool, executor, scope, mode: "both", module: pluginName });
       names.push(tool.name);
     }
     this.pluginToolNames.set(pluginName, names);
