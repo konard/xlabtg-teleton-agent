@@ -246,6 +246,39 @@ export interface ChatResponse {
   context: Context;
 }
 
+const THINK_RE = /<think>[\s\S]*?<\/think>/g;
+
+/**
+ * Shared post-processing for both complete() and stream() responses: strip
+ * <think> blocks (Cocoon, Mistral, etc.), persist the transcript, extract the
+ * text content, and append the response to the context.
+ */
+function finalizeResponse(
+  response: AssistantMessage,
+  context: Context,
+  options: ChatOptions
+): ChatResponse {
+  for (const block of response.content) {
+    if (block.type === "text" && block.text.includes("<think>")) {
+      block.text = block.text.replace(THINK_RE, "").trim();
+    }
+  }
+
+  if (options.persistTranscript && options.sessionId) {
+    appendToTranscript(options.sessionId, response);
+  }
+
+  const textContent = response.content.find((block) => block.type === "text");
+  const text = textContent?.type === "text" ? textContent.text : "";
+
+  const updatedContext: Context = {
+    ...context,
+    messages: [...context.messages, response],
+  };
+
+  return { message: response, text, context: updatedContext };
+}
+
 export async function chatWithContext(
   config: AgentConfig,
   options: ChatOptions
@@ -321,31 +354,7 @@ export async function chatWithContext(
     }
   }
 
-  // Strip <think> blocks from all providers (Cocoon, Mistral, etc.)
-  const thinkRe = /<think>[\s\S]*?<\/think>/g;
-  for (const block of response.content) {
-    if (block.type === "text" && block.text.includes("<think>")) {
-      block.text = block.text.replace(thinkRe, "").trim();
-    }
-  }
-
-  if (options.persistTranscript && options.sessionId) {
-    appendToTranscript(options.sessionId, response);
-  }
-
-  const textContent = response.content.find((block) => block.type === "text");
-  const text = textContent?.type === "text" ? textContent.text : "";
-
-  const updatedContext: Context = {
-    ...context,
-    messages: [...context.messages, response],
-  };
-
-  return {
-    message: response,
-    text,
-    context: updatedContext,
-  };
+  return finalizeResponse(response, context, options);
 }
 
 export interface StreamResult {
@@ -396,28 +405,7 @@ export function streamWithContext(config: AgentConfig, options: ChatOptions): St
   // Result promise: wait for the stream to complete and build ChatResponse
   const resultPromise = (async (): Promise<ChatResponse> => {
     const response = await eventStream.result();
-
-    // Strip <think> blocks
-    const thinkRe = /<think>[\s\S]*?<\/think>/g;
-    for (const block of response.content) {
-      if (block.type === "text" && block.text.includes("<think>")) {
-        block.text = block.text.replace(thinkRe, "").trim();
-      }
-    }
-
-    if (options.persistTranscript && options.sessionId) {
-      appendToTranscript(options.sessionId, response);
-    }
-
-    const textContent = response.content.find((block) => block.type === "text");
-    const text = textContent?.type === "text" ? textContent.text : "";
-
-    const updatedContext: Context = {
-      ...context,
-      messages: [...context.messages, response],
-    };
-
-    return { message: response, text, context: updatedContext };
+    return finalizeResponse(response, context, options);
   })();
 
   return { textStream: textDeltas(), result: resultPromise };
