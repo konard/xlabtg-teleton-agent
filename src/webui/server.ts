@@ -18,19 +18,7 @@ import {
   COOKIE_MAX_AGE,
 } from "./middleware/auth.js";
 import { logInterceptor } from "./log-interceptor.js";
-import { createStatusRoutes } from "./routes/status.js";
-import { createToolsRoutes } from "./routes/tools.js";
-import { createLogsRoutes } from "./routes/logs.js";
-import { createMemoryRoutes } from "./routes/memory.js";
-import { createSoulRoutes } from "./routes/soul.js";
-import { createPluginsRoutes } from "./routes/plugins.js";
-import { createMcpRoutes } from "./routes/mcp.js";
-import { createWorkspaceRoutes } from "./routes/workspace.js";
-import { createTasksRoutes } from "./routes/tasks.js";
-import { createConfigRoutes } from "./routes/config.js";
-import { createMarketplaceRoutes } from "./routes/marketplace.js";
-import { createHooksRoutes } from "./routes/hooks.js";
-import { createTonProxyRoutes } from "./routes/ton-proxy.js";
+import { SHARED_ROUTE_FACTORIES } from "./routes/shared.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createWalletRoutes } from "./routes/wallet.js";
 import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
@@ -172,19 +160,9 @@ export class WebUIServer {
     });
 
     // API routes (all require auth via middleware above)
-    this.app.route("/api/status", createStatusRoutes(this.deps));
-    this.app.route("/api/tools", createToolsRoutes(this.deps));
-    this.app.route("/api/logs", createLogsRoutes(this.deps));
-    this.app.route("/api/memory", createMemoryRoutes(this.deps));
-    this.app.route("/api/soul", createSoulRoutes(this.deps));
-    this.app.route("/api/plugins", createPluginsRoutes(this.deps));
-    this.app.route("/api/mcp", createMcpRoutes(this.deps));
-    this.app.route("/api/workspace", createWorkspaceRoutes(this.deps));
-    this.app.route("/api/tasks", createTasksRoutes(this.deps));
-    this.app.route("/api/config", createConfigRoutes(this.deps));
-    this.app.route("/api/marketplace", createMarketplaceRoutes(this.deps));
-    this.app.route("/api/hooks", createHooksRoutes(this.deps));
-    this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
+    for (const [seg, make] of SHARED_ROUTE_FACTORIES) {
+      this.app.route(`/api/${seg}`, make(this.deps));
+    }
     this.app.route("/api/conversations", createConversationRoutes(this.deps));
     this.app.route("/api/wallet", createWalletRoutes(this.deps));
 

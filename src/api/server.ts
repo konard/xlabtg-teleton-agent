@@ -27,19 +27,7 @@ import { globalRateLimit, mutatingRateLimit, readRateLimit } from "./middleware/
 import { auditMiddleware } from "./middleware/audit.js";
 
 // Existing WebUI route factories
-import { createStatusRoutes } from "../webui/routes/status.js";
-import { createToolsRoutes } from "../webui/routes/tools.js";
-import { createLogsRoutes } from "../webui/routes/logs.js";
-import { createMemoryRoutes } from "../webui/routes/memory.js";
-import { createSoulRoutes } from "../webui/routes/soul.js";
-import { createPluginsRoutes } from "../webui/routes/plugins.js";
-import { createMcpRoutes } from "../webui/routes/mcp.js";
-import { createWorkspaceRoutes } from "../webui/routes/workspace.js";
-import { createTasksRoutes } from "../webui/routes/tasks.js";
-import { createConfigRoutes } from "../webui/routes/config.js";
-import { createMarketplaceRoutes } from "../webui/routes/marketplace.js";
-import { createHooksRoutes } from "../webui/routes/hooks.js";
-import { createTonProxyRoutes } from "../webui/routes/ton-proxy.js";
+import { SHARED_ROUTE_FACTORIES } from "../webui/routes/shared.js";
 import { createSetupRoutes } from "../webui/routes/setup.js";
 
 // New API routes
@@ -208,19 +196,9 @@ export class ApiServer {
     const adaptedDeps = createDepsAdapter(this.deps);
 
     // Mount existing WebUI route factories under /v1/
-    this.app.route("/v1/status", createStatusRoutes(adaptedDeps));
-    this.app.route("/v1/tools", createToolsRoutes(adaptedDeps));
-    this.app.route("/v1/logs", createLogsRoutes(adaptedDeps));
-    this.app.route("/v1/memory", createMemoryRoutes(adaptedDeps));
-    this.app.route("/v1/soul", createSoulRoutes(adaptedDeps));
-    this.app.route("/v1/plugins", createPluginsRoutes(adaptedDeps));
-    this.app.route("/v1/mcp", createMcpRoutes(adaptedDeps));
-    this.app.route("/v1/workspace", createWorkspaceRoutes(adaptedDeps));
-    this.app.route("/v1/tasks", createTasksRoutes(adaptedDeps));
-    this.app.route("/v1/config", createConfigRoutes(adaptedDeps));
-    this.app.route("/v1/marketplace", createMarketplaceRoutes(adaptedDeps));
-    this.app.route("/v1/hooks", createHooksRoutes(adaptedDeps));
-    this.app.route("/v1/ton-proxy", createTonProxyRoutes(adaptedDeps));
+    for (const [seg, make] of SHARED_ROUTE_FACTORIES) {
+      this.app.route(`/v1/${seg}`, make(adaptedDeps));
+    }
 
     // Setup routes (no agent deps needed, keyHash for config persistence)
     this.app.route("/v1/setup", createSetupRoutes({ keyHash: this.keyHash }));
