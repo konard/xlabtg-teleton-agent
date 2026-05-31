@@ -3,6 +3,7 @@ import { api, TaskData } from '../lib/api';
 import { formatDate, formatDateTime, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
+import { expandableRowProps } from '../lib/a11y';
 
 type TaskStatus = TaskData['status'];
 type Task = TaskData;
@@ -319,9 +320,7 @@ export function Tasks() {
                   <React.Fragment key={task.id}>
                     <tr
                       onClick={() => setSelected(isExpanded ? null : task)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setSelected(isExpanded ? null : task); } }}
-                      tabIndex={0}
-                      role="button"
+                      {...expandableRowProps(() => setSelected(isExpanded ? null : task))}
                       style={{
                         cursor: 'pointer',
                         borderBottom: isExpanded ? 'none' : '1px solid var(--border)',

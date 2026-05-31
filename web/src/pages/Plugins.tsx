@@ -8,6 +8,7 @@ import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
+import { expandableRowProps } from '../lib/a11y';
 
 type Tab = 'installed' | 'marketplace';
 
@@ -351,9 +352,7 @@ export function Plugins() {
                     <React.Fragment key={plugin.name}>
                       <tr
                         onClick={() => setExpandedPlugin(isExpanded ? null : plugin.name)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPlugin(isExpanded ? null : plugin.name); } }}
-                        tabIndex={0}
-                        role="button"
+                        {...expandableRowProps(() => setExpandedPlugin(isExpanded ? null : plugin.name))}
                         style={{
                           cursor: 'pointer',
                           borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
@@ -623,9 +622,7 @@ export function Plugins() {
                       <React.Fragment key={plugin.id}>
                         <tr
                           onClick={() => setExpandedPlugin(isExpanded ? null : `market-${plugin.id}`)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPlugin(isExpanded ? null : `market-${plugin.id}`); } }}
-                          tabIndex={0}
-                          role="button"
+                          {...expandableRowProps(() => setExpandedPlugin(isExpanded ? null : `market-${plugin.id}`))}
                           style={{
                             cursor: 'pointer',
                             borderBottom: isExpanded ? 'none' : '1px solid var(--border)',

@@ -7,6 +7,7 @@ import { useToolManager } from '../hooks/useToolManager';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
+import { expandableRowProps } from '../lib/a11y';
 
 export function Tools() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
@@ -103,9 +104,7 @@ export function Tools() {
                   <Fragment key={module.name}>
                     <tr
                       onClick={() => setExpandedModule(isExpanded ? null : module.name)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedModule(isExpanded ? null : module.name); } }}
-                      tabIndex={0}
-                      role="button"
+                      {...expandableRowProps(() => setExpandedModule(isExpanded ? null : module.name))}
                       style={{
                         cursor: 'pointer',
                         borderBottom: isExpanded ? 'none' : '1px solid var(--border)',

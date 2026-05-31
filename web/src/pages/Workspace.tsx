@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { api, FileEntry, WorkspaceInfo } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
+import { expandableRowProps } from '../lib/a11y';
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-';
@@ -292,14 +293,8 @@ export function Workspace() {
               {/* Parent directory link */}
               {currentPath && (
                 <tr
-                  onClick={() => {
-                    const parts = currentPath.split('/');
-                    parts.pop();
-                    navigateTo(parts.join('/'));
-                  }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const parts = currentPath.split('/'); parts.pop(); navigateTo(parts.join('/')); } }}
-                  tabIndex={0}
-                  role="button"
+                  onClick={() => { const parts = currentPath.split('/'); parts.pop(); navigateTo(parts.join('/')); }}
+                  {...expandableRowProps(() => { const parts = currentPath.split('/'); parts.pop(); navigateTo(parts.join('/')); })}
                   style={{ cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
                   className="file-row"
                 >
@@ -317,9 +312,7 @@ export function Workspace() {
                   <React.Fragment key={entry.path}>
                     <tr
                       onClick={() => entry.isDirectory ? navigateTo(entry.path) : handleFileClick(entry.path)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); entry.isDirectory ? navigateTo(entry.path) : handleFileClick(entry.path); } }}
-                      tabIndex={0}
-                      role="button"
+                      {...expandableRowProps(() => entry.isDirectory ? navigateTo(entry.path) : handleFileClick(entry.path))}
                       style={{
                         cursor: 'pointer',
                         borderBottom: isExpanded ? 'none' : '1px solid var(--border)',

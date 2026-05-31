@@ -4,6 +4,7 @@ import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
+import { expandableRowProps } from '../lib/a11y';
 
 export function Conversations() {
   const [filter, setFilter] = useState('');
@@ -100,9 +101,7 @@ export function Conversations() {
                   <React.Fragment key={chat.id}>
                     <tr
                       onClick={() => toggleChat(chat.id)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleChat(chat.id); } }}
-                      tabIndex={0}
-                      role="button"
+                      {...expandableRowProps(() => toggleChat(chat.id))}
                       style={{
                         cursor: 'pointer',
                         borderBottom: isExpanded ? 'none' : '1px solid var(--border)',

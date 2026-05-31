@@ -3,6 +3,7 @@ import { api, WalletInfo, WalletTransaction } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
+import { expandableRowProps } from '../lib/a11y';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -134,9 +135,7 @@ export function Wallet() {
                   <React.Fragment key={tx.hash}>
                     <tr
                       onClick={() => toggleTx(tx.hash)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleTx(tx.hash); } }}
-                      tabIndex={0}
-                      role="button"
+                      {...expandableRowProps(() => toggleTx(tx.hash))}
                       style={{
                         cursor: 'pointer',
                         borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
