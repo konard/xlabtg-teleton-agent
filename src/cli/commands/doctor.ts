@@ -23,11 +23,7 @@ const reset = "\x1b[0m";
 
 function formatResult(result: CheckResult): string {
   const icon =
-    result.status === "ok"
-      ? GREEN("✓")
-      : result.status === "warn"
-        ? YELLOW("⚠")
-        : RED("✗");
+    result.status === "ok" ? GREEN("✓") : result.status === "warn" ? YELLOW("⚠") : RED("✗");
   return `${icon} ${result.name}: ${result.message}`;
 }
 
@@ -462,10 +458,14 @@ ${blue}  ┌──────────────────────�
   console.log("");
 
   if (errors > 0) {
-    console.log(RED(`  ✗ ${errors} error${errors > 1 ? "s" : ""} found - run 'teleton setup' to fix`));
+    console.log(
+      RED(`  ✗ ${errors} error${errors > 1 ? "s" : ""} found - run 'teleton setup' to fix`)
+    );
   } else if (warnings > 0) {
     console.log(
-      YELLOW(`  ⚠ ${warnings} warning${warnings > 1 ? "s" : ""} - agent may work with limited features`)
+      YELLOW(
+        `  ⚠ ${warnings} warning${warnings > 1 ? "s" : ""} - agent may work with limited features`
+      )
     );
   } else {
     console.log(GREEN(`  ✓ All ${ok} checks passed - system ready`));

@@ -1017,9 +1017,7 @@ export class AgentRuntime {
 
       const toolHint = summarizeToolParams(block.name, plan.params);
       log.debug(`${block.name}: ${exec.result.success ? "✓" : "✗"} ${exec.result.error || ""}`);
-      sink.iterationToolNames.push(
-        `${block.name}${toolHint} ${exec.result.success ? "✓" : "✗"}`
-      );
+      sink.iterationToolNames.push(`${block.name}${toolHint} ${exec.result.success ? "✓" : "✗"}`);
 
       sink.totalToolCalls.push({
         name: block.name,
@@ -1059,8 +1057,7 @@ export class AgentRuntime {
     const iterSignatures = toolPlans.map(
       (p) => `${p.block.name}:${JSON.stringify(p.params, Object.keys(p.params).sort())}`
     );
-    const allDuplicates =
-      iterSignatures.length > 0 && iterSignatures.every((sig) => seen.has(sig));
+    const allDuplicates = iterSignatures.length > 0 && iterSignatures.every((sig) => seen.has(sig));
     for (const sig of iterSignatures) seen.add(sig);
     return allDuplicates;
   }

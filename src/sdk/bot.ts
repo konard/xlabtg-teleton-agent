@@ -104,7 +104,9 @@ export function createBotSDK(
           });
           return;
         } catch (error: unknown) {
-          log.warn(`GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`);
+          log.warn(
+            `GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
+          );
         }
       }
 

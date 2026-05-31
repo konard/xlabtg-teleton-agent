@@ -709,7 +709,8 @@ async function stepProvider(
       detectedFromMsg: "Credentials auto-detected from Codex CLI",
       statusExpiredMsg: "expired (run codex to re-authenticate)",
       noteFooterMsg: "Token read from ~/.codex/auth.json",
-      notFoundHint: "Codex credentials not found. Make sure Codex CLI is installed and authenticated.",
+      notFoundHint:
+        "Codex credentials not found. Make sure Codex CLI is installed and authenticated.",
       fallbackKeyLabel: "OpenAI API Key (fallback)",
       prompter,
     });
