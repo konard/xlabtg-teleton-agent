@@ -8,6 +8,7 @@ import {
   SECONDS_PER_HOUR,
 } from "../../constants/limits.js";
 import { createLogger } from "../../utils/logger.js";
+import { escapeFts5Query, bm25ToScore } from "./fts-utils.js";
 
 const log = createLogger("Memory");
 
@@ -59,16 +60,6 @@ export function parseTemporalIntent(query: string): { afterTimestamp?: number } 
   if (/\brecently?\b/.test(lower)) return { afterTimestamp: now - 3 * SECONDS_PER_DAY };
 
   return {};
-}
-
-/**
- * Escape FTS5 special characters to prevent syntax errors.
- */
-function escapeFts5Query(query: string): string {
-  return query
-    .replace(/["\*\-\+\(\)\:\^\~\?\.\@\#\$\%\&\!\[\]\{\}\|\\\/<>=,;'`]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /**
@@ -235,7 +226,7 @@ export class HybridSearch {
 
       return rows.map((row) => ({
         ...row,
-        keywordScore: this.bm25ToScore(row.score),
+        keywordScore: bm25ToScore(row.score),
         createdAt: row.created_at ?? undefined,
         importance: row.importance ?? 0.5,
         lastAccessedAt: row.last_accessed_at ?? undefined,
@@ -346,7 +337,7 @@ export class HybridSearch {
       return rows.map((row) => ({
         ...row,
         text: row.text ?? "",
-        keywordScore: this.bm25ToScore(row.score),
+        keywordScore: bm25ToScore(row.score),
         createdAt: row.timestamp ?? undefined,
       }));
     } catch (error) {
@@ -400,13 +391,5 @@ export class HybridSearch {
       .filter((r) => r.score >= HYBRID_SEARCH_MIN_SCORE)
       .sort((a, b) => b.score - a.score)
       .slice(0, limit);
-  }
-
-  /**
-   * Convert BM25 rank to normalized score.
-   * FTS5 rank is negative; more negative = better match.
-   */
-  private bm25ToScore(rank: number): number {
-    return 1 / (1 + Math.exp(rank));
   }
 }

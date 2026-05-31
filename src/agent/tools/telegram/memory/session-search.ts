@@ -2,6 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getEffectiveApiKey } from "../../../client.js";
 import { summarizeViaClaude } from "../../../../memory/ai-summarization.js";
+import { escapeFts5Query } from "../../../../memory/search/fts-utils.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
 import type { SupportedProvider } from "../../../../config/providers.js";
@@ -27,16 +28,6 @@ interface FtsRow {
 interface Cluster {
   messages: FtsRow[];
   totalRank: number;
-}
-
-/**
- * Escape FTS5 special characters (mirrors hybrid.ts).
- */
-function escapeFts5Query(query: string): string {
-  return query
-    .replace(/["\*\-\+\(\)\:\^\~\?\.\@\#\$\%\&\!\[\]\{\}\|\\\/<>=,;'`]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
 }
 
 /**
