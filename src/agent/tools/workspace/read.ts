@@ -2,9 +2,9 @@
 
 import { Type } from "@sinclair/typebox";
 import { readFileSync, lstatSync } from "fs";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validateReadPath, WorkspaceSecurityError } from "../../../workspace/index.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import type { Tool, ToolExecutor } from "../types.js";
+import { validateReadPath } from "../../../workspace/index.js";
+import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceReadParams {
   path: string;
@@ -35,11 +35,8 @@ export const workspaceReadTool: Tool = {
   }),
 };
 
-export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> = async (
-  params,
-  _context
-): Promise<ToolResult> => {
-  try {
+export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> =
+  withToolErrors<WorkspaceReadParams>(async (params) => {
     const { path, encoding = "utf-8", maxSize = 1024 * 1024 } = params;
 
     // Validate the path
@@ -105,16 +102,4 @@ export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> = async (
         modified: stats.mtime.toISOString(),
       },
     };
-  } catch (error) {
-    if (error instanceof WorkspaceSecurityError) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
-  }
-};
+  });

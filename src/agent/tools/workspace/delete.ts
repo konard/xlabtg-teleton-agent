@@ -2,9 +2,9 @@
 
 import { Type } from "@sinclair/typebox";
 import { unlinkSync, rmdirSync, readdirSync, rmSync } from "fs";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validatePath, WorkspaceSecurityError } from "../../../workspace/index.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import type { Tool, ToolExecutor } from "../types.js";
+import { validatePath } from "../../../workspace/index.js";
+import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceDeleteParams {
   path: string;
@@ -38,11 +38,8 @@ export const workspaceDeleteTool: Tool = {
   }),
 };
 
-export const workspaceDeleteExecutor: ToolExecutor<WorkspaceDeleteParams> = async (
-  params,
-  _context
-): Promise<ToolResult> => {
-  try {
+export const workspaceDeleteExecutor: ToolExecutor<WorkspaceDeleteParams> =
+  withToolErrors<WorkspaceDeleteParams>(async (params) => {
     const { path, recursive = false } = params;
 
     // Validate the path
@@ -86,16 +83,4 @@ export const workspaceDeleteExecutor: ToolExecutor<WorkspaceDeleteParams> = asyn
         message: `Successfully deleted ${validated.isDirectory ? "directory" : "file"}`,
       },
     };
-  } catch (error) {
-    if (error instanceof WorkspaceSecurityError) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
-  }
-};
+  });

@@ -3,13 +3,9 @@
 import { Type } from "@sinclair/typebox";
 import { readdirSync, lstatSync } from "fs";
 import { join } from "path";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import {
-  validateDirectory,
-  WORKSPACE_ROOT,
-  WorkspaceSecurityError,
-} from "../../../workspace/index.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import type { Tool, ToolExecutor } from "../types.js";
+import { validateDirectory, WORKSPACE_ROOT } from "../../../workspace/index.js";
+import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceListParams {
   path?: string;
@@ -87,11 +83,8 @@ function listDir(dirPath: string, recursive: boolean, filter: string): FileInfo[
   return results;
 }
 
-export const workspaceListExecutor: ToolExecutor<WorkspaceListParams> = async (
-  params,
-  _context
-): Promise<ToolResult> => {
-  try {
+export const workspaceListExecutor: ToolExecutor<WorkspaceListParams> =
+  withToolErrors<WorkspaceListParams>(async (params) => {
     const { path = "", recursive = false, filter = "all" } = params;
 
     // Validate the path
@@ -119,16 +112,4 @@ export const workspaceListExecutor: ToolExecutor<WorkspaceListParams> = async (
         workspaceRoot: WORKSPACE_ROOT,
       },
     };
-  } catch (error) {
-    if (error instanceof WorkspaceSecurityError) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
-  }
-};
+  });
