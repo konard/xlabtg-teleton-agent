@@ -9,6 +9,7 @@ import {
   type SupportedProvider,
 } from "../../config/providers.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { GREEN, YELLOW, RED } from "../prompts.js";
 
 interface CheckResult {
   name: string;
@@ -16,19 +17,17 @@ interface CheckResult {
   message: string;
 }
 
-const green = "\x1b[32m";
-const yellow = "\x1b[33m";
-const red = "\x1b[31m";
-const reset = "\x1b[0m";
+// ASCII banner colors (raw ANSI — chalk has no equivalent blue export)
 const blue = "\x1b[34m";
+const reset = "\x1b[0m";
 
 function formatResult(result: CheckResult): string {
   const icon =
     result.status === "ok"
-      ? `${green}✓${reset}`
+      ? GREEN("✓")
       : result.status === "warn"
-        ? `${yellow}⚠${reset}`
-        : `${red}✗${reset}`;
+        ? YELLOW("⚠")
+        : RED("✗");
   return `${icon} ${result.name}: ${result.message}`;
 }
 
@@ -463,15 +462,13 @@ ${blue}  ┌──────────────────────�
   console.log("");
 
   if (errors > 0) {
-    console.log(
-      `${red}  ✗ ${errors} error${errors > 1 ? "s" : ""} found - run 'teleton setup' to fix${reset}`
-    );
+    console.log(RED(`  ✗ ${errors} error${errors > 1 ? "s" : ""} found - run 'teleton setup' to fix`));
   } else if (warnings > 0) {
     console.log(
-      `${yellow}  ⚠ ${warnings} warning${warnings > 1 ? "s" : ""} - agent may work with limited features${reset}`
+      YELLOW(`  ⚠ ${warnings} warning${warnings > 1 ? "s" : ""} - agent may work with limited features`)
     );
   } else {
-    console.log(`${green}  ✓ All ${ok} checks passed - system ready${reset}`);
+    console.log(GREEN(`  ✓ All ${ok} checks passed - system ready`));
   }
 
   console.log("");

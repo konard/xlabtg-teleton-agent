@@ -115,9 +115,9 @@ export async function onboardCommand(options: OnboardOptions = {}): Promise<void
     const port = parseInt(options.uiPort || "7777") || 7777;
     const url = `http://localhost:${port}/setup`;
 
+    // ASCII banner colors (raw ANSI — chalk has no equivalent blue export)
     const blue = "\x1b[34m";
     const reset = "\x1b[0m";
-    const dim = "\x1b[2m";
     console.log(`
 ${blue}  ┌───────────────────────────────────────────────────────────────────────────────────────┐
   │                                                                                       │
@@ -129,9 +129,9 @@ ${blue}  ┌──────────────────────�
   │                                                                                       │
   └────────────────────────────────────────────────────────────────── DEV: ZKPROOF.T.ME ──┘${reset}
 
-  ${dim}Setup wizard running at${reset} ${url}
-  ${dim}Opening in your default browser...${reset}
-  ${dim}Press Ctrl+C to cancel.${reset}
+  ${DIM("Setup wizard running at")} ${url}
+  ${DIM("Opening in your default browser...")}
+  ${DIM("Press Ctrl+C to cancel.")}
 `);
 
     const server = new SetupServer(port);
