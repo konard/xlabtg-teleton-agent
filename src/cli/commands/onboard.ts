@@ -29,7 +29,7 @@ import {
   type StepDef,
 } from "../prompts.js";
 
-import { ensureWorkspace, isNewWorkspace } from "../../workspace/manager.js";
+import { ensureWorkspace, isNewWorkspace, type Workspace } from "../../workspace/manager.js";
 import { writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { TELETON_ROOT } from "../../workspace/paths.js";
@@ -462,38 +462,46 @@ ${blue}  ┌──────────────────────�
 /**
  * Interactive onboarding wizard
  */
-async function runInteractiveOnboarding(
+// ── Interactive wizard state ──────────────────────────────────────────
+
+/** Mutable state shared across the interactive wizard steps. */
+interface OnboardState {
+  selectedProvider: SupportedProvider;
+  selectedModel: string;
+  apiKey: string;
+  localBaseUrl: string;
+  cocoonInstance: number;
+  apiId: number;
+  apiHash: string;
+  phone: string;
+  userId: number;
+  telegramMode: "user" | "bot";
+  botToken: string | undefined;
+  botUsername: string | undefined;
+  dmPolicy: Policy;
+  groupPolicy: Policy;
+  requireMention: boolean;
+  maxAgenticIterations: string;
+  execMode: "off" | "yolo";
+  tonapiKey: string | undefined;
+  toncenterApiKey: string | undefined;
+  tavilyApiKey: string | undefined;
+}
+
+/**
+ * Step 0: Agent — security warning, workspace, name, Telegram mode.
+ * Returns the workspace/spinner shared by later steps, plus the agent name and
+ * mode. Returns null when the user declines to overwrite an existing config.
+ */
+async function stepAgent(
   options: OnboardOptions,
   prompter: ReturnType<typeof createPrompter>
-): Promise<void> {
-  // ── Shared state ──
-  let selectedProvider: SupportedProvider = "anthropic";
-  let selectedModel = "";
-  let apiKey = "";
-  let apiId = 0;
-  let apiHash = "";
-  let phone = "";
-  let userId = 0;
-  let telegramMode: "user" | "bot" = "user";
-  let botToken: string | undefined;
-  let botUsername: string | undefined;
-  let dmPolicy: "open" | "allowlist" | "admin-only" | "disabled" = "admin-only";
-  let groupPolicy: "open" | "allowlist" | "admin-only" | "disabled" = "admin-only";
-  let requireMention = true;
-  let maxAgenticIterations = "5";
-  let execMode: "off" | "yolo" = "off";
-  let cocoonInstance = 10000;
-
-  // Intro
-  console.clear();
-  console.log();
-  console.log(wizardFrame(0, STEPS));
-  console.log();
-  await sleep(800);
-
-  // ════════════════════════════════════════════════════════════════════
-  // Step 0: Agent — security warning, workspace, name, mode, modules
-  // ════════════════════════════════════════════════════════════════════
+): Promise<{
+  workspace: Workspace;
+  spinner: ReturnType<typeof ora>;
+  agentName: string;
+  telegramMode: "user" | "bot";
+} | null> {
   redraw(0);
 
   noteBox(
@@ -541,7 +549,7 @@ async function runInteractiveOnboarding(
     });
     if (!shouldOverwrite) {
       console.log(`\n  ${DIM("Setup cancelled — existing configuration preserved.")}\n`);
-      return;
+      return null;
     }
   }
 
@@ -558,7 +566,7 @@ async function runInteractiveOnboarding(
     writeFileSync(workspace.identityPath, updated, "utf-8");
   }
 
-  telegramMode = await select({
+  const telegramMode = await select({
     message: "Telegram mode",
     default: "user",
     theme,
@@ -577,14 +585,24 @@ async function runInteractiveOnboarding(
   });
 
   STEPS[0].value = agentName;
+  return { workspace, spinner, agentName, telegramMode };
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 1: Provider — select + tool limit warning + API key
-  // ════════════════════════════════════════════════════════════════════
+/** Step 1: Provider — select provider, resolve API key/base URL, pick model. */
+async function stepProvider(
+  options: OnboardOptions,
+  prompter: ReturnType<typeof createPrompter>
+): Promise<{
+  selectedProvider: SupportedProvider;
+  apiKey: string;
+  localBaseUrl: string;
+  cocoonInstance: number;
+  selectedModel: string;
+}> {
   redraw(1);
 
   const providers = getSupportedProviders();
-  selectedProvider = await select({
+  const selectedProvider = await select({
     message: "AI Provider",
     default: "anthropic",
     theme,
@@ -609,7 +627,9 @@ async function runInteractiveOnboarding(
   }
 
   // API key (or Cocoon / Local setup)
+  let apiKey = "";
   let localBaseUrl = "";
+  let cocoonInstance = 10000;
   if (selectedProvider === "cocoon") {
     // Cocoon Network — no API key, managed externally via cocoon-cli
     apiKey = "";
@@ -731,7 +751,7 @@ async function runInteractiveOnboarding(
   }
 
   // Model selection (advanced mode only, after provider + API key)
-  selectedModel = providerMeta.defaultModel;
+  let selectedModel = providerMeta.defaultModel;
 
   if (selectedProvider !== "cocoon" && selectedProvider !== "local") {
     const providerModels = getModelsForProvider(selectedProvider);
@@ -762,9 +782,21 @@ async function runInteractiveOnboarding(
     STEPS[1].value = `${STEPS[1].value ?? providerMeta.displayName}, ${modelLabel}`;
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 2: Config — admin + policies
-  // ════════════════════════════════════════════════════════════════════
+  return { selectedProvider, apiKey, localBaseUrl, cocoonInstance, selectedModel };
+}
+
+/** Step 2: Config — admin user ID, DM/group policies, iterations, exec mode. */
+async function stepConfig(
+  options: OnboardOptions,
+  telegramMode: "user" | "bot"
+): Promise<{
+  userId: number;
+  dmPolicy: Policy;
+  groupPolicy: Policy;
+  requireMention: boolean;
+  maxAgenticIterations: string;
+  execMode: "off" | "yolo";
+}> {
   redraw(2);
 
   // Admin User ID
@@ -787,8 +819,11 @@ async function runInteractiveOnboarding(
           return true;
         },
       });
-  userId = parseInt(userIdStr);
+  const userId = parseInt(userIdStr);
 
+  let dmPolicy: Policy = "admin-only";
+  let groupPolicy: Policy = "admin-only";
+  let requireMention = true;
   if (telegramMode === "bot") {
     dmPolicy = "admin-only";
     groupPolicy = "admin-only";
@@ -833,7 +868,7 @@ async function runInteractiveOnboarding(
     });
   }
 
-  maxAgenticIterations = await input({
+  const maxAgenticIterations = await input({
     message: "Max agentic iterations (tool call loops per message)",
     default: "5",
     theme,
@@ -843,7 +878,7 @@ async function runInteractiveOnboarding(
     },
   });
 
-  execMode = await select({
+  const execMode = await select({
     message: "Coding Agent (system execution)",
     choices: [
       { value: "off" as const, name: "Disabled", description: "No system execution capability" },
@@ -858,13 +893,25 @@ async function runInteractiveOnboarding(
   });
 
   STEPS[2].value = `${dmPolicy}/${groupPolicy}`;
+  return { userId, dmPolicy, groupPolicy, requireMention, maxAgenticIterations, execMode };
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 3: Modules — optional API keys
-  // ════════════════════════════════════════════════════════════════════
+/** Step 3: Modules — optional bot token (user mode) and TonAPI/TonCenter/Tavily keys. */
+async function stepModules(
+  telegramMode: "user" | "bot",
+  spinner: ReturnType<typeof ora>
+): Promise<{
+  botToken: string | undefined;
+  botUsername: string | undefined;
+  tonapiKey: string | undefined;
+  toncenterApiKey: string | undefined;
+  tavilyApiKey: string | undefined;
+}> {
   redraw(3);
 
   const extras: string[] = [];
+  let botToken: string | undefined;
+  let botUsername: string | undefined;
 
   // Bot token (recommended — required for deals module; skipped in bot mode, handled at step 5)
   const setupBot =
@@ -969,13 +1016,14 @@ async function runInteractiveOnboarding(
   if (tavilyApiKey) extras.push("Tavily");
 
   STEPS[3].value = extras.length ? extras.join(", ") : "defaults";
+  return { botToken, botUsername, tonapiKey, toncenterApiKey, tavilyApiKey };
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 4: Wallet — generate / import / keep
-  // ════════════════════════════════════════════════════════════════════
+/** Step 4: Wallet — generate / import / keep, then show the mnemonic backup. */
+async function stepWallet(spinner: ReturnType<typeof ora>): Promise<WalletData> {
   redraw(4);
 
-  let wallet;
+  let wallet: WalletData;
   const existingWallet = walletExists() ? loadWallet() : null;
 
   if (existingWallet) {
@@ -1083,10 +1131,25 @@ async function runInteractiveOnboarding(
   }
 
   STEPS[4].value = `${wallet.address.slice(0, 8)}...${wallet.address.slice(-4)}`;
+  return wallet;
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 5: Telegram — credentials
-  // ════════════════════════════════════════════════════════════════════
+/**
+ * Step 5: Telegram — bot token (bot mode) or API id/hash/phone (user mode).
+ * In bot mode it returns the resolved bot token/username; in user mode it
+ * returns the captured credentials. Unset fields keep their incoming values.
+ */
+async function stepTelegram(
+  options: OnboardOptions,
+  telegramMode: "user" | "bot",
+  spinner: ReturnType<typeof ora>
+): Promise<{
+  botToken?: string;
+  botUsername?: string;
+  apiId?: number;
+  apiHash?: string;
+  phone?: string;
+}> {
   redraw(5);
 
   if (telegramMode === "bot") {
@@ -1104,7 +1167,8 @@ async function runInteractiveOnboarding(
       theme,
       validate: (value = "") => validateBotTokenFormat(value),
     });
-    botToken = tokenInput;
+    const botToken = tokenInput;
+    let botUsername: string | undefined;
 
     // Validate and fetch bot username
     spinner.start(DIM("Validating bot token..."));
@@ -1119,92 +1183,99 @@ async function runInteractiveOnboarding(
     }
 
     STEPS[5].value = botUsername ? `@${botUsername}` : "bot token set";
-  } else {
-    noteBox(
-      "To get your API credentials:\n" +
-        "\n" +
-        "  1. Go to https://my.telegram.org/apps\n" +
-        "  2. Log in with your phone number\n" +
-        '  3. Click "API development tools"\n' +
-        "  4. Create an application (any name/short name works)\n" +
-        "  5. Copy the API ID (number) and API Hash (hex string)\n" +
-        "\n" +
-        "⚠ Do NOT use a VPN — Telegram will block the login page.",
-      "Telegram",
-      TON
-    );
-
-    const envApiId = process.env.TELETON_TG_API_ID;
-    const envApiHash = process.env.TELETON_TG_API_HASH;
-    const envPhone = process.env.TELETON_TG_PHONE;
-
-    const apiIdStr = options.apiId
-      ? options.apiId.toString()
-      : await input({
-          message: envApiId ? "API ID (from env)" : "API ID (from my.telegram.org)",
-          default: envApiId,
-          theme,
-          validate: (value) => {
-            if (!value || isNaN(parseInt(value))) return "Invalid API ID (must be a number)";
-            return true;
-          },
-        });
-    apiId = parseInt(apiIdStr);
-
-    apiHash = options.apiHash
-      ? options.apiHash
-      : await input({
-          message: envApiHash ? "API Hash (from env)" : "API Hash (from my.telegram.org)",
-          default: envApiHash,
-          theme,
-          validate: (value) => {
-            if (!value || value.length < 10) return "Invalid API Hash";
-            return true;
-          },
-        });
-
-    phone = options.phone
-      ? options.phone
-      : await input({
-          message: envPhone ? "Phone number (from env)" : "Phone number (international format)",
-          default: envPhone,
-          theme,
-          validate: (value) => {
-            if (!value || !value.startsWith("+")) return "Must start with +";
-            return true;
-          },
-        });
-
-    STEPS[5].value = phone;
+    return { botToken, botUsername };
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 6: Connect — save config + Telegram auth
-  // ════════════════════════════════════════════════════════════════════
+  noteBox(
+    "To get your API credentials:\n" +
+      "\n" +
+      "  1. Go to https://my.telegram.org/apps\n" +
+      "  2. Log in with your phone number\n" +
+      '  3. Click "API development tools"\n' +
+      "  4. Create an application (any name/short name works)\n" +
+      "  5. Copy the API ID (number) and API Hash (hex string)\n" +
+      "\n" +
+      "⚠ Do NOT use a VPN — Telegram will block the login page.",
+    "Telegram",
+    TON
+  );
+
+  const envApiId = process.env.TELETON_TG_API_ID;
+  const envApiHash = process.env.TELETON_TG_API_HASH;
+  const envPhone = process.env.TELETON_TG_PHONE;
+
+  const apiIdStr = options.apiId
+    ? options.apiId.toString()
+    : await input({
+        message: envApiId ? "API ID (from env)" : "API ID (from my.telegram.org)",
+        default: envApiId,
+        theme,
+        validate: (value) => {
+          if (!value || isNaN(parseInt(value))) return "Invalid API ID (must be a number)";
+          return true;
+        },
+      });
+  const apiId = parseInt(apiIdStr);
+
+  const apiHash = options.apiHash
+    ? options.apiHash
+    : await input({
+        message: envApiHash ? "API Hash (from env)" : "API Hash (from my.telegram.org)",
+        default: envApiHash,
+        theme,
+        validate: (value) => {
+          if (!value || value.length < 10) return "Invalid API Hash";
+          return true;
+        },
+      });
+
+  const phone = options.phone
+    ? options.phone
+    : await input({
+        message: envPhone ? "Phone number (from env)" : "Phone number (international format)",
+        default: envPhone,
+        theme,
+        validate: (value) => {
+          if (!value || !value.startsWith("+")) return "Must start with +";
+          return true;
+        },
+      });
+
+  STEPS[5].value = phone;
+  return { apiId, apiHash, phone };
+}
+
+/** Step 6: Connect — build+save config, optionally authenticate with Telegram. */
+async function stepConnect(
+  state: OnboardState,
+  workspace: Workspace,
+  spinner: ReturnType<typeof ora>,
+  prompter: ReturnType<typeof createPrompter>
+): Promise<boolean> {
   redraw(6);
 
   // Build config (shared with the non-interactive flow via buildConfig)
   const config = buildConfig({
-    provider: selectedProvider,
-    apiKey,
-    baseUrl: selectedProvider === "local" ? localBaseUrl : undefined,
-    model: selectedModel,
-    maxAgenticIterations: parseInt(maxAgenticIterations, 10),
-    telegramMode,
-    apiId,
-    apiHash,
-    phone,
-    userId,
-    dmPolicy,
-    groupPolicy,
-    requireMention,
-    execMode,
-    botToken,
-    botUsername,
-    tonapiKey,
-    toncenterApiKey,
-    tavilyApiKey,
-    cocoonPort: selectedProvider === "cocoon" ? cocoonInstance : undefined,
+    provider: state.selectedProvider,
+    apiKey: state.apiKey,
+    baseUrl: state.selectedProvider === "local" ? state.localBaseUrl : undefined,
+    model: state.selectedModel,
+    maxAgenticIterations: parseInt(state.maxAgenticIterations, 10),
+    telegramMode: state.telegramMode,
+    apiId: state.apiId,
+    apiHash: state.apiHash,
+    phone: state.phone,
+    userId: state.userId,
+    dmPolicy: state.dmPolicy,
+    groupPolicy: state.groupPolicy,
+    requireMention: state.requireMention,
+    execMode: state.execMode,
+    botToken: state.botToken,
+    botUsername: state.botUsername,
+    tonapiKey: state.tonapiKey,
+    toncenterApiKey: state.toncenterApiKey,
+    tavilyApiKey: state.tavilyApiKey,
+    cocoonPort: state.selectedProvider === "cocoon" ? state.cocoonInstance : undefined,
     sessionPath: workspace.sessionPath,
     workspaceRoot: workspace.root,
   });
@@ -1217,7 +1288,7 @@ async function runInteractiveOnboarding(
 
   // Telegram authentication
   let telegramConnected = false;
-  if (telegramMode === "bot") {
+  if (state.telegramMode === "bot") {
     console.log(`\n  ${DIM("Bot mode — no Telegram auth required. Ready to start.")}\n`);
     STEPS[6].value = "Bot mode ✓";
     telegramConnected = true;
@@ -1235,9 +1306,9 @@ async function runInteractiveOnboarding(
       try {
         const sessionPath = join(TELETON_ROOT, "telegram_session.txt");
         const client = new TelegramUserClient({
-          apiId,
-          apiHash,
-          phone,
+          apiId: state.apiId,
+          apiHash: state.apiHash,
+          phone: state.phone,
           sessionPath,
         });
         await client.connect();
@@ -1259,6 +1330,89 @@ async function runInteractiveOnboarding(
       STEPS[6].value = "Auth on first start";
     }
   }
+
+  return telegramConnected;
+}
+
+async function runInteractiveOnboarding(
+  options: OnboardOptions,
+  prompter: ReturnType<typeof createPrompter>
+): Promise<void> {
+  // ── Mutable shared state ──
+  const state: OnboardState = {
+    selectedProvider: "anthropic",
+    selectedModel: "",
+    apiKey: "",
+    localBaseUrl: "",
+    cocoonInstance: 10000,
+    apiId: 0,
+    apiHash: "",
+    phone: "",
+    userId: 0,
+    telegramMode: "user",
+    botToken: undefined,
+    botUsername: undefined,
+    dmPolicy: "admin-only",
+    groupPolicy: "admin-only",
+    requireMention: true,
+    maxAgenticIterations: "5",
+    execMode: "off",
+    tonapiKey: undefined,
+    toncenterApiKey: undefined,
+    tavilyApiKey: undefined,
+  };
+
+  // Intro
+  console.clear();
+  console.log();
+  console.log(wizardFrame(0, STEPS));
+  console.log();
+  await sleep(800);
+
+  // Step 0: Agent
+  const agentResult = await stepAgent(options, prompter);
+  if (!agentResult) return; // user declined to overwrite existing config
+  const { workspace, spinner } = agentResult;
+  state.telegramMode = agentResult.telegramMode;
+
+  // Step 1: Provider
+  const provider = await stepProvider(options, prompter);
+  state.selectedProvider = provider.selectedProvider;
+  state.apiKey = provider.apiKey;
+  state.localBaseUrl = provider.localBaseUrl;
+  state.cocoonInstance = provider.cocoonInstance;
+  state.selectedModel = provider.selectedModel;
+
+  // Step 2: Config
+  const cfg = await stepConfig(options, state.telegramMode);
+  state.userId = cfg.userId;
+  state.dmPolicy = cfg.dmPolicy;
+  state.groupPolicy = cfg.groupPolicy;
+  state.requireMention = cfg.requireMention;
+  state.maxAgenticIterations = cfg.maxAgenticIterations;
+  state.execMode = cfg.execMode;
+
+  // Step 3: Modules
+  const modules = await stepModules(state.telegramMode, spinner);
+  state.botToken = modules.botToken;
+  state.botUsername = modules.botUsername;
+  state.tonapiKey = modules.tonapiKey;
+  state.toncenterApiKey = modules.toncenterApiKey;
+  state.tavilyApiKey = modules.tavilyApiKey;
+
+  // Step 4: Wallet (produced + persisted inside the step; not needed downstream)
+  await stepWallet(spinner);
+
+  // Step 5: Telegram
+  const telegram = await stepTelegram(options, state.telegramMode, spinner);
+  if (telegram.botToken !== undefined) state.botToken = telegram.botToken;
+  if (telegram.botUsername !== undefined) state.botUsername = telegram.botUsername;
+  if (telegram.apiId !== undefined) state.apiId = telegram.apiId;
+  if (telegram.apiHash !== undefined) state.apiHash = telegram.apiHash;
+  if (telegram.phone !== undefined) state.phone = telegram.phone;
+
+  // Step 6: Connect
+  const telegramConnected = await stepConnect(state, workspace, spinner, prompter);
 
   // ════════════════════════════════════════════════════════════════════
   // Final summary
