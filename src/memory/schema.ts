@@ -4,6 +4,25 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Memory");
 
+/**
+ * Idempotent ALTER TABLE ... ADD COLUMN: swallows the "duplicate column name"
+ * error so migrations can re-run. Single definition shared by all migrations.
+ */
+function addColumnIfNotExists(
+  db: Database.Database,
+  table: string,
+  column: string,
+  type: string
+): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
+      throw error;
+    }
+  }
+}
+
 function compareSemver(a: string, b: string): number {
   const parseVersion = (v: string) => {
     const parts = v.split("-")[0].split(".").map(Number);
@@ -417,28 +436,19 @@ export function runMigrations(db: Database.Database): void {
       log.info("Running migration 1.2.0: Extend sessions table for SQLite backend");
 
       // Add missing columns to sessions table
-      const addColumnIfNotExists = (table: string, column: string, type: string) => {
-        try {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-        } catch (error: unknown) {
-          if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
-            throw error;
-          }
-        }
-      };
-
       addColumnIfNotExists(
+        db,
         "sessions",
         "updated_at",
         "INTEGER NOT NULL DEFAULT (unixepoch() * 1000)"
       );
-      addColumnIfNotExists("sessions", "last_message_id", "INTEGER");
-      addColumnIfNotExists("sessions", "last_channel", "TEXT");
-      addColumnIfNotExists("sessions", "last_to", "TEXT");
-      addColumnIfNotExists("sessions", "context_tokens", "INTEGER");
-      addColumnIfNotExists("sessions", "model", "TEXT");
-      addColumnIfNotExists("sessions", "provider", "TEXT");
-      addColumnIfNotExists("sessions", "last_reset_date", "TEXT");
+      addColumnIfNotExists(db, "sessions", "last_message_id", "INTEGER");
+      addColumnIfNotExists(db, "sessions", "last_channel", "TEXT");
+      addColumnIfNotExists(db, "sessions", "last_to", "TEXT");
+      addColumnIfNotExists(db, "sessions", "context_tokens", "INTEGER");
+      addColumnIfNotExists(db, "sessions", "model", "TEXT");
+      addColumnIfNotExists(db, "sessions", "provider", "TEXT");
+      addColumnIfNotExists(db, "sessions", "last_reset_date", "TEXT");
 
       const sessions = db.prepare("SELECT started_at FROM sessions LIMIT 1").all() as Array<{
         started_at: number;
@@ -597,18 +607,8 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.13.0")) {
     log.info("Running migration 1.13.0: Add token usage columns to sessions");
     try {
-      const addColumnIfNotExists = (table: string, column: string, type: string) => {
-        try {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-        } catch (error: unknown) {
-          if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
-            throw error;
-          }
-        }
-      };
-
-      addColumnIfNotExists("sessions", "input_tokens", "INTEGER DEFAULT 0");
-      addColumnIfNotExists("sessions", "output_tokens", "INTEGER DEFAULT 0");
+      addColumnIfNotExists(db, "sessions", "input_tokens", "INTEGER DEFAULT 0");
+      addColumnIfNotExists(db, "sessions", "output_tokens", "INTEGER DEFAULT 0");
 
       log.info("Migration 1.13.0 complete: Token usage columns added to sessions");
     } catch (error) {
@@ -685,21 +685,11 @@ export function runMigrations(db: Database.Database): void {
       "Running migration 1.17.0: Add importance, access tracking, and lifecycle columns to knowledge"
     );
     try {
-      const addColumnIfNotExists = (table: string, column: string, type: string) => {
-        try {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-        } catch (error: unknown) {
-          if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
-            throw error;
-          }
-        }
-      };
-
-      addColumnIfNotExists("knowledge", "importance", "REAL DEFAULT 0.5");
-      addColumnIfNotExists("knowledge", "access_count", "INTEGER DEFAULT 0");
-      addColumnIfNotExists("knowledge", "last_accessed_at", "INTEGER");
-      addColumnIfNotExists("knowledge", "status", "TEXT DEFAULT 'active'");
-      addColumnIfNotExists("knowledge", "memory_type", "TEXT DEFAULT 'semantic'");
+      addColumnIfNotExists(db, "knowledge", "importance", "REAL DEFAULT 0.5");
+      addColumnIfNotExists(db, "knowledge", "access_count", "INTEGER DEFAULT 0");
+      addColumnIfNotExists(db, "knowledge", "last_accessed_at", "INTEGER");
+      addColumnIfNotExists(db, "knowledge", "status", "TEXT DEFAULT 'active'");
+      addColumnIfNotExists(db, "knowledge", "memory_type", "TEXT DEFAULT 'semantic'");
 
       db.exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_status ON knowledge(status)`);
 
