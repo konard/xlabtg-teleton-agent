@@ -6,6 +6,7 @@ import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
 import { Loading } from '../components/Loading';
+import { Alert } from '../components/Alert';
 
 function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
   return (
@@ -72,12 +73,7 @@ export function Dashboard() {
         <p>System overview</p>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '14px' }}>
-          {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
-        </div>
-      )}
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
 
 
       {/* ── Status bar ─────────────────────────────────────── */}

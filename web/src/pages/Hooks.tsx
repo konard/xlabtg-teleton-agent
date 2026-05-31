@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
+import { Alert } from '../components/Alert';
 
 interface TriggerEntry {
   id: string;
@@ -172,12 +173,7 @@ export function Hooks() {
         <p>Keyword blocklist and context injection triggers</p>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>{error}</span>
-          <button className="btn-ghost btn-sm" onClick={() => setError(null)}>Dismiss</button>
-        </div>
-      )}
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
 
       {/* ── Keyword Blocklist ── */}
       <div className="card" style={{ marginBottom: '16px' }}>

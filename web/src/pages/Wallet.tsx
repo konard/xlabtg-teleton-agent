@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api, WalletInfo, WalletTransaction } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
+import { Alert } from '../components/Alert';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -59,12 +60,7 @@ export function Wallet() {
         <p>TON blockchain wallet</p>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '12px' }}>
-          {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
-        </div>
-      )}
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '12px' }} />}
 
       {/* Wallet info card */}
       <div className="card" style={{ marginBottom: '16px', padding: '16px 20px' }}>

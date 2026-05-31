@@ -6,6 +6,7 @@ import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
+import { Alert } from '../components/Alert';
 
 export function Tools() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
@@ -41,13 +42,9 @@ export function Tools() {
       </div>
 
       {error && (
-        <div className="alert error" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>{error}</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button className="btn-ghost btn-sm" onClick={() => setError(null)}>Dismiss</button>
-            <button className="btn-sm" onClick={() => { setError(null); reload(); }}>Retry</button>
-          </div>
-        </div>
+        <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }}>
+          <button className="btn-sm" onClick={() => { setError(null); reload(); }}>Retry</button>
+        </Alert>
       )}
 
       {/* Stats bar */}

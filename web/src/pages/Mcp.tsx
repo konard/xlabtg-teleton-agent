@@ -3,6 +3,7 @@ import { api, McpServerInfo } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
+import { Alert } from '../components/Alert';
 
 export function Mcp() {
   const { data: servers, loading, error, reload, setError } = useResource<McpServerInfo[]>(
@@ -93,23 +94,8 @@ export function Mcp() {
         </div>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '14px' }}>
-          {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>
-            Dismiss
-          </button>
-        </div>
-      )}
-
-      {success && (
-        <div className="alert success" style={{ marginBottom: '14px' }}>
-          {success}
-          <button onClick={() => setSuccess(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>
-            Dismiss
-          </button>
-        </div>
-      )}
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
+      {success && <Alert type="success" message={success} onDismiss={() => setSuccess(null)} style={{ marginBottom: '14px' }} />}
 
       {showAdd && (
         <div className="card" style={{ marginBottom: '14px' }}>

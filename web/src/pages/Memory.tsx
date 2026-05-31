@@ -3,6 +3,7 @@ import { api, MemorySourceFile, MemoryChunk, SearchResult } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
+import { Alert } from '../components/Alert';
 
 export function Memory() {
   const [filter, setFilter] = useState('');
@@ -92,12 +93,7 @@ export function Memory() {
           </button>
         </div>
 
-        {error && (
-          <div className="alert error" style={{ margin: '12px 14px' }}>
-            {error}
-            <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
-          </div>
-        )}
+        {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ margin: '12px 14px' }} />}
 
         {query ? (
           /* Semantic search results */
