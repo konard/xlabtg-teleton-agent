@@ -1,8 +1,14 @@
 import { z } from "zod";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../constants/limits.js";
+import { SUPPORTED_PROVIDER_IDS } from "./providers.js";
 
 export const DMPolicy = z.enum(["allowlist", "open", "admin-only", "disabled"]);
 export const GroupPolicy = z.enum(["open", "allowlist", "admin-only", "disabled"]);
+
+// Exec enums exported so the UI whitelist (configurable-keys.ts) reuses them
+// instead of re-listing the literals.
+export const ExecMode = z.enum(["off", "yolo"]);
+export const ExecScope = z.enum(["admin-only", "allowlist", "all"]);
 
 export const SessionResetPolicySchema = z.object({
   daily_reset_enabled: z.boolean().default(true).describe("Enable daily session reset"),
@@ -20,26 +26,7 @@ export const SessionResetPolicySchema = z.object({
 });
 
 export const AgentConfigSchema = z.object({
-  provider: z
-    .enum([
-      "anthropic",
-      "claude-code",
-      "codex",
-      "openai",
-      "google",
-      "xai",
-      "groq",
-      "openrouter",
-      "moonshot",
-      "mistral",
-      "cerebras",
-      "zai",
-      "minimax",
-      "huggingface",
-      "cocoon",
-      "local",
-    ])
-    .default("anthropic"),
+  provider: z.enum(SUPPORTED_PROVIDER_IDS).default("anthropic"),
   api_key: z.string().default(""),
   base_url: z
     .string()
@@ -315,14 +302,8 @@ const _ExecAuditObject = z.object({
 });
 
 const _ExecObject = z.object({
-  mode: z
-    .enum(["off", "yolo"])
-    .default("off")
-    .describe("Exec mode: off (disabled) or yolo (full system access)"),
-  scope: z
-    .enum(["admin-only", "allowlist", "all"])
-    .default("admin-only")
-    .describe("Who can trigger exec tools"),
+  mode: ExecMode.default("off").describe("Exec mode: off (disabled) or yolo (full system access)"),
+  scope: ExecScope.default("admin-only").describe("Who can trigger exec tools"),
   allowlist: z
     .array(z.number())
     .default([])

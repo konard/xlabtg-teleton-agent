@@ -236,6 +236,15 @@ export function getSupportedProviders(): ProviderMetadata[] {
   return Object.values(PROVIDER_REGISTRY);
 }
 
+/**
+ * Provider ids as a non-empty tuple, derived from the single registry so the
+ * Zod `agent.provider` enum stays in sync with PROVIDER_REGISTRY (no 3rd copy).
+ */
+export const SUPPORTED_PROVIDER_IDS = Object.keys(PROVIDER_REGISTRY) as [
+  SupportedProvider,
+  ...SupportedProvider[],
+];
+
 export function validateApiKeyFormat(provider: SupportedProvider, key: string): string | undefined {
   const meta = PROVIDER_REGISTRY[provider];
   if (!meta) return `Unknown provider: ${provider}`;
