@@ -303,24 +303,30 @@ export class ToolRegistry {
   /**
    * Load tool configurations from database and seed missing ones
    */
-  loadConfigFromDB(db: Database.Database): void {
-    this.db = db;
-    this.toolConfigs = loadAllToolConfigs(db);
-
-    // Seed DB with defaults for tools that don't have config yet
+  /**
+   * Seed DB config defaults for any of `names` lacking one, then reload the
+   * in-memory config cache once if anything was seeded. No-op without a DB.
+   */
+  private seedConfigs(names: Iterable<string>): void {
+    if (!this.db) return;
     let seeded = false;
-    for (const [toolName] of this.tools) {
-      if (!this.toolConfigs.has(toolName)) {
-        const defaultScope = this.scopes.get(toolName) ?? "always";
-        initializeToolConfig(db, toolName, true, defaultScope);
+    for (const name of names) {
+      if (!this.toolConfigs.has(name)) {
+        const defaultScope = this.scopes.get(name) ?? "always";
+        initializeToolConfig(this.db, name, true, defaultScope);
         seeded = true;
       }
     }
-    // Reload once after all seeds
     if (seeded) {
-      this.toolConfigs = loadAllToolConfigs(db);
+      this.toolConfigs = loadAllToolConfigs(this.db);
     }
+  }
 
+  loadConfigFromDB(db: Database.Database): void {
+    this.db = db;
+    this.toolConfigs = loadAllToolConfigs(db);
+    // Seed DB with defaults for tools that don't have config yet
+    this.seedConfigs(this.tools.keys());
     // Clear cache to force regeneration with new configs
     this.toolArrayCache = null;
   }
@@ -416,19 +422,7 @@ export class ToolRegistry {
     this.pluginToolNames.set(pluginName, names);
 
     // Seed new tools into DB config (if DB is initialized)
-    if (this.db) {
-      let seeded = false;
-      for (const name of names) {
-        if (!this.toolConfigs.has(name)) {
-          const defaultScope = this.scopes.get(name) ?? "always";
-          initializeToolConfig(this.db, name, true, defaultScope);
-          seeded = true;
-        }
-      }
-      if (seeded) {
-        this.toolConfigs = loadAllToolConfigs(this.db);
-      }
-    }
+    this.seedConfigs(names);
 
     this.toolArrayCache = null;
 
@@ -473,19 +467,7 @@ export class ToolRegistry {
     this.pluginToolNames.set(pluginName, names);
 
     // Seed new tools into DB config (if DB is initialized)
-    if (this.db) {
-      let seeded = false;
-      for (const name of names) {
-        if (!this.toolConfigs.has(name)) {
-          const defaultScope = this.scopes.get(name) ?? "always";
-          initializeToolConfig(this.db, name, true, defaultScope);
-          seeded = true;
-        }
-      }
-      if (seeded) {
-        this.toolConfigs = loadAllToolConfigs(this.db);
-      }
-    }
+    this.seedConfigs(names);
 
     this.toolArrayCache = null;
 
