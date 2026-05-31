@@ -91,6 +91,15 @@ export class GrammyBotBridge implements ITelegramBridge {
     return this.botInfo?.username;
   }
 
+  /**
+   * Convert a decimal-string chatId to the JS number the grammy/Bot API expects.
+   * The Bot API types chat ids as JS numbers; bridge-interface keeps them as
+   * strings, so this is the single conversion point for the whole bridge.
+   */
+  private toChatId(chatId: string): number {
+    return Number(chatId);
+  }
+
   async sendMessage(options: SendMessageOptions): Promise<SentMessage> {
     if (!options.text || options.text.trim().length === 0) {
       log.debug("sendMessage skipped: empty text");
@@ -108,7 +117,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       return this.sendLongMessage(options.chatId, html, options.replyToId, replyMarkup);
     }
 
-    const result = await this.bot.api.sendMessage(Number(options.chatId), html, {
+    const result = await this.bot.api.sendMessage(this.toChatId(options.chatId), html, {
       parse_mode: "HTML",
       reply_to_message_id: options.replyToId,
       reply_markup: replyMarkup,
@@ -153,7 +162,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     for (let i = 0; i < chunks.length; i++) {
       const isFirst = i === 0;
       const isLast = i === chunks.length - 1;
-      const result = await this.bot.api.sendMessage(Number(chatId), chunks[i], {
+      const result = await this.bot.api.sendMessage(this.toChatId(chatId), chunks[i], {
         parse_mode: "HTML",
         reply_to_message_id: isFirst ? replyToId : undefined,
         reply_markup: isLast ? replyMarkup : undefined,
@@ -170,7 +179,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       : undefined;
 
     const result = await this.bot.api.editMessageText(
-      Number(options.chatId),
+      this.toChatId(options.chatId),
       options.messageId,
       markdownToTelegramHtml(options.text),
       { parse_mode: "HTML", reply_markup: replyMarkup }
@@ -188,7 +197,7 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async deleteMessage(chatId: string, messageId: number): Promise<boolean> {
-    await this.bot.api.deleteMessage(Number(chatId), messageId);
+    await this.bot.api.deleteMessage(this.toChatId(chatId), messageId);
     return true;
   }
 
@@ -198,8 +207,8 @@ export class GrammyBotBridge implements ITelegramBridge {
     messageId: number
   ): Promise<SentMessage> {
     const result = await this.bot.api.forwardMessage(
-      Number(toChatId),
-      Number(fromChatId),
+      this.toChatId(toChatId),
+      this.toChatId(fromChatId),
       messageId
     );
 
@@ -217,7 +226,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     replyToId?: number
   ): Promise<SentMessage> {
     const input = Buffer.isBuffer(photo) ? new InputFile(photo) : photo;
-    const result = await this.bot.api.sendPhoto(Number(chatId), input, {
+    const result = await this.bot.api.sendPhoto(this.toChatId(chatId), input, {
       caption,
       reply_to_message_id: replyToId,
     });
@@ -230,13 +239,13 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async pinMessage(chatId: string, messageId: number): Promise<boolean> {
-    await this.bot.api.pinChatMessage(Number(chatId), messageId);
+    await this.bot.api.pinChatMessage(this.toChatId(chatId), messageId);
     return true;
   }
 
   async sendDice(chatId: string, emoji?: string): Promise<SentMessage> {
     const result = await this.bot.api.sendDice(
-      Number(chatId),
+      this.toChatId(chatId),
       emoji as Parameters<typeof this.bot.api.sendDice>[1]
     );
 
@@ -248,7 +257,7 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async getChatInfo(chatId: string): Promise<ChatInfo> {
-    const chat = await this.bot.api.getChat(Number(chatId));
+    const chat = await this.bot.api.getChat(this.toChatId(chatId));
 
     return {
       id: String(chat.id),
@@ -273,14 +282,14 @@ export class GrammyBotBridge implements ITelegramBridge {
 
   async setTyping(chatId: string): Promise<void> {
     try {
-      await this.bot.api.sendChatAction(Number(chatId), "typing");
+      await this.bot.api.sendChatAction(this.toChatId(chatId), "typing");
     } catch {
       // 429 rate-limits on typing are harmless — swallow silently
     }
   }
 
   async sendReaction(chatId: string, messageId: number, emoji: string): Promise<void> {
-    await this.bot.api.setMessageReaction(Number(chatId), messageId, [
+    await this.bot.api.setMessageReaction(this.toChatId(chatId), messageId, [
       { type: "emoji", emoji } as Parameters<
         typeof this.bot.api.setMessageReaction
       >[2] extends (infer U)[]
@@ -302,7 +311,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     let fullText = "";
     let lastDraftTime = 0;
     const THROTTLE_MS = 300;
-    const numericChatId = Number(chatId);
+    const numericChatId = this.toChatId(chatId);
     // Leave headroom for HTML expansion from markdownToTelegramHtml
     const SPLIT_THRESHOLD = TELEGRAM_MAX_MESSAGE_LENGTH - 300;
 
@@ -362,7 +371,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     const draftId = this.activeDraftIds.get(chatId);
     if (draftId) {
       try {
-        await this.bot.api.sendMessageDraft(Number(chatId), draftId, " ");
+        await this.bot.api.sendMessageDraft(this.toChatId(chatId), draftId, " ");
       } catch {
         /* best effort */
       }
