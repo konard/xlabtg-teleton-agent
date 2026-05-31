@@ -44,6 +44,7 @@ import {
   saveWallet,
   walletExists,
   loadWallet,
+  type WalletData,
 } from "../../ton/wallet-service.js";
 import {
   getSupportedProviders,
@@ -195,6 +196,51 @@ async function promptOptionalKey(opts: {
     theme,
     validate: (v = "") => opts.validate(v),
   });
+}
+
+/** Shared bot-token format (id:hash). Used by all interactive + non-interactive sites. */
+const BOT_TOKEN_REGEX = /^[0-9]+:[A-Za-z0-9_-]+$/;
+
+/** Validate bot-token format for an inquirer `validate` callback. */
+function validateBotTokenFormat(value: string): true | string {
+  if (!value) return "Bot token is required";
+  if (!BOT_TOKEN_REGEX.test(value)) return "Invalid format (expected 123456:ABC...)";
+  return true;
+}
+
+/**
+ * Call Telegram getMe to verify a bot token and fetch its username.
+ * Returns `ok:true` with the username when verified, `ok:false` when the
+ * token is rejected, or `networkError:true` when the API is unreachable.
+ */
+async function validateAndFetchBot(
+  token: string
+): Promise<{ ok: boolean; username?: string; networkError?: boolean }> {
+  try {
+    const res = await fetchWithTimeout(`https://api.telegram.org/bot${token}/getMe`);
+    const data = await res.json();
+    if (!data.ok) return { ok: false };
+    return { ok: true, username: data.result.username };
+  } catch {
+    return { ok: false, networkError: true };
+  }
+}
+
+/** Prompt for a 24-word mnemonic and import+save the wallet, with spinner feedback. */
+async function importWalletFlow(spinner: ReturnType<typeof ora>): Promise<WalletData> {
+  const mnemonicInput = await input({
+    message: "Enter your 24-word mnemonic (space-separated)",
+    theme,
+    validate: (value = "") => {
+      const words = value.trim().split(/\s+/);
+      return words.length === 24 ? true : `Expected 24 words, got ${words.length}`;
+    },
+  });
+  spinner.start(DIM("Importing wallet..."));
+  const wallet = await importWallet(mnemonicInput.trim().split(/\s+/));
+  saveWallet(wallet);
+  spinner.succeed(DIM(`Wallet imported: ${wallet.address}`));
+  return wallet;
 }
 
 // Model catalog imported from shared source (see src/config/model-catalog.ts)
@@ -698,26 +744,18 @@ async function runInteractiveOnboarding(
     const tokenInput = await password({
       message: "Bot token (from @BotFather)",
       theme,
-      validate: (value) => {
-        if (!value || !value.includes(":")) return "Invalid format (expected id:hash)";
-        return true;
-      },
+      validate: (value = "") => validateBotTokenFormat(value),
     });
 
     // Validate bot token
     spinner.start(DIM("Validating bot token..."));
-    try {
-      const res = await fetchWithTimeout(`https://api.telegram.org/bot${tokenInput}/getMe`);
-      const data = await res.json();
-      if (!data.ok) {
-        spinner.warn(DIM("Bot token is invalid — skipping bot setup"));
-      } else {
-        botToken = tokenInput;
-        botUsername = data.result.username;
-        spinner.succeed(DIM(`Bot verified: @${botUsername}`));
-        extras.push("Bot");
-      }
-    } catch {
+    const result = await validateAndFetchBot(tokenInput);
+    if (result.ok) {
+      botToken = tokenInput;
+      botUsername = result.username;
+      spinner.succeed(DIM(`Bot verified: @${botUsername}`));
+      extras.push("Bot");
+    } else if (result.networkError) {
       spinner.warn(DIM("Could not validate bot token (network error) — saving anyway"));
       botToken = tokenInput;
       const usernameInput = await input({
@@ -730,6 +768,8 @@ async function runInteractiveOnboarding(
       });
       botUsername = usernameInput;
       extras.push("Bot");
+    } else {
+      spinner.warn(DIM("Bot token is invalid — skipping bot setup"));
     }
   }
 
@@ -814,18 +854,7 @@ async function runInteractiveOnboarding(
     if (walletAction === "keep") {
       wallet = existingWallet;
     } else if (walletAction === "import") {
-      const mnemonicInput = await input({
-        message: "Enter your 24-word mnemonic (space-separated)",
-        theme,
-        validate: (value = "") => {
-          const words = value.trim().split(/\s+/);
-          return words.length === 24 ? true : `Expected 24 words, got ${words.length}`;
-        },
-      });
-      spinner.start(DIM("Importing wallet..."));
-      wallet = await importWallet(mnemonicInput.trim().split(/\s+/));
-      saveWallet(wallet);
-      spinner.succeed(DIM(`Wallet imported: ${wallet.address}`));
+      wallet = await importWalletFlow(spinner);
     } else {
       spinner.start(DIM("Generating new TON wallet..."));
       wallet = await generateWallet();
@@ -848,18 +877,7 @@ async function runInteractiveOnboarding(
     });
 
     if (walletAction === "import") {
-      const mnemonicInput = await input({
-        message: "Enter your 24-word mnemonic (space-separated)",
-        theme,
-        validate: (value = "") => {
-          const words = value.trim().split(/\s+/);
-          return words.length === 24 ? true : `Expected 24 words, got ${words.length}`;
-        },
-      });
-      spinner.start(DIM("Importing wallet..."));
-      wallet = await importWallet(mnemonicInput.trim().split(/\s+/));
-      saveWallet(wallet);
-      spinner.succeed(DIM(`Wallet imported: ${wallet.address}`));
+      wallet = await importWalletFlow(spinner);
     } else {
       spinner.start(DIM("Generating TON wallet..."));
       wallet = await generateWallet();
@@ -939,28 +957,20 @@ async function runInteractiveOnboarding(
     const tokenInput = await password({
       message: "Bot token (from @BotFather)",
       theme,
-      validate: (value = "") => {
-        if (!value) return "Bot token is required";
-        if (!/^[0-9]+:[A-Za-z0-9_-]+$/.test(value))
-          return "Invalid format (expected 123456:ABC...)";
-        return true;
-      },
+      validate: (value = "") => validateBotTokenFormat(value),
     });
     botToken = tokenInput;
 
     // Validate and fetch bot username
     spinner.start(DIM("Validating bot token..."));
-    try {
-      const res = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/getMe`);
-      const data = await res.json();
-      if (!data.ok) {
-        spinner.warn(DIM("Bot token validation failed — saving anyway"));
-      } else {
-        botUsername = data.result.username;
-        spinner.succeed(DIM(`Bot verified: @${botUsername}`));
-      }
-    } catch {
+    const result = await validateAndFetchBot(botToken);
+    if (result.ok) {
+      botUsername = result.username;
+      spinner.succeed(DIM(`Bot verified: @${botUsername}`));
+    } else if (result.networkError) {
       spinner.warn(DIM("Could not validate bot token (network error) — saving anyway"));
+    } else {
+      spinner.warn(DIM("Bot token validation failed — saving anyway"));
     }
 
     STEPS[5].value = botUsername ? `@${botUsername}` : "bot token set";
@@ -1210,7 +1220,7 @@ async function runNonInteractiveOnboarding(
       prompter.error("Non-interactive bot mode requires: --bot-token");
       process.exit(1);
     }
-    if (!/^[0-9]+:[A-Za-z0-9_-]+$/.test(options.botToken)) {
+    if (!BOT_TOKEN_REGEX.test(options.botToken)) {
       prompter.error("--bot-token format invalid (expected 123456:ABC...)");
       process.exit(1);
     }
