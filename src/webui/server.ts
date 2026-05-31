@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { bodyLimit } from "hono/body-limit";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
 import type { Server as HttpServer } from "node:http";
 import { existsSync } from "node:fs";
@@ -10,6 +9,7 @@ import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { WebUIServerDeps } from "./types.js";
 import { createLifecycleSSE } from "./lifecycle-sse.js";
+import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "./http-common.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("WebUI");
@@ -114,19 +114,13 @@ export class WebUIServer {
     // Body size limit (defense-in-depth against oversized payloads)
     this.app.use(
       "*",
-      bodyLimit({
-        maxSize: 2 * 1024 * 1024, // 2MB
-        onError: (c) => c.json({ success: false, error: "Request body too large (max 2MB)" }, 413),
-      })
+      sharedBodyLimit((c) =>
+        c.json({ success: false, error: "Request body too large (max 2MB)" }, 413)
+      )
     );
 
     // Security headers for all responses
-    this.app.use("*", async (c, next) => {
-      await next();
-      c.res.headers.set("X-Content-Type-Options", "nosniff");
-      c.res.headers.set("X-Frame-Options", "DENY");
-      c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    });
+    applySecurityMiddleware(this.app, { referrerPolicy: "strict-origin-when-cross-origin" });
 
     // Auth for all /api/* routes
     // Accepts: HttpOnly cookie > Bearer header > ?token= query param (fallback)
@@ -455,14 +449,9 @@ export class WebUIServer {
 
   async stop(): Promise<void> {
     if (this.server) {
-      return new Promise((resolve) => {
-        (this.server as HttpServer).closeAllConnections();
-        this.server?.close(() => {
-          logInterceptor.uninstall();
-          log.info("WebUI server stopped");
-          resolve();
-        });
-      });
+      await closeServer(this.server as HttpServer);
+      logInterceptor.uninstall();
+      log.info("WebUI server stopped");
     }
   }
 

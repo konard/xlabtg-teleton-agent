@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import { timeout } from "hono/timeout";
 import { serve, type ServerType } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
@@ -18,6 +17,7 @@ import type { ApiServerDeps } from "./deps.js";
 import { createDepsAdapter } from "./deps.js";
 import type { ApiConfig } from "../config/schema.js";
 import { createLifecycleSSE } from "../webui/lifecycle-sse.js";
+import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "../webui/http-common.js";
 import { createProblem } from "./schemas/common.js";
 
 // Middleware
@@ -138,18 +138,11 @@ export class ApiServer {
     // 2. Body limit (2MB)
     this.app.use(
       "*",
-      bodyLimit({
-        maxSize: 2 * 1024 * 1024,
-        onError: (c) => {
-          return c.json(
-            createProblem(413, "Payload Too Large", "Request body exceeds 2MB limit"),
-            413,
-            {
-              "Content-Type": "application/problem+json",
-            }
-          );
-        },
-      })
+      sharedBodyLimit((c) =>
+        c.json(createProblem(413, "Payload Too Large", "Request body exceeds 2MB limit"), 413, {
+          "Content-Type": "application/problem+json",
+        })
+      )
     );
 
     // 3. Timeout (30s) — exclude SSE endpoints
@@ -160,13 +153,8 @@ export class ApiServer {
       return timeout(30_000)(c, next);
     });
 
-    // 4. Security headers
-    this.app.use("*", async (c, next) => {
-      await next();
-      c.res.headers.set("X-Content-Type-Options", "nosniff");
-      c.res.headers.set("X-Frame-Options", "DENY");
-      c.res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    });
+    // 4. Security headers (HSTS — HTTPS-only API)
+    applySecurityMiddleware(this.app, { hsts: true });
   }
 
   private setupRoutes(): void {
@@ -407,13 +395,8 @@ export class ApiServer {
 
   async stop(): Promise<void> {
     if (this.server) {
-      return new Promise((resolve) => {
-        (this.server as HttpServer).closeAllConnections();
-        (this.server as HttpServer).close(() => {
-          log.info("Management API server stopped");
-          resolve();
-        });
-      });
+      await closeServer(this.server as HttpServer);
+      log.info("Management API server stopped");
     }
   }
 

@@ -9,13 +9,13 @@
 import { Hono } from "hono";
 import { serve } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { bodyLimit } from "hono/body-limit";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 import { platform } from "node:os";
 import { createSetupRoutes } from "./routes/setup.js";
+import { applySecurityMiddleware, sharedBodyLimit, closeServer } from "./http-common.js";
 import { randomBytes } from "node:crypto";
 import YAML from "yaml";
 import { TELETON_ROOT } from "../workspace/paths.js";
@@ -99,19 +99,13 @@ export class SetupServer {
     // Body size limit
     this.app.use(
       "*",
-      bodyLimit({
-        maxSize: 2 * 1024 * 1024,
-        onError: (c) => c.json({ success: false, error: "Request body too large (max 2MB)" }, 413),
-      })
+      sharedBodyLimit((c) =>
+        c.json({ success: false, error: "Request body too large (max 2MB)" }, 413)
+      )
     );
 
     // Security headers
-    this.app.use("*", async (c, next) => {
-      await next();
-      c.res.headers.set("X-Content-Type-Options", "nosniff");
-      c.res.headers.set("X-Frame-Options", "DENY");
-      c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    });
+    applySecurityMiddleware(this.app, { referrerPolicy: "strict-origin-when-cross-origin" });
 
     // No auth middleware — localhost-only setup server
   }
@@ -237,14 +231,8 @@ export class SetupServer {
 
   async stop(): Promise<void> {
     if (this.server) {
-      return new Promise((resolve) => {
-        // Force-close keep-alive connections so we don't wait ~30s for them to expire
-        (this.server as unknown as HttpServer).closeAllConnections();
-        this.server?.close(() => {
-          log.info("Setup server stopped");
-          resolve();
-        });
-      });
+      await closeServer(this.server as unknown as HttpServer);
+      log.info("Setup server stopped");
     }
   }
 }
