@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { api, TaskData } from '../lib/api';
 import { formatDate, formatDateTime, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
+import { useResource } from '../hooks/useResource';
 
 type TaskStatus = TaskData['status'];
 type Task = TaskData;
@@ -58,9 +59,6 @@ function truncate(s: string | null | undefined, max: number): string {
 }
 
 export function Tasks() {
-  const [tasks, setTasks] = useState<Task[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<TaskStatus | ''>('');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -73,36 +71,28 @@ export function Tasks() {
   const cleanRef = useRef<HTMLDivElement>(null);
 
   // Always fetch ALL tasks so filter counts are accurate
-  const loadTasks = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.tasksList();
-      const all = res.data ?? [];
-      setTasks(all);
-      // Refresh selected task if it's still in the list
-      setSelected((prev) => {
-        if (!prev) return null;
-        return all.find((t: Task) => t.id === prev.id) ?? null;
-      });
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data: tasks, loading, error, reload, setError } = useResource<Task[]>(
+    () => api.tasksList().then((r) => r.data ?? []),
+    [],
+  );
 
+  // Refresh selected task whenever the task list reloads
   useEffect(() => {
-    loadTasks();
-  }, [loadTasks]);
+    if (!tasks) return;
+    setSelected((prev) => {
+      if (!prev) return null;
+      return tasks.find((t) => t.id === prev.id) ?? null;
+    });
+  }, [tasks]);
 
   // Poll only while a task is active (pending/in_progress), like the Dashboard.
-  const hasActiveTask = tasks.some((t) => t.status === 'pending' || t.status === 'in_progress');
+  const allTasks = tasks ?? [];
+  const hasActiveTask = allTasks.some((t) => t.status === 'pending' || t.status === 'in_progress');
   useEffect(() => {
     if (!hasActiveTask) return;
-    const id = setInterval(loadTasks, 5000);
+    const id = setInterval(reload, 5000);
     return () => clearInterval(id);
-  }, [hasActiveTask, loadTasks]);
+  }, [hasActiveTask, reload]);
 
   // Close clean dropdown on click outside
   useEffect(() => {
@@ -123,7 +113,7 @@ export function Tasks() {
     try {
       await api.tasksClean(status);
       setError(null);
-      loadTasks();
+      reload();
       setSelected(null);
     } catch (err) {
       setError(errMsg(err));
@@ -134,7 +124,7 @@ export function Tasks() {
     if (!confirm('Cancel this task?')) return;
     try {
       await api.tasksCancel(id);
-      loadTasks();
+      reload();
       if (selected?.id === id) setSelected(null);
     } catch (err) {
       setError(errMsg(err));
@@ -145,7 +135,7 @@ export function Tasks() {
     if (!confirm('Permanently delete this task?')) return;
     try {
       await api.tasksDelete(id);
-      loadTasks();
+      reload();
       if (selected?.id === id) setSelected(null);
     } catch (err) {
       setError(errMsg(err));
@@ -153,7 +143,7 @@ export function Tasks() {
   };
 
   // Counts from ALL tasks, filter for display
-  const counts = tasks.reduce(
+  const counts = allTasks.reduce(
     (acc, t) => {
       acc[t.status] = (acc[t.status] || 0) + 1;
       return acc;
@@ -161,7 +151,7 @@ export function Tasks() {
     {} as Record<string, number>
   );
   const terminalCount = (counts['done'] || 0) + (counts['failed'] || 0) + (counts['cancelled'] || 0);
-  const statusFiltered = filter ? tasks.filter((t) => t.status === filter) : tasks;
+  const statusFiltered = filter ? allTasks.filter((t) => t.status === filter) : allTasks;
   const trimmedQuery = searchQuery.trim().toLowerCase();
   const filteredTasks = trimmedQuery
     ? statusFiltered.filter((t) =>
@@ -198,7 +188,7 @@ export function Tasks() {
             fontSize: '13px',
           }}
         >
-          All ({tasks.length})
+          All ({allTasks.length})
         </span>
         {(['pending', 'in_progress', 'done', 'failed', 'cancelled'] as TaskStatus[]).map((s) => (
           <span
@@ -265,7 +255,7 @@ export function Tasks() {
         )}
         <button
           className="btn-ghost btn-sm"
-          onClick={loadTasks}
+          onClick={reload}
         >
           Refresh
         </button>

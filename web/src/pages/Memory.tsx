@@ -1,13 +1,16 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { api, MemorySourceFile, MemoryChunk, SearchResult } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
+import { useResource } from '../hooks/useResource';
 
 export function Memory() {
   const [filter, setFilter] = useState('');
-  const [sources, setSources] = useState<MemorySourceFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const { data: sources, loading, error, reload, setError } = useResource<MemorySourceFile[]>(
+    () => api.getMemorySources().then((r) => r.data ?? []),
+    [],
+  );
 
   // Expanded source state
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
@@ -18,23 +21,6 @@ export function Memory() {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const query = filter.trim();
-
-  const loadSources = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getMemorySources();
-      setSources(res.data ?? []);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSources();
-  }, [loadSources]);
 
   // Debounced semantic search across indexed knowledge (hybrid vector + keyword).
   useEffect(() => {
@@ -98,7 +84,7 @@ export function Memory() {
             style={{ width: '100%' }}
           />
           <button
-            onClick={loadSources}
+            onClick={reload}
             disabled={loading}
             className="btn-ghost btn-sm"
           >
@@ -156,7 +142,7 @@ export function Memory() {
           )
         ) : loading ? (
           <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : sources.length === 0 ? (
+        ) : (sources ?? []).length === 0 ? (
           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
             No memory files indexed
           </div>
@@ -170,7 +156,7 @@ export function Memory() {
               </tr>
             </thead>
             <tbody>
-              {sources.map((src) => {
+              {(sources ?? []).map((src) => {
                 const isExpanded = expandedSource === src.source;
                 return (
                   <React.Fragment key={src.source}>

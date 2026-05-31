@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api, McpServerInfo } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
+import { useResource } from '../hooks/useResource';
 
 export function Mcp() {
-  const [servers, setServers] = useState<McpServerInfo[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: servers, loading, error, reload, setError } = useResource<McpServerInfo[]>(
+    () => api.getMcpServers().then((r) => r.data),
+    [],
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showAdd, setShowAdd] = useState(false);
   const [addPkg, setAddPkg] = useState('');
@@ -16,23 +18,6 @@ export function Mcp() {
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-
-  const loadData = (initial = false) => {
-    if (initial) setLoading(true);
-    api.getMcpServers()
-      .then((res) => {
-        setServers(res.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        setError(errMsg(err));
-        setLoading(false);
-      });
-  };
-
-  useEffect(() => {
-    loadData(true);
-  }, []);
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {
@@ -66,7 +51,7 @@ export function Mcp() {
       setAddName('');
       setEnvPairs([]);
       setShowAdd(false);
-      loadData();
+      reload();
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -81,7 +66,7 @@ export function Mcp() {
     try {
       const res = await api.removeMcpServer(name);
       setSuccess(res.data.message);
-      loadData();
+      reload();
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -91,7 +76,8 @@ export function Mcp() {
 
   if (loading) return <Loading />;
 
-  const connectedCount = servers.filter((s) => s.connected).length;
+  const allServers = servers ?? [];
+  const connectedCount = allServers.filter((s) => s.connected).length;
 
   return (
     <div>
@@ -229,7 +215,7 @@ export function Mcp() {
         </div>
       )}
 
-      {servers.length === 0 && !showAdd && (
+      {allServers.length === 0 && !showAdd && (
         <div className="empty">
           <p>No MCP servers configured</p>
           <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
@@ -237,13 +223,13 @@ export function Mcp() {
           </p>
         </div>
       )}
-      {servers.length > 0 && (
+      {allServers.length > 0 && (
         <>
           <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-            {connectedCount}/{servers.length} connected · {servers.reduce((sum, s) => sum + s.toolCount, 0)} tools total
+            {connectedCount}/{allServers.length} connected · {allServers.reduce((sum, s) => sum + s.toolCount, 0)} tools total
           </div>
 
-          {servers.map((server) => (
+          {allServers.map((server) => (
             <div key={server.name} className="card" style={{ marginBottom: '10px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>

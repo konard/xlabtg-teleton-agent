@@ -1,13 +1,19 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { api } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
+import { useResource } from '../hooks/useResource';
 
 interface TriggerEntry {
   id: string;
   keyword: string;
   context: string;
   enabled: boolean;
+}
+
+interface HooksData {
+  blocklist: { enabled: boolean; keywords: string[]; message: string };
+  triggers: TriggerEntry[];
 }
 
 export function Hooks() {
@@ -25,35 +31,34 @@ export function Hooks() {
   const [editKeyword, setEditKeyword] = useState('');
   const [editContext, setEditContext] = useState('');
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   // Debounced save for blocklist
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const blocklistRef = useRef({ enabled: false, keywords: [] as string[], message: '' });
 
-  const loadData = async () => {
-    setLoading(true);
-    try {
+  const { data: hooksData, loading, error, setError } = useResource<HooksData>(
+    async () => {
       const [blockRes, trigRes] = await Promise.all([api.getBlocklist(), api.getTriggers()]);
-      const bl = blockRes.data;
-      setBlockEnabled(bl.enabled);
-      setKeywords(bl.keywords);
-      setBlockMessage(bl.message);
-      blocklistRef.current = { enabled: bl.enabled, keywords: bl.keywords, message: bl.message };
-      setTriggers(trigRes.data);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setLoading(false);
-    }
-  };
+      return { blocklist: blockRes.data, triggers: trigRes.data };
+    },
+    [],
+  );
 
-  useEffect(() => {
-    loadData();
-    return () => { if (saveTimer.current) clearTimeout(saveTimer.current); };
-  }, []);
+  // Sync loaded data into local state (keeps saveTimer/blocklistRef inside the component)
+  const savedHooksData = useRef<HooksData | null>(null);
+  if (hooksData && hooksData !== savedHooksData.current) {
+    savedHooksData.current = hooksData;
+    const bl = hooksData.blocklist;
+    setBlockEnabled(bl.enabled);
+    setKeywords(bl.keywords);
+    setBlockMessage(bl.message);
+    blocklistRef.current = { enabled: bl.enabled, keywords: bl.keywords, message: bl.message };
+    setTriggers(hooksData.triggers);
+  }
+
+  // Cleanup debounce timer on unmount
+  useEffect(() => () => { if (saveTimer.current) clearTimeout(saveTimer.current); }, []);
 
   const saveBlocklist = useCallback((config: { enabled: boolean; keywords: string[]; message: string }) => {
     blocklistRef.current = config;

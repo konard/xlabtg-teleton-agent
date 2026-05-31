@@ -1,41 +1,27 @@
-import { useEffect, useState, Fragment } from 'react';
+import { useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
-import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
+import { useResource } from '../hooks/useResource';
 
 export function Tools() {
-  const [modules, setModules] = useState<ModuleInfo[]>([]);
-  const [loading, setLoading] = useState(true);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
-  const loadTools = () => {
-    setLoading(true);
-    return api.getTools()
-      .then((toolsRes) => {
-        setModules(toolsRes.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        tm.setError(errMsg(err));
-        setLoading(false);
-      });
-  };
+  const { data: modules, loading, error, reload, setError } = useResource<ModuleInfo[]>(
+    () => api.getTools().then((r) => r.data),
+    [],
+  );
 
-  const tm = useToolManager(loadTools);
-  const { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope } = tm;
-
-  useEffect(() => {
-    loadTools();
-  }, []);
+  const { updating, toggleEnabled, updateScope, bulkToggle, bulkScope } = useToolManager(reload);
 
   if (loading) return <Loading />;
 
-  const builtIn = modules.filter((m) => !m.isPlugin);
+  const allModules = modules ?? [];
+  const builtIn = allModules.filter((m) => !m.isPlugin);
   const builtInCount = builtIn.reduce((sum, m) => sum + m.toolCount, 0);
   const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter(t => t.enabled).length, 0);
 
@@ -59,7 +45,7 @@ export function Tools() {
           <span>{error}</span>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button className="btn-ghost btn-sm" onClick={() => setError(null)}>Dismiss</button>
-            <button className="btn-sm" onClick={() => { setError(null); loadTools(); }}>Retry</button>
+            <button className="btn-sm" onClick={() => { setError(null); reload(); }}>Retry</button>
           </div>
         </div>
       )}
@@ -82,7 +68,7 @@ export function Tools() {
           )}
           <button
             className="btn-ghost btn-sm"
-            onClick={loadTools}
+            onClick={reload}
           >
             Refresh
           </button>

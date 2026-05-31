@@ -1,6 +1,7 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState } from 'react';
 import { api, FileEntry, WorkspaceInfo } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
+import { useResource } from '../hooks/useResource';
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-';
@@ -24,10 +25,15 @@ function isBinaryFile(path: string): boolean {
 
 export function Workspace() {
   const [currentPath, setCurrentPath] = useState('');
-  const [entries, setEntries] = useState<FileEntry[]>([]);
+
+  const { data: dirData, loading, error, reload, setError } = useResource(
+    () => api.workspaceList(currentPath).then((r) => r.data),
+    [currentPath],
+  );
+
+  const entries: FileEntry[] = dirData?.entries ?? [];
+
   const [info, setInfo] = useState<WorkspaceInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   // Editor state
   const [editingFile, setEditingFile] = useState<string | null>(null);
@@ -40,33 +46,12 @@ export function Workspace() {
   const [dialog, setDialog] = useState<{ type: 'newFile' | 'newFolder' | 'rename'; target?: string } | null>(null);
   const [dialogInput, setDialogInput] = useState('');
 
-  const loadDir = useCallback(async (path: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.workspaceList(path);
-      setEntries(res.data?.entries ?? []);
-      setCurrentPath(path);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadInfo = useCallback(async () => {
-    try {
-      const res = await api.workspaceInfo();
-      setInfo(res.data ?? null);
-    } catch {
-      // non-critical
-    }
-  }, []);
-
+  // Load workspace info (non-critical)
   useEffect(() => {
-    loadDir('');
-    loadInfo();
-  }, [loadDir, loadInfo]);
+    api.workspaceInfo()
+      .then((r) => setInfo(r.data ?? null))
+      .catch(() => {});
+  }, []);
 
   // Warn on tab close when dirty
   useEffect(() => {
@@ -78,7 +63,7 @@ export function Workspace() {
 
   const navigateTo = (path: string) => {
     if (!closeEditor()) return;
-    loadDir(path);
+    setCurrentPath(path);
   };
 
   // Breadcrumb segments
@@ -134,7 +119,7 @@ export function Workspace() {
     try {
       await api.workspaceWrite(editingFile, editContent);
       setEditDirty(false);
-      loadDir(currentPath);
+      reload();
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -153,8 +138,8 @@ export function Workspace() {
         setEditContent('');
         setEditDirty(false);
       }
-      loadDir(currentPath);
-      loadInfo();
+      reload();
+      api.workspaceInfo().then((r) => setInfo(r.data ?? null)).catch(() => {});
     } catch (err) {
       setError(errMsg(err));
     }
@@ -181,8 +166,8 @@ export function Workspace() {
       }
       setDialog(null);
       setDialogInput('');
-      loadDir(currentPath);
-      loadInfo();
+      reload();
+      api.workspaceInfo().then((r) => setInfo(r.data ?? null)).catch(() => {});
     } catch (err) {
       setError(errMsg(err));
     }

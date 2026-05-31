@@ -6,14 +6,28 @@ import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
 import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
+import { useResource } from '../hooks/useResource';
 
 type Tab = 'installed' | 'marketplace';
 
+interface PluginsData {
+  manifests: PluginManifest[];
+  pluginModules: ModuleInfo[];
+}
+
 export function Plugins() {
   const [tab, setTab] = useState<Tab>('installed');
-  const [manifests, setManifests] = useState<PluginManifest[]>([]);
-  const [pluginModules, setPluginModules] = useState<ModuleInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const { data: pluginsData, loading, error, reload, setError } = useResource<PluginsData>(
+    () => Promise.all([api.getPlugins(), api.getTools()]).then(([pluginsRes, toolsRes]) => ({
+      manifests: pluginsRes.data,
+      pluginModules: toolsRes.data.filter((m) => m.isPlugin),
+    })),
+    [],
+  );
+
+  const manifests = pluginsData?.manifests ?? [];
+  const pluginModules = pluginsData?.pluginModules ?? [];
 
   // Marketplace state
   const [marketplace, setMarketplace] = useState<MarketplacePlugin[]>([]);
@@ -36,19 +50,7 @@ export function Plugins() {
   const [editingSecret, setEditingSecret] = useState<string | null>(null);
   const [secretInput, setSecretInput] = useState('');
 
-  const loadData = () => {
-    setLoading(true);
-    return Promise.all([api.getPlugins(), api.getTools()])
-      .then(([pluginsRes, toolsRes]) => {
-        setManifests(pluginsRes.data);
-        setPluginModules(toolsRes.data.filter((m) => m.isPlugin));
-        setLoading(false);
-      })
-      .catch((err) => {
-        tm.setError(err.message);
-        setLoading(false);
-      });
-  };
+  const { updating, toggleEnabled, updateScope, bulkToggle, bulkScope } = useToolManager(reload);
 
   const loadMarketplace = (refresh = false) => {
     setMarketLoading(true);
@@ -58,16 +60,12 @@ export function Plugins() {
         setMarketLoading(false);
       })
       .catch((err) => {
-        tm.setError(err.message);
+        setError(errMsg(err));
         setMarketLoading(false);
       });
   };
 
-  const tm = useToolManager(loadData);
-  const { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope } = tm;
-
   useEffect(() => {
-    loadData();
     loadMarketplace();
   }, []);
 
@@ -76,7 +74,7 @@ export function Plugins() {
     setOperating(id);
     try {
       await api.installPlugin(id);
-      await Promise.all([loadMarketplace(), loadData()]);
+      await Promise.all([loadMarketplace(), reload()]);
       if (plugin?.secrets && Object.keys(plugin.secrets).length > 0) {
         try {
           const existing = await api.getPluginSecrets(id);
@@ -101,7 +99,7 @@ export function Plugins() {
     setOperating(id);
     try {
       await api.uninstallPlugin(id);
-      await Promise.all([loadMarketplace(), loadData()]);
+      await Promise.all([loadMarketplace(), reload()]);
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -113,7 +111,7 @@ export function Plugins() {
     setOperating(id);
     try {
       await api.updatePlugin(id);
-      await Promise.all([loadMarketplace(), loadData()]);
+      await Promise.all([loadMarketplace(), reload()]);
     } catch (err) {
       setError(errMsg(err));
     } finally {
@@ -133,7 +131,7 @@ export function Plugins() {
       }
     }
     setOperating(null);
-    await Promise.all([loadMarketplace(), loadData()]);
+    await Promise.all([loadMarketplace(), reload()]);
   };
 
   // Inline secrets helpers
@@ -225,7 +223,7 @@ export function Plugins() {
           <span>{error}</span>
           <div style={{ display: 'flex', gap: '6px' }}>
             <button className="btn-ghost btn-sm" onClick={() => setError(null)}>Dismiss</button>
-            <button className="btn-sm" onClick={() => { setError(null); loadData(); }}>Retry</button>
+            <button className="btn-sm" onClick={() => { setError(null); reload(); }}>Retry</button>
           </div>
         </div>
       )}

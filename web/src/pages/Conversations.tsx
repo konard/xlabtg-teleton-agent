@@ -1,35 +1,21 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { api, ConversationChat, ConversationMessage } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
+import { useResource } from '../hooks/useResource';
 
 export function Conversations() {
   const [filter, setFilter] = useState('');
-  const [chats, setChats] = useState<ConversationChat[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const { data: chats, loading, error, reload, setError } = useResource<ConversationChat[]>(
+    () => api.getConversations().then((r) => r.data ?? []),
+    [],
+  );
 
   // Expanded chat state
   const [expandedChat, setExpandedChat] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
-
-  const loadChats = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getConversations();
-      setChats(res.data ?? []);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadChats();
-  }, [loadChats]);
 
   const toggleChat = async (chatId: string) => {
     if (expandedChat === chatId) {
@@ -51,14 +37,15 @@ export function Conversations() {
   };
 
   const lowerFilter = filter.toLowerCase();
+  const allChats = chats ?? [];
   const filtered = lowerFilter
-    ? chats.filter(
+    ? allChats.filter(
         (c) =>
           (c.title ?? '').toLowerCase().includes(lowerFilter) ||
           (c.username ?? '').toLowerCase().includes(lowerFilter) ||
           c.id.toLowerCase().includes(lowerFilter)
       )
-    : chats;
+    : allChats;
 
   return (
     <div>
@@ -78,7 +65,7 @@ export function Conversations() {
             style={{ width: '100%' }}
           />
           <button
-            onClick={loadChats}
+            onClick={reload}
             disabled={loading}
             className="btn-ghost btn-sm"
           >

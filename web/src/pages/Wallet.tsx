@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState } from 'react';
 import { api, WalletInfo, WalletTransaction } from '../lib/api';
-import { formatDateTime, errMsg } from '../lib/utils';
+import { formatDateTime } from '../lib/utils';
+import { useResource } from '../hooks/useResource';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -13,47 +14,23 @@ function truncateHash(hash: string): string {
 }
 
 export function Wallet() {
-  const [wallet, setWallet] = useState<WalletInfo | null>(null);
-  const [transactions, setTransactions] = useState<WalletTransaction[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [txLoading, setTxLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data: wallet, loading, error, reload: reloadWallet, setError } =
+    useResource<WalletInfo | null>(
+      () => api.getWallet().then((r) => r.data ?? null),
+      [],
+    );
+  const { data: transactions, loading: txLoading, reload: reloadTx } =
+    useResource<WalletTransaction[]>(
+      () => api.getWalletTransactions().then((r) => r.data ?? []),
+      [],
+    );
+
   const [copied, setCopied] = useState(false);
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
 
-  const loadWallet = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getWallet();
-      setWallet(res.data ?? null);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadTransactions = useCallback(async () => {
-    setTxLoading(true);
-    try {
-      const res = await api.getWalletTransactions();
-      setTransactions(res.data ?? []);
-    } catch (err) {
-      setError(errMsg(err));
-    } finally {
-      setTxLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadWallet();
-    loadTransactions();
-  }, [loadWallet, loadTransactions]);
-
   const refresh = () => {
-    loadWallet();
-    loadTransactions();
+    reloadWallet();
+    reloadTx();
   };
 
   const copyAddress = async () => {
@@ -137,7 +114,7 @@ export function Wallet() {
 
         {txLoading ? (
           <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : transactions.length === 0 ? (
+        ) : (transactions ?? []).length === 0 ? (
           <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
             No transactions yet
           </div>
@@ -153,7 +130,7 @@ export function Wallet() {
               </tr>
             </thead>
             <tbody>
-              {transactions.map((tx) => {
+              {(transactions ?? []).map((tx) => {
                 const dir = getDirection(tx.type);
                 const isExpanded = expandedTx === tx.hash;
                 const counterparty = tx.from || tx.to || tx.jettonWallet || '\u2014';
