@@ -101,7 +101,7 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * Auto-detect provider credentials (Claude Code / Codex), with a manual
+ * Auto-detect provider credentials (Codex), with a manual
  * API-key fallback. Returns the resolved api key (empty when auto-detected,
  * since it is read at runtime) and the STEPS[1].value status string.
  */
