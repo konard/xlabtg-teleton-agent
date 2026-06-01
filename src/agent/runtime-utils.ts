@@ -51,7 +51,13 @@ export function isServerError(errorMessage?: string): boolean {
     errorMessage.includes("529") ||
     errorMessage.includes("overloaded") ||
     errorMessage.includes("Internal server error") ||
-    errorMessage.includes("api_error")
+    errorMessage.includes("api_error") ||
+    // Transient streaming-transport drops are retryable: an LLM provider WebSocket
+    // closing mid-stream (1012 service restart, 1006 abnormal, 1011 server error)
+    // or a dropped socket is not a terminal error — back off and retry.
+    errorMessage.includes("WebSocket closed") ||
+    errorMessage.includes("ECONNRESET") ||
+    errorMessage.includes("socket hang up")
   );
 }
 
