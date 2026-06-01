@@ -101,7 +101,7 @@ jobs:
     needs: [checks, test]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -135,19 +135,24 @@ jobs:
           if [ "$COUNT" -eq 0 ]; then echo "Nothing to notify"; exit 0; fi
 
           esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+          # Send one message, retrying until Telegram accepts it. IMPORTANT: no
+          # curl --fail here — on a 429 we must READ the body to get retry_after;
+          # --fail discards it, which silently drops rate-limited messages.
           send() {
-            local text="$1" resp ra
-            resp=$(curl -fsS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
-              -d chat_id="${TG_CHAT}" -d parse_mode=HTML -d disable_web_page_preview=true \
-              --data-urlencode "text=${text}" 2>/dev/null || true)
-            # Honor Telegram 429 back-off, then retry once.
-            ra=$(printf '%s' "$resp" | grep -o '"retry_after":[0-9]*' | grep -o '[0-9]*' || true)
-            if [ -n "$ra" ]; then
-              sleep "$((ra + 1))"
-              curl -fsS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            local text="$1" attempt resp ra
+            for attempt in 1 2 3 4 5 6; do
+              resp=$(curl -sS -m 25 -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
                 -d chat_id="${TG_CHAT}" -d parse_mode=HTML -d disable_web_page_preview=true \
-                --data-urlencode "text=${text}" >/dev/null 2>&1 || true
-            fi
+                --data-urlencode "text=${text}" 2>/dev/null || true)
+              case "$resp" in
+                *'"ok":true'*) return 0 ;;
+              esac
+              # 429 -> honor retry_after; other transient error -> small backoff.
+              ra=$(printf '%s' "$resp" | grep -o '"retry_after":[0-9]*' | grep -o '[0-9]*' || true)
+              sleep "$(( ${ra:-2} + 1 ))"
+            done
+            echo "WARN: gave up sending after retries: ${text%%$'\n'*}"
+            return 1
           }
 
           if [ "$BRANCH" = "main" ]; then
