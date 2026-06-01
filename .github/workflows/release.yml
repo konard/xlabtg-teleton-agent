@@ -4,14 +4,15 @@ on:
   push:
     tags: ["v*"]
 
+# Least privilege by default; jobs opt into the extra scopes they need.
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 jobs:
   # ---- Build & Verify ----
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +20,9 @@ jobs:
         with:
           node-version: 20
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
 
       - run: npm ci
       - run: cd web && npm ci
@@ -39,6 +43,10 @@ jobs:
   publish-npm:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
 
@@ -47,6 +55,9 @@ jobs:
           node-version: 20
           registry-url: https://registry.npmjs.org
           cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
 
       - name: Check if version already published
         id: check
@@ -71,7 +82,7 @@ jobs:
           name: dist
           path: dist/
 
-      - run: npm publish --access public
+      - run: npm publish --provenance --access public
         if: steps.check.outputs.publish == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -80,6 +91,10 @@ jobs:
   publish-sdk:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write # npm provenance
     steps:
       - uses: actions/checkout@v4
 
@@ -108,7 +123,7 @@ jobs:
 
       - name: Build and publish SDK
         if: steps.check.outputs.publish == 'true'
-        run: npm run build -w packages/sdk && cd packages/sdk && npm publish --access public
+        run: npm run build -w packages/sdk && cd packages/sdk && npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
@@ -116,6 +131,10 @@ jobs:
   publish-docker:
     needs: build
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
     steps:
       - uses: actions/checkout@v4
 
@@ -137,6 +156,8 @@ jobs:
         with:
           context: .
           push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           tags: |
             ghcr.io/${{ steps.meta.outputs.repo }}:${{ steps.meta.outputs.version }}
             ghcr.io/${{ steps.meta.outputs.repo }}:latest
@@ -145,6 +166,9 @@ jobs:
   create-release:
     needs: [publish-npm]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # create the GitHub release
     steps:
       - uses: actions/checkout@v4
         with:
