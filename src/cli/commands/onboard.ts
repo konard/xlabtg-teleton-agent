@@ -56,10 +56,6 @@ import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../constants/limits.js";
 import { fetchWithTimeout } from "../../utils/fetch.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import ora from "ora";
-import {
-  getClaudeCodeApiKey,
-  isClaudeCodeTokenValid,
-} from "../../providers/claude-code-credentials.js";
 import { getCodexApiKey, isCodexTokenValid } from "../../providers/codex-credentials.js";
 
 export interface OnboardOptions {
@@ -682,23 +678,6 @@ async function stepProvider(
     );
 
     STEPS[1].value = `${providerMeta.displayName}  ${DIM(localBaseUrl)}`;
-  } else if (selectedProvider === "claude-code") {
-    // Claude Code — auto-detect credentials, fallback to manual key
-    const result = await handleAutoDetectedProvider({
-      getKey: getClaudeCodeApiKey,
-      isValid: isClaudeCodeTokenValid,
-      displayName: providerMeta.displayName,
-      noteTitle: "Claude Code",
-      detectedFromMsg: "Credentials auto-detected from Claude Code",
-      statusExpiredMsg: "expired (will refresh on use)",
-      noteFooterMsg: "Token will auto-refresh when it expires.",
-      notFoundHint:
-        "Claude Code credentials not found. Make sure Claude Code is installed and authenticated (claude login).",
-      fallbackKeyLabel: "Anthropic API Key (fallback)",
-      prompter,
-    });
-    apiKey = result.apiKey;
-    STEPS[1].value = result.stepValue;
   } else if (selectedProvider === "codex") {
     // Codex — auto-detect credentials from ~/.codex/auth.json
     const result = await handleAutoDetectedProvider({

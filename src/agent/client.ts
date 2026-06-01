@@ -12,10 +12,6 @@ import { appendToTranscript, readTranscript } from "../session/transcript.js";
 import type { SupportedProvider } from "../config/providers.js";
 import { sanitizeToolsForGemini } from "./schema-sanitizer.js";
 import { createLogger } from "../utils/logger.js";
-import {
-  getClaudeCodeApiKey,
-  refreshClaudeCodeApiKey,
-} from "../providers/claude-code-credentials.js";
 import { getCodexApiKey, refreshCodexApiKey } from "../providers/codex-credentials.js";
 import { getProviderModel } from "../providers/model-resolver.js";
 
@@ -39,12 +35,11 @@ function isUnauthorizedError(errorMessage?: string): boolean {
 
 /** Providers whose credentials can be refreshed once on a 401, then the call retried. */
 const RETRY_401_PROVIDERS: { provider: string; refresh: () => Promise<string | null> }[] = [
-  { provider: "claude-code", refresh: refreshClaudeCodeApiKey },
   { provider: "codex", refresh: refreshCodexApiKey },
 ];
 
 export function isOAuthToken(apiKey: string, provider?: string): boolean {
-  if (provider && provider !== "anthropic" && provider !== "claude-code") return false;
+  if (provider && provider !== "anthropic") return false;
   return apiKey.startsWith("sk-ant-oat01-");
 }
 
@@ -52,7 +47,6 @@ export function isOAuthToken(apiKey: string, provider?: string): boolean {
 export function getEffectiveApiKey(provider: string, rawKey: string): string {
   if (provider === "local") return "local";
   if (provider === "cocoon") return "";
-  if (provider === "claude-code") return getClaudeCodeApiKey(rawKey);
   if (provider === "codex") return getCodexApiKey(rawKey);
   return rawKey;
 }

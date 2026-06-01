@@ -47,6 +47,18 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
     delete (raw as Record<string, unknown>).market;
   }
 
+  // Backward compatibility: the 'claude-code' provider was removed. Migrate existing
+  // configs to 'anthropic' so they keep loading instead of failing enum validation.
+  // The old credential auto-detection is gone — users must supply an Anthropic key.
+  const rawAgent = (raw as { agent?: { provider?: unknown } } | null)?.agent;
+  if (rawAgent && rawAgent.provider === "claude-code") {
+    log.warn(
+      "Provider 'claude-code' was removed; migrating to 'anthropic'. Set agent.api_key " +
+        "(or the TELETON_API_KEY env var) to your Anthropic key (sk-ant-...)."
+    );
+    rawAgent.provider = "anthropic";
+  }
+
   const result = ConfigSchema.safeParse(raw);
   if (!result.success) {
     throw new Error(`Invalid config: ${result.error.message}`);
@@ -54,11 +66,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
 
   const config = result.data;
   const provider = config.agent.provider as SupportedProvider;
-  if (
-    provider !== "anthropic" &&
-    provider !== "claude-code" &&
-    !(raw as Record<string, Record<string, unknown>>).agent?.model
-  ) {
+  if (provider !== "anthropic" && !(raw as Record<string, Record<string, unknown>>).agent?.model) {
     const meta = getProviderMetadata(provider);
     config.agent.model = meta.defaultModel;
   }

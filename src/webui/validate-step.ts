@@ -52,9 +52,6 @@ export function validateStep(step: number, data: WizardData): boolean {
           return false;
         }
       }
-      if (data.provider === "claude-code") {
-        return true; // credentials auto-detected at runtime
-      }
       return data.apiKey.length > 0;
     case 2: {
       // Config

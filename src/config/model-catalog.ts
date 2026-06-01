@@ -264,9 +264,8 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   ],
 };
 
-/** Get models for a provider (claude-code → anthropic, codex → openai-codex) */
+/** Get models for a provider (codex → openai-codex) */
 export function getModelsForProvider(provider: string): ModelOption[] {
-  const key =
-    provider === "claude-code" ? "anthropic" : provider === "codex" ? "openai-codex" : provider;
+  const key = provider === "codex" ? "openai-codex" : provider;
   return MODEL_OPTIONS[key] || [];
 }

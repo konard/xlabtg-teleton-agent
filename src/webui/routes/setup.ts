@@ -16,10 +16,6 @@ import {
   validateApiKeyFormat,
   type SupportedProvider,
 } from "../../config/providers.js";
-import {
-  getClaudeCodeApiKey,
-  isClaudeCodeTokenValid,
-} from "../../providers/claude-code-credentials.js";
 import { ConfigSchema, DealsConfigSchema } from "../../config/schema.js";
 import { ensureWorkspace, isNewWorkspace } from "../../workspace/manager.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
@@ -96,8 +92,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       toolLimit: p.toolLimit,
       keyPrefix: p.keyPrefix,
       consoleUrl: p.consoleUrl,
-      requiresApiKey: p.id !== "cocoon" && p.id !== "local" && p.id !== "claude-code",
-      autoDetectsKey: p.id === "claude-code",
+      requiresApiKey: p.id !== "cocoon" && p.id !== "local",
       requiresBaseUrl: p.id === "local",
     }));
     return c.json({ success: true, data: providers });
@@ -117,27 +112,6 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       },
     ];
     return c.json({ success: true, data: result });
-  });
-
-  // ── GET /detect-claude-code-key ───────────────────────────────────
-  app.get("/detect-claude-code-key", (c) => {
-    try {
-      const key = getClaudeCodeApiKey();
-      const masked = maskKey(key);
-      return c.json({
-        success: true,
-        data: {
-          found: true,
-          maskedKey: masked,
-          valid: isClaudeCodeTokenValid(),
-        },
-      });
-    } catch {
-      return c.json({
-        success: true,
-        data: { found: false, maskedKey: null, valid: false },
-      });
-    }
   });
 
   // ── POST /validate/api-key ────────────────────────────────────────

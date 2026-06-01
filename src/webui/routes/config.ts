@@ -335,7 +335,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
     const provider = c.req.param("provider");
     try {
       const meta = getProviderMetadata(provider as SupportedProvider);
-      const needsKey = provider !== "claude-code" && provider !== "cocoon" && provider !== "local";
+      const needsKey = provider !== "cocoon" && provider !== "local";
       return c.json({
         success: true,
         data: {

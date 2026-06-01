@@ -26,13 +26,6 @@ export interface SetupProvider {
   keyPrefix: string | null;
   consoleUrl: string | null;
   requiresApiKey: boolean;
-  autoDetectsKey?: boolean;
-}
-
-export interface ClaudeCodeKeyDetection {
-  found: boolean;
-  maskedKey: string | null;
-  valid: boolean;
 }
 
 export interface SetupModelOption {
@@ -747,9 +740,6 @@ export const setup = {
       method: 'POST',
       body: JSON.stringify({ provider, apiKey }),
     }),
-
-  detectClaudeCodeKey: () =>
-    fetchSetupAPI<ClaudeCodeKeyDetection>('/setup/detect-claude-code-key'),
 
   validateBotToken: (token: string) =>
     fetchSetupAPI<BotValidation>('/setup/validate/bot-token', {

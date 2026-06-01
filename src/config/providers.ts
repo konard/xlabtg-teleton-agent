@@ -1,6 +1,5 @@
 export type SupportedProvider =
   | "anthropic"
-  | "claude-code"
   | "codex"
   | "openai"
   | "google"
@@ -30,18 +29,6 @@ export interface ProviderMetadata {
 }
 
 const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
-  "claude-code": {
-    id: "claude-code",
-    displayName: "Claude Code (Auto)",
-    envVar: "ANTHROPIC_API_KEY",
-    keyPrefix: "sk-ant-",
-    keyHint: "Auto-detected from Claude Code",
-    consoleUrl: "https://console.anthropic.com/",
-    defaultModel: "claude-haiku-4-5-20251001",
-    utilityModel: "claude-haiku-4-5-20251001",
-    toolLimit: null,
-    piAiProvider: "anthropic",
-  },
   codex: {
     id: "codex",
     displayName: "Codex (Auto)",
@@ -248,13 +235,7 @@ export const SUPPORTED_PROVIDER_IDS = Object.keys(PROVIDER_REGISTRY) as [
 export function validateApiKeyFormat(provider: SupportedProvider, key: string): string | undefined {
   const meta = PROVIDER_REGISTRY[provider];
   if (!meta) return `Unknown provider: ${provider}`;
-  if (
-    provider === "cocoon" ||
-    provider === "local" ||
-    provider === "claude-code" ||
-    provider === "codex"
-  )
-    return undefined;
+  if (provider === "cocoon" || provider === "local" || provider === "codex") return undefined;
   if (!key || key.trim().length === 0) return "API key is required";
   if (meta.keyPrefix && !key.startsWith(meta.keyPrefix)) {
     return `Invalid format (should start with ${meta.keyPrefix})`;
