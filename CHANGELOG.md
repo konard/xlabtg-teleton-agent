@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.24](https://github.com/xlabtg/teleton-agent/compare/v0.8.23...v0.8.24) (2026-06-01)
+
+
+### Documentation
+
+* синхронизировать версию форка в README (0.8.22 → 0.8.23) ([54fc8e3](https://github.com/xlabtg/teleton-agent/commit/54fc8e3767733ede23917cd9f2cf528ae753d307))
+
 ## [0.8.23](https://github.com/xlabtg/teleton-agent/compare/v0.8.22...v0.8.23) (2026-05-30)
 
 
