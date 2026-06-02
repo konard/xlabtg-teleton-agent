@@ -1,7 +1,7 @@
 import { useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
-import { ToolRow } from '../components/ToolRow';
-import { Select } from '../components/Select';
+import { ToolRow, SCOPE_OPTIONS } from '../components/ToolRow';
+import { PillTabs } from '../components/PillTabs';
 import { SearchBar } from '../components/SearchBar';
 import { Segmented } from '../components/Segmented';
 import { List, ListRow } from '../components/List';
@@ -133,13 +133,12 @@ export function Tools() {
                   onClick={() => setExpandedModule(isExpanded ? null : module.name)}
                   trailing={
                     <>
-                      <Select
-                        value={commonScope}
-                        options={['', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled']}
-                        labels={[mixedScope ? 'Mixed' : 'Scope', 'All', 'DM only', 'Group only', 'Admin only', 'Allowlist', 'Disabled']}
-                        onChange={(v) => v && bulkScope(module, v as ToolInfo['scope'])}
+                      <PillTabs
+                        value={mixedScope ? '' : (commonScope === 'always' ? 'open' : commonScope)}
+                        options={SCOPE_OPTIONS}
+                        onChange={(v) => bulkScope(module, v as ToolInfo['scope'])}
                         disabled={isBusy}
-                        style={{ minWidth: '100px' }}
+                        ariaLabel={`Scope for all ${module.name} tools`}
                       />
                       <label className="toggle">
                         <input

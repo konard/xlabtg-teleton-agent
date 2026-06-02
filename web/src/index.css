@@ -2241,19 +2241,20 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 }
 .pill-tab:disabled { opacity: 0.45; cursor: not-allowed; }
 
-/* ── Tool row (expanded, with folder-style scope) ── */
+/* ── Tool row (expanded): name + scope pills + toggle on one line ── */
 .tool-row2 {
   display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 16px 12px;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 16px;
 }
 .tool-row2:not(:first-child) { border-top: 1px solid var(--border); }
-.tool-row2-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.tool-row2-main { flex: 1; min-width: 0; }
+.tool-row2 .pill-tabs { flex-shrink: 0; max-width: 320px; }
+.tool-row2 .tool-desc {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* List section header (uppercase, iOS grouped) */

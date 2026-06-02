@@ -8,7 +8,7 @@ interface ToolRowProps {
   onScope: (name: string, scope: ToolInfo['scope']) => void;
 }
 
-const SCOPE_OPTIONS: { value: string; label: string }[] = [
+export const SCOPE_OPTIONS: { value: string; label: string }[] = [
   { value: 'open', label: 'All' },
   { value: 'dm-only', label: 'DM' },
   { value: 'group-only', label: 'Group' },
@@ -23,20 +23,7 @@ export function ToolRow({ tool, updating, onToggle, onScope }: ToolRowProps) {
 
   return (
     <div className="tool-row2" style={{ opacity: tool.enabled ? 1 : 0.55 }}>
-      <div className="tool-row2-head">
-        <span className="ios-row-title">{tool.name}</span>
-        <label className="toggle">
-          <input
-            type="checkbox"
-            checked={tool.enabled}
-            onChange={() => onToggle(tool.name, tool.enabled)}
-            disabled={busy}
-          />
-          <span className="toggle-track" />
-          <span className="toggle-thumb" />
-        </label>
-      </div>
-      {tool.description && <div className="tool-desc">{tool.description}</div>}
+      <div className="ios-row-title tool-row2-main" title={tool.description}>{tool.name}</div>
       <PillTabs
         value={scopeVal}
         options={SCOPE_OPTIONS}
@@ -44,6 +31,16 @@ export function ToolRow({ tool, updating, onToggle, onScope }: ToolRowProps) {
         disabled={!tool.enabled || busy}
         ariaLabel={`Scope for ${tool.name}`}
       />
+      <label className="toggle">
+        <input
+          type="checkbox"
+          checked={tool.enabled}
+          onChange={() => onToggle(tool.name, tool.enabled)}
+          disabled={busy}
+        />
+        <span className="toggle-track" />
+        <span className="toggle-thumb" />
+      </label>
     </div>
   );
 }
