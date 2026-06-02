@@ -1,13 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { loadWallet } from "../../../ton/wallet-service.js";
+import { loadWallet, getCachedTonClient } from "../../../ton/wallet-service.js";
 import { toNano, fromNano, internal } from "@ton/ton";
-import { Address, SendMode } from "@ton/core";
+import { Address } from "@ton/core";
 import { tonapiFetch } from "../../../constants/api-endpoints.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
 import { openWallet } from "../../../ton/wallet-open.js";
+import { sendWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 
 const log = createLogger("Tools");
 interface DnsBidParams {
@@ -105,20 +106,17 @@ export const dnsBidExecutor: ToolExecutor<DnsBidParams> = async (
       };
     }
 
-    const opened = await openWallet();
+    const client = await getCachedTonClient();
+    const opened = await openWallet(client);
     if (!opened) {
       return { success: false, error: "Wallet key derivation failed." };
     }
     const { keyPair, contract } = opened;
 
-    await withTxLock(async () => {
-      const seqno = await contract.getSeqno();
-
+    const sent = await withTxLock(async () => {
       // Send bid (just TON, no body needed for bids - op=0 is implicit)
-      await contract.sendTransfer({
-        seqno,
+      return sendWalletTx(client, contract, {
         secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY,
         messages: [
           internal({
             to: Address.parse(nftAddress),
@@ -130,6 +128,10 @@ export const dnsBidExecutor: ToolExecutor<DnsBidParams> = async (
       });
     });
 
+    if (!sent) {
+      return { success: false, error: "Bid failed or could not be confirmed on-chain." };
+    }
+
     return {
       success: true,
       data: {
@@ -137,7 +139,8 @@ export const dnsBidExecutor: ToolExecutor<DnsBidParams> = async (
         amount: `${amount} TON`,
         nftAddress,
         from: walletData.address,
-        message: `Bid placed on ${fullDomain}: ${amount} TON\n  From: ${walletData.address}\n  NFT: ${nftAddress}\n  Transaction sent (check status in a few seconds)`,
+        txHash: sent.hash,
+        message: `Bid placed on ${fullDomain}: ${amount} TON — confirmed on-chain\n  From: ${walletData.address}\n  NFT: ${nftAddress}\n  tx ${sent.hash}\n  ${tonExplorerTxUrl(sent.hash)}`,
       },
     };
   } catch (error) {

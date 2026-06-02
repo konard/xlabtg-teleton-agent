@@ -1,13 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { loadWallet } from "../../../ton/wallet-service.js";
+import { loadWallet, getCachedTonClient } from "../../../ton/wallet-service.js";
 import { toNano, internal, beginCell } from "@ton/ton";
-import { Address, SendMode } from "@ton/core";
+import { Address } from "@ton/core";
 import { tonapiFetch } from "../../../constants/api-endpoints.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
 import { openWallet } from "../../../ton/wallet-open.js";
+import { sendWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 
 const log = createLogger("Tools");
 
@@ -120,15 +121,14 @@ export const dnsLinkExecutor: ToolExecutor<DnsLinkParams> = async (
       };
     }
 
-    const opened = await openWallet();
+    const client = await getCachedTonClient();
+    const opened = await openWallet(client);
     if (!opened) {
       return { success: false, error: "Wallet key derivation failed." };
     }
     const { keyPair, contract } = opened;
 
-    await withTxLock(async () => {
-      const seqno = await contract.getSeqno();
-
+    const sent = await withTxLock(async () => {
       // Build wallet record value cell: dns_smc_address#9fd3 + address + flags
       const valueCell = beginCell()
         .storeUint(DNS_SMC_ADDRESS_PREFIX, 16) // #9fd3
@@ -144,11 +144,8 @@ export const dnsLinkExecutor: ToolExecutor<DnsLinkParams> = async (
         .storeRef(valueCell) // value cell reference
         .endCell();
 
-      // Send transaction to NFT address
-      await contract.sendTransfer({
-        seqno,
+      return sendWalletTx(client, contract, {
         secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY,
         messages: [
           internal({
             to: Address.parse(nftAddress),
@@ -160,6 +157,10 @@ export const dnsLinkExecutor: ToolExecutor<DnsLinkParams> = async (
       });
     });
 
+    if (!sent) {
+      return { success: false, error: "DNS update failed or could not be confirmed on-chain." };
+    }
+
     return {
       success: true,
       data: {
@@ -167,7 +168,8 @@ export const dnsLinkExecutor: ToolExecutor<DnsLinkParams> = async (
         linkedWallet: targetAddress,
         nftAddress,
         from: walletData.address,
-        message: `Linked ${fullDomain} → ${targetAddress}\n  NFT: ${nftAddress}\n  Transaction sent (changes apply in a few seconds)`,
+        txHash: sent.hash,
+        message: `Linked ${fullDomain} → ${targetAddress} — confirmed on-chain\n  NFT: ${nftAddress}\n  tx ${sent.hash}\n  ${tonExplorerTxUrl(sent.hash)}`,
       },
     };
   } catch (error) {
