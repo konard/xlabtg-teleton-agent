@@ -263,11 +263,15 @@ describe("createTonSDK", () => {
         });
       });
 
-      it("returns txRef on success", async () => {
-        (sendTon as Mock).mockResolvedValue("42_1700000000_1.5");
+      it("returns the on-chain tx hash as txRef on success", async () => {
+        (sendTon as Mock).mockResolvedValue({
+          hash: "cd".repeat(32),
+          seqno: 42,
+          at: 1700000000000,
+        });
 
         const result = await sdk.sendTON(VALID_ADDRESS, 1.5, "hello");
-        expect(result).toEqual({ txRef: "42_1700000000_1.5", amount: 1.5 });
+        expect(result).toEqual({ txRef: "cd".repeat(32), amount: 1.5 });
         expect(sendTon).toHaveBeenCalledWith({
           toAddress: VALID_ADDRESS,
           amount: 1.5,
@@ -276,12 +280,12 @@ describe("createTonSDK", () => {
         });
       });
 
-      it("throws OPERATION_FAILED when sendTon returns null", async () => {
+      it("throws OPERATION_FAILED when the transfer is not confirmed", async () => {
         (sendTon as Mock).mockResolvedValue(null);
 
         await expect(sdk.sendTON(VALID_ADDRESS, 1)).rejects.toMatchObject({
           code: "OPERATION_FAILED",
-          message: expect.stringContaining("no reference returned"),
+          message: expect.stringContaining("not be confirmed"),
         });
       });
 

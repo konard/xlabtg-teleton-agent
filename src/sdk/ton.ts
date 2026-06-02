@@ -297,21 +297,21 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
       }
 
       try {
-        const txRef = await sendTon({
+        const result = await sendTon({
           toAddress: to,
           amount,
           comment,
           bounce: false,
         });
 
-        if (!txRef) {
+        if (!result) {
           throw new PluginSDKError(
-            "Transaction failed — no reference returned",
+            "Transaction failed or could not be confirmed on-chain",
             "OPERATION_FAILED"
           );
         }
 
-        return { txRef, amount };
+        return { txRef: result.hash, amount };
       } catch (error) {
         if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(

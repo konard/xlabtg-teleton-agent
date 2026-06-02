@@ -6,7 +6,7 @@
 import type Database from "better-sqlite3";
 import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { Deal } from "./types.js";
-import { sendTon } from "../ton/transfer.js";
+import { sendTon, tonExplorerTxUrl } from "../ton/transfer.js";
 import { formatAsset } from "./utils.js";
 import { JournalStore } from "../memory/journal-store.js";
 import { getErrorMessage } from "../utils/errors.js";
@@ -89,15 +89,16 @@ export async function executeDeal(
       );
 
       // Send TON to user's wallet
-      const txHash = await sendTon({
+      const sendResult = await sendTon({
         toAddress: deal.user_payment_wallet,
         amount: deal.agent_gives_ton_amount,
         comment: `Deal #${dealId} - ${formatAsset(deal.agent_gives_type, deal.agent_gives_ton_amount, deal.agent_gives_gift_slug)}`,
       });
 
-      if (!txHash) {
-        throw new Error("TON transfer failed (wallet not initialized or invalid parameters)");
+      if (!sendResult) {
+        throw new Error("TON transfer failed or could not be confirmed on-chain");
       }
+      const txHash = sendResult.hash;
 
       // Update deal: mark as completed (agent_sent_at already set by lock)
       db.prepare(
@@ -121,6 +122,7 @@ export async function executeDeal(
 I've sent **${deal.agent_gives_ton_amount} TON** to your wallet.
 
 TX Hash: \`${txHash}\`
+${tonExplorerTxUrl(txHash)}
 
 Thank you for trading! 🎉`,
       });

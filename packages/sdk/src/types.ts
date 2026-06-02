@@ -47,7 +47,7 @@ export interface TonPrice {
 
 /** Result of a TON send operation */
 export interface TonSendResult {
-  /** Transaction reference (format: seqno_timestamp_amount) */
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
   txRef: string;
   /** Amount sent in TON */
   amount: number;
