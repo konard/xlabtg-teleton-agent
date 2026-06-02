@@ -2390,6 +2390,138 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 .ios-sublist .ios-row { padding-left: 28px; }
 .ios-row.dimmed .ios-row-main { opacity: 0.5; }
 
+/* ── Wallet ── */
+.wallet-hero {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(120% 140% at 100% 0%, var(--accent-subtle), transparent 55%),
+    var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-card);
+  padding: var(--space-xl);
+  margin-bottom: var(--space-lg);
+}
+.wallet-diamond {
+  position: absolute;
+  top: -8px;
+  right: 4px;
+  width: 96px;
+  height: 96px;
+  color: var(--accent);
+  opacity: 0.12;
+  pointer-events: none;
+}
+.wallet-hero-empty {
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: var(--font-sm);
+  padding: var(--space-md) 0;
+}
+.wallet-hero-label {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: var(--text-tertiary);
+}
+.wallet-balance {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 6px 0 16px;
+}
+.wallet-balance-amount {
+  font-size: 40px;
+  font-weight: 700;
+  letter-spacing: -1px;
+  color: var(--text-primary);
+  line-height: 1;
+}
+.wallet-balance-unit {
+  font-size: var(--font-lg);
+  font-weight: 600;
+  color: var(--accent);
+}
+.wallet-address {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 6px 12px;
+  background: var(--glass-thin);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-pill);
+  max-width: 100%;
+}
+.wallet-address code {
+  font-family: var(--font-mono);
+  font-size: var(--font-sm);
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.4;
+}
+.wallet-addr-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  min-width: 26px;
+  padding: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  border-radius: var(--radius-pill);
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background var(--duration-color) var(--easing-standard), color var(--duration-color) var(--easing-standard);
+}
+.wallet-addr-btn svg { display: block; width: 15px; height: 15px; flex-shrink: 0; }
+.wallet-addr-btn:hover {
+  background: var(--glass-regular);
+  color: var(--accent);
+}
+
+/* Transaction rows: direction-colored leading icon + amount */
+.ios-row.tx-in .ios-row-lead { background: var(--green-dim); color: var(--green); }
+.ios-row.tx-out .ios-row-lead { background: var(--red-dim); color: var(--red); }
+.ios-row.tx-other .ios-row-lead { background: var(--bg-muted); color: var(--text-secondary); }
+.ios-row.tx-in .ios-row-sub,
+.ios-row.tx-out .ios-row-sub,
+.ios-row.tx-other .ios-row-sub { font-family: var(--font-mono); font-size: var(--font-xs); }
+.tx-amount {
+  font-size: var(--font-base);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.2px;
+}
+.tx-amount-in { color: var(--green); }
+.tx-amount-out { color: var(--text-primary); }
+.tx-amount-other { color: var(--text-secondary); }
+
+.tx-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 16px 14px 52px;
+}
+.tx-kv {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: var(--font-sm);
+}
+.tx-kv-label { color: var(--text-secondary); flex-shrink: 0; }
+.tx-kv-value {
+  color: var(--text-primary);
+  text-align: right;
+  word-break: break-all;
+}
+.tx-kv-value.mono { font-family: var(--font-mono); font-size: var(--font-xs); }
+.tx-kv-value a { color: var(--accent); }
+
 /* ── Telegram folder-style pill tabs (scope selector) ── */
 .pill-tabs {
   display: flex;

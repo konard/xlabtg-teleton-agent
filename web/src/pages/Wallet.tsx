@@ -1,132 +1,81 @@
-import React, { useState } from 'react';
+import { useMemo, useState, Fragment } from 'react';
 import { api, WalletInfo, WalletTransaction } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
 import { RefreshButton } from '../components/RefreshButton';
+import { Segmented } from '../components/Segmented';
+import { List, ListRow } from '../components/List';
 import { Alert } from '../components/Alert';
-import { expandableRowProps } from '../lib/a11y';
 import { Skeleton, SkeletonRows } from '../components/Skeleton';
 import { EmptyState } from '../components/EmptyState';
+import { toast } from '../lib/toast';
 
-function truncateAddress(addr: string): string {
-  if (addr.length <= 14) return addr;
-  return `${addr.slice(0, 6)}…${addr.slice(-6)}`;
+type Dir = 'in' | 'out' | 'other';
+type Filter = 'all' | 'in' | 'out';
+
+function truncate(addr: string, head = 6, tail = 6): string {
+  if (addr.length <= head + tail + 2) return addr;
+  return `${addr.slice(0, head)}…${addr.slice(-tail)}`;
 }
 
-function truncateHash(hash: string): string {
-  if (hash.length <= 16) return hash;
-  return `${hash.slice(0, 8)}…${hash.slice(-8)}`;
-}
-
-function getDirection(type: string): 'in' | 'out' | 'other' {
+function getDirection(type: string): Dir {
   if (type.includes('received') || type === 'gas_refund') return 'in';
   if (type.includes('sent')) return 'out';
   return 'other';
 }
 
-// ── TransactionRow ─────────────────────────────────────────────────────────
-
-interface TransactionRowProps {
-  tx: WalletTransaction;
-  isExpanded: boolean;
-  onToggle: (hash: string) => void;
+function relativeTime(seconds: number): string {
+  if (seconds < 60) return 'just now';
+  const m = Math.floor(seconds / 60);
+  if (m < 60) return `${m}m ago`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.floor(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return `${Math.floor(d / 30)}mo ago`;
 }
 
-function TransactionRow({ tx, isExpanded, onToggle }: TransactionRowProps) {
-  const dir = getDirection(tx.type);
-  const counterparty = tx.from || tx.to || tx.jettonWallet || '—';
+// ── Direction glyphs ───────────────────────────────────────────────────────
 
+function DirIcon({ dir }: { dir: Dir }) {
+  if (dir === 'other') {
+    return (
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <circle cx="7" cy="7" r="2.4" fill="currentColor" />
+      </svg>
+    );
+  }
+  // in = arrow down-left into wallet, out = arrow up-right
+  const path = dir === 'in' ? 'M10 4 4 10 M4 5.2 4 10 9 10' : 'M4 10 10 4 M5.2 4 10 4 10 9';
   return (
-    <React.Fragment>
-      <tr
-        onClick={() => onToggle(tx.hash)}
-        {...expandableRowProps(() => onToggle(tx.hash))}
-        style={{
-          cursor: 'pointer',
-          borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-          backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-        }}
-        className="file-row"
-      >
-        <td style={{ padding: '6px 14px', fontSize: '16px' }}>
-          <span style={{
-            color: dir === 'in' ? 'var(--green)' : dir === 'out' ? 'var(--red)' : 'var(--text-secondary)',
-          }}>
-            {dir === 'in' ? '↓' : dir === 'out' ? '↑' : '•'}
-          </span>
-        </td>
-        <td style={{ padding: '6px 14px' }}>
-          <span style={{
-            display: 'inline-block',
-            padding: '1px 6px',
-            fontSize: '11px',
-            borderRadius: '3px',
-            backgroundColor: dir === 'in' ? 'var(--green-dim)' : dir === 'out' ? 'var(--red-dim)' : 'var(--bg-muted)',
-            color: dir === 'in' ? 'var(--green)' : dir === 'out' ? 'var(--red)' : 'var(--text-secondary)',
-          }}>
-            {tx.type.replace(/_/g, ' ')}
-          </span>
-        </td>
-        <td style={{
-          textAlign: 'right',
-          padding: '6px 14px',
-          fontWeight: 500,
-          color: dir === 'in' ? 'var(--green)' : 'var(--text-primary)',
-        }}>
-          {tx.amount ? `${dir === 'in' ? '+' : dir === 'out' ? '-' : ''}${tx.amount}` : '—'}
-        </td>
-        <td style={{ padding: '6px 14px', color: 'var(--text-secondary)', fontFamily: 'monospace', fontSize: '12px' }}>
-          {truncateAddress(counterparty)}
-        </td>
-        <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-          {formatDateTime(tx.date)}
-        </td>
-      </tr>
-      {isExpanded && (
-        <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-          <td colSpan={5} style={{ padding: '0 14px 14px 14px' }}>
-            <div style={{
-              padding: '10px 12px',
-              border: '1px solid var(--border)',
-              borderRadius: '4px',
-              backgroundColor: 'var(--bg-glass)',
-              marginTop: '8px',
-            }}>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '12px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Hash</span>
-                  <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace' }}>{truncateHash(tx.hash)}</code>
-                </div>
-                {tx.from && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>From</span>
-                    <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '11px' }}>{tx.from}</code>
-                  </div>
-                )}
-                {tx.to && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>To</span>
-                    <code style={{ color: 'var(--text-primary)', fontFamily: 'monospace', fontSize: '11px' }}>{tx.to}</code>
-                  </div>
-                )}
-                {tx.comment && (
-                  <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>Comment</span>
-                    <span style={{ color: 'var(--text-primary)' }}>{tx.comment}</span>
-                  </div>
-                )}
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-secondary)' }}>Explorer</span>
-                  <a href={tx.explorer} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent)', fontSize: '12px' }}>
-                    View on TonViewer
-                  </a>
-                </div>
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
-    </React.Fragment>
+    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+      <path d={path} stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function TonDiamond() {
+  return (
+    <svg className="wallet-diamond" viewBox="0 0 56 56" fill="none" aria-hidden="true">
+      <path
+        d="M14 16h28a2 2 0 0 1 1.7 3L29.6 41.4a2 2 0 0 1-3.3 0L12.3 19a2 2 0 0 1 1.7-3Z"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinejoin="round"
+      />
+      <path d="M28 17v24M14.5 18.5 28 24l13.5-5.5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// ── Transaction detail ─────────────────────────────────────────────────────
+
+function DetailRow({ label, value, mono }: { label: string; value: React.ReactNode; mono?: boolean }) {
+  return (
+    <div className="tx-kv">
+      <span className="tx-kv-label">{label}</span>
+      <span className={`tx-kv-value${mono ? ' mono' : ''}`}>{value}</span>
+    </div>
   );
 }
 
@@ -144,7 +93,7 @@ export function Wallet() {
       [],
     );
 
-  const [copied, setCopied] = useState(false);
+  const [filter, setFilter] = useState<Filter>('all');
   const [expandedTx, setExpandedTx] = useState<string | null>(null);
 
   const refresh = () => {
@@ -156,14 +105,17 @@ export function Wallet() {
     if (!wallet?.address) return;
     try {
       await navigator.clipboard.writeText(wallet.address);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* ignore */ }
+      toast.success('Address copied');
+    } catch {
+      toast.error('Copy failed');
+    }
   };
 
-  const toggleTx = (hash: string) => {
-    setExpandedTx(expandedTx === hash ? null : hash);
-  };
+  const all = transactions ?? [];
+  const filtered = useMemo(
+    () => (filter === 'all' ? all : all.filter((tx) => getDirection(tx.type) === filter)),
+    [all, filter],
+  );
 
   return (
     <div>
@@ -172,81 +124,126 @@ export function Wallet() {
         <p>TON blockchain wallet</p>
       </div>
 
-      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '12px' }} />}
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
 
-      {/* Wallet info card */}
-      <div className="card" style={{ marginBottom: '16px', padding: '16px 20px' }}>
+      {/* ── Balance hero ── */}
+      <div className="wallet-hero">
+        <TonDiamond />
         {loading ? (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <Skeleton width={220} height={28} />
-            <Skeleton width={120} height={28} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+            <Skeleton width={90} height={12} />
+            <Skeleton width={200} height={40} />
+            <Skeleton width={260} height={30} />
           </div>
         ) : !wallet?.address ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>No wallet configured</div>
+          <div className="wallet-hero-empty">No wallet configured</div>
         ) : (
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-            <div>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Address</div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <code style={{ fontSize: '13px', color: 'var(--text-primary)', fontFamily: 'monospace' }}>
-                  {truncateAddress(wallet.address)}
-                </code>
-                <button
-                  onClick={copyAddress}
-                  className="btn-ghost btn-sm"
-                  style={{ padding: '2px 6px', fontSize: '11px' }}
-                >
-                  {copied ? 'Copied!' : 'Copy'}
-                </button>
-              </div>
+          <>
+            <div className="wallet-hero-label">Total Balance</div>
+            <div className="wallet-balance">
+              <span className="wallet-balance-amount">{wallet.balance}</span>
+              <span className="wallet-balance-unit">GRAM</span>
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div style={{ fontSize: '11px', color: 'var(--text-secondary)', textTransform: 'uppercase', marginBottom: '4px' }}>Balance</div>
-              <div style={{ fontSize: '20px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                {wallet.balance} TON
-              </div>
+            <div className="wallet-address">
+              <code>{wallet.address}</code>
+              <button className="wallet-addr-btn" onClick={copyAddress} aria-label="Copy address">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="8" y="8" width="14" height="14" rx="2" />
+                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+                </svg>
+              </button>
+              <a
+                className="wallet-addr-btn"
+                href={`https://tonviewer.com/${wallet.address}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="View on TonViewer"
+              >
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 3h6v6" />
+                  <path d="M10 14 21 3" />
+                  <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                </svg>
+              </a>
             </div>
-          </div>
+          </>
         )}
       </div>
 
-      {/* Transactions table */}
-      <div className="card" style={{ padding: 0 }}>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-          <span style={{ flex: 1, fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>Recent Transactions</span>
-          <RefreshButton onRefresh={refresh} />
+      {/* ── Transactions ── */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px' }}>
+        <Segmented<Filter>
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Filter transactions"
+          options={[
+            { value: 'all', label: 'All' },
+            { value: 'in', label: 'In' },
+            { value: 'out', label: 'Out' },
+          ]}
+        />
+        <div style={{ flex: 1 }} />
+        <RefreshButton onRefresh={refresh} />
+      </div>
+
+      {txLoading ? (
+        <SkeletonRows />
+      ) : filtered.length === 0 ? (
+        <div className="card" style={{ padding: 0 }}>
+          <EmptyState
+            title={all.length === 0 ? 'No transactions yet' : 'No matching transactions'}
+            description={
+              all.length === 0
+                ? 'Wallet activity will show up here once transactions occur.'
+                : 'Try a different filter.'
+            }
+          />
         </div>
-
-        {txLoading ? (
-          <div style={{ padding: '14px' }}>
-            <SkeletonRows />
-          </div>
-        ) : (transactions ?? []).length === 0 ? (
-          <EmptyState title="No transactions yet" description="Wallet activity will show up here once transactions occur." />
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
-                <th style={{ textAlign: 'left', padding: '8px 14px', width: '40px' }}></th>
-                <th style={{ textAlign: 'left', padding: '8px 14px' }}>Type</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '120px' }}>Amount</th>
-                <th style={{ textAlign: 'left', padding: '8px 14px' }}>Address</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '140px' }}>Date</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(transactions ?? []).map((tx) => (
-                <TransactionRow
-                  key={tx.hash}
-                  tx={tx}
-                  isExpanded={expandedTx === tx.hash}
-                  onToggle={toggleTx}
+      ) : (
+        <List>
+          {filtered.map((tx) => {
+            const dir = getDirection(tx.type);
+            const counterparty = tx.from || tx.to || tx.jettonWallet || '—';
+            const isExpanded = expandedTx === tx.hash;
+            const sign = dir === 'in' ? '+' : dir === 'out' ? '−' : '';
+            return (
+              <Fragment key={tx.hash}>
+                <ListRow
+                  className={`tx-${dir}`}
+                  leading={<DirIcon dir={dir} />}
+                  title={tx.type.replace(/_/g, ' ')}
+                  subtitle={`${truncate(counterparty)} · ${relativeTime(tx.secondsAgo)}`}
+                  trailing={
+                    <span className={`tx-amount tx-amount-${dir}`}>
+                      {tx.amount ? `${sign}${tx.amount}` : '—'}
+                    </span>
+                  }
+                  disclosure
+                  expanded={isExpanded}
+                  onClick={() => setExpandedTx(isExpanded ? null : tx.hash)}
                 />
-              ))}
-            </tbody>
-          </table>
-        )}
-      </div>
+                {isExpanded && (
+                  <div className="ios-sublist tx-detail">
+                    <DetailRow label="Hash" value={truncate(tx.hash, 10, 10)} mono />
+                    {tx.from && <DetailRow label="From" value={truncate(tx.from, 10, 10)} mono />}
+                    {tx.to && <DetailRow label="To" value={truncate(tx.to, 10, 10)} mono />}
+                    {tx.comment && <DetailRow label="Comment" value={tx.comment} />}
+                    <DetailRow label="Date" value={formatDateTime(tx.date)} />
+                    <DetailRow
+                      label="Explorer"
+                      value={
+                        <a href={tx.explorer} target="_blank" rel="noopener noreferrer">
+                          View on TonViewer ↗
+                        </a>
+                      }
+                    />
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </List>
+      )}
     </div>
   );
 }
