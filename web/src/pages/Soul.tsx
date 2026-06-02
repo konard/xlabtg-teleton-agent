@@ -18,6 +18,11 @@ export function Soul() {
 
   const dirty = content !== savedContent;
 
+  // Editor stats — token count is an estimate (~4 chars/token, no client tokenizer).
+  const chars = content.length;
+  const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const estTokens = Math.ceil(chars / 4);
+
   const loadFile = useCallback(async (filename: string) => {
     setLoading(true);
     setMessage(null);
@@ -102,11 +107,16 @@ export function Soul() {
               placeholder={`Edit ${activeTab}...`}
               style={{ flex: 1, minHeight: '200px' }}
             />
-            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-              {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>Unsaved changes</span>}
-              <button className="btn-sm" onClick={saveFile} disabled={saving || !dirty}>
-                {saving ? 'Saving…' : 'Save'}
-              </button>
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)', fontVariantNumeric: 'tabular-nums' }}>
+                ~{estTokens.toLocaleString()} tokens · {words.toLocaleString()} words · {chars.toLocaleString()} chars
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>Unsaved changes</span>}
+                <button className="btn-sm" onClick={saveFile} disabled={saving || !dirty}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
           </>
         )}
