@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.26](https://github.com/xlabtg/teleton-agent/compare/v0.8.25...v0.8.26) (2026-06-02)
+
+
+### Bug Fixes
+
+* **exec:** honor allowlist mode and prevent shell injection in install/service ([b8c45a6](https://github.com/xlabtg/teleton-agent/commit/b8c45a6a844e724ea9873c2ff468e57108277901)), closes [#523](https://github.com/xlabtg/teleton-agent/issues/523)
+* **exec:** соблюдение allowlist и защита от shell-инъекций в exec_install/exec_service ([47d1e2b](https://github.com/xlabtg/teleton-agent/commit/47d1e2bd03d095089a379323994e50164b954e03))
+
+
+### Documentation
+
+* sync README fork version to 0.8.25 (matches package.json) ([e4b7500](https://github.com/xlabtg/teleton-agent/commit/e4b75003d6432deac58f1be4f04460eec7fbf2b8))
+
 ## [0.8.25](https://github.com/xlabtg/teleton-agent/compare/v0.8.24...v0.8.25) (2026-06-02)
 
 
