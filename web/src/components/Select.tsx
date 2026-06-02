@@ -7,9 +7,10 @@ interface SelectProps {
   labels?: string[];
   onChange: (value: string) => void;
   style?: React.CSSProperties;
+  disabled?: boolean;
 }
 
-export function Select({ value, options, labels, onChange, style }: SelectProps) {
+export function Select({ value, options, labels, onChange, style, disabled }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(-1);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -104,8 +105,9 @@ export function Select({ value, options, labels, onChange, style }: SelectProps)
       <button
         type="button"
         className="custom-select-trigger"
-        onClick={() => setOpen(!open)}
-        onKeyDown={handleKeyDown}
+        onClick={() => !disabled && setOpen(!open)}
+        onKeyDown={(e) => !disabled && handleKeyDown(e)}
+        disabled={disabled}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}

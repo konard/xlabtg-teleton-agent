@@ -2132,6 +2132,164 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 .empty-state-desc { font-size: var(--font-md); color: var(--text-secondary); max-width: 380px; }
 .empty-state-action { margin-top: 12px; }
 
+/* ── iOS grouped list ── */
+.ios-list {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.ios-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 16px;
+  position: relative;
+  cursor: default;
+  transition: background var(--duration-color) var(--easing-standard);
+}
+.ios-row.tappable { cursor: pointer; }
+.ios-row.tappable:hover { background: var(--glass-thin); }
+.ios-row.expanded { background: var(--glass-micro); }
+/* Inset separator: starts after the leading content, like iOS */
+.ios-row:not(:first-child)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 16px;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+.ios-row.inset-sep::before { left: 52px; }
+.ios-row-lead {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: var(--accent);
+  color: #fff;
+  flex-shrink: 0;
+}
+.ios-row-main { flex: 1; min-width: 0; }
+.ios-row-title {
+  font-size: var(--font-base);
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ios-row-sub {
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+  margin-top: 1px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ios-row-trail {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.ios-row-chevron {
+  color: var(--text-tertiary);
+  display: inline-flex;
+  transition: transform var(--duration-color) var(--easing-standard);
+}
+.ios-row-chevron.open { transform: rotate(90deg); }
+.ios-sublist { background: var(--glass-micro); }
+.ios-sublist .ios-row { padding-left: 28px; }
+.ios-row.dimmed .ios-row-main { opacity: 0.5; }
+
+/* List section header (uppercase, iOS grouped) */
+.ios-section-header {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--text-secondary);
+  padding: 6px 4px;
+}
+
+/* ── Segmented control (Apple) ── */
+.segmented {
+  display: inline-flex;
+  padding: 2px;
+  gap: 2px;
+  background: var(--glass-regular);
+  border-radius: var(--radius-md);
+}
+.segmented-item {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  height: 28px;
+  padding: 0 14px;
+  border-radius: calc(var(--radius-md) - 3px);
+  font-size: var(--font-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--duration-color) var(--easing-standard),
+    background var(--duration-color) var(--easing-standard);
+  white-space: nowrap;
+}
+.segmented-item:hover:not(.active) { color: var(--text-primary); }
+.segmented-item.active {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  box-shadow: var(--shadow-sm);
+}
+
+/* ── iOS search bar ── */
+.ios-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 36px;
+  padding: 0 12px;
+  background: var(--glass-regular);
+  border: none;
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+}
+.ios-search svg { flex-shrink: 0; opacity: 0.7; }
+.ios-search input {
+  flex: 1;
+  height: auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--font-base);
+}
+.ios-search input:focus { outline: none; box-shadow: none; }
+.ios-search-clear {
+  all: unset;
+  display: inline-flex;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  border-radius: 50%;
+}
+.ios-search-clear:hover { color: var(--text-secondary); }
+
+/* Indeterminate toggle (partial state) */
+.toggle input:indeterminate + .toggle-track {
+  background: var(--accent-dim);
+}
+.toggle input:indeterminate + .toggle-track + .toggle-thumb {
+  transform: translateX(10px);
+  background: var(--accent);
+}
+
 /* ── Global focus-visible (a11y) ── */
 :focus-visible {
   outline: 2px solid var(--accent);
