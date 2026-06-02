@@ -26,6 +26,7 @@ interface ListRowProps {
   /** Inset the top separator to align under the title (when rows have a leading icon). */
   insetSeparator?: boolean;
   className?: string;
+  leadingClassName?: string;
 }
 
 export function ListRow({
@@ -38,6 +39,7 @@ export function ListRow({
   onClick,
   insetSeparator,
   className,
+  leadingClassName,
 }: ListRowProps) {
   const tappable = !!onClick;
   return (
@@ -57,7 +59,7 @@ export function ListRow({
           }
         : {})}
     >
-      {leading && <div className="ios-row-lead">{leading}</div>}
+      {leading && <div className={`ios-row-lead${leadingClassName ? ` ${leadingClassName}` : ''}`}>{leading}</div>}
       <div className="ios-row-main">
         <div className="ios-row-title">{title}</div>
         {subtitle != null && <div className="ios-row-sub">{subtitle}</div>}
