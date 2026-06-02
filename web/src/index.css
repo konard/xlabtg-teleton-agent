@@ -2297,6 +2297,17 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
   color: var(--text-primary);
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
 }
+/* No blue focus ring / tap flash on the pill selectors (selection is the indicator) */
+.segmented-item,
+.pill-tab {
+  -webkit-tap-highlight-color: transparent;
+}
+.segmented-item:focus,
+.segmented-item:focus-visible,
+.pill-tab:focus,
+.pill-tab:focus-visible {
+  outline: none;
+}
 
 /* ── iOS search bar ── */
 .ios-search {
