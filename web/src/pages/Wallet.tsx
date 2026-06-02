@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { api, WalletInfo, WalletTransaction } from '../lib/api';
 import { formatDateTime } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
 import { Skeleton, SkeletonRows } from '../components/Skeleton';
@@ -213,13 +214,7 @@ export function Wallet() {
       <div className="card" style={{ padding: 0 }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
           <span style={{ flex: 1, fontSize: '13px', fontWeight: 500, color: 'var(--text-primary)' }}>Recent Transactions</span>
-          <button
-            onClick={refresh}
-            disabled={txLoading}
-            className="btn-ghost btn-sm"
-          >
-            {txLoading ? 'Loading...' : 'Refresh'}
-          </button>
+          <RefreshButton onRefresh={refresh} />
         </div>
 
         {txLoading ? (

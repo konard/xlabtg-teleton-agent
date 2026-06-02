@@ -5,6 +5,7 @@ import { SearchBar } from '../components/SearchBar';
 import { List, ListRow } from '../components/List';
 import { CodeBlock } from '../components/CodeBlock';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
 import { SkeletonRows } from '../components/Skeleton';
 import { EmptyState } from '../components/EmptyState';
@@ -91,9 +92,7 @@ export function Memory() {
         <div style={{ flex: 1 }}>
           <SearchBar value={filter} onChange={setFilter} placeholder="Search memory content…" />
         </div>
-        <button className="btn-ghost btn-sm" onClick={reload} disabled={loading}>
-          {loading ? 'Loading…' : 'Refresh'}
-        </button>
+        <RefreshButton onRefresh={reload} />
       </div>
 
       {query ? (

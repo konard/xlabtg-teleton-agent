@@ -2132,6 +2132,28 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 .empty-state-desc { font-size: var(--font-md); color: var(--text-secondary); max-width: 380px; }
 .empty-state-action { margin-top: 12px; }
 
+/* ── Refresh button (unified) ── */
+.refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-pill);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: color var(--duration-color) var(--easing-standard),
+    background var(--duration-color) var(--easing-standard);
+}
+.refresh-btn:hover { background: var(--glass-thin); color: var(--text-primary); }
+.refresh-btn svg { display: block; }
+.refresh-btn svg.spin { animation: refresh-spin 0.7s linear infinite; transform-origin: center; }
+@keyframes refresh-spin { to { transform: rotate(360deg); } }
+
 /* ── Code / content block ── */
 .code-block {
   border: 1px solid var(--border-glass);

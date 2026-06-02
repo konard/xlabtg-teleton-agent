@@ -7,6 +7,7 @@ import { Segmented } from '../components/Segmented';
 import { List, ListRow } from '../components/List';
 import { useToolManager } from '../hooks/useToolManager';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
 import { SkeletonRows } from '../components/Skeleton';
 import { EmptyState } from '../components/EmptyState';
@@ -89,7 +90,7 @@ export function Tools() {
         <div style={{ flex: 1, minWidth: '180px' }}>
           <SearchBar value={search} onChange={setSearch} placeholder="Search tools…" />
         </div>
-        <button className="btn-ghost btn-sm" onClick={reload}>Refresh</button>
+        <RefreshButton onRefresh={reload} />
       </div>
 
       {/* Module list */}

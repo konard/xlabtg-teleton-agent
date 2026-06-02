@@ -11,6 +11,7 @@ import { errMsg } from '../lib/utils';
 import { SkeletonRows } from '../components/Skeleton';
 import { EmptyState } from '../components/EmptyState';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
 import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -283,9 +284,7 @@ export function Plugins() {
           </button>
         )}
         {tab === 'marketplace' && (
-          <button className="btn-ghost btn-sm" onClick={() => loadMarketplace(true)} disabled={marketLoading} style={{ whiteSpace: 'nowrap' }}>
-            {marketLoading ? 'Refreshing…' : 'Refresh'}
-          </button>
+          <RefreshButton onRefresh={() => loadMarketplace(true)} />
         )}
       </div>
 

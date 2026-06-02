@@ -3,6 +3,7 @@ import { api, TaskData } from '../lib/api';
 import { formatDate, formatDateTime, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { expandableRowProps } from '../lib/a11y';
 import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -264,12 +265,7 @@ export function Tasks() {
             )}
           </div>
         )}
-        <button
-          className="btn-ghost btn-sm"
-          onClick={reload}
-        >
-          Refresh
-        </button>
+        <RefreshButton onRefresh={reload} />
       </div>
 
       {/* Clean confirmation modal */}

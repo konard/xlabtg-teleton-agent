@@ -3,6 +3,7 @@ import { api, ConversationChat, ConversationMessage } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
 import { SkeletonRows } from '../components/Skeleton';
@@ -68,13 +69,7 @@ export function Conversations() {
             wrapperStyle={{ flex: 1 }}
             style={{ width: '100%' }}
           />
-          <button
-            onClick={reload}
-            disabled={loading}
-            className="btn-ghost btn-sm"
-          >
-            {loading ? 'Loading...' : 'Refresh'}
-          </button>
+          <RefreshButton onRefresh={reload} />
         </div>
 
         {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ margin: '12px 14px' }} />}
