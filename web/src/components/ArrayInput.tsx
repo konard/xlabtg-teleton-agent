@@ -220,15 +220,15 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
           style={{
             flex: 1,
             background: 'var(--bg-glass)',
-            border: '1px solid var(--border-glass)',
+            border: `1px solid ${error ? 'var(--red)' : 'var(--border-glass)'}`,
             color: 'var(--text-primary)',
             fontSize: 'var(--font-sm)',
             padding: '5px 10px',
             outline: 'none',
             fontFamily: 'var(--font-mono)',
           }}
-          onFocus={e => { e.target.style.borderColor = 'var(--border-strong)'; }}
-          onBlur={e => { e.target.style.borderColor = 'var(--border-glass)'; }}
+          onFocus={e => { if (!error) e.target.style.borderColor = 'var(--border-strong)'; }}
+          onBlur={e => { e.target.style.borderColor = error ? 'var(--red)' : 'var(--border-glass)'; }}
         />
         <button
           type="button"

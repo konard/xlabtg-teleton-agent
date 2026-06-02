@@ -45,24 +45,29 @@ export function InfoTip({ text }: InfoTipProps) {
       onBlur={hide}
     >
       {/* Trigger icon */}
-      <span
-        tabIndex={0}
-        role="button"
+      <button
+        type="button"
         aria-describedby={visible ? tooltipId : undefined}
         aria-label="Info"
         style={{
+          background: 'transparent',
+          border: 'none',
+          height: 'auto',
+          width: 'auto',
+          padding: 0,
           cursor: 'help',
           display: 'inline-flex',
+          alignItems: 'center',
+          borderRadius: '50%',
           color: visible ? 'var(--text-primary)' : 'var(--text-secondary)',
           transition: 'color 0.15s',
-          outline: 'none',
         }}
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
           <text x="7" y="10.5" textAnchor="middle" fill="currentColor" fontSize="9" fontWeight="600" fontFamily="sans-serif">i</text>
         </svg>
-      </span>
+      </button>
 
       {/* Tooltip */}
       <span
