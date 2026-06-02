@@ -9,7 +9,7 @@ const log = createLogger("Exec");
 const KILL_GRACE_MS = 5000;
 
 export function runCommand(command: string, options: RunOptions): Promise<ExecResult> {
-  const { timeout, maxOutput, useShell = true, sandboxMode = "unrestricted" } = options;
+  const { timeout, maxOutput, useShell = true, argv, sandboxMode = "unrestricted" } = options;
   const startTime = Date.now();
 
   return new Promise((resolve) => {
@@ -35,11 +35,12 @@ export function runCommand(command: string, options: RunOptions): Promise<ExecRe
     let resolved = false;
     const sandbox = createSandboxProfile(sandboxMode);
 
-    // In no-shell mode, tokenize and exec directly so the OS never sees a shell.
+    // In no-shell mode, exec directly so the OS never sees a shell. Callers may
+    // pass an explicit, pre-validated argv; otherwise the command is tokenized.
     const [spawnCmd, spawnArgs] = useShell
       ? (["bash", ["-c", command]] as [string, string[]])
       : (() => {
-          const tokens = tokenizeCommand(command) ?? [];
+          const tokens = argv ?? tokenizeCommand(command) ?? [];
           return [tokens[0] ?? command, tokens.slice(1)] as [string, string[]];
         })();
 

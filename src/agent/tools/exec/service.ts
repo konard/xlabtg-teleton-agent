@@ -2,6 +2,8 @@ import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import type { ExecConfig } from "../../../config/schema.js";
 import { runCommand } from "./runner.js";
+import { isCommandAllowed } from "./allowlist.js";
+import { isSafeArgToken } from "./validate.js";
 import { insertAuditEntry, updateAuditEntry } from "./audit.js";
 import type Database from "better-sqlite3";
 
@@ -39,7 +41,29 @@ export function createExecServiceExecutor(
   return async (params, context): Promise<ToolResult> => {
     const { action, name } = params;
     const { timeout, max_output } = execConfig.limits;
-    const command = `systemctl ${action} ${name}`;
+
+    // In allowlist mode the systemctl binary itself must be permitted.
+    if (
+      execConfig.mode === "allowlist" &&
+      !isCommandAllowed("systemctl", execConfig.command_allowlist)
+    ) {
+      return {
+        success: false,
+        error: `Command not permitted. Allowed commands: ${execConfig.command_allowlist.length > 0 ? execConfig.command_allowlist.join(", ") : "(none configured)"}.`,
+      };
+    }
+
+    // Validate the service name and execute without a shell to prevent injection
+    // through metacharacters in the model-controlled service name.
+    if (!isSafeArgToken(name)) {
+      return {
+        success: false,
+        error: `Invalid service name: ${JSON.stringify(name)}. Service names may only contain letters, digits, and ._@/:=+- characters.`,
+      };
+    }
+
+    const argv = ["systemctl", action, name];
+    const command = argv.join(" ");
 
     let auditId: number | undefined;
     if (execConfig.audit.log_commands) {
@@ -56,6 +80,8 @@ export function createExecServiceExecutor(
     const result = await runCommand(command, {
       timeout: timeout * 1000,
       maxOutput: max_output,
+      useShell: false,
+      argv,
       sandboxMode: execConfig.sandbox_mode,
     });
 

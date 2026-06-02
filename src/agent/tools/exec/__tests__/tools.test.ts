@@ -236,6 +236,114 @@ describe("exec_install", () => {
     expect(rows[0].tool).toBe("exec_install");
     expect(rows[0].command).toBe("apt install -y nginx");
   });
+
+  it("spawns without a shell using an explicit argv", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 1000,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const executor = createExecInstallExecutor(db, makeExecConfig());
+    await executor({ manager: "apt", packages: "nginx curl" }, makeContext());
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "apt install -y nginx curl",
+      expect.objectContaining({
+        useShell: false,
+        argv: ["apt", "install", "-y", "nginx", "curl"],
+      })
+    );
+  });
+
+  // Security regression: WORK4-001
+  it("SECURITY: rejects package args that contain shell metacharacters", async () => {
+    const executor = createExecInstallExecutor(db, makeExecConfig());
+    const result = await executor(
+      { manager: "apt", packages: "git; touch /tmp/PWNED" },
+      makeContext()
+    );
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Invalid package name");
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("SECURITY: rejects package args with command substitution", async () => {
+    const executor = createExecInstallExecutor(db, makeExecConfig());
+    const result = await executor({ manager: "pip", packages: "flask $(id)" }, makeContext());
+
+    expect(result.success).toBe(false);
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("SECURITY: honors allowlist mode and rejects when manager is not allowed", async () => {
+    const config = makeExecConfig({ mode: "allowlist", command_allowlist: ["git"] });
+    const executor = createExecInstallExecutor(db, config);
+    const result = await executor({ manager: "apt", packages: "git" }, makeContext());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("not permitted");
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("SECURITY: allowlist mode + injection attempt is rejected (issue reproduction)", async () => {
+    const config = makeExecConfig({ mode: "allowlist", command_allowlist: ["git"] });
+    const executor = createExecInstallExecutor(db, config);
+    const result = await executor(
+      { manager: "apt", packages: "git; touch /tmp/PWNED" },
+      makeContext()
+    );
+
+    expect(result.success).toBe(false);
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("allows install in allowlist mode when manager binary is permitted", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "installed",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 1000,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const config = makeExecConfig({ mode: "allowlist", command_allowlist: ["apt"] });
+    const executor = createExecInstallExecutor(db, config);
+    const result = await executor({ manager: "apt", packages: "nginx" }, makeContext());
+
+    expect(result.success).toBe(true);
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "apt install -y nginx",
+      expect.objectContaining({ useShell: false, argv: ["apt", "install", "-y", "nginx"] })
+    );
+  });
+
+  it("accepts docker tags and scoped npm package names", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 1000,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const executor = createExecInstallExecutor(db, makeExecConfig());
+    await executor({ manager: "docker", packages: "registry.io/nginx:latest" }, makeContext());
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "docker pull registry.io/nginx:latest",
+      expect.objectContaining({ argv: ["docker", "pull", "registry.io/nginx:latest"] })
+    );
+  });
 });
 
 describe("exec_service", () => {
@@ -280,6 +388,89 @@ describe("exec_service", () => {
     const rows = db.prepare("SELECT * FROM exec_audit").all() as any[];
     expect(rows[0].tool).toBe("exec_service");
     expect(rows[0].command).toBe("systemctl restart docker");
+  });
+
+  it("spawns without a shell using an explicit argv", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "active",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 100,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const executor = createExecServiceExecutor(db, makeExecConfig());
+    await executor({ action: "status", name: "nginx" }, makeContext());
+
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "systemctl status nginx",
+      expect.objectContaining({ useShell: false, argv: ["systemctl", "status", "nginx"] })
+    );
+  });
+
+  // Security regression: WORK4-001
+  it("SECURITY: rejects service name that contains shell metacharacters", async () => {
+    const executor = createExecServiceExecutor(db, makeExecConfig());
+    const result = await executor({ action: "status", name: "x; touch /tmp/PWNED" }, makeContext());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("Invalid service name");
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("SECURITY: honors allowlist mode and rejects when systemctl is not allowed", async () => {
+    const config = makeExecConfig({ mode: "allowlist", command_allowlist: ["git"] });
+    const executor = createExecServiceExecutor(db, config);
+    const result = await executor({ action: "status", name: "nginx" }, makeContext());
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("not permitted");
+    expect(mockRunCommand).not.toHaveBeenCalled();
+  });
+
+  it("allows service action in allowlist mode when systemctl is permitted", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "active",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 100,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const config = makeExecConfig({ mode: "allowlist", command_allowlist: ["systemctl"] });
+    const executor = createExecServiceExecutor(db, config);
+    const result = await executor({ action: "restart", name: "nginx" }, makeContext());
+
+    expect(result.success).toBe(true);
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "systemctl restart nginx",
+      expect.objectContaining({ useShell: false, argv: ["systemctl", "restart", "nginx"] })
+    );
+  });
+
+  it("accepts systemd template unit names with @", async () => {
+    mockRunCommand.mockResolvedValue({
+      stdout: "active",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      duration: 100,
+      truncated: false,
+      timedOut: false,
+    });
+
+    const executor = createExecServiceExecutor(db, makeExecConfig());
+    const result = await executor({ action: "status", name: "getty@tty1.service" }, makeContext());
+
+    expect(result.success).toBe(true);
+    expect(mockRunCommand).toHaveBeenCalledWith(
+      "systemctl status getty@tty1.service",
+      expect.objectContaining({ argv: ["systemctl", "status", "getty@tty1.service"] })
+    );
   });
 });
 

@@ -31,5 +31,11 @@ export interface RunOptions {
   maxOutput: number; // chars
   /** When false, execute via spawn(argv[0], argv.slice(1)) without a shell. Default: true. */
   useShell?: boolean;
+  /**
+   * Explicit argv to spawn when useShell is false. When provided, the command
+   * string is used only for audit/logging and is NOT tokenized or interpreted
+   * by a shell. This lets callers build a strictly validated argv themselves.
+   */
+  argv?: string[];
   sandboxMode?: SandboxMode;
 }

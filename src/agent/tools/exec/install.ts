@@ -2,6 +2,8 @@ import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import type { ExecConfig } from "../../../config/schema.js";
 import { runCommand } from "./runner.js";
+import { isCommandAllowed } from "./allowlist.js";
+import { parseSafeTokenList } from "./validate.js";
 import { insertAuditEntry, updateAuditEntry } from "./audit.js";
 import type Database from "better-sqlite3";
 
@@ -10,11 +12,14 @@ interface ExecInstallParams {
   packages: string;
 }
 
-const INSTALL_COMMANDS: Record<string, (pkgs: string) => string> = {
-  apt: (pkgs) => `apt install -y ${pkgs}`,
-  pip: (pkgs) => `pip install ${pkgs}`,
-  npm: (pkgs) => `npm install -g ${pkgs}`,
-  docker: (pkgs) => `docker pull ${pkgs}`,
+// Each entry is the fixed argv prefix the package list is appended to. The
+// command is always spawned without a shell (argv array) so interpolated
+// package names can never be interpreted as shell syntax.
+const INSTALL_ARGV: Record<string, string[]> = {
+  apt: ["apt", "install", "-y"],
+  pip: ["pip", "install"],
+  npm: ["npm", "install", "-g"],
+  docker: ["docker", "pull"],
 };
 
 export const execInstallTool: Tool = {
@@ -40,15 +45,40 @@ export function createExecInstallExecutor(
     const { manager, packages } = params;
     const { timeout, max_output } = execConfig.limits;
 
-    const buildCommand = INSTALL_COMMANDS[manager];
-    if (!buildCommand) {
+    const baseArgv = INSTALL_ARGV[manager];
+    if (!baseArgv) {
       return {
         success: false,
         error: `Unsupported package manager: ${manager}. Use apt, pip, npm, or docker.`,
       };
     }
 
-    const command = buildCommand(packages);
+    // In allowlist mode the package manager binary itself must be permitted.
+    if (
+      execConfig.mode === "allowlist" &&
+      !isCommandAllowed(baseArgv[0], execConfig.command_allowlist)
+    ) {
+      return {
+        success: false,
+        error: `Command not permitted. Allowed commands: ${execConfig.command_allowlist.length > 0 ? execConfig.command_allowlist.join(", ") : "(none configured)"}.`,
+      };
+    }
+
+    // Validate each package token and execute without a shell to prevent
+    // injection through metacharacters in the model-controlled package list.
+    const parsed = parseSafeTokenList(packages);
+    if ("invalid" in parsed) {
+      return {
+        success: false,
+        error:
+          parsed.invalid === ""
+            ? "No packages specified."
+            : `Invalid package name: ${JSON.stringify(parsed.invalid)}. Package names may only contain letters, digits, and ._@/:=+- characters.`,
+      };
+    }
+
+    const argv = [...baseArgv, ...parsed.tokens];
+    const command = argv.join(" ");
 
     let auditId: number | undefined;
     if (execConfig.audit.log_commands) {
@@ -65,6 +95,8 @@ export function createExecInstallExecutor(
     const result = await runCommand(command, {
       timeout: timeout * 1000,
       maxOutput: max_output,
+      useShell: false,
+      argv,
       sandboxMode: execConfig.sandbox_mode,
     });
 

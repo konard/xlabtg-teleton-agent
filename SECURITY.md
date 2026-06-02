@@ -79,6 +79,7 @@ Key restrictions in this mode:
 - **No shell interpreter**: allowed commands are executed via `spawn(program, args)` directly — no `bash -c` — so the OS never interprets shell syntax.
 - **First-token matching**: `allowlist: ["git"]` permits `git status`, `git diff`, etc., but rejects `gitconfig` (different binary) and `git status && id` (contains `&`).
 - **No pipes or redirects**: pipeline-based operations are not supported in allowlist mode; use `yolo` mode if you need them and understand the risks.
+- **Applies to all exec tools**: `exec_install` and `exec_service` honor the same gate. In allowlist mode their underlying binary (`apt`/`pip`/`npm`/`docker`, `systemctl`) must be present in `command_allowlist`. In every mode, package and service names are validated against a conservative character set (`A-Za-z0-9._@/:=+-`) and spawned via an explicit argv without a shell, so a model-controlled argument such as `git; touch /tmp/PWNED` can never inject additional commands.
 
 Example safe configuration:
 

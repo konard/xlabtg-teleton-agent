@@ -124,6 +124,52 @@ describe("runner", () => {
     killSpy.mockRestore();
   });
 
+  it("spawns explicit argv without a shell when argv is provided", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    const promise = runCommand("apt install -y nginx curl", {
+      timeout: 5000,
+      maxOutput: 50000,
+      useShell: false,
+      argv: ["apt", "install", "-y", "nginx", "curl"],
+    });
+    proc.emit("close", 0, null);
+    await promise;
+
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "apt",
+      ["install", "-y", "nginx", "curl"],
+      expect.any(Object)
+    );
+  });
+
+  it("never spawns a shell with injected metacharacters via argv", async () => {
+    const proc = createMockProcess();
+    mockSpawn.mockReturnValue(proc);
+
+    // Even if a metacharacter-laden token slips into argv, it is passed as a
+    // single literal argument — the OS never sees a shell.
+    const promise = runCommand("systemctl status x; touch /tmp/PWNED", {
+      timeout: 5000,
+      maxOutput: 50000,
+      useShell: false,
+      argv: ["systemctl", "status", "x; touch /tmp/PWNED"],
+    });
+    proc.emit("close", 0, null);
+    await promise;
+
+    // Crucially, the OS sees "systemctl" with the metacharacter token as a
+    // single literal argument — no "bash -c" wrapping that would interpret it.
+    expect(mockSpawn).toHaveBeenCalledWith(
+      "systemctl",
+      ["status", "x; touch /tmp/PWNED"],
+      expect.any(Object)
+    );
+    const lastCall = mockSpawn.mock.calls[mockSpawn.mock.calls.length - 1];
+    expect(lastCall[0]).not.toBe("bash");
+  });
+
   it("returns duration in ms", async () => {
     const proc = createMockProcess();
     mockSpawn.mockReturnValue(proc);
