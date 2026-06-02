@@ -164,4 +164,3 @@ function RoutedContent() {
 }
 
 export default App;
-export { AuthenticatedApp };

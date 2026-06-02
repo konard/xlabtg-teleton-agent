@@ -20,9 +20,6 @@ export function getSteps(telegramMode: 'user' | 'bot') {
   return ALL_STEPS;
 }
 
-// Default export for backward compat — components can use getSteps(data.telegramMode) for dynamic
-export const STEPS = ALL_STEPS;
-
 // ── Shared types ────────────────────────────────────────────────────
 
 export interface WizardData {
@@ -110,7 +107,7 @@ const DEFAULTS: WizardData = {
 
 // ── Validation ──────────────────────────────────────────────────────
 
-export function validateStep(step: number, data: WizardData): boolean {
+function validateStep(step: number, data: WizardData): boolean {
   switch (step) {
     case 0:
       return data.riskAccepted;
