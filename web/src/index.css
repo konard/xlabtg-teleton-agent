@@ -2132,6 +2132,49 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 .empty-state-desc { font-size: var(--font-md); color: var(--text-secondary); max-width: 380px; }
 .empty-state-action { margin-top: 12px; }
 
+/* ── Chat bubbles ── */
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px 16px;
+  max-height: 460px;
+  overflow-y: auto;
+}
+.chat-msg {
+  display: flex;
+  flex-direction: column;
+  max-width: 78%;
+}
+.chat-msg.out { align-self: flex-end; align-items: flex-end; }
+.chat-msg.in { align-self: flex-start; align-items: flex-start; }
+.chat-sender {
+  font-size: var(--font-xs);
+  font-weight: 600;
+  color: var(--accent);
+  margin: 0 0 2px 12px;
+}
+.chat-bubble {
+  padding: 7px 12px;
+  border-radius: 16px;
+  font-size: var(--font-md);
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.chat-msg.in .chat-bubble {
+  background: var(--glass-thick);
+  color: var(--text-primary);
+  border-bottom-left-radius: 5px;
+}
+.chat-msg.out .chat-bubble {
+  background: var(--accent);
+  color: #fff;
+  border-bottom-right-radius: 5px;
+}
+.chat-bubble.media { font-style: italic; opacity: 0.8; }
+.chat-time { font-size: 10px; color: var(--text-tertiary); margin: 2px 8px 0; }
+
 /* ── Refresh button (unified) ── */
 .refresh-btn {
   display: inline-flex;
