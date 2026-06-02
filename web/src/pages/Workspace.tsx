@@ -3,6 +3,9 @@ import { api, FileEntry, WorkspaceInfo } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
 import { expandableRowProps } from '../lib/a11y';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
+import { EmptyState } from '../components/EmptyState';
 
 function formatSize(bytes: number): string {
   if (bytes === 0) return '-';
@@ -25,6 +28,7 @@ function isBinaryFile(path: string): boolean {
 }
 
 export function Workspace() {
+  const confirm = useConfirm();
   const [currentPath, setCurrentPath] = useState('');
 
   const { data: dirData, loading, error, reload, setError } = useResource(
@@ -97,7 +101,7 @@ export function Workspace() {
   };
 
   const closeEditor = (): boolean => {
-    if (fileMode === 'text' && editDirty && !confirm('You have unsaved changes. Discard?')) return false;
+    if (fileMode === 'text' && editDirty && !window.confirm('You have unsaved changes. Discard?')) return false;
     setEditingFile(null);
     setEditContent('');
     setEditDirty(false);
@@ -121,8 +125,10 @@ export function Workspace() {
       await api.workspaceWrite(editingFile, editContent);
       setEditDirty(false);
       reload();
+      toast.success('Saved');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -130,7 +136,7 @@ export function Workspace() {
 
   const deleteEntry = async (entry: FileEntry) => {
     const label = entry.isDirectory ? 'directory' : 'file';
-    if (!confirm(`Delete ${label} "${entry.name}"?`)) return;
+    if (!(await confirm({ message: `Delete ${label} "${entry.name}"?`, destructive: true, confirmLabel: 'Delete' }))) return;
 
     try {
       await api.workspaceDelete(entry.path, entry.isDirectory);
@@ -141,8 +147,10 @@ export function Workspace() {
       }
       reload();
       api.workspaceInfo().then((r) => setInfo(r.data ?? null)).catch(() => {});
+      toast.success('Deleted');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
@@ -276,9 +284,7 @@ export function Workspace() {
         {loading ? (
           <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
         ) : entries.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            Empty directory
-          </div>
+          <EmptyState title="Empty directory" description="This folder has no files." />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>

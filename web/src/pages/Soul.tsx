@@ -1,10 +1,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import { errMsg } from '../lib/utils';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
 export function Soul() {
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<string>(SOUL_FILES[0]);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
@@ -35,8 +38,10 @@ export function Soul() {
       const res = await api.updateSoulFile(activeTab, content);
       setSavedContent(content);
       setMessage({ type: 'success', text: res.data.message });
+      toast.success('Saved');
     } catch (err) {
       setMessage({ type: 'error', text: errMsg(err) });
+      toast.error(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -52,9 +57,9 @@ export function Soul() {
   }, [dirty]);
 
   // Confirm before switching tabs with unsaved changes
-  const handleTabSwitch = (file: string) => {
+  const handleTabSwitch = async (file: string) => {
     if (file === activeTab) return;
-    if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
+    if (dirty && !(await confirm({ message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', destructive: true }))) return;
     setActiveTab(file);
   };
 

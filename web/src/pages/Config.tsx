@@ -12,6 +12,8 @@ import { ConfigSection } from '../components/ConfigSection';
 import { InfoTip } from '../components/InfoTip';
 import { InfoBanner } from '../components/InfoBanner';
 import { errMsg } from '../lib/utils';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
 
 const TABS = [
   { id: 'llm', label: 'LLM' },
@@ -41,6 +43,8 @@ export function Config() {
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = searchParams.get('tab') || 'llm';
 
+  const confirm = useConfirm();
+
   const config = useConfigState();
   const configKeys = config.configKeys;
 
@@ -58,7 +62,7 @@ export function Config() {
     if (activeTab !== 'ton-proxy') return;
     api.getTonProxyStatus()
       .then((res) => setProxyStatus(res.data))
-      .catch(() => {});
+      .catch((err) => toast.error(errMsg(err)));
   }, [activeTab]);
 
   const handleArraySave = async (key: string, values: string[]) => {
@@ -176,7 +180,12 @@ export function Config() {
                   checked={config.getLocal('heartbeat.enabled') === 'true'}
                   onChange={async (e) => {
                     const val = e.target.checked;
-                    await config.saveConfig('heartbeat.enabled', String(val));
+                    try {
+                      await config.saveConfig('heartbeat.enabled', String(val));
+                      toast.success(val ? 'Heartbeat enabled' : 'Heartbeat disabled');
+                    } catch (err) {
+                      toast.error(errMsg(err));
+                    }
                   }}
                 />
                 <span className="toggle-track" />
@@ -218,7 +227,12 @@ export function Config() {
                     checked={config.getLocal('heartbeat.self_configurable') === 'true'}
                     onChange={async (e) => {
                       const val = e.target.checked;
-                      await config.saveConfig('heartbeat.self_configurable', String(val));
+                      try {
+                        await config.saveConfig('heartbeat.self_configurable', String(val));
+                        toast.success('Settings saved');
+                      } catch (err) {
+                        toast.error(errMsg(err));
+                      }
                     }}
                   />
                   <span className="toggle-track" />
@@ -274,8 +288,10 @@ export function Config() {
                         : await api.stopTonProxy();
                       setProxyStatus(res.data);
                       config.loadData();
+                      toast.success(enable ? 'TON Proxy started' : 'TON Proxy stopped');
                     } catch (err) {
                       setProxyError(errMsg(err));
+                      toast.error(errMsg(err));
                     } finally {
                       setProxyLoading(false);
                     }
@@ -325,15 +341,17 @@ export function Config() {
                   <button
                     disabled={proxyLoading || !proxyStatus?.installed}
                     onClick={async () => {
-                      if (!confirm('Remove the TON Proxy binary from disk?')) return;
+                      if (!(await confirm({ message: 'Remove the TON Proxy binary from disk?', destructive: true, confirmLabel: 'Uninstall' }))) return;
                       setProxyLoading(true);
                       setProxyError(null);
                       try {
                         const res = await api.uninstallTonProxy();
                         setProxyStatus(res.data);
                         config.loadData();
+                        toast.success('TON Proxy uninstalled');
                       } catch (err) {
                         setProxyError(errMsg(err));
+                        toast.error(errMsg(err));
                       } finally {
                         setProxyLoading(false);
                       }
@@ -448,7 +466,18 @@ export function Config() {
                 <input
                   type="checkbox"
                   checked={config.toolRag.enabled}
-                  onChange={() => config.saveToolRag({ enabled: !config.toolRag!.enabled })}
+                  onChange={async () => {
+                    const next = !config.toolRag!.enabled;
+                    config.setError(null);
+                    try {
+                      await api.updateToolRag({ enabled: next });
+                      config.loadData();
+                      toast.success(next ? 'Tool RAG enabled' : 'Tool RAG disabled');
+                    } catch (err) {
+                      config.setError(errMsg(err));
+                      toast.error(errMsg(err));
+                    }
+                  }}
                 />
                 <span className="toggle-track" />
                 <span className="toggle-thumb" />

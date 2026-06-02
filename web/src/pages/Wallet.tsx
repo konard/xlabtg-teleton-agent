@@ -4,6 +4,8 @@ import { formatDateTime } from '../lib/utils';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
+import { Skeleton, SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 
 function truncateAddress(addr: string): string {
   if (addr.length <= 14) return addr;
@@ -174,7 +176,10 @@ export function Wallet() {
       {/* Wallet info card */}
       <div className="card" style={{ marginBottom: '16px', padding: '16px 20px' }}>
         {loading ? (
-          <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>Loading wallet...</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <Skeleton width={220} height={28} />
+            <Skeleton width={120} height={28} />
+          </div>
         ) : !wallet?.address ? (
           <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>No wallet configured</div>
         ) : (
@@ -218,11 +223,11 @@ export function Wallet() {
         </div>
 
         {txLoading ? (
-          <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : (transactions ?? []).length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            No transactions yet
+          <div style={{ padding: '14px' }}>
+            <SkeletonRows />
           </div>
+        ) : (transactions ?? []).length === 0 ? (
+          <EmptyState title="No transactions yet" description="Wallet activity will show up here once transactions occur." />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>

@@ -5,6 +5,8 @@ import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 
 export function Memory() {
   const [filter, setFilter] = useState('');
@@ -99,11 +101,15 @@ export function Memory() {
         {query ? (
           /* Semantic search results */
           searching ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>Searching...</div>
-          ) : results.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-              No results for &ldquo;{query}&rdquo;
+            <div style={{ padding: '14px' }}>
+              <SkeletonRows />
             </div>
+          ) : results.length === 0 ? (
+            <EmptyState
+              title="No results"
+              description={`No matches for "${query}".`}
+              action={<button className="btn-ghost btn-sm" onClick={() => setFilter('')}>Clear search</button>}
+            />
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', padding: '12px 14px' }}>
               {results.map((r) => (
@@ -138,11 +144,11 @@ export function Memory() {
             </div>
           )
         ) : loading ? (
-          <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : (sources ?? []).length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            No memory files indexed
+          <div style={{ padding: '14px' }}>
+            <SkeletonRows />
           </div>
+        ) : (sources ?? []).length === 0 ? (
+          <EmptyState title="No memory files indexed" description="Indexed knowledge sources will appear here once content is added." />
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>

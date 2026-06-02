@@ -4,10 +4,11 @@ import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 import { SearchInput } from '../components/SearchInput';
 import { useToolManager } from '../hooks/useToolManager';
-import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 
 export function Tools() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
@@ -20,7 +21,19 @@ export function Tools() {
 
   const { updating, toggleEnabled, updateScope, bulkToggle, bulkScope } = useToolManager(reload);
 
-  if (loading) return <Loading />;
+  if (loading) {
+    return (
+      <div>
+        <div className="header">
+          <h1>Tools</h1>
+          <p>Loading modules…</p>
+        </div>
+        <div className="card" style={{ padding: '14px' }}>
+          <SkeletonRows />
+        </div>
+      </div>
+    );
+  }
 
   const allModules = modules ?? [];
   const builtIn = allModules.filter((m) => !m.isPlugin);
@@ -76,9 +89,15 @@ export function Tools() {
       {/* Module table */}
       <div className="card" style={{ padding: 0 }}>
         {filtered.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            {trimmedSearch ? 'No modules match your search' : 'No modules found'}
-          </div>
+          trimmedSearch ? (
+            <EmptyState
+              title="No modules found"
+              description="No modules match your search."
+              action={<button className="btn-ghost btn-sm" onClick={() => setSearch('')}>Clear search</button>}
+            />
+          ) : (
+            <EmptyState title="No modules found" description="No tool modules are available." />
+          )
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>

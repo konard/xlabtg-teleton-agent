@@ -4,8 +4,11 @@ import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
 
 export function Mcp() {
+  const confirm = useConfirm();
   const { data: servers, loading, error, reload, setError } = useResource<McpServerInfo[]>(
     () => api.getMcpServers().then((r) => r.data),
     [],
@@ -47,6 +50,7 @@ export function Mcp() {
         env: Object.keys(env).length > 0 ? env : undefined,
       });
       setSuccess(res.data.message);
+      toast.success(res.data.message);
       setAddPkg('');
       setAddArgs('');
       setAddName('');
@@ -55,21 +59,24 @@ export function Mcp() {
       reload();
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setAdding(false);
     }
   };
 
   const handleRemove = async (name: string) => {
-    if (!confirm(`Remove MCP server "${name}"?`)) return;
+    if (!(await confirm({ message: `Remove MCP server "${name}"?`, destructive: true, confirmLabel: 'Remove' }))) return;
     setRemoving(name);
     setError(null);
     try {
       const res = await api.removeMcpServer(name);
       setSuccess(res.data.message);
+      toast.success('Server removed');
       reload();
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setRemoving(null);
     }

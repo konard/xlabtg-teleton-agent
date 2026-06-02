@@ -5,7 +5,7 @@ import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
 import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
-import { Loading } from '../components/Loading';
+import { Skeleton, SkeletonText } from '../components/Skeleton';
 import { Alert } from '../components/Alert';
 
 function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
@@ -58,7 +58,25 @@ export function Dashboard() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
-  if (loading) return <Loading />;
+  if (loading) {
+    return (
+      <div className="dashboard-root">
+        <div className="header">
+          <h1>Dashboard</h1>
+          <p>System overview</p>
+        </div>
+        <div className="card status-bar" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} width={80} height={36} />
+          ))}
+        </div>
+        <div className="dashboard-settings">
+          <div className="card"><SkeletonText lines={4} /></div>
+          <div className="card"><SkeletonText lines={4} /></div>
+        </div>
+      </div>
+    );
+  }
   if (!status || !stats) return <div className="alert error">Failed to load dashboard data</div>;
 
   const s = currentStatus ?? status;

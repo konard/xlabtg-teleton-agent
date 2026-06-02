@@ -5,6 +5,8 @@ import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 
 export function Conversations() {
   const [filter, setFilter] = useState('');
@@ -79,11 +81,19 @@ export function Conversations() {
 
         {/* Chats table */}
         {loading ? (
-          <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            {filter ? 'No matching chats' : 'No conversations yet'}
+          <div style={{ padding: '14px' }}>
+            <SkeletonRows />
           </div>
+        ) : filtered.length === 0 ? (
+          filter ? (
+            <EmptyState
+              title="No matching chats"
+              description="No conversations match your filter."
+              action={<button className="btn-ghost btn-sm" onClick={() => setFilter('')}>Clear filters</button>}
+            />
+          ) : (
+            <EmptyState title="No conversations yet" description="Chat history will appear here once the agent starts talking." />
+          )
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
             <thead>

@@ -9,6 +9,8 @@ import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
 import { expandableRowProps } from '../lib/a11y';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
 
 type Tab = 'installed' | 'marketplace';
 
@@ -18,6 +20,7 @@ interface PluginsData {
 }
 
 export function Plugins() {
+  const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>('installed');
 
   const { data: pluginsData, loading, error, reload, setError } = useResource<PluginsData>(
@@ -77,6 +80,7 @@ export function Plugins() {
     try {
       await api.installPlugin(id);
       await Promise.all([loadMarketplace(), reload()]);
+      toast.success('Plugin installed');
       if (plugin?.secrets && Object.keys(plugin.secrets).length > 0) {
         try {
           const existing = await api.getPluginSecrets(id);
@@ -91,19 +95,22 @@ export function Plugins() {
       }
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setOperating(null);
     }
   };
 
   const handleUninstall = async (id: string) => {
-    if (!confirm(`Uninstall plugin "${id}"? This will remove its files.`)) return;
+    if (!(await confirm({ message: `Uninstall plugin "${id}"? This will remove its files.`, destructive: true, confirmLabel: 'Uninstall' }))) return;
     setOperating(id);
     try {
       await api.uninstallPlugin(id);
       await Promise.all([loadMarketplace(), reload()]);
+      toast.success('Plugin uninstalled');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -114,8 +121,10 @@ export function Plugins() {
     try {
       await api.updatePlugin(id);
       await Promise.all([loadMarketplace(), reload()]);
+      toast.success('Plugin updated');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -123,17 +132,29 @@ export function Plugins() {
 
   const handleUpdateAll = async () => {
     const toUpdate = marketplace.filter((p) => p.status === 'updatable');
+    const total = toUpdate.length;
+    let succeeded = 0;
+    let failed = 0;
+    let lastError: string | null = null;
     for (const plugin of toUpdate) {
       setOperating(plugin.id);
       try {
         await api.updatePlugin(plugin.id);
+        succeeded++;
       } catch (err) {
-        setError(errMsg(err));
-        break;
+        failed++;
+        lastError = errMsg(err);
       }
     }
     setOperating(null);
     await Promise.all([loadMarketplace(), reload()]);
+    if (succeeded > 0) {
+      toast.success(`Updated ${succeeded}/${total} plugins`);
+    }
+    if (failed > 0) {
+      toast.error(`${failed} plugin${failed === 1 ? '' : 's'} failed to update`);
+      setError(lastError);
+    }
   };
 
   // Inline secrets helpers
@@ -167,12 +188,15 @@ export function Plugins() {
   };
 
   const removeSecret = async (pluginId: string, key: string) => {
+    if (!(await confirm({ message: `Remove secret "${key}"?`, destructive: true, confirmLabel: 'Remove' }))) return;
     try {
       await api.unsetPluginSecret(pluginId, key);
       const res = await api.getPluginSecrets(pluginId);
       setSecretsInfo(res.data);
+      toast.success('Secret removed');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 

@@ -4,6 +4,8 @@ import { errMsg } from '../lib/utils';
 import { Loading } from '../components/Loading';
 import { useResource } from '../hooks/useResource';
 import { Alert } from '../components/Alert';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
 
 interface TriggerEntry {
   id: string;
@@ -51,6 +53,7 @@ function BlocklistCard({ initialData, onError }: BlocklistCardProps) {
         await api.updateBlocklist(config);
       } catch (err) {
         onError(errMsg(err));
+        toast.error(errMsg(err));
       }
     }, 400);
   }, [onError]);
@@ -191,6 +194,7 @@ interface TriggersCardProps {
 }
 
 function TriggersCard({ initialTriggers, onError }: TriggersCardProps) {
+  const confirm = useConfirm();
   const [triggers, setTriggers] = useState<TriggerEntry[]>(initialTriggers);
   const [newKeyword, setNewKeyword] = useState('');
   const [newContext, setNewContext] = useState('');
@@ -209,6 +213,7 @@ function TriggersCard({ initialTriggers, onError }: TriggersCardProps) {
       setTriggers((prev) => [...prev, res.data]);
       setNewKeyword('');
       setNewContext('');
+      toast.success('Trigger created');
     } catch (err) {
       onError(errMsg(err));
     } finally {
@@ -217,11 +222,14 @@ function TriggersCard({ initialTriggers, onError }: TriggersCardProps) {
   };
 
   const handleDeleteTrigger = async (id: string) => {
+    if (!(await confirm({ message: 'Delete this trigger?', destructive: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.deleteTrigger(id);
       setTriggers((prev) => prev.filter((t) => t.id !== id));
+      toast.success('Trigger deleted');
     } catch (err) {
       onError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
@@ -231,8 +239,10 @@ function TriggersCard({ initialTriggers, onError }: TriggersCardProps) {
       setTriggers((prev) =>
         prev.map((t) => (t.id === id ? { ...t, enabled: !enabled } : t))
       );
+      toast.success('Trigger updated');
     } catch (err) {
       onError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 

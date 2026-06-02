@@ -4,6 +4,9 @@ import { formatDate, formatDateTime, errMsg } from '../lib/utils';
 import { SearchInput } from '../components/SearchInput';
 import { useResource } from '../hooks/useResource';
 import { expandableRowProps } from '../lib/a11y';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
+import { EmptyState } from '../components/EmptyState';
 
 type TaskStatus = TaskData['status'];
 type Task = TaskData;
@@ -60,6 +63,7 @@ function truncate(s: string | null | undefined, max: number): string {
 }
 
 export function Tasks() {
+  const confirm = useConfirm();
   const [filter, setFilter] = useState<TaskStatus | ''>('');
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -116,30 +120,36 @@ export function Tasks() {
       setError(null);
       reload();
       setSelected(null);
+      toast.success('Completed tasks cleared');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
   const cancelTask = async (id: string) => {
-    if (!confirm('Cancel this task?')) return;
+    if (!(await confirm({ message: 'Cancel this task?', confirmLabel: 'Cancel task' }))) return;
     try {
       await api.tasksCancel(id);
       reload();
       if (selected?.id === id) setSelected(null);
+      toast.success('Task cancelled');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
   const deleteTask = async (id: string) => {
-    if (!confirm('Permanently delete this task?')) return;
+    if (!(await confirm({ message: 'Permanently delete this task?', destructive: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.tasksDelete(id);
       reload();
       if (selected?.id === id) setSelected(null);
+      toast.success('Task deleted');
     } catch (err) {
       setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
@@ -289,11 +299,13 @@ export function Tasks() {
         {loading ? (
           <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
         ) : filteredTasks.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            {trimmedQuery
-              ? 'No tasks match your search'
-              : filter ? `No ${STATUS_LABELS[filter].toLowerCase()} tasks` : 'No tasks yet'}
-          </div>
+          trimmedQuery ? (
+            <EmptyState title="No matching tasks" description="No tasks match your search." />
+          ) : filter ? (
+            <EmptyState title="No matching tasks" description={`No ${STATUS_LABELS[filter].toLowerCase()} tasks.`} />
+          ) : (
+            <EmptyState title="No tasks yet" description="Scheduled and queued tasks will appear here." />
+          )
         ) : (
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
             <thead>
