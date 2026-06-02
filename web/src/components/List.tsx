@@ -65,7 +65,11 @@ export function ListRow({
         {subtitle != null && <div className="ios-row-sub">{subtitle}</div>}
       </div>
       {(trailing || disclosure) && (
-        <div className="ios-row-trail" onClick={(e) => e.stopPropagation()}>
+        <div
+          className="ios-row-trail"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           {trailing}
           {disclosure && <Chevron open={!!expanded} />}
         </div>

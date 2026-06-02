@@ -1081,7 +1081,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.18.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.19.0");
     });
   });
 
@@ -1359,6 +1359,95 @@ describe("Memory Schema", () => {
         enabled: number;
       };
       expect(row.enabled).toBe(1);
+    });
+
+    it("migration 1.19.0 adds scope_level column and keeps legacy ones", () => {
+      ensureSchema(db);
+      runMigrations(db);
+
+      const cols = (
+        db.prepare(`PRAGMA table_info(tool_config)`).all() as Array<{ name: string }>
+      ).map((c) => c.name);
+
+      expect(cols).toContain("enabled");
+      expect(cols).toContain("scope");
+      expect(cols).toContain("scope_level");
+    });
+
+    it("migration 1.19.0 backfills scope_level from legacy (enabled, scope)", () => {
+      ensureSchema(db);
+      // Simulate a pre-1.19 tool_config table populated by an existing user.
+      db.exec(`
+        CREATE TABLE tool_config (
+          tool_name TEXT PRIMARY KEY,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+          scope TEXT CHECK(scope IN ('always', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled')),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_by INTEGER
+        );
+      `);
+      const seed: Array<[string, number, string | null]> = [
+        ["t_open", 1, "open"],
+        ["t_always", 1, "always"],
+        ["t_dm", 1, "dm-only"], // context scope collapses to 'all'
+        ["t_group", 1, "group-only"], // collapses to 'all'
+        ["t_admin", 1, "admin-only"],
+        ["t_allow", 1, "allowlist"],
+        ["t_disabled", 1, "disabled"],
+        ["t_enabled0", 0, "admin-only"], // enabled=0 overrides scope → off
+        ["t_null", 1, null],
+      ];
+      const ins = db.prepare(
+        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at) VALUES (?, ?, ?, unixepoch())`
+      );
+      for (const [n, e, s] of seed) ins.run(n, e, s);
+
+      setSchemaVersion(db, "1.18.0");
+      runMigrations(db);
+
+      const level = (name: string) =>
+        (
+          db.prepare(`SELECT scope_level FROM tool_config WHERE tool_name = ?`).get(name) as {
+            scope_level: string;
+          }
+        ).scope_level;
+
+      expect(level("t_open")).toBe("all");
+      expect(level("t_always")).toBe("all");
+      expect(level("t_dm")).toBe("all");
+      expect(level("t_group")).toBe("all");
+      expect(level("t_admin")).toBe("admin");
+      expect(level("t_allow")).toBe("allowlist");
+      expect(level("t_disabled")).toBe("off");
+      expect(level("t_enabled0")).toBe("off");
+      expect(level("t_null")).toBe("all");
+    });
+
+    it("migration 1.19.0 is idempotent on re-run", () => {
+      ensureSchema(db);
+      db.exec(`
+        CREATE TABLE tool_config (
+          tool_name TEXT PRIMARY KEY,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+          scope TEXT CHECK(scope IN ('always', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled')),
+          updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+          updated_by INTEGER
+        );
+      `);
+      db.prepare(
+        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at) VALUES ('t_admin', 1, 'admin-only', unixepoch())`
+      ).run();
+
+      setSchemaVersion(db, "1.18.0");
+      runMigrations(db);
+      // Force the 1.19.0 block to run a second time.
+      setSchemaVersion(db, "1.18.0");
+      expect(() => runMigrations(db)).not.toThrow();
+
+      const row = db
+        .prepare(`SELECT scope_level FROM tool_config WHERE tool_name = 't_admin'`)
+        .get() as { scope_level: string };
+      expect(row.scope_level).toBe("admin");
     });
   });
 });

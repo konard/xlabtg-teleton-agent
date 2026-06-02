@@ -104,6 +104,16 @@ function IconHooks() {
   );
 }
 
+function IconLogs() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m6 9 3 3-3 3" />
+      <path d="M13 15h5" />
+    </svg>
+  );
+}
+
 function IconConfig() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -180,6 +190,7 @@ function DashboardNav() {
     { to: '/tasks',     icon: <IconTasks />,     label: 'Tasks' },
     { to: '/mcp',       icon: <IconMCP />,       label: 'MCP' },
     { to: '/hooks',     icon: <IconHooks />,     label: 'Hooks' },
+    { to: '/logs',      icon: <IconLogs />,      label: 'Logs' },
     { to: '/config',    icon: <IconConfig />,    label: 'Config' },
   ];
 

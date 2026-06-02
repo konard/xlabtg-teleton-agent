@@ -173,13 +173,19 @@ export interface WalletTransaction {
   nftAddress?: string;
 }
 
+export type ToolAccessLevel = 'all' | 'allowlist' | 'admin' | 'off';
+
 export interface ToolInfo {
   name: string;
   description: string;
   module: string;
-  scope: 'open' | 'always' | 'dm-only' | 'group-only' | 'admin-only' | 'allowlist' | 'disabled';
+  /** Per-tool access: who may use this tool (context-independent). */
+  level: ToolAccessLevel;
   category?: string;
-  enabled: boolean;
+  /** Legacy single-value scope (derived) — present for backward compatibility. */
+  scope?: string;
+  /** Derived: false only when the tool is off. */
+  enabled?: boolean;
 }
 
 export interface ModuleInfo {
@@ -232,8 +238,9 @@ export interface WorkspaceInfo {
 
 export interface ToolConfigData {
   tool: string;
-  enabled: boolean;
-  scope: string;
+  level: ToolAccessLevel;
+  scope?: string;
+  enabled?: boolean;
 }
 
 export interface ToolRagStatus {
@@ -483,7 +490,7 @@ export const api = {
 
   async updateToolConfig(
     toolName: string,
-    config: { enabled?: boolean; scope?: ToolInfo['scope'] }
+    config: { level?: ToolAccessLevel }
   ) {
     return fetchAPI<APIResponse<ToolConfigData>>(`/tools/${toolName}`, {
       method: 'PUT',

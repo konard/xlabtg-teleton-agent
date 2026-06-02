@@ -1,11 +1,15 @@
-import { useEffect, useRef, useSyncExternalStore, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useConfigState } from '../hooks/useConfigState';
-import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
-import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
+import { POLICY_OPTIONS } from '../components/TelegramSettingsPanel';
+import { AllowLists } from '../components/AllowLists';
 import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
-import { logStore } from '../lib/log-store';
+import { PillTabs } from '../components/PillTabs';
+import { InfoTip } from '../components/InfoTip';
+import { Select } from '../components/Select';
+import { ProviderSwitchZone, PROVIDER_OPTIONS, PROVIDER_LABELS } from '../components/ProviderControl';
 import { api, StatusData } from '../lib/api';
+import { errMsg } from '../lib/utils';
 import { Skeleton } from '../components/Skeleton';
 import { Alert } from '../components/Alert';
 
@@ -34,12 +38,22 @@ function StatItem({ label, value, mono, to }: { label: string; value: string | n
 export function Dashboard() {
   const {
     loading, error, setError, status, stats,
-    getLocal, getServer, setLocal, cancelLocal, saveConfig,
+    getLocal, saveConfig,
     modelOptions, pendingProvider, pendingMeta,
     pendingApiKey, setPendingApiKey,
     pendingValidating, pendingError, setPendingError,
     handleProviderChange, handleProviderConfirm, handleProviderCancel,
+    loadData,
   } = useConfigState();
+
+  const handleArraySave = async (key: string, values: string[]) => {
+    try {
+      await api.setConfigKey(key, values);
+      await loadData();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
 
   // Poll /api/status every 10s for live metrics (tokens, uptime).
   const [liveStatus, setLiveStatus] = useState<StatusData | null>(null);
@@ -51,13 +65,6 @@ export function Dashboard() {
     api.getWallet().then((r) => { if (active) setBalance(r.data?.balance ?? null); }).catch(() => {});
     return () => { active = false; clearInterval(id); };
   }, []);
-
-  const logs = useSyncExternalStore((cb) => logStore.subscribe(cb), () => logStore.getLogs());
-  const connected = useSyncExternalStore((cb) => logStore.subscribe(cb), () => logStore.isConnected());
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => { logStore.connect(); }, []);
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   if (loading) {
     return (
@@ -72,8 +79,6 @@ export function Dashboard() {
 
   const s = liveStatus ?? status;
   const platform = s.platform ? (PLATFORM_LABEL[s.platform] ?? s.platform) : null;
-  const provider = s.provider ? s.provider.charAt(0).toUpperCase() + s.provider.slice(1) : null;
-  const modelLabel = modelOptions.find((m) => m.value === s.model)?.name ?? s.model;
 
   return (
     <div className="dashboard-root">
@@ -86,14 +91,49 @@ export function Dashboard() {
         <span className="dash-orb" aria-hidden="true" />
         <div className="dash-hero-main">
           <div className="dash-hero-title">
-            {modelLabel || 'Agent'}
+            Agent
             <span className="dash-hero-state">Running</span>
           </div>
           <div className="dash-hero-sub">
-            {[provider, `up ${fmtUptime(s.uptime)}`, platform].filter(Boolean).join(' · ')}
+            {[`up ${fmtUptime(s.uptime)}`, platform].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        <div className="dash-hero-selects">
+          <div className="dash-hero-field">
+            <span className="dash-hero-label">Provider</span>
+            <Select
+              value={pendingProvider ?? getLocal('agent.provider')}
+              options={PROVIDER_OPTIONS}
+              labels={PROVIDER_LABELS}
+              onChange={handleProviderChange}
+            />
+          </div>
+          <div className="dash-hero-field model">
+            <span className="dash-hero-label">Model</span>
+            <Select
+              value={getLocal('agent.model')}
+              options={modelOptions.map((m) => m.value)}
+              labels={modelOptions.map((m) => m.name)}
+              onChange={(v) => saveConfig('agent.model', v)}
+            />
           </div>
         </div>
       </div>
+
+      {pendingProvider && pendingMeta && (
+        <div className="card" style={{ marginBottom: '14px' }}>
+          <ProviderSwitchZone
+            pendingMeta={pendingMeta}
+            pendingApiKey={pendingApiKey}
+            setPendingApiKey={setPendingApiKey}
+            pendingValidating={pendingValidating}
+            pendingError={pendingError}
+            setPendingError={setPendingError}
+            onConfirm={handleProviderConfirm}
+            onCancel={handleProviderCancel}
+          />
+        </div>
+      )}
 
       {/* ── Metrics ── */}
       <div className="dash-statbar">
@@ -110,21 +150,20 @@ export function Dashboard() {
       {/* ── Settings (side by side) ── */}
       <div className="dashboard-settings">
         <div className="card">
-          <AgentSettingsPanel
-            compact
-            getLocal={getLocal} getServer={getServer} setLocal={setLocal} saveConfig={saveConfig} cancelLocal={cancelLocal}
-            modelOptions={modelOptions}
-            pendingProvider={pendingProvider} pendingMeta={pendingMeta}
-            pendingApiKey={pendingApiKey} setPendingApiKey={setPendingApiKey}
-            pendingValidating={pendingValidating}
-            pendingError={pendingError} setPendingError={setPendingError}
-            handleProviderChange={handleProviderChange}
-            handleProviderConfirm={handleProviderConfirm}
-            handleProviderCancel={handleProviderCancel}
-          />
+          <div className="card-header"><div className="section-title">Access Policy</div></div>
+          <div className="dash-policy">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>DM Policy <InfoTip text="Who can DM the agent — All, Allow List, Admins only, or Off." /></label>
+              <PillTabs value={getLocal('telegram.dm_policy')} options={POLICY_OPTIONS} onChange={(v) => saveConfig('telegram.dm_policy', v)} ariaLabel="DM policy" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Group Policy <InfoTip text="Which groups the agent responds in — All, Allow List, Admins only, or Off." /></label>
+              <PillTabs value={getLocal('telegram.group_policy')} options={POLICY_OPTIONS} onChange={(v) => saveConfig('telegram.group_policy', v)} ariaLabel="Group policy" />
+            </div>
+          </div>
         </div>
-        <div className="card">
-          <TelegramSettingsPanel getLocal={getLocal} getServer={getServer} setLocal={setLocal} saveConfig={saveConfig} cancelLocal={cancelLocal} />
+        <div className="card dash-card-fill">
+          <AllowLists getLocal={getLocal} onSave={handleArraySave} />
         </div>
         {s.platform === 'linux' && (
           <div className="card" style={{ gridColumn: '1 / -1' }}>
@@ -132,54 +171,6 @@ export function Dashboard() {
           </div>
         )}
       </div>
-
-      {/* ── Live Logs (collapsible) ── */}
-      <LogsPanel logs={logs} connected={connected} bottomRef={bottomRef} />
-    </div>
-  );
-}
-
-function LogsPanel({ logs, connected, bottomRef }: {
-  logs: Array<{ level: string; timestamp: number; message: string }>;
-  connected: boolean;
-  bottomRef: React.RefObject<HTMLDivElement>;
-}) {
-  const [open, setOpen] = useState(true);
-  const toggle = useCallback(() => setOpen((v) => !v), []);
-
-  return (
-    <div className="card dash-logs">
-      <button className="dash-logs-toggle" onClick={toggle}>
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
-          Live Logs
-          {logs.length > 0 && <span className="dash-logs-count">({logs.length})</span>}
-        </span>
-        <span className="dash-logs-chevron" style={{ transform: open ? 'rotate(180deg)' : 'none' }}>&#9660;</span>
-      </button>
-      {open && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 14px 6px' }}>
-            <button className="btn-ghost btn-sm" onClick={() => logStore.clear()}>Clear</button>
-          </div>
-          <div className="dashboard-logs-scroll">
-            {logs.length === 0 ? (
-              <div className="empty">Waiting for logs…</div>
-            ) : (
-              logs.map((log, i) => (
-                <div key={i} className="log-entry">
-                  <span className={`badge ${log.level === 'warn' ? 'warn' : log.level === 'error' ? 'error' : 'info'}`}>
-                    {log.level.toUpperCase()}
-                  </span>{' '}
-                  <span style={{ color: 'var(--text-tertiary)' }}>{new Date(log.timestamp).toLocaleTimeString()}</span>{' '}
-                  {log.message}
-                </div>
-              ))
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </>
-      )}
     </div>
   );
 }

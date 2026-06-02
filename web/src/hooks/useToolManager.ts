@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { api, ToolInfo, ModuleInfo } from '../lib/api';
+import { api, ToolInfo, ModuleInfo, ToolAccessLevel } from '../lib/api';
 import { errMsg } from '../lib/utils';
 
 export function useToolManager(reloadFn: () => Promise<void>) {
@@ -19,29 +19,19 @@ export function useToolManager(reloadFn: () => Promise<void>) {
     }
   };
 
-  const toggleEnabled = (toolName: string, currentEnabled: boolean) =>
-    runUpdate(toolName, () => api.updateToolConfig(toolName, { enabled: !currentEnabled }));
+  // Set the access level for a single tool.
+  const updateLevel = (tool: ToolInfo, level: ToolAccessLevel) =>
+    runUpdate(tool.name, () => api.updateToolConfig(tool.name, { level }));
 
-  const updateScope = (toolName: string, newScope: ToolInfo['scope']) =>
-    runUpdate(toolName, () => api.updateToolConfig(toolName, { scope: newScope }));
-
-  const bulkToggle = (module: ModuleInfo, enabled: boolean) =>
+  // Set the access level for every tool in a module.
+  const bulkLevel = (module: ModuleInfo, level: ToolAccessLevel) =>
     runUpdate(module.name, async () => {
       for (const tool of module.tools) {
-        if (tool.enabled !== enabled) {
-          await api.updateToolConfig(tool.name, { enabled });
+        if (tool.level !== level) {
+          await api.updateToolConfig(tool.name, { level });
         }
       }
     });
 
-  const bulkScope = (module: ModuleInfo, scope: ToolInfo['scope']) =>
-    runUpdate(module.name, async () => {
-      for (const tool of module.tools) {
-        if (tool.scope !== scope) {
-          await api.updateToolConfig(tool.name, { scope });
-        }
-      }
-    });
-
-  return { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope };
+  return { updating, error, setError, updateLevel, bulkLevel };
 }

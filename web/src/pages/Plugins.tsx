@@ -1,6 +1,6 @@
 import { useEffect, useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo, PluginManifest, MarketplacePlugin, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
-import { ToolRow, SCOPE_OPTIONS } from '../components/ToolRow';
+import { ToolRow, LEVEL_OPTIONS } from '../components/ToolRow';
 import { PillTabs } from '../components/PillTabs';
 import { Select } from '../components/Select';
 import { SearchBar } from '../components/SearchBar';
@@ -17,6 +17,13 @@ import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
 
 type Tab = 'installed' | 'marketplace';
+
+// Common access level across a plugin's tools, or '' when mixed.
+const pluginCommonLevel = (tools: ToolInfo[]): string => {
+  if (tools.length === 0) return '';
+  const set = new Set(tools.map((t) => t.level));
+  return set.size === 1 ? (set.values().next().value ?? '') : '';
+};
 
 interface PluginsData {
   manifests: PluginManifest[];
@@ -59,7 +66,7 @@ export function Plugins() {
   const [editingSecret, setEditingSecret] = useState<string | null>(null);
   const [secretInput, setSecretInput] = useState('');
 
-  const { updating, toggleEnabled, updateScope, bulkToggle, bulkScope } = useToolManager(reload);
+  const { updating, updateLevel, bulkLevel } = useToolManager(reload);
 
   const loadMarketplace = (refresh = false) => {
     setMarketLoading(true);
@@ -314,12 +321,7 @@ export function Plugins() {
               const hasSecrets = marketEntry?.secrets && Object.keys(marketEntry.secrets).length > 0;
               const isExpanded = expandedPlugin === plugin.name;
               const hasTools = !!module && module.tools.length > 0;
-              const someEnabled = hasTools ? module!.tools.some((t) => t.enabled) : false;
-              const allEnabled = hasTools ? module!.tools.every((t) => t.enabled) : false;
-              const partial = someEnabled && !allEnabled;
-              const scopes = module ? new Set(module.tools.map((t) => t.scope)) : new Set<string>();
-              const mixedScope = scopes.size > 1;
-              const commonScope = mixedScope ? '' : (scopes.values().next().value ?? 'always');
+              const commonLevel = pluginCommonLevel(module?.tools ?? []);
               const isBusy = updating === plugin.name || operating === (marketEntry?.id ?? plugin.name);
               const isUpdatable = marketEntry?.status === 'updatable';
 
@@ -338,32 +340,19 @@ export function Plugins() {
                     expanded={isExpanded}
                     onClick={() => setExpandedPlugin(isExpanded ? null : plugin.name)}
                     trailing={hasTools ? (
-                      <>
-                        <PillTabs
-                          value={mixedScope ? '' : (commonScope === 'always' ? 'open' : commonScope)}
-                          options={SCOPE_OPTIONS}
-                          onChange={(v) => bulkScope(module!, v as ToolInfo['scope'])}
-                          disabled={isBusy}
-                          ariaLabel={`Scope for all ${plugin.name} tools`}
-                        />
-                        <label className="toggle">
-                          <input
-                            type="checkbox"
-                            ref={(el) => { if (el) el.indeterminate = partial; }}
-                            checked={someEnabled}
-                            onChange={() => bulkToggle(module!, !someEnabled)}
-                            disabled={isBusy}
-                          />
-                          <span className="toggle-track" />
-                          <span className="toggle-thumb" />
-                        </label>
-                      </>
+                      <PillTabs
+                        value={commonLevel}
+                        options={LEVEL_OPTIONS}
+                        onChange={(v) => bulkLevel(module!, v as ToolInfo['level'])}
+                        disabled={isBusy}
+                        ariaLabel={`Access level for all ${plugin.name} tools`}
+                      />
                     ) : undefined}
                   />
                   {isExpanded && (
                     <div className="ios-sublist">
                       {hasTools && module!.tools.map((tool) => (
-                        <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} />
+                        <ToolRow key={tool.name} tool={tool} updating={updating} onLevel={updateLevel} />
                       ))}
 
                       {/* Actions */}

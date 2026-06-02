@@ -22,6 +22,7 @@ import {
   saveToolConfig,
   type ToolConfig,
 } from "../../memory/tool-config.js";
+import { scopeToLevel, levelToScope, type ToolAccessLevel } from "./scope.js";
 import type { ToolIndex } from "./tool-index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { createLogger } from "../../utils/logger.js";
@@ -32,8 +33,6 @@ const log = createLogger("Registry");
 type AccessDenial =
   | { kind: "mode"; mode: ToolMode }
   | { kind: "disabled" }
-  | { kind: "dm-only" }
-  | { kind: "group-only" }
   | { kind: "admin-only" }
   | { kind: "allowlist" }
   | { kind: "module-disabled"; module: string }
@@ -154,9 +153,12 @@ export class ToolRegistry {
   }
 
   /**
-   * Single authorization grid (mode → enabled → scope → group module perms).
-   * Shared by execute() (maps the denial to a message) and passesFilters() (uses
-   * only .ok), so the two can no longer drift. `isAdmin` is passed in by the caller.
+   * Single authorization grid (mode → per-tool access level → group module
+   * perms). The tool's level (all/allowlist/admin/off) is context-independent;
+   * the DM-vs-group "who does the agent respond to" gating is a separate global
+   * concern handled upstream. Shared by execute() (maps the denial to a message)
+   * and passesFilters() (uses only .ok), so the two can no longer drift.
+   * `isAdmin` is passed in by the caller.
    */
   private checkAccess(
     name: string,
@@ -167,18 +169,10 @@ export class ToolRegistry {
       return { ok: false, reason: { kind: "mode", mode: toolMode } };
     }
 
-    if (!this.isToolEnabled(name)) {
-      return { ok: false, reason: { kind: "disabled" } };
-    }
-
-    const scope = this.getEffectiveScope(name);
-    if (scope === "disabled") return { ok: false, reason: { kind: "disabled" } };
-    if (scope === "dm-only" && ctx.isGroup) return { ok: false, reason: { kind: "dm-only" } };
-    if (scope === "group-only" && !ctx.isGroup)
-      return { ok: false, reason: { kind: "group-only" } };
-    if (scope === "admin-only" && !ctx.isAdmin)
-      return { ok: false, reason: { kind: "admin-only" } };
-    if (scope === "allowlist" && !ctx.isAdmin) {
+    const level = this.getEffectiveLevel(name);
+    if (level === "off") return { ok: false, reason: { kind: "disabled" } };
+    if (level === "admin" && !ctx.isAdmin) return { ok: false, reason: { kind: "admin-only" } };
+    if (level === "allowlist" && !ctx.isAdmin) {
       if (!ctx.senderId || !this.allowFrom.has(ctx.senderId)) {
         return { ok: false, reason: { kind: "allowlist" } };
       }
@@ -187,9 +181,10 @@ export class ToolRegistry {
     if (ctx.isGroup && ctx.chatId && this.permissions) {
       const module = this.tools.get(name)?.module;
       if (module) {
-        const level = this.permissions.getLevel(ctx.chatId, module);
-        if (level === "disabled") return { ok: false, reason: { kind: "module-disabled", module } };
-        if (level === "admin" && !ctx.isAdmin) {
+        const mLevel = this.permissions.getLevel(ctx.chatId, module);
+        if (mLevel === "disabled")
+          return { ok: false, reason: { kind: "module-disabled", module } };
+        if (mLevel === "admin" && !ctx.isAdmin) {
           return { ok: false, reason: { kind: "module-admin", module } };
         }
       }
@@ -204,10 +199,6 @@ export class ToolRegistry {
         return `Tool "${name}" requires ${reason.mode} mode (current: ${this.mode})`;
       case "disabled":
         return `Tool "${name}" is currently disabled`;
-      case "dm-only":
-        return `Tool "${name}" is not available in group chats`;
-      case "group-only":
-        return `Tool "${name}" is only available in group chats`;
       case "admin-only":
         return `Tool "${name}" is restricted to admin users`;
       case "allowlist":
@@ -319,8 +310,7 @@ export class ToolRegistry {
     let seeded = false;
     for (const name of names) {
       if (!this.toolConfigs.has(name)) {
-        const defaultScope = this.tools.get(name)?.scope ?? "always";
-        initializeToolConfig(this.db, name, true, defaultScope);
+        initializeToolConfig(this.db, name, scopeToLevel(this.tools.get(name)?.scope));
         seeded = true;
       }
     }
@@ -339,72 +329,76 @@ export class ToolRegistry {
   }
 
   /**
-   * Get effective scope for a tool (config override or default)
+   * Effective access level for a tool: the DB override if present, else the
+   * code-declared default scope mapped to a level.
+   */
+  private getEffectiveLevel(toolName: string): ToolAccessLevel {
+    const config = this.toolConfigs.get(toolName);
+    if (config) return config.level;
+    return scopeToLevel(this.tools.get(toolName)?.scope);
+  }
+
+  /**
+   * Legacy single-value scope view (derived from the level). Kept for backward-
+   * compatible callers (getEntry, getModuleTools).
    */
   private getEffectiveScope(toolName: string): ToolScope {
-    const config = this.toolConfigs.get(toolName);
-    if (config?.scope !== null && config?.scope !== undefined) {
-      return config.scope === "always" ? "open" : config.scope;
-    }
-    const codeScope = this.tools.get(toolName)?.scope ?? "open";
-    return codeScope === "always" ? "open" : codeScope;
+    return levelToScope(this.getEffectiveLevel(toolName));
   }
 
   /**
-   * Check if a tool is enabled
+   * Check if a tool is enabled (i.e. not off).
    */
   isToolEnabled(toolName: string): boolean {
-    const config = this.toolConfigs.get(toolName);
-    return config?.enabled ?? true;
+    return this.getEffectiveLevel(toolName) !== "off";
   }
 
   /**
-   * Update tool enabled status
+   * Update a tool's access level (primary writer).
+   */
+  updateToolLevel(toolName: string, level: ToolAccessLevel, updatedBy?: number): boolean {
+    if (!this.tools.has(toolName) || !this.db) return false;
+
+    saveToolConfig(this.db, toolName, level, updatedBy);
+
+    // Update in-memory cache
+    this.toolConfigs = loadAllToolConfigs(this.db);
+    this.toolArrayCache = null;
+
+    return true;
+  }
+
+  /**
+   * Toggle a tool on/off (backward-compatible adapter). Disabling sets the level
+   * off; re-enabling an off tool restores its code-declared default.
    */
   setToolEnabled(toolName: string, enabled: boolean, updatedBy?: number): boolean {
     if (!this.tools.has(toolName) || !this.db) return false;
 
-    const currentConfig = this.toolConfigs.get(toolName);
-    const scope = currentConfig?.scope ?? this.tools.get(toolName)?.scope ?? "always";
-
-    saveToolConfig(this.db, toolName, enabled, scope, updatedBy);
-
-    // Update in-memory cache
-    this.toolConfigs = loadAllToolConfigs(this.db);
-    this.toolArrayCache = null;
-
-    return true;
+    let next: ToolAccessLevel;
+    if (!enabled) {
+      next = "off";
+    } else if (this.getEffectiveLevel(toolName) === "off") {
+      next = scopeToLevel(this.tools.get(toolName)?.scope);
+    } else {
+      next = this.getEffectiveLevel(toolName);
+    }
+    return this.updateToolLevel(toolName, next, updatedBy);
   }
 
   /**
-   * Update tool scope
+   * Apply a legacy single-value scope (backward-compatible adapter).
    */
   updateToolScope(toolName: string, scope: ToolScope, updatedBy?: number): boolean {
-    if (!this.tools.has(toolName) || !this.db) return false;
-
-    const currentConfig = this.toolConfigs.get(toolName);
-    const enabled = currentConfig?.enabled ?? true;
-
-    saveToolConfig(this.db, toolName, enabled, scope, updatedBy);
-
-    // Update in-memory cache
-    this.toolConfigs = loadAllToolConfigs(this.db);
-    this.toolArrayCache = null;
-
-    return true;
+    return this.updateToolLevel(toolName, scopeToLevel(scope), updatedBy);
   }
 
   /**
-   * Get tool configuration
+   * Get a tool's effective access level (DB override or code default).
    */
-  getToolConfig(toolName: string): { enabled: boolean; scope: ToolScope } | null {
+  getToolConfig(toolName: string): { level: ToolAccessLevel } | null {
     if (!this.tools.has(toolName)) return null;
-
-    const config = this.toolConfigs.get(toolName);
-    const enabled = config?.enabled ?? true;
-    const scope = config?.scope ?? this.tools.get(toolName)?.scope ?? "always";
-
-    return { enabled, scope };
+    return { level: this.getEffectiveLevel(toolName) };
   }
 
   /**

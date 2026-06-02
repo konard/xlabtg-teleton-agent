@@ -17,6 +17,7 @@ const Tasks = React.lazy(() => import('./pages/Tasks').then(m => ({ default: m.T
 const Mcp = React.lazy(() => import('./pages/Mcp').then(m => ({ default: m.Mcp })));
 const Config = React.lazy(() => import('./pages/Config').then(m => ({ default: m.Config })));
 const Hooks = React.lazy(() => import('./pages/Hooks').then(m => ({ default: m.Hooks })));
+const Logs = React.lazy(() => import('./pages/Logs').then(m => ({ default: m.Logs })));
 const Conversations = React.lazy(() => import('./pages/Conversations').then(m => ({ default: m.Conversations })));
 const Wallet = React.lazy(() => import('./pages/Wallet').then(m => ({ default: m.Wallet })));
 
@@ -155,6 +156,7 @@ function RoutedContent() {
             <Route path="mcp" element={<Mcp />} />
             <Route path="config" element={<Config />} />
             <Route path="hooks" element={<Hooks />} />
+            <Route path="logs" element={<Logs />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

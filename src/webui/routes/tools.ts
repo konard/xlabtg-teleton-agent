@@ -1,45 +1,61 @@
 import { Hono } from "hono";
 import type { WebUIServerDeps, ToolInfo, ModuleInfo, APIResponse } from "../types.js";
 import type { ToolScope } from "../../agent/tools/types.js";
+import {
+  scopeToLevel,
+  levelToScope,
+  isToolAccessLevel,
+  type ToolAccessLevel,
+} from "../../agent/tools/scope.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import { readRawConfig, setNestedValue, writeRawConfig } from "../../config/configurable-keys.js";
+
+const VALID_SCOPES: readonly ToolScope[] = [
+  "always",
+  "dm-only",
+  "group-only",
+  "admin-only",
+  "open",
+  "allowlist",
+  "disabled",
+];
 
 export function createToolsRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
 
+  // Build the API view of a single tool from its effective access level.
+  const buildToolInfo = (toolName: string, moduleName: string): ToolInfo | null => {
+    const tool = deps.toolRegistry.getAll().find((t) => t.name === toolName);
+    if (!tool) return null;
+    const level = deps.toolRegistry.getToolConfig(toolName)?.level ?? "all";
+    return {
+      name: tool.name,
+      description: tool.description || "",
+      module: moduleName,
+      level,
+      category: deps.toolRegistry.getToolCategory(tool.name),
+      scope: levelToScope(level),
+      enabled: level !== "off",
+    };
+  };
+
+  const buildModuleTools = (moduleName: string): ToolInfo[] =>
+    deps.toolRegistry
+      .getModuleTools(moduleName)
+      .map((entry) => buildToolInfo(entry.name, moduleName))
+      .filter((t): t is ToolInfo => t !== null);
+
   // Get all tools grouped by module
   app.get("/", (c) => {
     try {
-      const allTools = deps.toolRegistry.getAll();
       const modules = deps.toolRegistry.getAvailableModules();
 
-      // Create a map of tool name to tool definition for fast lookup
-      const toolMap = new Map(allTools.map((t) => [t.name, t]));
-
       const moduleData: ModuleInfo[] = modules.map((moduleName) => {
-        const moduleToolNames = deps.toolRegistry.getModuleTools(moduleName);
-
-        const toolsInfo: ToolInfo[] = moduleToolNames
-          .map((toolEntry) => {
-            const tool = toolMap.get(toolEntry.name);
-            if (!tool) return null;
-
-            const config = deps.toolRegistry.getToolConfig(toolEntry.name);
-            return {
-              name: tool.name,
-              description: tool.description || "",
-              module: moduleName,
-              scope: config?.scope ?? toolEntry.scope,
-              category: deps.toolRegistry.getToolCategory(tool.name),
-              enabled: config?.enabled ?? true,
-            } as ToolInfo;
-          })
-          .filter((t) => t !== null) as ToolInfo[];
-
+        const tools = buildModuleTools(moduleName);
         return {
           name: moduleName,
-          toolCount: moduleToolNames.length,
-          tools: toolsInfo,
+          toolCount: tools.length,
+          tools,
           isPlugin: deps.toolRegistry.isPluginModule(moduleName),
         };
       });
@@ -152,75 +168,65 @@ export function createToolsRoutes(deps: WebUIServerDeps) {
 
   // ── Per-tool routes (wildcard) ─────────────────────────────────────
 
-  // Update tool configuration
+  // Update tool configuration. Accepts the access-level model { level } and, for
+  // backward compatibility, the legacy { enabled?, scope? } shape.
   app.put("/:name", async (c) => {
     try {
       const toolName = c.req.param("name");
-      const body = await c.req.json();
+      const body = (await c.req.json()) as {
+        enabled?: boolean;
+        scope?: string;
+        level?: string;
+      };
 
       if (!deps.toolRegistry.has(toolName)) {
-        const response: APIResponse = {
-          success: false,
-          error: `Tool "${toolName}" not found`,
-        };
-        return c.json(response, 404);
+        return c.json({ success: false, error: `Tool "${toolName}" not found` }, 404);
       }
 
-      const { enabled, scope } = body as { enabled?: boolean; scope?: string };
-
-      // Validate scope against whitelist
-      const VALID_SCOPES = [
-        "always",
-        "dm-only",
-        "group-only",
-        "admin-only",
-        "open",
-        "allowlist",
-        "disabled",
-      ] as const;
-      if (scope !== undefined && !(VALID_SCOPES as readonly string[]).includes(scope)) {
-        const response: APIResponse = {
-          success: false,
-          error: `Invalid scope "${scope}". Must be one of: ${VALID_SCOPES.join(", ")}`,
-        };
-        return c.json(response, 400);
-      }
-
-      // Update enabled status if provided
-      if (enabled !== undefined) {
-        const success = deps.toolRegistry.setToolEnabled(toolName, enabled);
-        if (!success) {
-          const response: APIResponse = {
+      // Validate provided values up front.
+      if (body.scope !== undefined && !(VALID_SCOPES as readonly string[]).includes(body.scope)) {
+        return c.json(
+          {
             success: false,
-            error: "Failed to update tool enabled status",
-          };
-          return c.json(response, 500);
-        }
+            error: `Invalid scope "${body.scope}". Must be one of: ${VALID_SCOPES.join(", ")}`,
+          },
+          400
+        );
       }
-
-      // Update scope if provided
-      if (scope !== undefined) {
-        const success = deps.toolRegistry.updateToolScope(toolName, scope as ToolScope);
-        if (!success) {
-          const response: APIResponse = {
+      if (body.level !== undefined && !isToolAccessLevel(body.level)) {
+        return c.json(
+          {
             success: false,
-            error: "Failed to update tool scope",
-          };
-          return c.json(response, 500);
-        }
+            error: `Invalid level "${body.level}". Must be one of: all, allowlist, admin, off`,
+          },
+          400
+        );
       }
 
-      const config = deps.toolRegistry.getToolConfig(toolName);
-      const response: APIResponse = {
+      // Resolve the next level, layering each provided field.
+      let next: ToolAccessLevel = deps.toolRegistry.getToolConfig(toolName)?.level ?? "all";
+      if (body.scope !== undefined) next = scopeToLevel(body.scope as ToolScope);
+      if (body.enabled === false) next = "off";
+      else if (body.enabled === true && next === "off") {
+        next = "all";
+      }
+      if (isToolAccessLevel(body.level)) next = body.level;
+
+      const ok = deps.toolRegistry.updateToolLevel(toolName, next);
+      if (!ok) {
+        return c.json({ success: false, error: "Failed to update tool access" }, 500);
+      }
+
+      const level = deps.toolRegistry.getToolConfig(toolName)?.level ?? next;
+      return c.json({
         success: true,
         data: {
           tool: toolName,
-          enabled: config?.enabled ?? true,
-          scope: config?.scope ?? "always",
+          level,
+          scope: levelToScope(level),
+          enabled: level !== "off",
         },
-      };
-
-      return c.json(response);
+      });
     } catch (error) {
       const response: APIResponse = {
         success: false,
@@ -236,24 +242,19 @@ export function createToolsRoutes(deps: WebUIServerDeps) {
       const toolName = c.req.param("name");
 
       if (!deps.toolRegistry.has(toolName)) {
-        const response: APIResponse = {
-          success: false,
-          error: `Tool "${toolName}" not found`,
-        };
-        return c.json(response, 404);
+        return c.json({ success: false, error: `Tool "${toolName}" not found` }, 404);
       }
 
-      const config = deps.toolRegistry.getToolConfig(toolName);
-      const response: APIResponse = {
+      const level = deps.toolRegistry.getToolConfig(toolName)?.level ?? "all";
+      return c.json({
         success: true,
         data: {
           tool: toolName,
-          enabled: config?.enabled ?? true,
-          scope: config?.scope ?? "always",
+          level,
+          scope: levelToScope(level),
+          enabled: level !== "off",
         },
-      };
-
-      return c.json(response);
+      });
     } catch (error) {
       const response: APIResponse = {
         success: false,
@@ -267,33 +268,10 @@ export function createToolsRoutes(deps: WebUIServerDeps) {
   app.get("/:module", (c) => {
     try {
       const moduleName = c.req.param("module");
-      const allTools = deps.toolRegistry.getAll();
-      const toolMap = new Map(allTools.map((t) => [t.name, t]));
-
-      const moduleToolNames = deps.toolRegistry.getModuleTools(moduleName);
-
-      const toolsInfo: ToolInfo[] = moduleToolNames
-        .map((toolEntry) => {
-          const tool = toolMap.get(toolEntry.name);
-          if (!tool) return null;
-
-          const config = deps.toolRegistry.getToolConfig(toolEntry.name);
-          return {
-            name: tool.name,
-            description: tool.description || "",
-            module: moduleName,
-            scope: config?.scope ?? toolEntry.scope,
-            category: deps.toolRegistry.getToolCategory(tool.name),
-            enabled: config?.enabled ?? true,
-          } as ToolInfo;
-        })
-        .filter((t) => t !== null) as ToolInfo[];
-
       const response: APIResponse<ToolInfo[]> = {
         success: true,
-        data: toolsInfo,
+        data: buildModuleTools(moduleName),
       };
-
       return c.json(response);
     } catch (error) {
       const response: APIResponse = {

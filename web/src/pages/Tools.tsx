@@ -1,6 +1,6 @@
 import { useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
-import { ToolRow, SCOPE_OPTIONS } from '../components/ToolRow';
+import { ToolRow, LEVEL_OPTIONS } from '../components/ToolRow';
 import { PillTabs } from '../components/PillTabs';
 import { SearchBar } from '../components/SearchBar';
 import { Segmented } from '../components/Segmented';
@@ -14,6 +14,12 @@ import { EmptyState } from '../components/EmptyState';
 
 type Filter = 'all' | 'enabled' | 'disabled';
 
+// Common level across a module's tools, or '' when mixed.
+const commonLevel = (tools: ToolInfo[]): string => {
+  const set = new Set(tools.map((t) => t.level));
+  return set.size === 1 ? (set.values().next().value ?? '') : '';
+};
+
 export function Tools() {
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -24,7 +30,7 @@ export function Tools() {
     [],
   );
 
-  const { updating, toggleEnabled, updateScope, bulkToggle, bulkScope } = useToolManager(reload);
+  const { updating, updateLevel, bulkLevel } = useToolManager(reload);
 
   if (loading) {
     return (
@@ -41,7 +47,7 @@ export function Tools() {
   const allModules = modules ?? [];
   const builtIn = allModules.filter((m) => !m.isPlugin);
   const builtInCount = builtIn.reduce((sum, m) => sum + m.toolCount, 0);
-  const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter((t) => t.enabled).length, 0);
+  const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter((t) => t.level !== 'off').length, 0);
 
   const trimmedSearch = search.trim().toLowerCase();
   const filtered = builtIn.filter((m) => {
@@ -55,8 +61,8 @@ export function Tools() {
         );
       if (!match) return false;
     }
-    if (filter === 'enabled') return m.tools.some((t) => t.enabled);
-    if (filter === 'disabled') return m.tools.every((t) => !t.enabled);
+    if (filter === 'enabled') return m.tools.some((t) => t.level !== 'off');
+    if (filter === 'disabled') return m.tools.every((t) => t.level === 'off');
     return true;
   });
 
@@ -83,8 +89,8 @@ export function Tools() {
           ariaLabel="Filter modules"
           options={[
             { value: 'all', label: `All ${builtIn.length}` },
-            { value: 'enabled', label: `Enabled ${enabledCount}` },
-            { value: 'disabled', label: `Disabled ${builtInCount - enabledCount}` },
+            { value: 'enabled', label: `Active ${enabledCount}` },
+            { value: 'disabled', label: `Off ${builtInCount - enabledCount}` },
           ]}
         />
         <div style={{ flex: 1, minWidth: '180px' }}>
@@ -114,13 +120,8 @@ export function Tools() {
         <List>
           {filtered.map((module) => {
             const isExpanded = expandedModule === module.name;
-            const someEnabled = module.tools.some((t) => t.enabled);
-            const allEnabled = module.tools.every((t) => t.enabled);
-            const partial = someEnabled && !allEnabled;
-            const enabledInModule = module.tools.filter((t) => t.enabled).length;
-            const scopes = new Set(module.tools.map((t) => t.scope));
-            const mixedScope = scopes.size > 1;
-            const commonScope = mixedScope ? '' : (scopes.values().next().value ?? 'always');
+            const activeInModule = module.tools.filter((t) => t.level !== 'off').length;
+            const common = commonLevel(module.tools);
             const isBusy = updating === module.name;
 
             return (
@@ -128,37 +129,24 @@ export function Tools() {
                 <ListRow
                   leading={module.name.charAt(0).toUpperCase()}
                   title={module.name}
-                  subtitle={`${enabledInModule}/${module.toolCount} enabled`}
+                  subtitle={`${activeInModule}/${module.toolCount} active`}
                   disclosure
                   expanded={isExpanded}
                   onClick={() => setExpandedModule(isExpanded ? null : module.name)}
                   trailing={
-                    <>
-                      <PillTabs
-                        value={mixedScope ? '' : (commonScope === 'always' ? 'open' : commonScope)}
-                        options={SCOPE_OPTIONS}
-                        onChange={(v) => bulkScope(module, v as ToolInfo['scope'])}
-                        disabled={isBusy}
-                        ariaLabel={`Scope for all ${module.name} tools`}
-                      />
-                      <label className="toggle">
-                        <input
-                          type="checkbox"
-                          ref={(el) => { if (el) el.indeterminate = partial; }}
-                          checked={someEnabled}
-                          onChange={() => bulkToggle(module, !someEnabled)}
-                          disabled={isBusy}
-                        />
-                        <span className="toggle-track" />
-                        <span className="toggle-thumb" />
-                      </label>
-                    </>
+                    <PillTabs
+                      value={common}
+                      options={LEVEL_OPTIONS}
+                      onChange={(v) => bulkLevel(module, v as ToolInfo['level'])}
+                      disabled={isBusy}
+                      ariaLabel={`Access level for all ${module.name} tools`}
+                    />
                   }
                 />
                 {isExpanded && (
                   <div className="ios-sublist">
                     {module.tools.map((tool) => (
-                      <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} />
+                      <ToolRow key={tool.name} tool={tool} updating={updating} onLevel={updateLevel} />
                     ))}
                   </div>
                 )}
