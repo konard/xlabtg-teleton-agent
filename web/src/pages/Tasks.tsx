@@ -1,10 +1,14 @@
-import React, { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, Fragment } from 'react';
 import { api, TaskData } from '../lib/api';
 import { formatDate, formatDateTime, errMsg } from '../lib/utils';
-import { SearchInput } from '../components/SearchInput';
+import { SearchBar } from '../components/SearchBar';
+import { PillTabs } from '../components/PillTabs';
+import { List, ListRow } from '../components/List';
+import { CodeBlock } from '../components/CodeBlock';
 import { useResource } from '../hooks/useResource';
 import { RefreshButton } from '../components/RefreshButton';
-import { expandableRowProps } from '../lib/a11y';
+import { Alert } from '../components/Alert';
+import { SkeletonRows } from '../components/Skeleton';
 import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
 import { EmptyState } from '../components/EmptyState';
@@ -28,71 +32,53 @@ const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-
-function StatusBadge({ status }: { status: TaskStatus }) {
-  return (
-    <span
-      style={{
-        display: 'inline-block',
-        padding: '2px 8px',
-        borderRadius: '10px',
-        fontSize: '11px',
-        fontWeight: 600,
-        color: 'var(--text-on-accent)',
-        backgroundColor: STATUS_COLORS[status],
-      }}
-    >
-      {STATUS_LABELS[status]}
-    </span>
-  );
-}
+const STATUSES: TaskStatus[] = ['pending', 'in_progress', 'done', 'failed', 'cancelled'];
 
 function PriorityDots({ priority }: { priority: number }) {
-  if (priority === 0) return <span style={{ color: 'var(--text-secondary)', fontSize: '11px' }}>-</span>;
-  const filled = Math.min(priority, 10);
+  if (priority === 0) return null;
+  const filled = Math.min(priority, 5);
   return (
-    <span title={`Priority: ${priority}/10`} style={{ fontSize: '11px', letterSpacing: '1px' }}>
-      {'●'.repeat(Math.min(filled, 5))}
-      {'○'.repeat(Math.max(0, 5 - filled))}
+    <span className="task-prio" title={`Priority ${priority}/10`}>
+      {'●'.repeat(filled)}{'○'.repeat(5 - filled)}
     </span>
   );
 }
 
 function truncate(s: string | null | undefined, max: number): string {
   if (!s) return '';
-  return s.length > max ? s.slice(0, max) + '...' : s;
+  return s.length > max ? s.slice(0, max) + '…' : s;
+}
+
+function prettyJson(raw: string): string {
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+}
+
+function KV({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <>
+      <span className="task-kv-label">{label}</span>
+      <span className="task-kv-value">{children}</span>
+    </>
+  );
 }
 
 export function Tasks() {
   const confirm = useConfirm();
   const [filter, setFilter] = useState<TaskStatus | ''>('');
-  const [searchQuery, setSearchQuery] = useState('');
+  const [query, setQuery] = useState('');
+  const [openId, setOpenId] = useState<string | null>(null);
 
-  // Detail panel
-  const [selected, setSelected] = useState<Task | null>(null);
-
-  // Clean dropdown + confirm modal
   const [cleanMenuOpen, setCleanMenuOpen] = useState(false);
-  const [cleanConfirm, setCleanConfirm] = useState<TaskStatus | null>(null);
   const cleanRef = useRef<HTMLDivElement>(null);
 
-  // Always fetch ALL tasks so filter counts are accurate
   const { data: tasks, loading, error, reload, setError } = useResource<Task[]>(
     () => api.tasksList().then((r) => r.data ?? []),
     [],
   );
 
-  // Refresh selected task whenever the task list reloads
-  useEffect(() => {
-    if (!tasks) return;
-    setSelected((prev) => {
-      if (!prev) return null;
-      return tasks.find((t) => t.id === prev.id) ?? null;
-    });
-  }, [tasks]);
-
-  // Poll only while a task is active (pending/in_progress), like the Dashboard.
   const allTasks = tasks ?? [];
+
+  // Poll only while a task is active (pending/in_progress).
   const hasActiveTask = allTasks.some((t) => t.status === 'pending' || t.status === 'in_progress');
   useEffect(() => {
     if (!hasActiveTask) return;
@@ -100,28 +86,28 @@ export function Tasks() {
     return () => clearInterval(id);
   }, [hasActiveTask, reload]);
 
-  // Close clean dropdown on click outside
+  // Close clean dropdown on outside click.
   useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (cleanRef.current && !cleanRef.current.contains(e.target as Node)) {
-        setCleanMenuOpen(false);
-      }
-    }
-    if (cleanMenuOpen) {
-      document.addEventListener('mousedown', handleClickOutside);
-      return () => document.removeEventListener('mousedown', handleClickOutside);
-    }
+    if (!cleanMenuOpen) return;
+    const onClick = (e: MouseEvent) => {
+      if (cleanRef.current && !cleanRef.current.contains(e.target as Node)) setCleanMenuOpen(false);
+    };
+    document.addEventListener('mousedown', onClick);
+    return () => document.removeEventListener('mousedown', onClick);
   }, [cleanMenuOpen]);
 
   const handleClean = async (status: TaskStatus) => {
-    setCleanConfirm(null);
     setCleanMenuOpen(false);
+    const n = counts[status] || 0;
+    if (!(await confirm({
+      message: `Permanently delete all ${n} ${STATUS_LABELS[status].toLowerCase()} task${n === 1 ? '' : 's'}? This cannot be undone.`,
+      destructive: true,
+      confirmLabel: `Delete ${n}`,
+    }))) return;
     try {
       await api.tasksClean(status);
-      setError(null);
       reload();
-      setSelected(null);
-      toast.success('Completed tasks cleared');
+      toast.success('Tasks cleared');
     } catch (err) {
       setError(errMsg(err));
       toast.error(errMsg(err));
@@ -133,7 +119,6 @@ export function Tasks() {
     try {
       await api.tasksCancel(id);
       reload();
-      if (selected?.id === id) setSelected(null);
       toast.success('Task cancelled');
     } catch (err) {
       setError(errMsg(err));
@@ -146,7 +131,7 @@ export function Tasks() {
     try {
       await api.tasksDelete(id);
       reload();
-      if (selected?.id === id) setSelected(null);
+      if (openId === id) setOpenId(null);
       toast.success('Task deleted');
     } catch (err) {
       setError(errMsg(err));
@@ -154,24 +139,22 @@ export function Tasks() {
     }
   };
 
-  // Counts from ALL tasks, filter for display
-  const counts = allTasks.reduce(
-    (acc, t) => {
-      acc[t.status] = (acc[t.status] || 0) + 1;
-      return acc;
-    },
-    {} as Record<string, number>
-  );
-  const terminalCount = (counts['done'] || 0) + (counts['failed'] || 0) + (counts['cancelled'] || 0);
+  const counts = allTasks.reduce((acc, t) => { acc[t.status] = (acc[t.status] || 0) + 1; return acc; }, {} as Record<string, number>);
+  const terminalStatuses = (['done', 'failed', 'cancelled'] as TaskStatus[]).filter((s) => (counts[s] || 0) > 0);
+
   const statusFiltered = filter ? allTasks.filter((t) => t.status === filter) : allTasks;
-  const trimmedQuery = searchQuery.trim().toLowerCase();
-  const filteredTasks = trimmedQuery
+  const q = query.trim().toLowerCase();
+  const filteredTasks = q
     ? statusFiltered.filter((t) =>
-        t.description.toLowerCase().includes(trimmedQuery) ||
-        (t.reason ?? '').toLowerCase().includes(trimmedQuery) ||
-        t.id.toLowerCase().includes(trimmedQuery)
-      )
+        t.description.toLowerCase().includes(q) ||
+        (t.reason ?? '').toLowerCase().includes(q) ||
+        t.id.toLowerCase().includes(q))
     : statusFiltered;
+
+  const filterOptions = [
+    { value: '' as const, label: `All ${allTasks.length}` },
+    ...STATUSES.map((s) => ({ value: s, label: `${STATUS_LABELS[s]} ${counts[s] || 0}` })),
+  ];
 
   return (
     <div>
@@ -180,87 +163,29 @@ export function Tasks() {
         <p>Scheduled and queued agent tasks</p>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '14px' }}>
-          {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>
-            Dismiss
-          </button>
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
+
+      {/* Filters */}
+      <div style={{ marginBottom: '10px', overflowX: 'auto' }}>
+        <PillTabs value={filter} options={filterOptions} onChange={setFilter} ariaLabel="Filter by status" />
+      </div>
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px' }}>
+        <div style={{ flex: 1 }}>
+          <SearchBar value={query} onChange={setQuery} placeholder="Search tasks…" />
         </div>
-      )}
-
-      {/* Stats bar */}
-      <div className="card" style={{ padding: '10px 14px', marginBottom: '14px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', overflow: 'visible', position: 'relative', zIndex: 2, borderRadius: 'var(--radius-pill)' }}>
-        <span
-          onClick={() => setFilter('')}
-          style={{
-            cursor: 'pointer',
-            fontWeight: filter === '' ? 'bold' : 'normal',
-            color: filter === '' ? 'var(--text-primary)' : 'var(--text-secondary)',
-            fontSize: '13px',
-          }}
-        >
-          All ({allTasks.length})
-        </span>
-        {(['pending', 'in_progress', 'done', 'failed', 'cancelled'] as TaskStatus[]).map((s) => (
-          <span
-            key={s}
-            onClick={() => setFilter(filter === s ? '' : s)}
-            style={{
-              cursor: 'pointer',
-              fontWeight: filter === s ? 'bold' : 'normal',
-              color: filter === s ? STATUS_COLORS[s] : 'var(--text-secondary)',
-              fontSize: '13px',
-            }}
-          >
-            {STATUS_LABELS[s]} ({counts[s] || 0})
-          </span>
-        ))}
-
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <SearchInput value={searchQuery} onChange={setSearchQuery} placeholder="Search tasks..." />
-          {trimmedQuery && (
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-              {filteredTasks.length} of {statusFiltered.length} tasks
-            </span>
-          )}
-        </div>
-
-        {/* Clean dropdown */}
-        {terminalCount > 0 && (
+        {terminalStatuses.length > 0 && (
           <div ref={cleanRef} style={{ position: 'relative' }}>
-            <button
-              className="btn-ghost btn-sm"
-              onClick={() => setCleanMenuOpen(!cleanMenuOpen)}
-            >
-              Clean
-            </button>
+            <button className="btn-ghost btn-sm" onClick={() => setCleanMenuOpen((v) => !v)}>Clean</button>
             {cleanMenuOpen && (
-              <div
-                className="custom-select-menu"
-                style={{
-                  position: 'absolute',
-                  top: '100%',
-                  right: 0,
-                  marginTop: '4px',
-                  zIndex: 10,
-                  minWidth: '170px',
-                  width: 'auto',
-                }}
-              >
-                {(['done', 'failed', 'cancelled'] as TaskStatus[])
-                  .filter((s) => (counts[s] || 0) > 0)
-                  .map((s) => (
-                    <div
-                      key={s}
-                      className="custom-select-option"
-                      onClick={() => { setCleanMenuOpen(false); setCleanConfirm(s); }}
-                      style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-                    >
-                      <span style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: STATUS_COLORS[s], flexShrink: 0 }} />
-                      {STATUS_LABELS[s]} ({counts[s]})
-                    </div>
-                  ))}
+              <div className="custom-select-menu" style={{ position: 'absolute', top: '100%', right: 0, marginTop: '4px', zIndex: 10, minWidth: '170px' }}>
+                {terminalStatuses.map((s) => (
+                  <div key={s} className="custom-select-option" onClick={() => handleClean(s)} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span className="task-dot" style={{ background: STATUS_COLORS[s] }} />
+                    {STATUS_LABELS[s]} ({counts[s]})
+                  </div>
+                ))}
               </div>
             )}
           </div>
@@ -268,244 +193,80 @@ export function Tasks() {
         <RefreshButton onRefresh={reload} />
       </div>
 
-      {/* Clean confirmation modal */}
-      {cleanConfirm && (
-        <div className="modal-overlay" onClick={() => setCleanConfirm(null)}>
-          <div className="modal" style={{ maxWidth: '380px' }} onClick={(e) => e.stopPropagation()}>
-            <h2 style={{ marginBottom: '4px' }}>Clean {STATUS_LABELS[cleanConfirm].toLowerCase()} tasks</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
-              Permanently delete all {counts[cleanConfirm] || 0}{' '}
-              <span style={{ color: STATUS_COLORS[cleanConfirm], fontWeight: 600 }}>
-                {STATUS_LABELS[cleanConfirm].toLowerCase()}
-              </span>{' '}
-              tasks? This cannot be undone.
-            </p>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-              <button className="btn-ghost" onClick={() => setCleanConfirm(null)}>Cancel</button>
-              <button className="btn-danger btn-sm" onClick={() => handleClean(cleanConfirm)}>
-                Delete {counts[cleanConfirm] || 0} tasks
-              </button>
-            </div>
-          </div>
+      {loading ? (
+        <SkeletonRows />
+      ) : filteredTasks.length === 0 ? (
+        <div className="card" style={{ padding: 0 }}>
+          <EmptyState
+            title={q || filter ? 'No matching tasks' : 'No tasks yet'}
+            description={
+              q ? 'No tasks match your search.'
+                : filter ? `No ${STATUS_LABELS[filter].toLowerCase()} tasks.`
+                : 'Scheduled and queued tasks will appear here.'
+            }
+          />
         </div>
-      )}
+      ) : (
+        <List>
+          {filteredTasks.map((task) => {
+            const isOpen = openId === task.id;
+            const active = task.status === 'pending' || task.status === 'in_progress';
+            return (
+              <Fragment key={task.id}>
+                <ListRow
+                  className="task-row"
+                  leading={<span className={`task-dot${task.status === 'in_progress' ? ' pulse' : ''}`} style={{ background: STATUS_COLORS[task.status] }} />}
+                  title={truncate(task.description, 120)}
+                  subtitle={
+                    <span>
+                      <span style={{ color: STATUS_COLORS[task.status], fontWeight: 600 }}>{STATUS_LABELS[task.status]}</span>
+                      {' · '}
+                      {task.scheduledFor ? `scheduled ${formatDate(task.scheduledFor)}` : `created ${formatDate(task.createdAt)}`}
+                      {task.reason ? ` · ${truncate(task.reason, 60)}` : ''}
+                    </span>
+                  }
+                  trailing={<PriorityDots priority={task.priority} />}
+                  disclosure
+                  expanded={isOpen}
+                  onClick={() => setOpenId(isOpen ? null : task.id)}
+                />
+                {isOpen && (
+                  <div className="ios-sublist task-detail">
+                    <div className="task-kv">
+                      <KV label="ID"><code>{task.id}</code></KV>
+                      <KV label="Priority">{task.priority}/10</KV>
+                      <KV label="Description">{task.description}</KV>
+                      {task.reason && <KV label="Reason">{task.reason}</KV>}
+                      <KV label="Created by">{task.createdBy || '—'}</KV>
+                      <KV label="Created">{formatDateTime(task.createdAt)}</KV>
+                      <KV label="Scheduled">{formatDateTime(task.scheduledFor)}</KV>
+                      <KV label="Started">{formatDateTime(task.startedAt)}</KV>
+                      <KV label="Completed">{formatDateTime(task.completedAt)}</KV>
+                      {task.dependencies.length > 0 && <KV label="Depends on">{task.dependencies.length} task(s)</KV>}
+                      {task.dependents.length > 0 && <KV label="Dependents">{task.dependents.length} task(s)</KV>}
+                    </div>
 
-      {/* Task list */}
-      <div className="card" style={{ padding: 0 }}>
-        {loading ? (
-          <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : filteredTasks.length === 0 ? (
-          trimmedQuery ? (
-            <EmptyState title="No matching tasks" description="No tasks match your search." />
-          ) : filter ? (
-            <EmptyState title="No matching tasks" description={`No ${STATUS_LABELS[filter].toLowerCase()} tasks.`} />
-          ) : (
-            <EmptyState title="No tasks yet" description="Scheduled and queued tasks will appear here." />
-          )
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', tableLayout: 'fixed' }}>
-            <thead>
-              <tr
-                style={{
-                  borderBottom: '1px solid var(--border)',
-                  color: 'var(--text-secondary)',
-                  fontSize: '11px',
-                  textTransform: 'uppercase',
-                }}
-              >
-                <th style={{ textAlign: 'left', padding: '8px 14px' }}>Description</th>
-                <th style={{ textAlign: 'center', padding: '8px 10px', width: 80 }}>Status</th>
-                <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Priority</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: 120 }}>Scheduled</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: 120 }}>Created</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: 70 }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTasks.map((task) => {
-                const isExpanded = selected?.id === task.id;
-                return (
-                  <React.Fragment key={task.id}>
-                    <tr
-                      onClick={() => setSelected(isExpanded ? null : task)}
-                      {...expandableRowProps(() => setSelected(isExpanded ? null : task))}
-                      style={{
-                        cursor: 'pointer',
-                        borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                        backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                      }}
-                      className="file-row"
-                    >
-                      <td style={{ padding: '8px 14px' }}>
-                        <div>
-                          <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
-                            {isExpanded ? '\u25BC' : '\u25B6'}
-                          </span>
-                          {truncate(task.description, 80)}
-                        </div>
-                        {task.reason && (
-                          <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '14px' }}>
-                            {truncate(task.reason, 60)}
-                          </div>
-                        )}
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                        <StatusBadge status={task.status} />
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                        <PriorityDots priority={task.priority} />
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '8px 14px', color: 'var(--text-secondary)' }}>
-                        {formatDate(task.scheduledFor)}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '8px 14px', color: 'var(--text-secondary)' }}>
-                        {formatDate(task.createdAt)}
-                      </td>
-                      <td
-                        style={{ textAlign: 'right', padding: '8px 14px', whiteSpace: 'nowrap' }}
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {(task.status === 'pending' || task.status === 'in_progress') && (
-                          <button className="icon-button" aria-label="Cancel task" onClick={() => cancelTask(task.id)} title="Cancel">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
-                          </button>
-                        )}
-                        <button className="icon-button" aria-label="Delete task" onClick={() => deleteTask(task.id)} title="Delete">
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                        </button>
-                      </td>
-                    </tr>
-                    {isExpanded && selected && (
-                      <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                        <td colSpan={6} style={{ padding: '0 14px 14px 14px', overflow: 'hidden' }}>
-                          <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr', gap: '6px 12px', fontSize: '13px', padding: '10px 0' }}>
-                            <span style={{ color: 'var(--text-secondary)' }}>ID</span>
-                            <code style={{ fontSize: '11px', wordBreak: 'break-all' }}>{selected.id}</code>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Status</span>
-                            <span><StatusBadge status={selected.status} /></span>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Priority</span>
-                            <span>{selected.priority}/10</span>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Description</span>
-                            <span>{selected.description}</span>
-
-                            {selected.reason && (
-                              <>
-                                <span style={{ color: 'var(--text-secondary)' }}>Reason</span>
-                                <span>{selected.reason}</span>
-                              </>
-                            )}
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Created by</span>
-                            <span>{selected.createdBy || '\u2014'}</span>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Created</span>
-                            <span>{formatDateTime(selected.createdAt)}</span>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Scheduled for</span>
-                            <span>{formatDateTime(selected.scheduledFor)}</span>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Started</span>
-                            <span>{formatDateTime(selected.startedAt)}</span>
-
-                            <span style={{ color: 'var(--text-secondary)' }}>Completed</span>
-                            <span>{formatDateTime(selected.completedAt)}</span>
-
-                            {selected.dependencies.length > 0 && (
-                              <>
-                                <span style={{ color: 'var(--text-secondary)' }}>Depends on</span>
-                                <span style={{ fontSize: '11px' }}>{selected.dependencies.length} task(s)</span>
-                              </>
-                            )}
-
-                            {selected.dependents.length > 0 && (
-                              <>
-                                <span style={{ color: 'var(--text-secondary)' }}>Dependents</span>
-                                <span style={{ fontSize: '11px' }}>{selected.dependents.length} task(s)</span>
-                              </>
-                            )}
-                          </div>
-
-                          {selected.payload && (
-                            <div style={{ marginTop: '4px' }}>
-                              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Payload</div>
-                              <pre
-                                style={{
-                                  padding: '8px',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'var(--glass-thin)',
-                                  fontSize: '11px',
-                                  overflow: 'auto',
-                                  maxHeight: '150px',
-                                  margin: 0,
-                                  whiteSpace: 'pre-wrap',
-                                  wordBreak: 'break-word',
-                                }}
-                              >
-                                {(() => {
-                                  try {
-                                    return JSON.stringify(JSON.parse(selected.payload!), null, 2);
-                                  } catch {
-                                    return selected.payload;
-                                  }
-                                })()}
-                              </pre>
-                            </div>
-                          )}
-
-                          {selected.result && (
-                            <div style={{ marginTop: '12px' }}>
-                              <div style={{ fontSize: '12px', color: 'var(--green)', marginBottom: '4px' }}>Result</div>
-                              <pre
-                                style={{
-                                  padding: '8px',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'var(--glass-thin)',
-                                  fontSize: '11px',
-                                  overflow: 'auto',
-                                  maxHeight: '200px',
-                                  margin: 0,
-                                  whiteSpace: 'pre-wrap',
-                                  wordBreak: 'break-word',
-                                }}
-                              >
-                                {truncate(selected.result, 2000)}
-                              </pre>
-                            </div>
-                          )}
-
-                          {selected.error && (
-                            <div style={{ marginTop: '12px' }}>
-                              <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '4px' }}>Error</div>
-                              <pre
-                                style={{
-                                  padding: '8px',
-                                  borderRadius: '4px',
-                                  backgroundColor: 'var(--red-dim)',
-                                  fontSize: '11px',
-                                  overflow: 'auto',
-                                  maxHeight: '150px',
-                                  margin: 0,
-                                  color: 'var(--red)',
-                                }}
-                              >
-                                {selected.error}
-                              </pre>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
+                    {task.payload && (
+                      <CodeBlock header="Payload" maxHeight={150}>{prettyJson(task.payload)}</CodeBlock>
                     )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                    {task.result && (
+                      <CodeBlock header={<span style={{ color: 'var(--green)' }}>Result</span>} maxHeight={200}>{truncate(task.result, 2000)}</CodeBlock>
+                    )}
+                    {task.error && (
+                      <CodeBlock header={<span style={{ color: 'var(--red)' }}>Error</span>} maxHeight={150}>{task.error}</CodeBlock>
+                    )}
 
+                    <div className="task-detail-actions">
+                      {active && <button className="btn-ghost btn-sm" onClick={() => cancelTask(task.id)}>Cancel task</button>}
+                      <button className="btn-danger btn-sm" onClick={() => deleteTask(task.id)}>Delete</button>
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </List>
+      )}
     </div>
   );
 }
