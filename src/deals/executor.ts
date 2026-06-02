@@ -6,7 +6,8 @@
 import type Database from "better-sqlite3";
 import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { Deal } from "./types.js";
-import { sendTon, tonExplorerTxUrl } from "../ton/transfer.js";
+import { sendTon } from "../ton/transfer.js";
+import { tonExplorerTxUrl } from "../ton/confirm.js";
 import { formatAsset } from "./utils.js";
 import { JournalStore } from "../memory/journal-store.js";
 import { getErrorMessage } from "../utils/errors.js";

@@ -6,11 +6,11 @@ import {
   invalidateTonClientCache,
 } from "../../../ton/wallet-service.js";
 import { fromNano, internal } from "@ton/ton";
-import { SendMode } from "@ton/core";
 import { dexFactory } from "@ston-fi/sdk";
 import { StonApiClient } from "@ston-fi/api";
 import { withTxLock } from "../../../ton/tx-lock.js";
 import { openWallet } from "../../../ton/wallet-open.js";
+import { sendWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 import { getErrorMessage, isHttpError } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { toUnits } from "../../../ton/units.js";
@@ -116,7 +116,6 @@ export const stonfiSwapExecutor: ToolExecutor<JettonSwapParams> = async (
         return { success: false, error: "Wallet key derivation failed." };
       }
       const { keyPair, wallet, contract: walletContract } = opened;
-      const seqno = await walletContract.getSeqno();
 
       let txParams;
       const proxyTon = contracts.pTON.create(routerInfo.ptonMasterAddress);
@@ -163,10 +162,8 @@ export const stonfiSwapExecutor: ToolExecutor<JettonSwapParams> = async (
         });
       }
 
-      await walletContract.sendTransfer({
-        seqno,
+      const sent = await sendWalletTx(tonClient, walletContract, {
         secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY,
         messages: [
           internal({
             to: txParams.to,
@@ -176,6 +173,13 @@ export const stonfiSwapExecutor: ToolExecutor<JettonSwapParams> = async (
           }),
         ],
       });
+
+      if (!sent) {
+        return {
+          success: false,
+          error: "Swap transaction failed or could not be confirmed on-chain.",
+        };
+      }
 
       // Fetch ask asset decimals for accurate output conversion
       const toAssetInfo = await stonApiClient.getAsset(toAddress);
@@ -194,7 +198,8 @@ export const stonfiSwapExecutor: ToolExecutor<JettonSwapParams> = async (
           slippage: `${(slippage * 100).toFixed(2)}%`,
           priceImpact: simulationResult.priceImpact || "N/A",
           router: routerInfo.address,
-          message: `Swapped ${amount} ${isTonInput ? "TON" : "tokens"} for ~${expectedOutput.toFixed(4)} ${isTonOutput ? "TON" : "tokens"}\n  Minimum output: ${minOutput.toFixed(4)}\n  Slippage: ${(slippage * 100).toFixed(2)}%\n  Transaction sent (check balance in ~30 seconds)`,
+          txHash: sent.hash,
+          message: `Swapped ${amount} ${isTonInput ? "TON" : "tokens"} for ~${expectedOutput.toFixed(4)} ${isTonOutput ? "TON" : "tokens"} — confirmed on-chain\n  Minimum output: ${minOutput.toFixed(4)}\n  Slippage: ${(slippage * 100).toFixed(2)}%\n  tx ${sent.hash}\n  ${tonExplorerTxUrl(sent.hash)}`,
         },
       };
     }); // withTxLock

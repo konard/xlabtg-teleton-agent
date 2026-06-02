@@ -13,6 +13,7 @@ import { findDedustPool } from "./pool.js";
 import { getDecimals, toUnits, fromUnits } from "./asset-cache.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
 import { openWallet } from "../../../ton/wallet-open.js";
+import { walletTxLt, confirmWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 import { getErrorMessage, isHttpError } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 
@@ -149,6 +150,8 @@ export const dedustSwapExecutor: ToolExecutor<DedustSwapParams> = async (
       }
       const { keyPair, contract: walletContract } = opened;
       const sender = walletContract.sender(keyPair.secretKey);
+      const sinceLt = await walletTxLt(tonClient, walletContract.address);
+      let broadcastError: unknown;
 
       if (isTonInput) {
         // Check balance for TON swaps
@@ -174,12 +177,16 @@ export const dedustSwapExecutor: ToolExecutor<DedustSwapParams> = async (
         }
 
         // Use SDK's sendSwap method
-        await tonVault.sendSwap(sender, {
-          poolAddress: pool.address,
-          amount: amountIn,
-          limit: minAmountOut,
-          gasAmount: toNano(DEDUST_GAS.SWAP_TON_TO_JETTON),
-        });
+        try {
+          await tonVault.sendSwap(sender, {
+            poolAddress: pool.address,
+            amount: amountIn,
+            limit: minAmountOut,
+            gasAmount: toNano(DEDUST_GAS.SWAP_TON_TO_JETTON),
+          });
+        } catch (error) {
+          broadcastError = error;
+        }
       } else {
         // Jetton -> TON/Jetton swap (use normalized address)
         const jettonAddress = Address.parse(fromAssetAddr);
@@ -206,13 +213,26 @@ export const dedustSwapExecutor: ToolExecutor<DedustSwapParams> = async (
         });
 
         // Send jetton transfer with swap payload
-        await jettonWallet.sendTransfer(sender, toNano(DEDUST_GAS.SWAP_JETTON_TO_ANY), {
-          destination: jettonVault.address,
-          amount: amountIn,
-          responseAddress: Address.parse(walletData.address),
-          forwardAmount: toNano(DEDUST_GAS.FORWARD_GAS),
-          forwardPayload: swapPayload,
-        });
+        try {
+          await jettonWallet.sendTransfer(sender, toNano(DEDUST_GAS.SWAP_JETTON_TO_ANY), {
+            destination: jettonVault.address,
+            amount: amountIn,
+            responseAddress: Address.parse(walletData.address),
+            forwardAmount: toNano(DEDUST_GAS.FORWARD_GAS),
+            forwardPayload: swapPayload,
+          });
+        } catch (error) {
+          broadcastError = error;
+        }
+      }
+
+      const confirmed = await confirmWalletTx(tonClient, walletContract.address, sinceLt);
+      if (!confirmed) {
+        if (broadcastError) throw broadcastError;
+        return {
+          success: false,
+          error: "Swap transaction failed or could not be confirmed on-chain.",
+        };
       }
 
       // Calculate expected output for display using correct decimals
@@ -236,7 +256,8 @@ export const dedustSwapExecutor: ToolExecutor<DedustSwapParams> = async (
           tradeFee: feeAmount.toFixed(6),
           poolType: pool_type,
           poolAddress: pool.address.toString(),
-          message: `Swapped ${amount} ${fromSymbol} for ~${expectedOutput.toFixed(4)} ${toSymbol} on DeDust\n  Minimum output: ${minOutput.toFixed(4)}\n  Slippage: ${(slippage * 100).toFixed(2)}%\n  Transaction sent (check balance in ~30 seconds)`,
+          txHash: confirmed.hash,
+          message: `Swapped ${amount} ${fromSymbol} for ~${expectedOutput.toFixed(4)} ${toSymbol} on DeDust — confirmed on-chain\n  Minimum output: ${minOutput.toFixed(4)}\n  Slippage: ${(slippage * 100).toFixed(2)}%\n  tx ${confirmed.hash}\n  ${tonExplorerTxUrl(confirmed.hash)}`,
         },
       };
     }); // withTxLock

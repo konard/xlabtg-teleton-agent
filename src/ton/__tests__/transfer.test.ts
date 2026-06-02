@@ -3,7 +3,11 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // ─── Mocks ────────────────────────────────────────────────────────
 
 const h = vi.hoisted(() => {
-  const contract = { getSeqno: vi.fn(), sendTransfer: vi.fn() };
+  const contract = {
+    address: { toString: () => "EQwallet" },
+    getSeqno: vi.fn(),
+    sendTransfer: vi.fn(),
+  };
   const client = { open: vi.fn(() => contract), getTransactions: vi.fn() };
   return {
     contract,
