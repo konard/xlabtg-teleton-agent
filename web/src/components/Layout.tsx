@@ -172,7 +172,7 @@ function DashboardNav() {
     { to: '/',          icon: <IconDashboard />, label: 'Dashboard' },
     { to: '/tools',     icon: <IconTools />,     label: 'Tools' },
     { to: '/plugins',   icon: <IconPlugins />,   label: 'Plugins' },
-    { to: '/soul',      icon: <IconSoul />,      label: 'Soul' },
+    { to: '/soul',      icon: <IconSoul />,      label: 'System Prompt' },
     { to: '/memory',    icon: <IconMemory />,    label: 'Memory' },
     { to: '/conversations', icon: <IconConversations />, label: 'Chats' },
     { to: '/wallet',        icon: <IconWallet />,        label: 'Wallet' },

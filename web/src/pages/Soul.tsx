@@ -3,6 +3,7 @@ import { api } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
+import { Segmented } from '../components/Segmented';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
@@ -70,8 +71,8 @@ export function Soul() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
       <div className="header" style={{ marginBottom: '16px' }}>
-        <h1>Soul Editor</h1>
-        <p>Edit system prompt files</p>
+        <h1>System Prompt</h1>
+        <p>Edit your agent's system prompt files</p>
       </div>
 
       {message && (
@@ -79,16 +80,16 @@ export function Soul() {
       )}
 
       <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px' }}>
-        <div className="tabs" style={{ marginBottom: '8px' }}>
-          {SOUL_FILES.map((file) => (
-            <button
-              key={file}
-              className={`tab ${activeTab === file ? 'active' : ''}`}
-              onClick={() => handleTabSwitch(file)}
-            >
-              {file}{activeTab === file && dirty ? ' *' : ''}
-            </button>
-          ))}
+        <div style={{ marginBottom: '10px', overflowX: 'auto' }}>
+          <Segmented<string>
+            value={activeTab}
+            onChange={(f) => { void handleTabSwitch(f); }}
+            ariaLabel="System prompt file"
+            options={SOUL_FILES.map((file) => ({
+              value: file,
+              label: file + (file === activeTab && dirty ? ' •' : ''),
+            }))}
+          />
         </div>
 
         {loading ? (

@@ -8,7 +8,7 @@ const DASHBOARD_LINKS = [
   { label: 'Dashboard', path: '/' },
   { label: 'Tools', path: '/tools' },
   { label: 'Plugins', path: '/plugins' },
-  { label: 'Soul', path: '/soul' },
+  { label: 'System Prompt', path: '/soul' },
   { label: 'Memory', path: '/memory' },
   { label: 'Logs', path: '/logs' },
   { label: 'Workspace', path: '/workspace' },
