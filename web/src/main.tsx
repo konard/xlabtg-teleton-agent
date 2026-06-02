@@ -3,6 +3,8 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { initTheme } from './lib/theme'
+import { ConfirmProvider } from './components/ConfirmDialog'
+import { Toaster } from './lib/toast'
 
 initTheme()
 
@@ -20,6 +22,9 @@ window.addEventListener('load', () => sessionStorage.removeItem('chunk-reloaded'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <App />
+    <ConfirmProvider>
+      <App />
+      <Toaster />
+    </ConfirmProvider>
   </StrictMode>,
 )
