@@ -99,6 +99,24 @@ const mockLog = {
 
 const VALID_ADDRESS = "EQDtFpEwcFAEcRe5mLVh2N6C0x-_hJEM7W61_JLnSF74p4q2";
 
+/** A confirmed external-in wallet tx, for mocking on-chain send confirmation (hash = "cd"*32). */
+const CONFIRMED_TX = {
+  lt: 100n,
+  now: 2000,
+  inMessage: { info: { type: "external-in" } },
+  description: {
+    type: "generic",
+    computePhase: { type: "vm", success: true, exitCode: 0 },
+    actionPhase: { success: true, resultCode: 0, noFunds: false },
+  },
+  hash: () => Buffer.from("cd".repeat(32), "hex"),
+} as any;
+
+/** getTransactions mock: empty pre-send snapshot, then the confirmed tx on every poll. */
+function confirmingGetTransactions() {
+  return vi.fn().mockResolvedValueOnce([]).mockResolvedValue([CONFIRMED_TX]);
+}
+
 function mockResponse(data: any, status = 200): Response {
   return {
     ok: status >= 200 && status < 300,
@@ -622,11 +640,13 @@ describe("createTonSDK", () => {
 
         // Mock getCachedTonClient — returns a client with an open() method
         const mockWalletContract = {
+          address: { toString: () => "EQwallet" },
           getSeqno: vi.fn().mockResolvedValue(42),
           sendTransfer: vi.fn().mockResolvedValue(undefined),
         };
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockWalletContract),
+          getTransactions: confirmingGetTransactions(),
         });
       });
 
@@ -720,7 +740,7 @@ describe("createTonSDK", () => {
         );
 
         const result = await sdk.sendJetton(jettonAddr, recipientAddr, 10);
-        expect(result).toEqual({ success: true, seqno: 42 });
+        expect(result).toEqual({ success: true, seqno: 42, txRef: "cd".repeat(32) });
       });
 
       it("throws OPERATION_FAILED when getKeyPair returns null", async () => {
@@ -1351,6 +1371,7 @@ describe("createTonSDK", () => {
         };
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockContract),
+          getTransactions: confirmingGetTransactions(),
         });
         mocks.toNano.mockReturnValue(BigInt(50000000));
         mocks.internal.mockReturnValue({});
@@ -1491,6 +1512,7 @@ describe("createTonSDK", () => {
         };
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockContract),
+          getTransactions: confirmingGetTransactions(),
         });
 
         // Mock TonAPI jetton balances
@@ -1611,6 +1633,7 @@ describe("createTonSDK", () => {
         };
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockContract),
+          getTransactions: confirmingGetTransactions(),
         });
       });
 
@@ -1765,6 +1788,7 @@ describe("createTonSDK", () => {
 
     describe("send()", () => {
       const mockContract = {
+        address: { toString: () => VALID_ADDRESS },
         getSeqno: vi.fn().mockResolvedValue(7),
         sendTransfer: vi.fn().mockResolvedValue(undefined),
       };
@@ -1781,6 +1805,7 @@ describe("createTonSDK", () => {
         }));
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockContract),
+          getTransactions: confirmingGetTransactions(),
         });
         (withTxLock as Mock).mockImplementation((fn: () => any) => fn());
         mockContract.getSeqno.mockResolvedValue(7);
@@ -1789,9 +1814,7 @@ describe("createTonSDK", () => {
 
       it("sends with default options", async () => {
         const result = await sdk.send(VALID_ADDRESS, 1);
-        expect(result).toMatchObject({ seqno: 7 });
-        expect(result.hash).toContain("7_");
-        expect(result.hash).toContain("_send");
+        expect(result).toEqual({ hash: "cd".repeat(32), seqno: 7 });
         expect(withTxLock).toHaveBeenCalled();
       });
 
@@ -1833,6 +1856,7 @@ describe("createTonSDK", () => {
           mockContract.sendTransfer.mockResolvedValue(undefined);
           (getCachedTonClient as Mock).mockResolvedValue({
             open: vi.fn().mockReturnValue(mockContract),
+            getTransactions: confirmingGetTransactions(),
           });
           (withTxLock as Mock).mockImplementation((fn: () => any) => fn());
 
@@ -1905,6 +1929,7 @@ describe("createTonSDK", () => {
 
     describe("sendMessages()", () => {
       const mockContract = {
+        address: { toString: () => VALID_ADDRESS },
         getSeqno: vi.fn().mockResolvedValue(15),
         sendTransfer: vi.fn().mockResolvedValue(undefined),
       };
@@ -1921,6 +1946,7 @@ describe("createTonSDK", () => {
         }));
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockContract),
+          getTransactions: confirmingGetTransactions(),
         });
         (withTxLock as Mock).mockImplementation((fn: () => any) => fn());
         mockContract.getSeqno.mockResolvedValue(15);
@@ -1933,8 +1959,7 @@ describe("createTonSDK", () => {
           { to: VALID_ADDRESS, value: 2 },
         ];
         const result = await sdk.sendMessages(msgs);
-        expect(result).toMatchObject({ seqno: 15 });
-        expect(result.hash).toContain("_sendMessages");
+        expect(result).toEqual({ hash: "cd".repeat(32), seqno: 15 });
         expect(mocks.internal).toHaveBeenCalledTimes(2);
         expect(withTxLock).toHaveBeenCalled();
       });
@@ -2003,6 +2028,7 @@ describe("createTonSDK", () => {
 
     describe("createSender()", () => {
       const mockContract = {
+        address: { toString: () => VALID_ADDRESS },
         getSeqno: vi.fn().mockResolvedValue(20),
         sendTransfer: vi.fn().mockResolvedValue(undefined),
       };
@@ -2017,6 +2043,7 @@ describe("createTonSDK", () => {
         mocks.internal.mockReturnValue({});
         (getCachedTonClient as Mock).mockResolvedValue({
           open: vi.fn().mockReturnValue(mockContract),
+          getTransactions: confirmingGetTransactions(),
         });
         (withTxLock as Mock).mockImplementation((fn: () => any) => fn());
         mockContract.getSeqno.mockResolvedValue(20);

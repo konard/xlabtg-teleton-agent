@@ -34,6 +34,7 @@ import {
   invalidateTonClientCache,
 } from "../ton/wallet-service.js";
 import { sendTon } from "../ton/transfer.js";
+import { sendWalletTx } from "../ton/confirm.js";
 import { PAYMENT_TOLERANCE_RATIO } from "../constants/limits.js";
 import { withBlockchainRetry } from "../utils/retry.js";
 import { tonapiFetch, GECKOTERMINAL_API_URL } from "../constants/api-endpoints.js";
@@ -188,7 +189,7 @@ function wrapExternalMessage(wallet: WalletV5R1, transferCell: TonCell, seqno: n
  */
 async function signAndSend(
   messages: TonMessage[],
-  opts: { sendMode?: number; label: string; errorPrefix: string }
+  opts: { sendMode?: number; errorPrefix: string }
 ): Promise<TonTransferResult> {
   const keyPair = await getKeyPair();
   if (!keyPair) {
@@ -196,11 +197,10 @@ async function signAndSend(
   }
 
   try {
-    const seqno = await withTxLock(async () => {
-      const { contract, seqno: seq } = await buildWalletContext(keyPair);
-
-      await contract.sendTransfer({
-        seqno: seq,
+    const client = await getCachedTonClient();
+    const sent = await withTxLock(async () => {
+      const { contract } = await buildWalletContext(keyPair);
+      return sendWalletTx(client, contract, {
         secretKey: keyPair.secretKey,
         sendMode: opts.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
         messages: messages.map((m) =>
@@ -213,11 +213,12 @@ async function signAndSend(
           })
         ),
       });
-
-      return seq;
     });
 
-    return { hash: `${seqno}_${Date.now()}_${opts.label}`, seqno };
+    if (!sent) {
+      throw new PluginSDKError(`${opts.errorPrefix}: not confirmed on-chain`, "OPERATION_FAILED");
+    }
+    return { hash: sent.hash, seqno: sent.seqno };
   } catch (error) {
     const httpErr = isHttpError(error) ? error : undefined;
     const status = httpErr?.status || httpErr?.response?.status;
@@ -581,51 +582,30 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
         }
 
-        const seqno = await withTxLock(async () => {
-          const MAX_SEND_ATTEMPTS = 3;
-          let lastErr: unknown;
-
-          for (let attempt = 1; attempt <= MAX_SEND_ATTEMPTS; attempt++) {
-            try {
-              const { contract: walletContract, seqno: seq } = await buildWalletContext(keyPair);
-
-              await walletContract.sendTransfer({
-                seqno: seq,
-                secretKey: keyPair.secretKey,
-                sendMode: SendMode.PAY_GAS_SEPARATELY,
-                messages: [
-                  internal({
-                    to: TonAddress.parse(senderJettonWallet),
-                    value: tonToNano("0.05"),
-                    body: messageBody,
-                    bounce: true,
-                  }),
-                ],
-              });
-
-              return seq;
-            } catch (innerError) {
-              lastErr = innerError;
-              const httpErr = isHttpError(innerError) ? innerError : undefined;
-              const status = httpErr?.status || httpErr?.response?.status;
-              const respData = httpErr?.response?.data;
-              if (status === 429 || (status && status >= 500)) {
-                invalidateTonClientCache();
-                if (attempt < MAX_SEND_ATTEMPTS) {
-                  log.warn(
-                    `sendJetton attempt ${attempt} failed (${status}): ${JSON.stringify(respData ?? (innerError as Error).message)}, retrying...`
-                  );
-                  await new Promise((r) => setTimeout(r, 1000 * attempt));
-                  continue;
-                }
-              }
-              throw innerError;
-            }
-          }
-          throw lastErr;
+        const client = await getCachedTonClient();
+        const sent = await withTxLock(async () => {
+          const { contract: walletContract } = await buildWalletContext(keyPair);
+          return sendWalletTx(client, walletContract, {
+            secretKey: keyPair.secretKey,
+            messages: [
+              internal({
+                to: TonAddress.parse(senderJettonWallet),
+                value: tonToNano("0.05"),
+                body: messageBody,
+                bounce: true,
+              }),
+            ],
+          });
         });
 
-        return { success: true, seqno };
+        if (!sent) {
+          throw new PluginSDKError(
+            "Jetton transfer failed or could not be confirmed on-chain",
+            "OPERATION_FAILED"
+          );
+        }
+
+        return { success: true, seqno: sent.seqno, txRef: sent.hash };
       } catch (error) {
         // Invalidate node cache on 429/5xx so next attempt picks a fresh node
         const outerHttpErr = isHttpError(error) ? error : undefined;
@@ -1192,7 +1172,7 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
 
       return signAndSend(
         [{ to, value, body: opts?.body, bounce: opts?.bounce, stateInit: opts?.stateInit }],
-        { sendMode: opts?.sendMode, label: "send", errorPrefix: "Failed to send" }
+        { sendMode: opts?.sendMode, errorPrefix: "Failed to send" }
       );
     },
 
@@ -1228,7 +1208,6 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
 
       return signAndSend(messages, {
         sendMode: opts?.sendMode,
-        label: "sendMessages",
         errorPrefix: "Failed to send messages",
       });
     },
@@ -1255,34 +1234,28 @@ export function createTonSDK(log: PluginLogger, db: Database.Database | null): T
           if (args.sendMode !== undefined && (args.sendMode < 0 || args.sendMode > 3)) {
             throw new PluginSDKError("Unsafe sendMode", "OPERATION_FAILED");
           }
-          try {
-            await withTxLock(async () => {
-              const client = await getCachedTonClient();
-              const contract = client.open(wallet);
-              const seqno = await contract.getSeqno();
-
-              await contract.sendTransfer({
-                seqno,
-                secretKey: keyPair.secretKey,
-                sendMode: args.sendMode ?? SendMode.PAY_GAS_SEPARATELY,
-                messages: [
-                  internal({
-                    to: args.to,
-                    value: args.value,
-                    body: args.body,
-                    bounce: args.bounce ?? true,
-                    init: args.init ?? undefined,
-                  }),
-                ],
-              });
+          const client = await getCachedTonClient();
+          const sent = await withTxLock(async () => {
+            const contract = client.open(wallet);
+            return sendWalletTx(client, contract, {
+              secretKey: keyPair.secretKey,
+              sendMode: args.sendMode,
+              messages: [
+                internal({
+                  to: args.to,
+                  value: args.value,
+                  body: args.body,
+                  bounce: args.bounce ?? true,
+                  init: args.init ?? undefined,
+                }),
+              ],
             });
-          } catch (error) {
-            const httpErr = isHttpError(error) ? error : undefined;
-            const status = httpErr?.status || httpErr?.response?.status;
-            if (status === 429 || (status !== undefined && status >= 500)) {
-              invalidateTonClientCache();
-            }
-            throw error;
+          });
+          if (!sent) {
+            throw new PluginSDKError(
+              "Transaction failed or could not be confirmed on-chain",
+              "OPERATION_FAILED"
+            );
           }
         },
       };
