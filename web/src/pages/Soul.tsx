@@ -102,11 +102,11 @@ export function Soul() {
               placeholder={`Edit ${activeTab}...`}
               style={{ flex: 1, minHeight: '200px' }}
             />
-            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button onClick={saveFile} disabled={saving || !dirty}>
-                {saving ? 'Saving...' : 'Save'}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+              {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>Unsaved changes</span>}
+              <button className="btn-sm" onClick={saveFile} disabled={saving || !dirty}>
+                {saving ? 'Saving…' : 'Save'}
               </button>
-              {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Unsaved changes</span>}
             </div>
           </>
         )}
