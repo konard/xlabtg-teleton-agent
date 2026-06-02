@@ -1,4 +1,4 @@
-import { useState, Fragment } from 'react';
+import { useState } from 'react';
 import { api, ConversationChat, ConversationMessage } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchBar } from '../components/SearchBar';
@@ -18,17 +18,14 @@ export function Conversations() {
     [],
   );
 
-  const [expandedChat, setExpandedChat] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ConversationMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
 
-  const toggleChat = async (chatId: string) => {
-    if (expandedChat === chatId) {
-      setExpandedChat(null);
-      setMessages([]);
-      return;
-    }
-    setExpandedChat(chatId);
+  const selectChat = async (chatId: string) => {
+    if (selectedId === chatId) return;
+    setSelectedId(chatId);
+    setMessages([]);
     setMessagesLoading(true);
     try {
       const res = await api.getConversationMessages(chatId);
@@ -51,6 +48,10 @@ export function Conversations() {
       )
     : allChats;
 
+  const selected = allChats.find((c) => c.id === selectedId) ?? null;
+  const selectedName = selected ? (selected.title || selected.username || selected.id) : '';
+  const selectedIsGroup = selected ? selected.type !== 'dm' : false;
+
   return (
     <div>
       <div className="header">
@@ -60,85 +61,88 @@ export function Conversations() {
 
       {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
 
-      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px' }}>
-        <div style={{ flex: 1 }}>
-          <SearchBar value={filter} onChange={setFilter} placeholder="Filter chats…" />
-        </div>
-        <RefreshButton onRefresh={reload} />
-      </div>
+      <div className="chat-layout">
+        <aside className="chat-list-pane">
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ flex: 1 }}>
+              <SearchBar value={filter} onChange={setFilter} placeholder="Filter chats…" />
+            </div>
+            <RefreshButton onRefresh={reload} />
+          </div>
 
-      {loading ? (
-        <SkeletonRows />
-      ) : filtered.length === 0 ? (
-        <div className="card" style={{ padding: 0 }}>
-          {filter ? (
-            <EmptyState
-              title="No matching chats"
-              description="No conversations match your filter."
-              action={<button className="btn-ghost btn-sm" onClick={() => setFilter('')}>Clear filter</button>}
-            />
+          <div className="chat-list-scroll">
+            {loading ? (
+              <SkeletonRows />
+            ) : filtered.length === 0 ? (
+              <EmptyState
+                title={filter ? 'No matching chats' : 'No conversations'}
+                description={filter ? undefined : 'Chat history appears here once the agent starts talking.'}
+                action={filter ? <button className="btn-ghost btn-sm" onClick={() => setFilter('')}>Clear filter</button> : undefined}
+              />
+            ) : (
+              <List>
+                {filtered.map((chat) => {
+                  const name = chat.title || chat.username || chat.id;
+                  return (
+                    <ListRow
+                      key={chat.id}
+                      className={chat.id === selectedId ? 'selected' : undefined}
+                      leading={name.charAt(0).toUpperCase()}
+                      title={name}
+                      subtitle={`${chat.type} · ${chat.message_count} ${chat.message_count === 1 ? 'msg' : 'msgs'}`}
+                      onClick={() => selectChat(chat.id)}
+                    />
+                  );
+                })}
+              </List>
+            )}
+          </div>
+        </aside>
+
+        <section className="chat-detail-pane">
+          {!selected ? (
+            <EmptyState title="Select a conversation" description="Choose a chat to view its messages." />
           ) : (
-            <EmptyState title="No conversations yet" description="Chat history appears here once the agent starts talking." />
-          )}
-        </div>
-      ) : (
-        <List>
-          {filtered.map((chat) => {
-            const isExpanded = expandedChat === chat.id;
-            const name = chat.title || chat.username || chat.id;
-            const isGroup = chat.type !== 'dm';
-            return (
-              <Fragment key={chat.id}>
-                <ListRow
-                  leading={name.charAt(0).toUpperCase()}
-                  title={name}
-                  subtitle={`${chat.type} · ${chat.message_count} ${chat.message_count === 1 ? 'message' : 'messages'}`}
-                  disclosure
-                  expanded={isExpanded}
-                  onClick={() => toggleChat(chat.id)}
-                  trailing={
-                    chat.last_message_at ? (
-                      <span style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)' }}>
-                        {formatDate(chat.last_message_at, 1000)}
-                      </span>
-                    ) : undefined
-                  }
-                />
-                {isExpanded && (
-                  <div className="ios-sublist">
-                    {messagesLoading ? (
-                      <div style={{ padding: '14px 16px' }}><SkeletonRows rows={3} /></div>
-                    ) : messages.length === 0 ? (
-                      <div style={{ padding: '14px 16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>
-                        No messages
-                      </div>
-                    ) : (
-                      <div className="chat-thread">
-                        {messages.map((msg) => {
-                          const out = msg.is_from_agent === 1;
-                          return (
-                            <div key={msg.id} className={`chat-msg ${out ? 'out' : 'in'}`}>
-                              {!out && isGroup && <span className="chat-sender">{msg.sender_id || 'Unknown'}</span>}
-                              {msg.text ? (
-                                <div className="chat-bubble"><Markdown>{msg.text}</Markdown></div>
-                              ) : (
-                                <div className="chat-bubble media">
-                                  {msg.has_media ? `[${msg.media_type || 'media'}]` : '[empty]'}
-                                </div>
-                              )}
-                              <span className="chat-time">{formatDate(msg.timestamp, 1000)}</span>
+            <>
+              <div className="chat-detail-head">
+                <div className="ios-row-lead">{selectedName.charAt(0).toUpperCase()}</div>
+                <div style={{ minWidth: 0 }}>
+                  <div className="ios-row-title">{selectedName}</div>
+                  <div className="ios-row-sub">{selected.type} · {selected.message_count} {selected.message_count === 1 ? 'message' : 'messages'}</div>
+                </div>
+              </div>
+              <div className="chat-detail-body">
+                {messagesLoading ? (
+                  <div style={{ padding: '16px' }}><SkeletonRows rows={5} /></div>
+                ) : messages.length === 0 ? (
+                  <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>
+                    No messages
+                  </div>
+                ) : (
+                  <div className="chat-thread">
+                    {messages.map((msg) => {
+                      const out = msg.is_from_agent === 1;
+                      return (
+                        <div key={msg.id} className={`chat-msg ${out ? 'out' : 'in'}`}>
+                          {!out && selectedIsGroup && <span className="chat-sender">{msg.sender_id || 'Unknown'}</span>}
+                          {msg.text ? (
+                            <div className="chat-bubble"><Markdown>{msg.text}</Markdown></div>
+                          ) : (
+                            <div className="chat-bubble media">
+                              {msg.has_media ? `[${msg.media_type || 'media'}]` : '[empty]'}
                             </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                          )}
+                          <span className="chat-time">{formatDate(msg.timestamp, 1000)}</span>
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
-              </Fragment>
-            );
-          })}
-        </List>
-      )}
+              </div>
+            </>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
