@@ -1,11 +1,11 @@
 // src/agent/tools/web/fetch.ts
 
 import { Type } from "@sinclair/typebox";
-import { tavily } from "@tavily/core";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
+import type { Tool, ToolExecutor } from "../types.js";
 import { WEB_FETCH_MAX_TEXT_LENGTH } from "../../../constants/limits.js";
 import { sanitizeForContext } from "../../../utils/sanitize.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import { withToolErrors } from "../wrap.js";
+import { resolveTavily } from "./tavily.js";
 
 interface WebFetchParams {
   url: string;
@@ -28,19 +28,10 @@ export const webFetchTool: Tool = {
   }),
 };
 
-export const webFetchExecutor: ToolExecutor<WebFetchParams> = async (
-  params,
-  context
-): Promise<ToolResult> => {
-  try {
-    const apiKey = context.config?.tavily_api_key;
-    if (!apiKey) {
-      return {
-        success: false,
-        error:
-          "Tavily API key not configured. Set tavily_api_key in config.yaml (free at https://tavily.com)",
-      };
-    }
+export const webFetchExecutor: ToolExecutor<WebFetchParams> = withToolErrors<WebFetchParams>(
+  async (params, context) => {
+    const tav = resolveTavily(context);
+    if (!tav.ok) return tav.error;
 
     const { url, max_length = WEB_FETCH_MAX_TEXT_LENGTH } = params;
 
@@ -59,7 +50,7 @@ export const webFetchExecutor: ToolExecutor<WebFetchParams> = async (
       };
     }
 
-    const client = tavily({ apiKey });
+    const client = tav.client;
     const response = await client.extract([url], {
       extractDepth: "basic",
     });
@@ -92,10 +83,5 @@ export const webFetchExecutor: ToolExecutor<WebFetchParams> = async (
         truncated,
       },
     };
-  } catch (error) {
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
   }
-};
+);

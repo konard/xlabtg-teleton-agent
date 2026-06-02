@@ -12,7 +12,6 @@ const log = createLogger("Tools");
 interface SendDiceParams {
   chat_id: string;
   emoticon?: "🎲" | "🎯" | "🏀" | "⚽" | "🎰" | "🎳";
-  reply_to?: number;
 }
 
 export const telegramSendDiceTool: Tool = {
@@ -27,11 +26,6 @@ export const telegramSendDiceTool: Tool = {
       Type.String({
         description: "Dice type: 🎲 (default), 🎯, 🏀, ⚽, 🎰, or 🎳",
         enum: ["🎲", "🎯", "🏀", "⚽", "🎰", "🎳"],
-      })
-    ),
-    reply_to: Type.Optional(
-      Type.Number({
-        description: "Message ID to reply to",
       })
     ),
   }),

@@ -1,5 +1,6 @@
-// Re-export shim for backward compatibility
-export { GramJSUserBridge as TelegramBridge } from "./bridges/user.js";
+// Type re-export shim for backward compatibility. (The former
+// `GramJSUserBridge as TelegramBridge` value alias was unused and ambiguous with
+// ITelegramBridge — removed; import the class from ./bridges/user.js directly.)
 export type {
   TelegramMessage,
   InlineButton,

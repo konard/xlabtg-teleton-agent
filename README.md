@@ -85,7 +85,7 @@
 ## Prerequisites
 
 - **Node.js 20.0.0+** - [Download](https://nodejs.org/)
-- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Claude Code (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
+- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Codex (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
 - **Telegram Account** - Dedicated account recommended for security
 - **Telegram API Credentials** - From [my.telegram.org/apps](https://my.telegram.org/apps)
 - **Your Telegram User ID** - Message [@userinfobot](https://t.me/userinfobot)
@@ -172,7 +172,7 @@ The `teleton setup` wizard generates a fully configured `~/.teleton/config.yaml`
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
+  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
   api_key: "sk-ant-api03-..."
   model: "claude-haiku-4-5-20251001"
   utility_model: "claude-haiku-4-5-20251001"  # for summarization, compaction, vision
@@ -219,7 +219,7 @@ ton_proxy:                   # Optional: .ton domain proxy
 <table>
 <tr>
 <td align="center" width="20%"><br><b>Anthropic</b><br>Claude Opus 4.6<br><br></td>
-<td align="center" width="20%"><br><b>Claude Code</b><br>Auto-detected<br><br></td>
+<td align="center" width="20%"><br><b>Codex</b><br>Auto-detected<br><br></td>
 <td align="center" width="20%"><br><b>OpenAI</b><br>GPT-5<br><br></td>
 <td align="center" width="20%"><br><b>Google</b><br>Gemini 3 Pro<br><br></td>
 <td align="center" width="20%"><br><b>xAI</b><br>Grok 4.1<br><br></td>
@@ -475,7 +475,7 @@ The SDK provides namespaced access to core services:
 
 | Layer | Technology |
 |-------|------------|
-| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
+| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Codex, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
 | Telegram Userbot | [GramJS](https://gram.js.org/) Layer 223 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |

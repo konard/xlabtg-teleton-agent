@@ -3,13 +3,15 @@ interface SearchInputProps {
   onChange: (value: string) => void;
   placeholder?: string;
   style?: React.CSSProperties;
+  wrapperStyle?: React.CSSProperties;
 }
 
-export function SearchInput({ value, onChange, placeholder = 'Search...', style }: SearchInputProps) {
+export function SearchInput({ value, onChange, placeholder = 'Search...', style, wrapperStyle }: SearchInputProps) {
   return (
-    <div style={{ position: 'relative' }}>
+    <div style={{ position: 'relative', ...wrapperStyle }}>
       <input
         type="text"
+        aria-label={placeholder}
         placeholder={placeholder}
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -27,6 +29,8 @@ export function SearchInput({ value, onChange, placeholder = 'Search...', style 
       />
       {value && (
         <button
+          type="button"
+          aria-label="Clear search"
           onClick={() => onChange('')}
           style={{
             position: 'absolute',

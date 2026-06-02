@@ -1,8 +1,17 @@
-import { Select } from './Select';
+import { PillTabs } from './PillTabs';
 import { EditableField } from './EditableField';
 import { InfoTip } from './InfoTip';
 import { ArrayInput } from './ArrayInput';
 import type { ConfigKeyData } from '../lib/api';
+
+// Global "who does the agent respond to" policy — same All/List/Admin/Off
+// vocabulary as per-tool access levels, but persisted as the policy enum.
+export const POLICY_OPTIONS = [
+  { value: 'open', label: 'All' },
+  { value: 'allowlist', label: 'List' },
+  { value: 'admin-only', label: 'Admin' },
+  { value: 'disabled', label: 'Off' },
+];
 
 interface TelegramSettingsPanelProps {
   getLocal: (key: string) => string;
@@ -100,11 +109,11 @@ export function TelegramSettingsPanel({
                 <InfoTip text="Controls who can DM the agent. 'Open' = anyone, 'Allow Users' = only IDs in the allow list below, 'Admin Only' = only admins." />
               </span>
             </label>
-            <Select
+            <PillTabs
               value={getLocal('telegram.dm_policy')}
-              options={['admin-only', 'allowlist', 'open', 'disabled']}
-              labels={['Admin Only', 'Allow Users', 'Open', 'Disabled']}
+              options={POLICY_OPTIONS}
               onChange={(v) => saveConfig('telegram.dm_policy', v)}
+              ariaLabel="DM policy"
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -114,14 +123,62 @@ export function TelegramSettingsPanel({
                 <InfoTip text="Controls which group chats the agent responds in. 'Open' = all groups, 'Allow Groups' = only IDs in the allow list, 'Admin Only' = only admin-owned groups." />
               </span>
             </label>
-            <Select
+            <PillTabs
               value={getLocal('telegram.group_policy')}
-              options={['admin-only', 'allowlist', 'open', 'disabled']}
-              labels={['Admin Only', 'Allow Groups', 'Open', 'Disabled']}
+              options={POLICY_OPTIONS}
               onChange={(v) => saveConfig('telegram.group_policy', v)}
+              ariaLabel="Group policy"
             />
           </div>
         </div>
+
+        {/* ── Access Control — who 'List' / 'Admin' resolve to ── */}
+        {onArraySave && (
+          <div style={{ display: 'grid', gap: '14px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Admin IDs
+                  <InfoTip text="Telegram user IDs with full control: can use all tools, bypass restrictions, and manage the agent. Backs the 'Admin' option." />
+                </span>
+              </label>
+              <ArrayInput
+                value={getArrayValue(getLocal('telegram.admin_ids'))}
+                onChange={(values) => onArraySave('telegram.admin_ids', values)}
+                validate={(v) => (/^\d+$/.test(v) ? null : 'Must be a number')}
+                placeholder="Enter ID..."
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Allowed Users
+                  <InfoTip text="Telegram user IDs allowed when DM Policy (or a tool) is set to 'List'." />
+                </span>
+              </label>
+              <ArrayInput
+                value={getArrayValue(getLocal('telegram.allow_from'))}
+                onChange={(values) => onArraySave('telegram.allow_from', values)}
+                validate={(v) => (/^\d+$/.test(v) ? null : 'Must be a number')}
+                placeholder="Enter ID..."
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Allowed Groups
+                  <InfoTip text="Group/channel IDs allowed when Group Policy is set to 'List'." />
+                </span>
+              </label>
+              <ArrayInput
+                value={getArrayValue(getLocal('telegram.group_allow_from'))}
+                onChange={(values) => onArraySave('telegram.group_allow_from', values)}
+                validate={(v) => (/^\d+$/.test(v) ? null : 'Must be a number')}
+                placeholder="Enter ID..."
+              />
+            </div>
+          </div>
+        )}
 
         {/* ── Behavior (toggles, immediate-save) ────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -203,54 +260,6 @@ export function TelegramSettingsPanel({
                 inline
               />
             </div>
-
-            {/* ── Access Control (ArrayInput) ───────────────────── */}
-            {onArraySave && (
-              <div style={{ display: 'grid', gap: '16px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Admin IDs
-                      <InfoTip text="Telegram user IDs with full control: can use all tools, bypass restrictions, and manage the agent." />
-                    </span>
-                  </label>
-                  <ArrayInput
-                    value={getArrayValue(getLocal('telegram.admin_ids'))}
-                    onChange={(values) => onArraySave('telegram.admin_ids', values)}
-                    validate={(v) => /^\d+$/.test(v) ? null : 'Must be a number'}
-                    placeholder="Enter ID..."
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Allowed Users
-                      <InfoTip text="Telegram user IDs that can DM the agent when DM policy is set to 'Allow Users'." />
-                    </span>
-                  </label>
-                  <ArrayInput
-                    value={getArrayValue(getLocal('telegram.allow_from'))}
-                    onChange={(values) => onArraySave('telegram.allow_from', values)}
-                    validate={(v) => /^\d+$/.test(v) ? null : 'Must be a number'}
-                    placeholder="Enter ID..."
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Allowed Groups
-                      <InfoTip text="Group/channel IDs where the agent can respond when group policy is set to 'Allow Groups'." />
-                    </span>
-                  </label>
-                  <ArrayInput
-                    value={getArrayValue(getLocal('telegram.group_allow_from'))}
-                    onChange={(values) => onArraySave('telegram.group_allow_from', values)}
-                    validate={(v) => /^\d+$/.test(v) ? null : 'Must be a number'}
-                    placeholder="Enter ID..."
-                  />
-                </div>
-              </div>
-            )}
 
             {/* ── Rate Limits (EditableField, restart badge) ────── */}
             <div style={{ display: 'grid', gap: '12px' }}>

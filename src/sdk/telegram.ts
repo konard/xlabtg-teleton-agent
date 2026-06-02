@@ -1,5 +1,5 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type { ITelegramBridge } from "../telegram/bridge-interface.js";
+import { isUserBridge } from "../telegram/bridge-guards.js";
 import type { TelegramSDK, TelegramUser, SimpleMessage, PluginLogger } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
 import { getErrorMessage } from "../utils/errors.js";
@@ -97,6 +97,7 @@ export function createTelegramSDK(
     },
 
     async getMessages(chatId, limit): Promise<SimpleMessage[]> {
+      requireUserMode("getMessages");
       requireBridge();
       try {
         const messages = await bridge.getMessages(chatId, limit ?? 50);
@@ -116,7 +117,8 @@ export function createTelegramSDK(
     getMe(): TelegramUser | null {
       requireUserMode("getMe");
       try {
-        const me = (bridge.getRawClient() as any)?.getMe?.();
+        if (!isUserBridge(bridge)) return null;
+        const me = bridge.getClient().getMe();
         if (!me) return null;
         return {
           id: Number(me.id),
@@ -138,7 +140,7 @@ export function createTelegramSDK(
       log.warn("getRawClient() called — this bypasses SDK sandbox guarantees");
       if (!bridge.isAvailable()) return null;
       try {
-        return bridge.getRawClient();
+        return isUserBridge(bridge) ? bridge.getClient() : null;
       } catch {
         return null;
       }

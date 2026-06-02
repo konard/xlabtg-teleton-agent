@@ -1,9 +1,6 @@
 import {
   complete,
   stream,
-  getModel,
-  type Model,
-  type Api,
   type Context,
   type AssistantMessage,
   type Message,
@@ -12,20 +9,37 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AgentConfig } from "../config/schema.js";
 import { appendToTranscript, readTranscript } from "../session/transcript.js";
-import { getProviderMetadata, type SupportedProvider } from "../config/providers.js";
+import type { SupportedProvider } from "../config/providers.js";
 import { sanitizeToolsForGemini } from "./schema-sanitizer.js";
 import { createLogger } from "../utils/logger.js";
-import { fetchWithTimeout } from "../utils/fetch.js";
-import {
-  getClaudeCodeApiKey,
-  refreshClaudeCodeApiKey,
-} from "../providers/claude-code-credentials.js";
 import { getCodexApiKey, refreshCodexApiKey } from "../providers/codex-credentials.js";
+import { getProviderModel } from "../providers/model-resolver.js";
+
+// Model resolution + provider model registration live in the neutral providers/
+// layer so non-agent consumers (e.g. memory) can resolve models without importing
+// from agent/. Re-exported here for backward compatibility with existing importers.
+export {
+  registerCocoonModels,
+  registerLocalModels,
+  getProviderModel,
+  getUtilityModel,
+} from "../providers/model-resolver.js";
 
 const log = createLogger("LLM");
 
+/** 401/Unauthorized detection for the one-shot credential-refresh retry. */
+function isUnauthorizedError(errorMessage?: string): boolean {
+  if (!errorMessage) return false;
+  return errorMessage.includes("401") || errorMessage.toLowerCase().includes("unauthorized");
+}
+
+/** Providers whose credentials can be refreshed once on a 401, then the call retried. */
+const RETRY_401_PROVIDERS: { provider: string; refresh: () => Promise<string | null> }[] = [
+  { provider: "codex", refresh: refreshCodexApiKey },
+];
+
 export function isOAuthToken(apiKey: string, provider?: string): boolean {
-  if (provider && provider !== "anthropic" && provider !== "claude-code") return false;
+  if (provider && provider !== "anthropic") return false;
   return apiKey.startsWith("sk-ant-oat01-");
 }
 
@@ -33,189 +47,8 @@ export function isOAuthToken(apiKey: string, provider?: string): boolean {
 export function getEffectiveApiKey(provider: string, rawKey: string): string {
   if (provider === "local") return "local";
   if (provider === "cocoon") return "";
-  if (provider === "claude-code") return getClaudeCodeApiKey(rawKey);
   if (provider === "codex") return getCodexApiKey(rawKey);
   return rawKey;
-}
-
-const modelCache = new Map<string, Model<Api>>();
-
-const COCOON_MODELS: Record<string, Model<"openai-completions">> = {};
-
-/** Register models discovered from a running Cocoon client */
-export async function registerCocoonModels(httpPort: number): Promise<string[]> {
-  try {
-    const res = await fetchWithTimeout(`http://localhost:${httpPort}/v1/models`, {
-      timeoutMs: 3000,
-    });
-    if (!res.ok) return [];
-    const body = (await res.json()) as {
-      data?: { id?: string; name?: string }[];
-      models?: { id?: string; name?: string }[];
-    };
-    const models = body.data || body.models || [];
-    if (!Array.isArray(models)) return [];
-    const ids: string[] = [];
-    for (const m of models) {
-      const id = m.id || m.name || String(m);
-      COCOON_MODELS[id] = {
-        id,
-        name: id,
-        api: "openai-completions",
-        provider: "cocoon",
-        baseUrl: `http://localhost:${httpPort}/v1`,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 4096,
-        compat: {
-          supportsStore: false,
-          supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
-        },
-      };
-      ids.push(id);
-    }
-    return ids;
-  } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError") {
-      log.warn({ port: httpPort }, "Cocoon /v1/models timed out after 3s, returning empty list");
-    }
-    return [];
-  }
-}
-
-const LOCAL_MODELS: Record<string, Model<"openai-completions">> = {};
-
-/** Register models discovered from a local OpenAI-compatible server */
-export async function registerLocalModels(baseUrl: string): Promise<string[]> {
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      log.warn(`Local LLM base_url must use http or https (got ${parsed.protocol})`);
-      return [];
-    }
-    const url = baseUrl.replace(/\/+$/, "");
-    const res = await fetchWithTimeout(`${url}/models`, { timeoutMs: 10_000 });
-    if (!res.ok) return [];
-    const body = (await res.json()) as {
-      data?: { id?: string; name?: string }[];
-      models?: { id?: string; name?: string }[];
-    };
-    const rawModels = body.data || body.models || [];
-    if (!Array.isArray(rawModels)) return [];
-    const models = rawModels.slice(0, 500);
-    const ids: string[] = [];
-    for (const m of models) {
-      const id = m.id || m.name || String(m);
-      LOCAL_MODELS[id] = {
-        id,
-        name: id,
-        api: "openai-completions",
-        provider: "local",
-        baseUrl: url,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 4096,
-        compat: {
-          supportsStore: false,
-          supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
-          supportsStrictMode: false,
-          maxTokensField: "max_tokens",
-        },
-      };
-      ids.push(id);
-    }
-    return ids;
-  } catch {
-    return [];
-  }
-}
-
-/** Moonshot backward-compat: old model IDs → kimi-coding IDs */
-const MOONSHOT_MODEL_ALIASES: Record<string, string> = {
-  "kimi-k2.5": "kimi-for-coding",
-  k2p6: "kimi-for-coding",
-};
-
-export function getProviderModel(provider: SupportedProvider, modelId: string): Model<Api> {
-  const cacheKey = `${provider}:${modelId}`;
-  const cached = modelCache.get(cacheKey);
-  if (cached) return cached;
-
-  const meta = getProviderMetadata(provider);
-
-  if (meta.piAiProvider === "cocoon") {
-    let model = COCOON_MODELS[modelId];
-    if (!model) {
-      model = Object.values(COCOON_MODELS)[0];
-      if (model) log.warn(`Cocoon model "${modelId}" not found, using "${model.id}"`);
-    }
-    if (model) {
-      modelCache.set(cacheKey, model);
-      return model;
-    }
-    throw new Error("No Cocoon models available. Is the cocoon client running?");
-  }
-
-  if (meta.piAiProvider === "local") {
-    let model = LOCAL_MODELS[modelId];
-    if (!model) {
-      model = Object.values(LOCAL_MODELS)[0];
-      if (model) log.warn(`Local model "${modelId}" not found, using "${model.id}"`);
-    }
-    if (model) {
-      modelCache.set(cacheKey, model);
-      return model;
-    }
-    throw new Error("No local models available. Is the LLM server running?");
-  }
-
-  // Moonshot backward-compat: remap old model IDs to kimi-coding IDs
-  if (provider === "moonshot" && MOONSHOT_MODEL_ALIASES[modelId]) {
-    modelId = MOONSHOT_MODEL_ALIASES[modelId];
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- getModel requires literal provider+model types; dynamic strings need casts
-    const model = getModel(meta.piAiProvider as any, modelId as any);
-    if (!model) {
-      throw new Error(`getModel returned undefined for ${provider}/${modelId}`);
-    }
-    modelCache.set(cacheKey, model);
-    return model;
-  } catch {
-    log.warn(`Model ${modelId} not found for ${provider}, falling back to ${meta.defaultModel}`);
-    const fallbackKey = `${provider}:${meta.defaultModel}`;
-    const fallbackCached = modelCache.get(fallbackKey);
-    if (fallbackCached) return fallbackCached;
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same as above: dynamic strings
-      const model = getModel(meta.piAiProvider as any, meta.defaultModel as any);
-      if (!model) {
-        throw new Error(
-          `Fallback model ${meta.defaultModel} also returned undefined for ${provider}`
-        );
-      }
-      modelCache.set(fallbackKey, model);
-      return model;
-    } catch {
-      throw new Error(
-        `Could not find model ${modelId} or fallback ${meta.defaultModel} for ${provider}`
-      );
-    }
-  }
-}
-
-export function getUtilityModel(provider: SupportedProvider, overrideModel?: string): Model<Api> {
-  const meta = getProviderMetadata(provider);
-  const modelId = overrideModel || meta.utilityModel;
-  return getProviderModel(provider, modelId);
 }
 
 export interface ChatOptions {
@@ -232,6 +65,39 @@ export interface ChatResponse {
   message: AssistantMessage;
   text: string;
   context: Context;
+}
+
+const THINK_RE = /<think>[\s\S]*?<\/think>/g;
+
+/**
+ * Shared post-processing for both complete() and stream() responses: strip
+ * <think> blocks (Cocoon, Mistral, etc.), persist the transcript, extract the
+ * text content, and append the response to the context.
+ */
+function finalizeResponse(
+  response: AssistantMessage,
+  context: Context,
+  options: ChatOptions
+): ChatResponse {
+  for (const block of response.content) {
+    if (block.type === "text" && block.text.includes("<think>")) {
+      block.text = block.text.replace(THINK_RE, "").trim();
+    }
+  }
+
+  if (options.persistTranscript && options.sessionId) {
+    appendToTranscript(options.sessionId, response);
+  }
+
+  const textContent = response.content.find((block) => block.type === "text");
+  const text = textContent?.type === "text" ? textContent.text : "";
+
+  const updatedContext: Context = {
+    ...context,
+    messages: [...context.messages, response],
+  };
+
+  return { message: response, text, context: updatedContext };
 }
 
 export async function chatWithContext(
@@ -280,32 +146,11 @@ export async function chatWithContext(
 
   let response = await complete(model, context, completeOptions as ProviderStreamOptions);
 
-  // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials
-  if (
-    provider === "claude-code" &&
-    response.stopReason === "error" &&
-    response.errorMessage &&
-    (response.errorMessage.includes("401") ||
-      response.errorMessage.toLowerCase().includes("unauthorized"))
-  ) {
-    log.warn("Claude Code token rejected (401), refreshing credentials and retrying...");
-    const refreshedKey = await refreshClaudeCodeApiKey();
-    if (refreshedKey) {
-      completeOptions.apiKey = refreshedKey;
-      response = await complete(model, context, completeOptions as ProviderStreamOptions);
-    }
-  }
-
-  // Codex provider: retry once on 401/Unauthorized by re-reading credentials
-  if (
-    provider === "codex" &&
-    response.stopReason === "error" &&
-    response.errorMessage &&
-    (response.errorMessage.includes("401") ||
-      response.errorMessage.toLowerCase().includes("unauthorized"))
-  ) {
-    log.warn("Codex token rejected (401), re-reading credentials and retrying...");
-    const refreshedKey = await refreshCodexApiKey();
+  // Refreshable providers: retry once on 401/Unauthorized by refreshing credentials
+  const retry401 = RETRY_401_PROVIDERS.find((e) => e.provider === provider);
+  if (retry401 && response.stopReason === "error" && isUnauthorizedError(response.errorMessage)) {
+    log.warn(`${provider} token rejected (401), refreshing credentials and retrying...`);
+    const refreshedKey = await retry401.refresh();
     if (refreshedKey) {
       completeOptions.apiKey = refreshedKey;
       response = await complete(model, context, completeOptions as ProviderStreamOptions);
@@ -330,31 +175,7 @@ export async function chatWithContext(
     }
   }
 
-  // Strip <think> blocks from all providers (Cocoon, Mistral, etc.)
-  const thinkRe = /<think>[\s\S]*?<\/think>/g;
-  for (const block of response.content) {
-    if (block.type === "text" && block.text.includes("<think>")) {
-      block.text = block.text.replace(thinkRe, "").trim();
-    }
-  }
-
-  if (options.persistTranscript && options.sessionId) {
-    appendToTranscript(options.sessionId, response);
-  }
-
-  const textContent = response.content.find((block) => block.type === "text");
-  const text = textContent?.type === "text" ? textContent.text : "";
-
-  const updatedContext: Context = {
-    ...context,
-    messages: [...context.messages, response],
-  };
-
-  return {
-    message: response,
-    text,
-    context: updatedContext,
-  };
+  return finalizeResponse(response, context, options);
 }
 
 export interface StreamResult {
@@ -405,28 +226,7 @@ export function streamWithContext(config: AgentConfig, options: ChatOptions): St
   // Result promise: wait for the stream to complete and build ChatResponse
   const resultPromise = (async (): Promise<ChatResponse> => {
     const response = await eventStream.result();
-
-    // Strip <think> blocks
-    const thinkRe = /<think>[\s\S]*?<\/think>/g;
-    for (const block of response.content) {
-      if (block.type === "text" && block.text.includes("<think>")) {
-        block.text = block.text.replace(thinkRe, "").trim();
-      }
-    }
-
-    if (options.persistTranscript && options.sessionId) {
-      appendToTranscript(options.sessionId, response);
-    }
-
-    const textContent = response.content.find((block) => block.type === "text");
-    const text = textContent?.type === "text" ? textContent.text : "";
-
-    const updatedContext: Context = {
-      ...context,
-      messages: [...context.messages, response],
-    };
-
-    return { message: response, text, context: updatedContext };
+    return finalizeResponse(response, context, options);
   })();
 
   return { textStream: textDeltas(), result: resultPromise };

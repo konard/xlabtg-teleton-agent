@@ -1,116 +1,169 @@
-import { useEffect, useRef, useSyncExternalStore, useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useConfigState } from '../hooks/useConfigState';
-import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
-import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
+import { POLICY_OPTIONS } from '../components/TelegramSettingsPanel';
+import { AllowLists } from '../components/AllowLists';
 import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
-import { logStore } from '../lib/log-store';
+import { PillTabs } from '../components/PillTabs';
+import { InfoTip } from '../components/InfoTip';
+import { Select } from '../components/Select';
+import { ProviderSwitchZone, PROVIDER_OPTIONS, PROVIDER_LABELS } from '../components/ProviderControl';
 import { api, StatusData } from '../lib/api';
+import { errMsg } from '../lib/utils';
+import { Skeleton } from '../components/Skeleton';
+import { Alert } from '../components/Alert';
 
-function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+const PLATFORM_LABEL: Record<string, string> = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
+
+function fmtUptime(sec: number): string {
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+}
+
+function StatItem({ label, value, mono, to }: { label: string; value: string | number; mono?: boolean; to?: string }) {
+  const navigate = useNavigate();
+  const clickable = !!to;
   return (
-    <div className="metric">
-      <span className="metric-label">{label}</span>
-      <span className={`metric-value${mono ? ' mono' : ''}`}>{value}</span>
-    </div>
+    <span
+      className={`stat-item${clickable ? ' clickable' : ''}`}
+      onClick={clickable ? () => navigate(to) : undefined}
+      {...(clickable ? { role: 'button', tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter') navigate(to); } } : {})}
+    >
+      <span className={`stat-v${mono ? ' mono' : ''}`}>{value}</span>
+      <span className="stat-k">{label}</span>
+    </span>
   );
 }
 
 export function Dashboard() {
   const {
     loading, error, setError, status, stats,
-    getLocal, getServer, setLocal, cancelLocal, saveConfig,
+    getLocal, saveConfig,
     modelOptions, pendingProvider, pendingMeta,
     pendingApiKey, setPendingApiKey,
     pendingValidating, pendingError, setPendingError,
     handleProviderChange, handleProviderConfirm, handleProviderCancel,
+    loadData,
   } = useConfigState();
 
-  // Poll /api/status every 10s for live metrics (tokens, uptime)
+  const handleArraySave = async (key: string, values: string[]) => {
+    try {
+      await api.setConfigKey(key, values);
+      await loadData();
+    } catch (err) {
+      setError(errMsg(err));
+    }
+  };
+
+  // Poll /api/status every 10s for live metrics (tokens, uptime).
   const [liveStatus, setLiveStatus] = useState<StatusData | null>(null);
+  const [balance, setBalance] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    const poll = () => {
-      api.getStatus().then((res) => { if (active) setLiveStatus(res.data); }).catch(() => {});
-    };
+    const poll = () => api.getStatus().then((r) => { if (active) setLiveStatus(r.data); }).catch(() => {});
     const id = setInterval(poll, 10_000);
+    api.getWallet().then((r) => { if (active) setBalance(r.data?.balance ?? null); }).catch(() => {});
     return () => { active = false; clearInterval(id); };
   }, []);
 
-  const currentStatus = liveStatus ?? status;
-
-  const logs = useSyncExternalStore(
-    (cb) => logStore.subscribe(cb),
-    () => logStore.getLogs()
-  );
-  const connected = useSyncExternalStore(
-    (cb) => logStore.subscribe(cb),
-    () => logStore.isConnected()
-  );
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    logStore.connect();
-  }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
-
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) {
+    return (
+      <div className="dashboard-root">
+        <div className="header"><h1>Dashboard</h1><p>System overview</p></div>
+        <div className="card dash-hero"><Skeleton width={40} height={40} /><Skeleton width={220} height={28} /></div>
+        <div className="dash-statbar"><Skeleton width="100%" height={18} /></div>
+      </div>
+    );
+  }
   if (!status || !stats) return <div className="alert error">Failed to load dashboard data</div>;
 
-  const s = currentStatus ?? status;
-  const uptime = s.uptime < 3600
-    ? `${Math.floor(s.uptime / 60)}m`
-    : `${Math.floor(s.uptime / 3600)}h ${Math.floor((s.uptime % 3600) / 60)}m`;
+  const s = liveStatus ?? status;
+  const platform = s.platform ? (PLATFORM_LABEL[s.platform] ?? s.platform) : null;
 
   return (
     <div className="dashboard-root">
-      <div className="header">
-        <h1>Dashboard</h1>
-        <p>System overview</p>
+      <div className="header"><h1>Dashboard</h1><p>System overview</p></div>
+
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
+
+      {/* ── Status hero ── */}
+      <div className="card dash-hero">
+        <span className="dash-orb" aria-hidden="true" />
+        <div className="dash-hero-main">
+          <div className="dash-hero-title">
+            Agent
+            <span className="dash-hero-state">Running</span>
+          </div>
+          <div className="dash-hero-sub">
+            {[`up ${fmtUptime(s.uptime)}`, platform].filter(Boolean).join(' · ')}
+          </div>
+        </div>
+        <div className="dash-hero-selects">
+          <div className="dash-hero-field">
+            <span className="dash-hero-label">Provider</span>
+            <Select
+              value={pendingProvider ?? getLocal('agent.provider')}
+              options={PROVIDER_OPTIONS}
+              labels={PROVIDER_LABELS}
+              onChange={handleProviderChange}
+            />
+          </div>
+          <div className="dash-hero-field model">
+            <span className="dash-hero-label">Model</span>
+            <Select
+              value={getLocal('agent.model')}
+              options={modelOptions.map((m) => m.value)}
+              labels={modelOptions.map((m) => m.name)}
+              onChange={(v) => saveConfig('agent.model', v)}
+            />
+          </div>
+        </div>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '14px' }}>
-          {error}
-          <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
+      {pendingProvider && pendingMeta && (
+        <div className="card" style={{ marginBottom: '14px' }}>
+          <ProviderSwitchZone
+            pendingMeta={pendingMeta}
+            pendingApiKey={pendingApiKey}
+            setPendingApiKey={setPendingApiKey}
+            pendingValidating={pendingValidating}
+            pendingError={pendingError}
+            setPendingError={setPendingError}
+            onConfirm={handleProviderConfirm}
+            onCancel={handleProviderCancel}
+          />
         </div>
       )}
 
-
-      {/* ── Status bar ─────────────────────────────────────── */}
-      <div className="card status-bar">
-        <div className="status-row">
-          <Metric label="Uptime" value={uptime} />
-          <Metric label="Sessions" value={s.sessionCount} />
-          <Metric label="Tools" value={s.toolCount} />
-          <Metric label="Knowledge" value={stats.knowledge} />
-          <Metric label="Messages" value={stats.messages.toLocaleString()} />
-          <Metric label="Chats" value={stats.chats} />
-          <Metric label="Tokens" value={s.tokenUsage ? `${(s.tokenUsage.totalTokens / 1000).toFixed(1)}K` : '0'} mono />
-          <Metric label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
-        </div>
+      {/* ── Metrics ── */}
+      <div className="dash-statbar">
+        <StatItem label="Messages" value={stats.messages.toLocaleString()} to="/conversations" />
+        <StatItem label="Chats" value={stats.chats} to="/conversations" />
+        <StatItem label="Knowledge" value={stats.knowledge} to="/memory" />
+        <StatItem label="Tools" value={s.toolCount} to="/tools" />
+        <StatItem label="Sessions" value={s.sessionCount} />
+        <StatItem label="Tokens" value={s.tokenUsage ? `${(s.tokenUsage.totalTokens / 1000).toFixed(1)}K` : '0'} mono />
+        <StatItem label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
+        <StatItem label="GRAM" value={balance ?? '—'} mono to="/wallet" />
       </div>
 
-      {/* ── Settings (side by side) ────────────────────────── */}
+      {/* ── Settings (side by side) ── */}
       <div className="dashboard-settings">
         <div className="card">
-          <AgentSettingsPanel
-            compact
-            getLocal={getLocal} getServer={getServer} setLocal={setLocal} saveConfig={saveConfig} cancelLocal={cancelLocal}
-            modelOptions={modelOptions}
-            pendingProvider={pendingProvider} pendingMeta={pendingMeta}
-            pendingApiKey={pendingApiKey} setPendingApiKey={setPendingApiKey}
-            pendingValidating={pendingValidating}
-            pendingError={pendingError} setPendingError={setPendingError}
-            handleProviderChange={handleProviderChange}
-            handleProviderConfirm={handleProviderConfirm}
-            handleProviderCancel={handleProviderCancel}
-          />
+          <div className="card-header"><div className="section-title">Access Policy</div></div>
+          <div className="dash-policy">
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>DM Policy <InfoTip text="Who can DM the agent — All, Allow List, Admins only, or Off." /></label>
+              <PillTabs value={getLocal('telegram.dm_policy')} options={POLICY_OPTIONS} onChange={(v) => saveConfig('telegram.dm_policy', v)} ariaLabel="DM policy" />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>Group Policy <InfoTip text="Which groups the agent responds in — All, Allow List, Admins only, or Off." /></label>
+              <PillTabs value={getLocal('telegram.group_policy')} options={POLICY_OPTIONS} onChange={(v) => saveConfig('telegram.group_policy', v)} ariaLabel="Group policy" />
+            </div>
+          </div>
         </div>
-        <div className="card">
-          <TelegramSettingsPanel getLocal={getLocal} getServer={getServer} setLocal={setLocal} saveConfig={saveConfig} cancelLocal={cancelLocal} />
+        <div className="card dash-card-fill">
+          <AllowLists getLocal={getLocal} onSave={handleArraySave} />
         </div>
         {s.platform === 'linux' && (
           <div className="card" style={{ gridColumn: '1 / -1' }}>
@@ -118,77 +171,6 @@ export function Dashboard() {
           </div>
         )}
       </div>
-
-      {/* ── Live Logs (collapsible) ── */}
-      <LogsPanel logs={logs} connected={connected} bottomRef={bottomRef} />
-    </div>
-  );
-}
-
-function LogsPanel({ logs, connected, bottomRef }: {
-  logs: Array<{ level: string; timestamp: number; message: string }>;
-  connected: boolean;
-  bottomRef: React.RefObject<HTMLDivElement | null>;
-}) {
-  const [open, setOpen] = useState(true);
-  const toggle = useCallback(() => setOpen((v) => !v), []);
-
-  return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: '12px' }}>
-      <button
-        onClick={toggle}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '100%',
-          padding: '10px 14px',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--text-primary)',
-          fontSize: '13px',
-          fontWeight: 600,
-        }}
-      >
-        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
-          Live Logs
-          {logs.length > 0 && (
-            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 400 }}>
-              ({logs.length})
-            </span>
-          )}
-        </span>
-        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
-          &#9660;
-        </span>
-      </button>
-      {open && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '0 14px 6px' }}>
-            <button className="btn-ghost btn-sm" onClick={() => logStore.clear()}>Clear</button>
-          </div>
-          <div className="dashboard-logs-scroll">
-            {logs.length === 0 ? (
-              <div className="empty">Waiting for logs...</div>
-            ) : (
-              logs.map((log, i) => (
-                <div key={i} className="log-entry">
-                  <span className={`badge ${log.level === 'warn' ? 'warn' : log.level === 'error' ? 'error' : 'info'}`}>
-                    {log.level.toUpperCase()}
-                  </span>{' '}
-                  <span style={{ color: 'var(--text-tertiary)' }}>
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>{' '}
-                  {log.message}
-                </div>
-              ))
-            )}
-            <div ref={bottomRef} />
-          </div>
-        </>
-      )}
     </div>
   );
 }

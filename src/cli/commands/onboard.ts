@@ -29,11 +29,12 @@ import {
   type StepDef,
 } from "../prompts.js";
 
-import { ensureWorkspace, isNewWorkspace } from "../../workspace/manager.js";
+import { ensureWorkspace, isNewWorkspace, type Workspace } from "../../workspace/manager.js";
 import { writeFileSync, readFileSync, existsSync } from "fs";
 import { join } from "path";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { TelegramUserClient } from "../../telegram/client.js";
+import { maskSecret } from "../../utils/mask.js";
 import YAML from "yaml";
 import { type Config, DealsConfigSchema } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
@@ -43,6 +44,7 @@ import {
   saveWallet,
   walletExists,
   loadWallet,
+  type WalletData,
 } from "../../ton/wallet-service.js";
 import {
   getSupportedProviders,
@@ -54,10 +56,6 @@ import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../constants/limits.js";
 import { fetchWithTimeout } from "../../utils/fetch.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import ora from "ora";
-import {
-  getClaudeCodeApiKey,
-  isClaudeCodeTokenValid,
-} from "../../providers/claude-code-credentials.js";
 import { getCodexApiKey, isCodexTokenValid } from "../../providers/codex-credentials.js";
 
 export interface OnboardOptions {
@@ -102,6 +100,282 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+/**
+ * Auto-detect provider credentials (Codex), with a manual
+ * API-key fallback. Returns the resolved api key (empty when auto-detected,
+ * since it is read at runtime) and the STEPS[1].value status string.
+ */
+async function handleAutoDetectedProvider(opts: {
+  getKey: () => string;
+  isValid: () => boolean;
+  displayName: string;
+  noteTitle: string;
+  detectedFromMsg: string;
+  statusExpiredMsg: string;
+  noteFooterMsg: string;
+  notFoundHint: string;
+  fallbackKeyLabel: string;
+  prompter: ReturnType<typeof createPrompter>;
+}): Promise<{ apiKey: string; stepValue: string }> {
+  let apiKey = "";
+  let detected = false;
+  try {
+    const key = opts.getKey();
+    const valid = opts.isValid();
+    apiKey = ""; // Don't store in config — auto-detected at runtime
+    detected = true;
+    const masked = maskSecret(key, 12, 4);
+    noteBox(
+      `${opts.detectedFromMsg}\n` +
+        `Key: ${masked}\n` +
+        `Status: ${valid ? GREEN("valid ✓") : opts.statusExpiredMsg}\n` +
+        opts.noteFooterMsg,
+      opts.noteTitle,
+      TON
+    );
+    await confirm({
+      message: "Continue with auto-detected credentials?",
+      default: true,
+      theme,
+    });
+  } catch (error) {
+    if (error instanceof CancelledError) throw error;
+    opts.prompter.warn(opts.notFoundHint);
+    const useFallback = await confirm({
+      message: "Enter an API key manually instead?",
+      default: true,
+      theme,
+    });
+    if (useFallback) {
+      apiKey = await password({
+        message: opts.fallbackKeyLabel,
+        theme,
+        validate: (value = "") => {
+          if (!value || value.trim().length === 0) return "API key is required";
+          return true;
+        },
+      });
+    } else {
+      throw new CancelledError();
+    }
+  }
+
+  const stepValue = detected
+    ? `${opts.displayName}  ${DIM("auto-detected ✓")}`
+    : `${opts.displayName}  ${DIM(maskSecret(apiKey))}`;
+  return { apiKey, stepValue };
+}
+
+/**
+ * Prompt for an optional integration key: ask to enable, show a note, then
+ * collect+validate the key. Returns the entered value, or undefined if skipped.
+ * Callers handle assignment and `extras.push` based on the return value.
+ */
+async function promptOptionalKey(opts: {
+  confirmMsg: string;
+  note: string;
+  noteTitle: string;
+  inputMsg: string;
+  validate: (value: string) => true | string;
+}): Promise<string | undefined> {
+  const enable = await confirm({
+    message: opts.confirmMsg,
+    default: false,
+    theme,
+  });
+
+  if (!enable) return undefined;
+
+  noteBox(opts.note, opts.noteTitle, TON);
+  return input({
+    message: opts.inputMsg,
+    theme,
+    validate: (v = "") => opts.validate(v),
+  });
+}
+
+/** Shared bot-token format (id:hash). Used by all interactive + non-interactive sites. */
+const BOT_TOKEN_REGEX = /^[0-9]+:[A-Za-z0-9_-]+$/;
+
+/** Validate bot-token format for an inquirer `validate` callback. */
+function validateBotTokenFormat(value: string): true | string {
+  if (!value) return "Bot token is required";
+  if (!BOT_TOKEN_REGEX.test(value)) return "Invalid format (expected 123456:ABC...)";
+  return true;
+}
+
+/**
+ * Call Telegram getMe to verify a bot token and fetch its username.
+ * Returns `ok:true` with the username when verified, `ok:false` when the
+ * token is rejected, or `networkError:true` when the API is unreachable.
+ */
+async function validateAndFetchBot(
+  token: string
+): Promise<{ ok: boolean; username?: string; networkError?: boolean }> {
+  try {
+    const res = await fetchWithTimeout(`https://api.telegram.org/bot${token}/getMe`);
+    const data = await res.json();
+    if (!data.ok) return { ok: false };
+    return { ok: true, username: data.result.username };
+  } catch {
+    return { ok: false, networkError: true };
+  }
+}
+
+/** Prompt for a 24-word mnemonic and import+save the wallet, with spinner feedback. */
+async function importWalletFlow(spinner: ReturnType<typeof ora>): Promise<WalletData> {
+  const mnemonicInput = await input({
+    message: "Enter your 24-word mnemonic (space-separated)",
+    theme,
+    validate: (value = "") => {
+      const words = value.trim().split(/\s+/);
+      return words.length === 24 ? true : `Expected 24 words, got ${words.length}`;
+    },
+  });
+  spinner.start(DIM("Importing wallet..."));
+  const wallet = await importWallet(mnemonicInput.trim().split(/\s+/));
+  saveWallet(wallet);
+  spinner.succeed(DIM(`Wallet imported: ${wallet.address}`));
+  return wallet;
+}
+
+type Policy = "open" | "allowlist" | "admin-only" | "disabled";
+
+/** Variable inputs for {@link buildConfig}; everything else is a centralized default. */
+interface BuildConfigInput {
+  provider: SupportedProvider;
+  apiKey: string;
+  baseUrl?: string;
+  model: string;
+  maxAgenticIterations: number;
+  telegramMode: "user" | "bot";
+  apiId: number;
+  apiHash: string;
+  phone: string;
+  userId: number;
+  dmPolicy: Policy;
+  groupPolicy: Policy;
+  requireMention: boolean;
+  execMode: "off" | "yolo";
+  botToken?: string;
+  botUsername?: string;
+  tonapiKey?: string;
+  toncenterApiKey?: string;
+  tavilyApiKey?: string;
+  cocoonPort?: number;
+  sessionPath: string;
+  workspaceRoot: string;
+}
+
+/**
+ * Build the full Config object from the variable wizard inputs, centralizing
+ * every schema default in one place. Called by both the interactive and the
+ * non-interactive flows so they can never silently diverge.
+ */
+function buildConfig(input: BuildConfigInput): Config {
+  return {
+    meta: {
+      version: "1.0.0",
+      created_at: new Date().toISOString(),
+      onboard_command: "teleton setup",
+    },
+    agent: {
+      provider: input.provider,
+      api_key: input.apiKey,
+      ...(input.baseUrl ? { base_url: input.baseUrl } : {}),
+      model: input.model,
+      max_tokens: 4096,
+      temperature: 0.7,
+      system_prompt: null,
+      max_agentic_iterations: input.maxAgenticIterations,
+      session_reset_policy: {
+        daily_reset_enabled: true,
+        daily_reset_hour: 4,
+        idle_expiry_enabled: true,
+        idle_expiry_minutes: 1440,
+      },
+    },
+    telegram: {
+      mode: input.telegramMode,
+      api_id: input.telegramMode === "user" ? input.apiId : 0,
+      api_hash: input.telegramMode === "user" ? input.apiHash : "",
+      phone: input.telegramMode === "user" ? input.phone : "",
+      session_name: "teleton_session",
+      session_path: input.sessionPath,
+      dm_policy: input.dmPolicy,
+      allow_from: [],
+      group_policy: input.groupPolicy,
+      group_allow_from: [],
+      require_mention: input.requireMention,
+      max_message_length: TELEGRAM_MAX_MESSAGE_LENGTH,
+      typing_simulation: true,
+      rate_limit_messages_per_second: 1.0,
+      rate_limit_groups_per_minute: 20,
+      admin_ids: [input.userId],
+      owner_id: input.userId,
+      agent_channel: null,
+      debounce_ms: 1500,
+      bot_token: input.botToken,
+      bot_username: input.botUsername,
+      stream_mode: "all",
+      guest_mode: false,
+    },
+    storage: {
+      sessions_file: `${input.workspaceRoot}/sessions.json`,
+      memory_file: `${input.workspaceRoot}/memory.json`,
+      history_limit: 100,
+    },
+    embedding: { provider: "local" },
+    deals: DealsConfigSchema.parse({ enabled: !!input.botToken }),
+    webui: {
+      enabled: false,
+      port: 7777,
+      host: "127.0.0.1",
+      cors_origins: ["http://localhost:5173", "http://localhost:7777"],
+      log_requests: false,
+    },
+    dev: { hot_reload: false },
+    tool_rag: {
+      enabled: true,
+      top_k: 25,
+      always_include: [
+        "telegram_send_message",
+        "telegram_quote_reply",
+        "telegram_send_photo",
+        "journal_*",
+        "workspace_*",
+        "web_*",
+      ],
+      skip_unlimited_providers: false,
+    },
+    logging: { level: "info", pretty: true },
+    mcp: { servers: {} },
+    capabilities: {
+      exec: {
+        mode: input.execMode,
+        scope: "admin-only",
+        allowlist: [],
+        limits: { timeout: 120, max_output: 50000 },
+        audit: { log_commands: true },
+      },
+    },
+    ton_proxy: { enabled: false, port: 8080 },
+    heartbeat: {
+      enabled: true,
+      interval_ms: 3_600_000,
+      prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.",
+      self_configurable: false,
+    },
+    plugins: {},
+    ...(input.provider === "cocoon" && input.cocoonPort
+      ? { cocoon: { port: input.cocoonPort } }
+      : {}),
+    tonapi_key: input.tonapiKey,
+    toncenter_api_key: input.toncenterApiKey,
+    tavily_api_key: input.tavilyApiKey,
+  };
+}
+
 // Model catalog imported from shared source (see src/config/model-catalog.ts)
 
 /**
@@ -110,49 +384,7 @@ function sleep(ms: number): Promise<void> {
 export async function onboardCommand(options: OnboardOptions = {}): Promise<void> {
   // Web UI mode
   if (options.ui) {
-    const { SetupServer } = await import("../../webui/setup-server.js");
-    const port = parseInt(options.uiPort || "7777") || 7777;
-    const url = `http://localhost:${port}/setup`;
-
-    const blue = "\x1b[34m";
-    const reset = "\x1b[0m";
-    const dim = "\x1b[2m";
-    console.log(`
-${blue}  ┌───────────────────────────────────────────────────────────────────────────────────────┐
-  │                                                                                       │
-  │       ______________    ________________  _   __   ___   _____________   ________     │
-  │      /_  __/ ____/ /   / ____/_  __/ __ \\/ | / /  /   | / ____/ ____/ | / /_  __/     │
-  │       / / / __/ / /   / __/   / / / / / /  |/ /  / /| |/ / __/ __/ /  |/ / / /        │
-  │      / / / /___/ /___/ /___  / / / /_/ / /|  /  / ___ / /_/ / /___/ /|  / / /         │
-  │     /_/ /_____/_____/_____/ /_/  \\____/_/ |_/  /_/  |_\\____/_____/_/ |_/ /_/          │
-  │                                                                                       │
-  └────────────────────────────────────────────────────────────────── DEV: ZKPROOF.T.ME ──┘${reset}
-
-  ${dim}Setup wizard running at${reset} ${url}
-  ${dim}Opening in your default browser...${reset}
-  ${dim}Press Ctrl+C to cancel.${reset}
-`);
-
-    const server = new SetupServer(port);
-    await server.start();
-
-    process.on("SIGINT", () => {
-      void server.stop().then(() => process.exit(0));
-    });
-
-    // Wait for user to click "Start Agent" in the browser
-    await server.waitForLaunch();
-    console.log("\n  Launch signal received — stopping setup server");
-    await server.stop();
-
-    // Boot TonnetApp on the same port
-    console.log("  Starting TonnetApp...\n");
-    const { TeletonApp } = await import("../../index.js");
-    const configPath = join(TELETON_ROOT, "config.yaml");
-    const app = new TeletonApp(configPath);
-    await app.start();
-
-    // Keep process alive (TonnetApp manages its own lifecycle)
+    await runUiSetup(options);
     return;
   }
 
@@ -174,43 +406,98 @@ ${blue}  ┌──────────────────────�
 }
 
 /**
+ * Web UI setup mode: serve the browser setup wizard, then boot TonnetApp once
+ * the user clicks "Start Agent". Keeps the CLI->App lifecycle in one place.
+ */
+async function runUiSetup(options: OnboardOptions): Promise<void> {
+  const { SetupServer } = await import("../../webui/setup-server.js");
+  const port = parseInt(options.uiPort || "7777") || 7777;
+  const url = `http://localhost:${port}/setup`;
+
+  // ASCII banner colors (raw ANSI — chalk has no equivalent blue export)
+  const blue = "\x1b[34m";
+  const reset = "\x1b[0m";
+  console.log(`
+${blue}  ┌───────────────────────────────────────────────────────────────────────────────────────┐
+  │                                                                                       │
+  │       ______________    ________________  _   __   ___   _____________   ________     │
+  │      /_  __/ ____/ /   / ____/_  __/ __ \\/ | / /  /   | / ____/ ____/ | / /_  __/     │
+  │       / / / __/ / /   / __/   / / / / / /  |/ /  / /| |/ / __/ __/ /  |/ / / /        │
+  │      / / / /___/ /___/ /___  / / / /_/ / /|  /  / ___ / /_/ / /___/ /|  / / /         │
+  │     /_/ /_____/_____/_____/ /_/  \\____/_/ |_/  /_/  |_\\____/_____/_/ |_/ /_/          │
+  │                                                                                       │
+  └────────────────────────────────────────────────────────────────── DEV: ZKPROOF.T.ME ──┘${reset}
+
+  ${DIM("Setup wizard running at")} ${url}
+  ${DIM("Opening in your default browser...")}
+  ${DIM("Press Ctrl+C to cancel.")}
+`);
+
+  const server = new SetupServer(port);
+  await server.start();
+
+  process.on("SIGINT", () => {
+    void server.stop().then(() => process.exit(0));
+  });
+
+  // Wait for user to click "Start Agent" in the browser
+  await server.waitForLaunch();
+  console.log("\n  Launch signal received — stopping setup server");
+  await server.stop();
+
+  // Boot TonnetApp on the same port
+  console.log("  Starting TonnetApp...\n");
+  const { TeletonApp } = await import("../../index.js");
+  const configPath = join(TELETON_ROOT, "config.yaml");
+  const app = new TeletonApp(configPath);
+  await app.start();
+
+  // Keep process alive (TonnetApp manages its own lifecycle)
+}
+
+/**
  * Interactive onboarding wizard
  */
-async function runInteractiveOnboarding(
+// ── Interactive wizard state ──────────────────────────────────────────
+
+/** Mutable state shared across the interactive wizard steps. */
+interface OnboardState {
+  selectedProvider: SupportedProvider;
+  selectedModel: string;
+  apiKey: string;
+  localBaseUrl: string;
+  cocoonInstance: number;
+  apiId: number;
+  apiHash: string;
+  phone: string;
+  userId: number;
+  telegramMode: "user" | "bot";
+  botToken: string | undefined;
+  botUsername: string | undefined;
+  dmPolicy: Policy;
+  groupPolicy: Policy;
+  requireMention: boolean;
+  maxAgenticIterations: string;
+  execMode: "off" | "yolo";
+  tonapiKey: string | undefined;
+  toncenterApiKey: string | undefined;
+  tavilyApiKey: string | undefined;
+}
+
+/**
+ * Step 0: Agent — security warning, workspace, name, Telegram mode.
+ * Returns the workspace/spinner shared by later steps, plus the agent name and
+ * mode. Returns null when the user declines to overwrite an existing config.
+ */
+async function stepAgent(
   options: OnboardOptions,
   prompter: ReturnType<typeof createPrompter>
-): Promise<void> {
-  // ── Shared state ──
-  let selectedProvider: SupportedProvider = "anthropic";
-  let selectedModel = "";
-  let apiKey = "";
-  let apiId = 0;
-  let apiHash = "";
-  let phone = "";
-  let userId = 0;
-  let tonapiKey: string | undefined;
-  let toncenterApiKey: string | undefined;
-  let tavilyApiKey: string | undefined;
-  let telegramMode: "user" | "bot" = "user";
-  let botToken: string | undefined;
-  let botUsername: string | undefined;
-  let dmPolicy: "open" | "allowlist" | "admin-only" | "disabled" = "admin-only";
-  let groupPolicy: "open" | "allowlist" | "admin-only" | "disabled" = "admin-only";
-  let requireMention = true;
-  let maxAgenticIterations = "5";
-  let execMode: "off" | "yolo" = "off";
-  let cocoonInstance = 10000;
-
-  // Intro
-  console.clear();
-  console.log();
-  console.log(wizardFrame(0, STEPS));
-  console.log();
-  await sleep(800);
-
-  // ════════════════════════════════════════════════════════════════════
-  // Step 0: Agent — security warning, workspace, name, mode, modules
-  // ════════════════════════════════════════════════════════════════════
+): Promise<{
+  workspace: Workspace;
+  spinner: ReturnType<typeof ora>;
+  agentName: string;
+  telegramMode: "user" | "bot";
+} | null> {
   redraw(0);
 
   noteBox(
@@ -258,7 +545,7 @@ async function runInteractiveOnboarding(
     });
     if (!shouldOverwrite) {
       console.log(`\n  ${DIM("Setup cancelled — existing configuration preserved.")}\n`);
-      return;
+      return null;
     }
   }
 
@@ -275,7 +562,7 @@ async function runInteractiveOnboarding(
     writeFileSync(workspace.identityPath, updated, "utf-8");
   }
 
-  telegramMode = await select({
+  const telegramMode = await select({
     message: "Telegram mode",
     default: "user",
     theme,
@@ -294,14 +581,24 @@ async function runInteractiveOnboarding(
   });
 
   STEPS[0].value = agentName;
+  return { workspace, spinner, agentName, telegramMode };
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 1: Provider — select + tool limit warning + API key
-  // ════════════════════════════════════════════════════════════════════
+/** Step 1: Provider — select provider, resolve API key/base URL, pick model. */
+async function stepProvider(
+  options: OnboardOptions,
+  prompter: ReturnType<typeof createPrompter>
+): Promise<{
+  selectedProvider: SupportedProvider;
+  apiKey: string;
+  localBaseUrl: string;
+  cocoonInstance: number;
+  selectedModel: string;
+}> {
   redraw(1);
 
   const providers = getSupportedProviders();
-  selectedProvider = await select({
+  const selectedProvider = await select({
     message: "AI Provider",
     default: "anthropic",
     theme,
@@ -326,7 +623,9 @@ async function runInteractiveOnboarding(
   }
 
   // API key (or Cocoon / Local setup)
+  let apiKey = "";
   let localBaseUrl = "";
+  let cocoonInstance = 10000;
   if (selectedProvider === "cocoon") {
     // Cocoon Network — no API key, managed externally via cocoon-cli
     apiKey = "";
@@ -379,110 +678,23 @@ async function runInteractiveOnboarding(
     );
 
     STEPS[1].value = `${providerMeta.displayName}  ${DIM(localBaseUrl)}`;
-  } else if (selectedProvider === "claude-code") {
-    // Claude Code — auto-detect credentials, fallback to manual key
-    let detected = false;
-    try {
-      const key = getClaudeCodeApiKey();
-      const valid = isClaudeCodeTokenValid();
-      apiKey = ""; // Don't store in config — auto-detected at runtime
-      detected = true;
-      const masked = key.length > 16 ? key.slice(0, 12) + "..." + key.slice(-4) : "***";
-      noteBox(
-        `Credentials auto-detected from Claude Code\n` +
-          `Key: ${masked}\n` +
-          `Status: ${valid ? GREEN("valid ✓") : "expired (will refresh on use)"}\n` +
-          `Token will auto-refresh when it expires.`,
-        "Claude Code",
-        TON
-      );
-      await confirm({
-        message: "Continue with auto-detected credentials?",
-        default: true,
-        theme,
-      });
-    } catch (error) {
-      if (error instanceof CancelledError) throw error;
-      prompter.warn(
-        "Claude Code credentials not found. Make sure Claude Code is installed and authenticated (claude login)."
-      );
-      const useFallback = await confirm({
-        message: "Enter an API key manually instead?",
-        default: true,
-        theme,
-      });
-      if (useFallback) {
-        apiKey = await password({
-          message: `Anthropic API Key (fallback)`,
-          theme,
-          validate: (value = "") => {
-            if (!value || value.trim().length === 0) return "API key is required";
-            return true;
-          },
-        });
-      } else {
-        throw new CancelledError();
-      }
-    }
-
-    if (detected) {
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
-    } else {
-      const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
-    }
   } else if (selectedProvider === "codex") {
     // Codex — auto-detect credentials from ~/.codex/auth.json
-    let detected = false;
-    try {
-      const key = getCodexApiKey();
-      const valid = isCodexTokenValid();
-      apiKey = ""; // Don't store in config — auto-detected at runtime
-      detected = true;
-      const masked = key.length > 16 ? key.slice(0, 12) + "..." + key.slice(-4) : "***";
-      noteBox(
-        `Credentials auto-detected from Codex CLI\n` +
-          `Key: ${masked}\n` +
-          `Status: ${valid ? GREEN("valid ✓") : "expired (run codex to re-authenticate)"}\n` +
-          `Token read from ~/.codex/auth.json`,
-        "Codex",
-        TON
-      );
-      await confirm({
-        message: "Continue with auto-detected credentials?",
-        default: true,
-        theme,
-      });
-    } catch (error) {
-      if (error instanceof CancelledError) throw error;
-      prompter.warn(
-        "Codex credentials not found. Make sure Codex CLI is installed and authenticated."
-      );
-      const useFallback = await confirm({
-        message: "Enter an OpenAI API key manually instead?",
-        default: true,
-        theme,
-      });
-      if (useFallback) {
-        apiKey = await password({
-          message: `OpenAI API Key (fallback)`,
-          theme,
-          validate: (value = "") => {
-            if (!value || value.trim().length === 0) return "API key is required";
-            return true;
-          },
-        });
-      } else {
-        throw new CancelledError();
-      }
-    }
-
-    if (detected) {
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
-    } else {
-      const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
-    }
+    const result = await handleAutoDetectedProvider({
+      getKey: getCodexApiKey,
+      isValid: isCodexTokenValid,
+      displayName: providerMeta.displayName,
+      noteTitle: "Codex",
+      detectedFromMsg: "Credentials auto-detected from Codex CLI",
+      statusExpiredMsg: "expired (run codex to re-authenticate)",
+      noteFooterMsg: "Token read from ~/.codex/auth.json",
+      notFoundHint:
+        "Codex credentials not found. Make sure Codex CLI is installed and authenticated.",
+      fallbackKeyLabel: "OpenAI API Key (fallback)",
+      prompter,
+    });
+    apiKey = result.apiKey;
+    STEPS[1].value = result.stepValue;
   } else {
     // Standard providers — API key required
     const envApiKey = process.env.TELETON_API_KEY;
@@ -514,12 +726,12 @@ async function runInteractiveOnboarding(
       });
     }
 
-    const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
+    const maskedKey = maskSecret(apiKey);
     STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
   }
 
   // Model selection (advanced mode only, after provider + API key)
-  selectedModel = providerMeta.defaultModel;
+  let selectedModel = providerMeta.defaultModel;
 
   if (selectedProvider !== "cocoon" && selectedProvider !== "local") {
     const providerModels = getModelsForProvider(selectedProvider);
@@ -550,9 +762,21 @@ async function runInteractiveOnboarding(
     STEPS[1].value = `${STEPS[1].value ?? providerMeta.displayName}, ${modelLabel}`;
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 2: Config — admin + policies
-  // ════════════════════════════════════════════════════════════════════
+  return { selectedProvider, apiKey, localBaseUrl, cocoonInstance, selectedModel };
+}
+
+/** Step 2: Config — admin user ID, DM/group policies, iterations, exec mode. */
+async function stepConfig(
+  options: OnboardOptions,
+  telegramMode: "user" | "bot"
+): Promise<{
+  userId: number;
+  dmPolicy: Policy;
+  groupPolicy: Policy;
+  requireMention: boolean;
+  maxAgenticIterations: string;
+  execMode: "off" | "yolo";
+}> {
   redraw(2);
 
   // Admin User ID
@@ -575,8 +799,11 @@ async function runInteractiveOnboarding(
           return true;
         },
       });
-  userId = parseInt(userIdStr);
+  const userId = parseInt(userIdStr);
 
+  let dmPolicy: Policy = "admin-only";
+  let groupPolicy: Policy = "admin-only";
+  let requireMention = true;
   if (telegramMode === "bot") {
     dmPolicy = "admin-only";
     groupPolicy = "admin-only";
@@ -621,7 +848,7 @@ async function runInteractiveOnboarding(
     });
   }
 
-  maxAgenticIterations = await input({
+  const maxAgenticIterations = await input({
     message: "Max agentic iterations (tool call loops per message)",
     default: "5",
     theme,
@@ -631,7 +858,7 @@ async function runInteractiveOnboarding(
     },
   });
 
-  execMode = await select({
+  const execMode = await select({
     message: "Coding Agent (system execution)",
     choices: [
       { value: "off" as const, name: "Disabled", description: "No system execution capability" },
@@ -646,13 +873,25 @@ async function runInteractiveOnboarding(
   });
 
   STEPS[2].value = `${dmPolicy}/${groupPolicy}`;
+  return { userId, dmPolicy, groupPolicy, requireMention, maxAgenticIterations, execMode };
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 3: Modules — optional API keys
-  // ════════════════════════════════════════════════════════════════════
+/** Step 3: Modules — optional bot token (user mode) and TonAPI/TonCenter/Tavily keys. */
+async function stepModules(
+  telegramMode: "user" | "bot",
+  spinner: ReturnType<typeof ora>
+): Promise<{
+  botToken: string | undefined;
+  botUsername: string | undefined;
+  tonapiKey: string | undefined;
+  toncenterApiKey: string | undefined;
+  tavilyApiKey: string | undefined;
+}> {
   redraw(3);
 
   const extras: string[] = [];
+  let botToken: string | undefined;
+  let botUsername: string | undefined;
 
   // Bot token (recommended — required for deals module; skipped in bot mode, handled at step 5)
   const setupBot =
@@ -677,26 +916,18 @@ async function runInteractiveOnboarding(
     const tokenInput = await password({
       message: "Bot token (from @BotFather)",
       theme,
-      validate: (value) => {
-        if (!value || !value.includes(":")) return "Invalid format (expected id:hash)";
-        return true;
-      },
+      validate: (value = "") => validateBotTokenFormat(value),
     });
 
     // Validate bot token
     spinner.start(DIM("Validating bot token..."));
-    try {
-      const res = await fetchWithTimeout(`https://api.telegram.org/bot${tokenInput}/getMe`);
-      const data = await res.json();
-      if (!data.ok) {
-        spinner.warn(DIM("Bot token is invalid — skipping bot setup"));
-      } else {
-        botToken = tokenInput;
-        botUsername = data.result.username;
-        spinner.succeed(DIM(`Bot verified: @${botUsername}`));
-        extras.push("Bot");
-      }
-    } catch {
+    const result = await validateAndFetchBot(tokenInput);
+    if (result.ok) {
+      botToken = tokenInput;
+      botUsername = result.username;
+      spinner.succeed(DIM(`Bot verified: @${botUsername}`));
+      extras.push("Bot");
+    } else if (result.networkError) {
       spinner.warn(DIM("Could not validate bot token (network error) — saving anyway"));
       botToken = tokenInput;
       const usernameInput = await input({
@@ -709,109 +940,70 @@ async function runInteractiveOnboarding(
       });
       botUsername = usernameInput;
       extras.push("Bot");
+    } else {
+      spinner.warn(DIM("Bot token is invalid — skipping bot setup"));
     }
   }
 
   // TonAPI key
-  const setupTonapi = await confirm({
-    message: `Add a TonAPI key? ${DIM("(strongly recommended for TON features)")}`,
-    default: false,
-    theme,
-  });
-
-  if (setupTonapi) {
-    noteBox(
+  const tonapiKey = await promptOptionalKey({
+    confirmMsg: `Add a TonAPI key? ${DIM("(strongly recommended for TON features)")}`,
+    note:
       "Blockchain data — jettons, NFTs, prices, transaction history.\n" +
-        "Without key: 1 req/s (you WILL hit rate limits)\n" +
-        "With free key: 5 req/s\n" +
-        "\n" +
-        "Open @tonapibot on Telegram → mini app → generate a server key",
-      "TonAPI",
-      TON
-    );
-    const keyInput = await input({
-      message: "TonAPI key",
-      theme,
-      validate: (v) => {
-        if (!v || v.length < 10) return "Key too short";
-        return true;
-      },
-    });
-    tonapiKey = keyInput;
-    extras.push("TonAPI");
-  }
+      "Without key: 1 req/s (you WILL hit rate limits)\n" +
+      "With free key: 5 req/s\n" +
+      "\n" +
+      "Open @tonapibot on Telegram → mini app → generate a server key",
+    noteTitle: "TonAPI",
+    inputMsg: "TonAPI key",
+    validate: (v) => (!v || v.length < 10 ? "Key too short" : true),
+  });
+  if (tonapiKey) extras.push("TonAPI");
 
   // TonCenter key
-  const setupToncenter = await confirm({
-    message: `Add a TonCenter API key? ${DIM("(optional, dedicated RPC endpoint)")}`,
-    default: false,
-    theme,
-  });
-
-  if (setupToncenter) {
-    noteBox(
+  const toncenterApiKey = await promptOptionalKey({
+    confirmMsg: `Add a TonCenter API key? ${DIM("(optional, dedicated RPC endpoint)")}`,
+    note:
       "Blockchain RPC — send transactions, check balances.\n" +
-        "Without key: falls back to ORBS network (decentralized, slower)\n" +
-        "With free key: dedicated RPC endpoint\n" +
-        "\n" +
-        "Go to https://toncenter.com → get a free API key (instant, no signup)",
-      "TonCenter",
-      TON
-    );
-    const keyInput = await input({
-      message: "TonCenter API key",
-      theme,
-      validate: (v) => {
-        if (!v || v.length < 10) return "Key too short";
-        return true;
-      },
-    });
-    toncenterApiKey = keyInput;
-    extras.push("TonCenter");
-  }
+      "Without key: falls back to ORBS network (decentralized, slower)\n" +
+      "With free key: dedicated RPC endpoint\n" +
+      "\n" +
+      "Go to https://toncenter.com → get a free API key (instant, no signup)",
+    noteTitle: "TonCenter",
+    inputMsg: "TonCenter API key",
+    validate: (v) => (!v || v.length < 10 ? "Key too short" : true),
+  });
+  if (toncenterApiKey) extras.push("TonCenter");
 
   // Tavily key
-  const setupTavily = await confirm({
-    message: `Enable web search? ${DIM("(free Tavily key — 1,000 req/month)")}`,
-    default: false,
-    theme,
-  });
-
-  if (setupTavily) {
-    noteBox(
+  const tavilyApiKey = await promptOptionalKey({
+    confirmMsg: `Enable web search? ${DIM("(free Tavily key — 1,000 req/month)")}`,
+    note:
       "Web search lets your agent search the internet and read web pages.\n" +
-        "\n" +
-        "To get your free API key (takes 30 seconds):\n" +
-        "\n" +
-        "  1. Go to https://app.tavily.com/sign-in\n" +
-        "  2. Create an account (email or Google/GitHub)\n" +
-        "  3. Your API key is displayed on the dashboard\n" +
-        "     (starts with tvly-)\n" +
-        "\n" +
-        "Free plan: 1,000 requests/month — no credit card required.",
-      "Tavily — Web Search API",
-      TON
-    );
-    const keyInput = await input({
-      message: "Tavily API key (starts with tvly-)",
-      theme,
-      validate: (v) => {
-        if (!v || !v.startsWith("tvly-")) return "Should start with tvly-";
-        return true;
-      },
-    });
-    tavilyApiKey = keyInput;
-    extras.push("Tavily");
-  }
+      "\n" +
+      "To get your free API key (takes 30 seconds):\n" +
+      "\n" +
+      "  1. Go to https://app.tavily.com/sign-in\n" +
+      "  2. Create an account (email or Google/GitHub)\n" +
+      "  3. Your API key is displayed on the dashboard\n" +
+      "     (starts with tvly-)\n" +
+      "\n" +
+      "Free plan: 1,000 requests/month — no credit card required.",
+    noteTitle: "Tavily — Web Search API",
+    inputMsg: "Tavily API key (starts with tvly-)",
+    validate: (v) => (!v || !v.startsWith("tvly-") ? "Should start with tvly-" : true),
+  });
+  if (tavilyApiKey) extras.push("Tavily");
 
   STEPS[3].value = extras.length ? extras.join(", ") : "defaults";
+  return { botToken, botUsername, tonapiKey, toncenterApiKey, tavilyApiKey };
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 4: Wallet — generate / import / keep
-  // ════════════════════════════════════════════════════════════════════
+/** Step 4: Wallet — generate / import / keep, then show the mnemonic backup. */
+async function stepWallet(spinner: ReturnType<typeof ora>): Promise<WalletData> {
   redraw(4);
 
-  let wallet;
+  let wallet: WalletData;
   const existingWallet = walletExists() ? loadWallet() : null;
 
   if (existingWallet) {
@@ -835,18 +1027,7 @@ async function runInteractiveOnboarding(
     if (walletAction === "keep") {
       wallet = existingWallet;
     } else if (walletAction === "import") {
-      const mnemonicInput = await input({
-        message: "Enter your 24-word mnemonic (space-separated)",
-        theme,
-        validate: (value = "") => {
-          const words = value.trim().split(/\s+/);
-          return words.length === 24 ? true : `Expected 24 words, got ${words.length}`;
-        },
-      });
-      spinner.start(DIM("Importing wallet..."));
-      wallet = await importWallet(mnemonicInput.trim().split(/\s+/));
-      saveWallet(wallet);
-      spinner.succeed(DIM(`Wallet imported: ${wallet.address}`));
+      wallet = await importWalletFlow(spinner);
     } else {
       spinner.start(DIM("Generating new TON wallet..."));
       wallet = await generateWallet();
@@ -869,18 +1050,7 @@ async function runInteractiveOnboarding(
     });
 
     if (walletAction === "import") {
-      const mnemonicInput = await input({
-        message: "Enter your 24-word mnemonic (space-separated)",
-        theme,
-        validate: (value = "") => {
-          const words = value.trim().split(/\s+/);
-          return words.length === 24 ? true : `Expected 24 words, got ${words.length}`;
-        },
-      });
-      spinner.start(DIM("Importing wallet..."));
-      wallet = await importWallet(mnemonicInput.trim().split(/\s+/));
-      saveWallet(wallet);
-      spinner.succeed(DIM(`Wallet imported: ${wallet.address}`));
+      wallet = await importWalletFlow(spinner);
     } else {
       spinner.start(DIM("Generating TON wallet..."));
       wallet = await generateWallet();
@@ -941,10 +1111,25 @@ async function runInteractiveOnboarding(
   }
 
   STEPS[4].value = `${wallet.address.slice(0, 8)}...${wallet.address.slice(-4)}`;
+  return wallet;
+}
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 5: Telegram — credentials
-  // ════════════════════════════════════════════════════════════════════
+/**
+ * Step 5: Telegram — bot token (bot mode) or API id/hash/phone (user mode).
+ * In bot mode it returns the resolved bot token/username; in user mode it
+ * returns the captured credentials. Unset fields keep their incoming values.
+ */
+async function stepTelegram(
+  options: OnboardOptions,
+  telegramMode: "user" | "bot",
+  spinner: ReturnType<typeof ora>
+): Promise<{
+  botToken?: string;
+  botUsername?: string;
+  apiId?: number;
+  apiHash?: string;
+  phone?: string;
+}> {
   redraw(5);
 
   if (telegramMode === "bot") {
@@ -960,195 +1145,120 @@ async function runInteractiveOnboarding(
     const tokenInput = await password({
       message: "Bot token (from @BotFather)",
       theme,
-      validate: (value = "") => {
-        if (!value) return "Bot token is required";
-        if (!/^[0-9]+:[A-Za-z0-9_-]+$/.test(value))
-          return "Invalid format (expected 123456:ABC...)";
-        return true;
-      },
+      validate: (value = "") => validateBotTokenFormat(value),
     });
-    botToken = tokenInput;
+    const botToken = tokenInput;
+    let botUsername: string | undefined;
 
     // Validate and fetch bot username
     spinner.start(DIM("Validating bot token..."));
-    try {
-      const res = await fetchWithTimeout(`https://api.telegram.org/bot${botToken}/getMe`);
-      const data = await res.json();
-      if (!data.ok) {
-        spinner.warn(DIM("Bot token validation failed — saving anyway"));
-      } else {
-        botUsername = data.result.username;
-        spinner.succeed(DIM(`Bot verified: @${botUsername}`));
-      }
-    } catch {
+    const result = await validateAndFetchBot(botToken);
+    if (result.ok) {
+      botUsername = result.username;
+      spinner.succeed(DIM(`Bot verified: @${botUsername}`));
+    } else if (result.networkError) {
       spinner.warn(DIM("Could not validate bot token (network error) — saving anyway"));
+    } else {
+      spinner.warn(DIM("Bot token validation failed — saving anyway"));
     }
 
     STEPS[5].value = botUsername ? `@${botUsername}` : "bot token set";
-  } else {
-    noteBox(
-      "To get your API credentials:\n" +
-        "\n" +
-        "  1. Go to https://my.telegram.org/apps\n" +
-        "  2. Log in with your phone number\n" +
-        '  3. Click "API development tools"\n' +
-        "  4. Create an application (any name/short name works)\n" +
-        "  5. Copy the API ID (number) and API Hash (hex string)\n" +
-        "\n" +
-        "⚠ Do NOT use a VPN — Telegram will block the login page.",
-      "Telegram",
-      TON
-    );
-
-    const envApiId = process.env.TELETON_TG_API_ID;
-    const envApiHash = process.env.TELETON_TG_API_HASH;
-    const envPhone = process.env.TELETON_TG_PHONE;
-
-    const apiIdStr = options.apiId
-      ? options.apiId.toString()
-      : await input({
-          message: envApiId ? "API ID (from env)" : "API ID (from my.telegram.org)",
-          default: envApiId,
-          theme,
-          validate: (value) => {
-            if (!value || isNaN(parseInt(value))) return "Invalid API ID (must be a number)";
-            return true;
-          },
-        });
-    apiId = parseInt(apiIdStr);
-
-    apiHash = options.apiHash
-      ? options.apiHash
-      : await input({
-          message: envApiHash ? "API Hash (from env)" : "API Hash (from my.telegram.org)",
-          default: envApiHash,
-          theme,
-          validate: (value) => {
-            if (!value || value.length < 10) return "Invalid API Hash";
-            return true;
-          },
-        });
-
-    phone = options.phone
-      ? options.phone
-      : await input({
-          message: envPhone ? "Phone number (from env)" : "Phone number (international format)",
-          default: envPhone,
-          theme,
-          validate: (value) => {
-            if (!value || !value.startsWith("+")) return "Must start with +";
-            return true;
-          },
-        });
-
-    STEPS[5].value = phone;
+    return { botToken, botUsername };
   }
 
-  // ════════════════════════════════════════════════════════════════════
-  // Step 6: Connect — save config + Telegram auth
-  // ════════════════════════════════════════════════════════════════════
+  noteBox(
+    "To get your API credentials:\n" +
+      "\n" +
+      "  1. Go to https://my.telegram.org/apps\n" +
+      "  2. Log in with your phone number\n" +
+      '  3. Click "API development tools"\n' +
+      "  4. Create an application (any name/short name works)\n" +
+      "  5. Copy the API ID (number) and API Hash (hex string)\n" +
+      "\n" +
+      "⚠ Do NOT use a VPN — Telegram will block the login page.",
+    "Telegram",
+    TON
+  );
+
+  const envApiId = process.env.TELETON_TG_API_ID;
+  const envApiHash = process.env.TELETON_TG_API_HASH;
+  const envPhone = process.env.TELETON_TG_PHONE;
+
+  const apiIdStr = options.apiId
+    ? options.apiId.toString()
+    : await input({
+        message: envApiId ? "API ID (from env)" : "API ID (from my.telegram.org)",
+        default: envApiId,
+        theme,
+        validate: (value) => {
+          if (!value || isNaN(parseInt(value))) return "Invalid API ID (must be a number)";
+          return true;
+        },
+      });
+  const apiId = parseInt(apiIdStr);
+
+  const apiHash = options.apiHash
+    ? options.apiHash
+    : await input({
+        message: envApiHash ? "API Hash (from env)" : "API Hash (from my.telegram.org)",
+        default: envApiHash,
+        theme,
+        validate: (value) => {
+          if (!value || value.length < 10) return "Invalid API Hash";
+          return true;
+        },
+      });
+
+  const phone = options.phone
+    ? options.phone
+    : await input({
+        message: envPhone ? "Phone number (from env)" : "Phone number (international format)",
+        default: envPhone,
+        theme,
+        validate: (value) => {
+          if (!value || !value.startsWith("+")) return "Must start with +";
+          return true;
+        },
+      });
+
+  STEPS[5].value = phone;
+  return { apiId, apiHash, phone };
+}
+
+/** Step 6: Connect — build+save config, optionally authenticate with Telegram. */
+async function stepConnect(
+  state: OnboardState,
+  workspace: Workspace,
+  spinner: ReturnType<typeof ora>,
+  prompter: ReturnType<typeof createPrompter>
+): Promise<boolean> {
   redraw(6);
 
-  // Build config
-  const config: Config = {
-    meta: {
-      version: "1.0.0",
-      created_at: new Date().toISOString(),
-      onboard_command: "teleton setup",
-    },
-    agent: {
-      provider: selectedProvider,
-      api_key: apiKey,
-      ...(selectedProvider === "local" && localBaseUrl ? { base_url: localBaseUrl } : {}),
-      model: selectedModel,
-      max_tokens: 4096,
-      temperature: 0.7,
-      system_prompt: null,
-      max_agentic_iterations: parseInt(maxAgenticIterations, 10),
-      toolset: "full",
-      session_reset_policy: {
-        daily_reset_enabled: true,
-        daily_reset_hour: 4,
-        idle_expiry_enabled: true,
-        idle_expiry_minutes: 1440,
-      },
-    },
-    telegram: {
-      mode: telegramMode,
-      api_id: telegramMode === "user" ? apiId : 0,
-      api_hash: telegramMode === "user" ? apiHash : "",
-      phone: telegramMode === "user" ? phone : "",
-      session_name: "teleton_session",
-      session_path: workspace.sessionPath,
-      dm_policy: dmPolicy,
-      allow_from: [],
-      group_policy: groupPolicy,
-      group_allow_from: [],
-      require_mention: requireMention,
-      max_message_length: TELEGRAM_MAX_MESSAGE_LENGTH,
-      typing_simulation: true,
-      rate_limit_messages_per_second: 1.0,
-      rate_limit_groups_per_minute: 20,
-      admin_ids: [userId],
-      owner_id: userId,
-      agent_channel: null,
-      debounce_ms: 1500,
-      bot_token: botToken,
-      bot_username: botUsername,
-      stream_mode: "all",
-    },
-    storage: {
-      sessions_file: `${workspace.root}/sessions.json`,
-      memory_file: `${workspace.root}/memory.json`,
-      history_limit: 100,
-    },
-    embedding: { provider: "local" },
-    deals: DealsConfigSchema.parse({ enabled: !!botToken }),
-    webui: {
-      enabled: false,
-      port: 7777,
-      host: "127.0.0.1",
-      cors_origins: ["http://localhost:5173", "http://localhost:7777"],
-      log_requests: false,
-    },
-    dev: { hot_reload: false },
-    tool_rag: {
-      enabled: true,
-      top_k: 25,
-      always_include: [
-        "telegram_send_message",
-        "telegram_quote_reply",
-        "telegram_send_photo",
-        "journal_*",
-        "workspace_*",
-        "web_*",
-      ],
-      skip_unlimited_providers: false,
-    },
-    logging: { level: "info", pretty: true },
-    mcp: { servers: {} },
-    capabilities: {
-      exec: {
-        mode: execMode,
-        scope: "admin-only",
-        allowlist: [],
-        limits: { timeout: 120, max_output: 50000 },
-        audit: { log_commands: true },
-      },
-    },
-    ton_proxy: { enabled: false, port: 8080 },
-    heartbeat: {
-      enabled: true,
-      interval_ms: 3_600_000,
-      prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.",
-      self_configurable: false,
-    },
-    plugins: {},
-    ...(selectedProvider === "cocoon" ? { cocoon: { port: cocoonInstance } } : {}),
-    tonapi_key: tonapiKey,
-    toncenter_api_key: toncenterApiKey,
-    tavily_api_key: tavilyApiKey,
-  };
+  // Build config (shared with the non-interactive flow via buildConfig)
+  const config = buildConfig({
+    provider: state.selectedProvider,
+    apiKey: state.apiKey,
+    baseUrl: state.selectedProvider === "local" ? state.localBaseUrl : undefined,
+    model: state.selectedModel,
+    maxAgenticIterations: parseInt(state.maxAgenticIterations, 10),
+    telegramMode: state.telegramMode,
+    apiId: state.apiId,
+    apiHash: state.apiHash,
+    phone: state.phone,
+    userId: state.userId,
+    dmPolicy: state.dmPolicy,
+    groupPolicy: state.groupPolicy,
+    requireMention: state.requireMention,
+    execMode: state.execMode,
+    botToken: state.botToken,
+    botUsername: state.botUsername,
+    tonapiKey: state.tonapiKey,
+    toncenterApiKey: state.toncenterApiKey,
+    tavilyApiKey: state.tavilyApiKey,
+    cocoonPort: state.selectedProvider === "cocoon" ? state.cocoonInstance : undefined,
+    sessionPath: workspace.sessionPath,
+    workspaceRoot: workspace.root,
+  });
 
   // Save config
   spinner.start(DIM("Saving configuration..."));
@@ -1158,7 +1268,7 @@ async function runInteractiveOnboarding(
 
   // Telegram authentication
   let telegramConnected = false;
-  if (telegramMode === "bot") {
+  if (state.telegramMode === "bot") {
     console.log(`\n  ${DIM("Bot mode — no Telegram auth required. Ready to start.")}\n`);
     STEPS[6].value = "Bot mode ✓";
     telegramConnected = true;
@@ -1176,9 +1286,9 @@ async function runInteractiveOnboarding(
       try {
         const sessionPath = join(TELETON_ROOT, "telegram_session.txt");
         const client = new TelegramUserClient({
-          apiId,
-          apiHash,
-          phone,
+          apiId: state.apiId,
+          apiHash: state.apiHash,
+          phone: state.phone,
           sessionPath,
         });
         await client.connect();
@@ -1200,6 +1310,89 @@ async function runInteractiveOnboarding(
       STEPS[6].value = "Auth on first start";
     }
   }
+
+  return telegramConnected;
+}
+
+async function runInteractiveOnboarding(
+  options: OnboardOptions,
+  prompter: ReturnType<typeof createPrompter>
+): Promise<void> {
+  // ── Mutable shared state ──
+  const state: OnboardState = {
+    selectedProvider: "anthropic",
+    selectedModel: "",
+    apiKey: "",
+    localBaseUrl: "",
+    cocoonInstance: 10000,
+    apiId: 0,
+    apiHash: "",
+    phone: "",
+    userId: 0,
+    telegramMode: "user",
+    botToken: undefined,
+    botUsername: undefined,
+    dmPolicy: "admin-only",
+    groupPolicy: "admin-only",
+    requireMention: true,
+    maxAgenticIterations: "5",
+    execMode: "off",
+    tonapiKey: undefined,
+    toncenterApiKey: undefined,
+    tavilyApiKey: undefined,
+  };
+
+  // Intro
+  console.clear();
+  console.log();
+  console.log(wizardFrame(0, STEPS));
+  console.log();
+  await sleep(800);
+
+  // Step 0: Agent
+  const agentResult = await stepAgent(options, prompter);
+  if (!agentResult) return; // user declined to overwrite existing config
+  const { workspace, spinner } = agentResult;
+  state.telegramMode = agentResult.telegramMode;
+
+  // Step 1: Provider
+  const provider = await stepProvider(options, prompter);
+  state.selectedProvider = provider.selectedProvider;
+  state.apiKey = provider.apiKey;
+  state.localBaseUrl = provider.localBaseUrl;
+  state.cocoonInstance = provider.cocoonInstance;
+  state.selectedModel = provider.selectedModel;
+
+  // Step 2: Config
+  const cfg = await stepConfig(options, state.telegramMode);
+  state.userId = cfg.userId;
+  state.dmPolicy = cfg.dmPolicy;
+  state.groupPolicy = cfg.groupPolicy;
+  state.requireMention = cfg.requireMention;
+  state.maxAgenticIterations = cfg.maxAgenticIterations;
+  state.execMode = cfg.execMode;
+
+  // Step 3: Modules
+  const modules = await stepModules(state.telegramMode, spinner);
+  state.botToken = modules.botToken;
+  state.botUsername = modules.botUsername;
+  state.tonapiKey = modules.tonapiKey;
+  state.toncenterApiKey = modules.toncenterApiKey;
+  state.tavilyApiKey = modules.tavilyApiKey;
+
+  // Step 4: Wallet (produced + persisted inside the step; not needed downstream)
+  await stepWallet(spinner);
+
+  // Step 5: Telegram
+  const telegram = await stepTelegram(options, state.telegramMode, spinner);
+  if (telegram.botToken !== undefined) state.botToken = telegram.botToken;
+  if (telegram.botUsername !== undefined) state.botUsername = telegram.botUsername;
+  if (telegram.apiId !== undefined) state.apiId = telegram.apiId;
+  if (telegram.apiHash !== undefined) state.apiHash = telegram.apiHash;
+  if (telegram.phone !== undefined) state.phone = telegram.phone;
+
+  // Step 6: Connect
+  const telegramConnected = await stepConnect(state, workspace, spinner, prompter);
 
   // ════════════════════════════════════════════════════════════════════
   // Final summary
@@ -1231,7 +1424,7 @@ async function runNonInteractiveOnboarding(
       prompter.error("Non-interactive bot mode requires: --bot-token");
       process.exit(1);
     }
-    if (!/^[0-9]+:[A-Za-z0-9_-]+$/.test(options.botToken)) {
+    if (!BOT_TOKEN_REGEX.test(options.botToken)) {
       prompter.error("--bot-token format invalid (expected 123456:ABC...)");
       process.exit(1);
     }
@@ -1261,102 +1454,27 @@ async function runNonInteractiveOnboarding(
 
   const providerMeta = getProviderMetadata(selectedProvider);
 
-  const config: Config = {
-    meta: {
-      version: "1.0.0",
-      created_at: new Date().toISOString(),
-      onboard_command: "teleton setup",
-    },
-    agent: {
-      provider: selectedProvider,
-      api_key: options.apiKey || "",
-      ...(options.baseUrl ? { base_url: options.baseUrl } : {}),
-      model: providerMeta.defaultModel,
-      max_tokens: 4096,
-      temperature: 0.7,
-      system_prompt: null,
-      max_agentic_iterations: 5,
-      toolset: "full",
-      session_reset_policy: {
-        daily_reset_enabled: true,
-        daily_reset_hour: 4,
-        idle_expiry_enabled: true,
-        idle_expiry_minutes: 1440,
-      },
-    },
-    telegram: {
-      mode: nonInteractiveMode,
-      api_id: nonInteractiveMode === "user" ? (options.apiId ?? 0) : 0,
-      api_hash: nonInteractiveMode === "user" ? (options.apiHash ?? "") : "",
-      phone: nonInteractiveMode === "user" ? (options.phone ?? "") : "",
-      session_name: "teleton_session",
-      session_path: workspace.sessionPath,
-      dm_policy: "admin-only",
-      allow_from: [],
-      group_policy: "admin-only",
-      group_allow_from: [],
-      require_mention: true,
-      max_message_length: TELEGRAM_MAX_MESSAGE_LENGTH,
-      typing_simulation: true,
-      rate_limit_messages_per_second: 1.0,
-      rate_limit_groups_per_minute: 20,
-      admin_ids: [options.userId ?? 0],
-      owner_id: options.userId ?? 0,
-      agent_channel: null,
-      debounce_ms: 1500,
-      bot_token: nonInteractiveMode === "bot" ? options.botToken : undefined,
-      bot_username: undefined,
-      stream_mode: "all",
-    },
-    storage: {
-      sessions_file: `${workspace.root}/sessions.json`,
-      memory_file: `${workspace.root}/memory.json`,
-      history_limit: 100,
-    },
-    embedding: { provider: "local" },
-    deals: DealsConfigSchema.parse({}),
-    webui: {
-      enabled: false,
-      port: 7777,
-      host: "127.0.0.1",
-      cors_origins: ["http://localhost:5173", "http://localhost:7777"],
-      log_requests: false,
-    },
-    dev: { hot_reload: false },
-    tool_rag: {
-      enabled: true,
-      top_k: 25,
-      always_include: [
-        "telegram_send_message",
-        "telegram_quote_reply",
-        "telegram_send_photo",
-        "journal_*",
-        "workspace_*",
-        "web_*",
-      ],
-      skip_unlimited_providers: false,
-    },
-    logging: { level: "info", pretty: true },
-    capabilities: {
-      exec: {
-        mode: "off",
-        scope: "admin-only",
-        allowlist: [],
-        limits: { timeout: 120, max_output: 50000 },
-        audit: { log_commands: true },
-      },
-    },
-    ton_proxy: { enabled: false, port: 8080 },
-    heartbeat: {
-      enabled: true,
-      interval_ms: 3_600_000,
-      prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.",
-      self_configurable: false,
-    },
-    mcp: { servers: {} },
-    plugins: {},
-    tavily_api_key: options.tavilyApiKey,
-  };
+  const config = buildConfig({
+    provider: selectedProvider,
+    apiKey: options.apiKey || "",
+    baseUrl: options.baseUrl,
+    model: providerMeta.defaultModel,
+    maxAgenticIterations: 5,
+    telegramMode: nonInteractiveMode,
+    apiId: options.apiId ?? 0,
+    apiHash: options.apiHash ?? "",
+    phone: options.phone ?? "",
+    userId: options.userId ?? 0,
+    dmPolicy: "admin-only",
+    groupPolicy: "admin-only",
+    requireMention: true,
+    execMode: "off",
+    botToken: nonInteractiveMode === "bot" ? options.botToken : undefined,
+    botUsername: undefined,
+    tavilyApiKey: options.tavilyApiKey,
+    sessionPath: workspace.sessionPath,
+    workspaceRoot: workspace.root,
+  });
 
   const configYaml = YAML.stringify(config);
   writeFileSync(workspace.configPath, configYaml, { encoding: "utf-8", mode: 0o600 });

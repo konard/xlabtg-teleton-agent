@@ -1,12 +1,27 @@
 import type Database from "better-sqlite3";
-import type { ToolScope } from "../agent/tools/types.js";
+import { levelToScope, type ToolAccessLevel } from "../agent/tools/scope.js";
 
 export interface ToolConfig {
   toolName: string;
-  enabled: boolean;
-  scope: ToolScope | null; // null = use default from tool definition
+  level: ToolAccessLevel;
   updatedAt: number;
   updatedBy: number | null;
+}
+
+interface ToolConfigRow {
+  tool_name: string;
+  scope_level: ToolAccessLevel;
+  updated_at: number;
+  updated_by: number | null;
+}
+
+function rowToConfig(row: ToolConfigRow): ToolConfig {
+  return {
+    toolName: row.tool_name,
+    level: row.scope_level,
+    updatedAt: row.updated_at,
+    updatedBy: row.updated_by,
+  };
 }
 
 /**
@@ -15,29 +30,13 @@ export interface ToolConfig {
 export function loadToolConfig(db: Database.Database, toolName: string): ToolConfig | null {
   const row = db
     .prepare(
-      `SELECT tool_name, enabled, scope, updated_at, updated_by
+      `SELECT tool_name, scope_level, updated_at, updated_by
        FROM tool_config
        WHERE tool_name = ?`
     )
-    .get(toolName) as
-    | {
-        tool_name: string;
-        enabled: number;
-        scope: ToolScope | null;
-        updated_at: number;
-        updated_by: number | null;
-      }
-    | undefined;
+    .get(toolName) as ToolConfigRow | undefined;
 
-  if (!row) return null;
-
-  return {
-    toolName: row.tool_name,
-    enabled: row.enabled === 1,
-    scope: row.scope,
-    updatedAt: row.updated_at,
-    updatedBy: row.updated_by,
-  };
+  return row ? rowToConfig(row) : null;
 }
 
 /**
@@ -46,49 +45,41 @@ export function loadToolConfig(db: Database.Database, toolName: string): ToolCon
 export function loadAllToolConfigs(db: Database.Database): Map<string, ToolConfig> {
   const rows = db
     .prepare(
-      `SELECT tool_name, enabled, scope, updated_at, updated_by
+      `SELECT tool_name, scope_level, updated_at, updated_by
        FROM tool_config`
     )
-    .all() as Array<{
-    tool_name: string;
-    enabled: number;
-    scope: ToolScope | null;
-    updated_at: number;
-    updated_by: number | null;
-  }>;
+    .all() as ToolConfigRow[];
 
   const configs = new Map<string, ToolConfig>();
   for (const row of rows) {
-    configs.set(row.tool_name, {
-      toolName: row.tool_name,
-      enabled: row.enabled === 1,
-      scope: row.scope,
-      updatedAt: row.updated_at,
-      updatedBy: row.updated_by,
-    });
+    configs.set(row.tool_name, rowToConfig(row));
   }
   return configs;
 }
 
 /**
- * Save or update tool configuration
+ * Save or update a tool's access level. The legacy enabled/scope columns are
+ * kept in sync (derived) so a downgrade to pre-1.19 code still sees coherent
+ * values.
  */
 export function saveToolConfig(
   db: Database.Database,
   toolName: string,
-  enabled: boolean,
-  scope: ToolScope | null,
+  level: ToolAccessLevel,
   updatedBy?: number
 ): void {
+  const legacyScope = levelToScope(level);
+  const legacyEnabled = level === "off" ? 0 : 1;
   db.prepare(
-    `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-     VALUES (?, ?, ?, unixepoch(), ?)
+    `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+     VALUES (?, ?, ?, ?, unixepoch(), ?)
      ON CONFLICT(tool_name) DO UPDATE SET
        enabled = excluded.enabled,
        scope = excluded.scope,
+       scope_level = excluded.scope_level,
        updated_at = excluded.updated_at,
        updated_by = excluded.updated_by`
-  ).run(toolName, enabled ? 1 : 0, scope, updatedBy ?? null);
+  ).run(toolName, legacyEnabled, legacyScope, level, updatedBy ?? null);
 }
 
 /**
@@ -97,15 +88,16 @@ export function saveToolConfig(
 export function initializeToolConfig(
   db: Database.Database,
   toolName: string,
-  defaultEnabled: boolean,
-  defaultScope: ToolScope
+  level: ToolAccessLevel
 ): void {
   const existing = loadToolConfig(db, toolName);
   if (!existing) {
+    const legacyScope = levelToScope(level);
+    const legacyEnabled = level === "off" ? 0 : 1;
     db.prepare(
-      `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-       VALUES (?, ?, ?, unixepoch(), NULL)`
-    ).run(toolName, defaultEnabled ? 1 : 0, defaultScope);
+      `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+       VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+    ).run(toolName, legacyEnabled, legacyScope, level);
   }
 }
 

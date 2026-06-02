@@ -15,54 +15,54 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       value: "claude-opus-4-7",
       name: "Claude Opus 4.7",
-      description: "Most capable, 1M ctx, reasoning, $5/M",
+      description: "Most capable available, 1M ctx, reasoning, $5/$25",
     },
     {
       value: "claude-opus-4-6",
       name: "Claude Opus 4.6",
-      description: "Previous gen, 1M ctx, reasoning, $5/M",
+      description: "Previous gen, 1M ctx, reasoning, $5/$25",
     },
     {
       value: "claude-opus-4-5-20251101",
       name: "Claude Opus 4.5",
-      description: "Older gen, 200K ctx, $5/M",
+      description: "Older gen, 200K ctx, $5/$25",
     },
     {
       value: "claude-sonnet-4-6",
       name: "Claude Sonnet 4.6",
-      description: "Balanced, 1M ctx, reasoning, $3/M",
+      description: "Balanced, 1M ctx, reasoning, $3/$15",
     },
     {
       value: "claude-haiku-4-5-20251001",
       name: "Claude Haiku 4.5",
-      description: "Fast & cheap, 200K ctx, $1/M (default)",
+      description: "Fast & cheap, 200K ctx, $1/$5 (default)",
     },
   ],
   openai: [
     {
       value: "gpt-5.5",
       name: "GPT-5.5",
-      description: "Latest frontier, reasoning, 272K ctx, $5/M",
+      description: "Latest frontier, reasoning, 272K ctx, $5/$30",
     },
     {
       value: "gpt-5.5-pro",
       name: "GPT-5.5 Pro",
-      description: "Max capability, reasoning, 1M ctx, $30/M",
+      description: "Max capability, reasoning, 1M ctx, $30/$180",
     },
-    { value: "gpt-5.4", name: "GPT-5.4", description: "Reasoning, 272K ctx, $2.50/M" },
+    { value: "gpt-5.4", name: "GPT-5.4", description: "Reasoning, 272K ctx, $2.50/$15" },
     {
       value: "gpt-5.4-pro",
       name: "GPT-5.4 Pro",
-      description: "Extended thinking, 1M ctx, $30/M",
+      description: "Extended thinking, 1M ctx, $30/$180",
     },
     {
       value: "gpt-5.4-mini",
       name: "GPT-5.4 Mini",
-      description: "Fast & cheap, reasoning, 400K ctx, $0.75/M",
+      description: "Fast & cheap, reasoning, 400K ctx, $0.75/$4.50",
     },
-    { value: "gpt-4o", name: "GPT-4o", description: "Balanced, 128K ctx, $2.50/M" },
-    { value: "gpt-4.1", name: "GPT-4.1", description: "1M ctx, $2/M" },
-    { value: "gpt-4.1-mini", name: "GPT-4.1 Mini", description: "1M ctx, cheap, $0.40/M" },
+    { value: "gpt-4o", name: "GPT-4o", description: "Balanced, 128K ctx, $2.50/$10" },
+    { value: "gpt-4.1", name: "GPT-4.1", description: "1M ctx, $2/$8" },
+    { value: "gpt-4.1-mini", name: "GPT-4.1 Mini", description: "1M ctx, cheap, $0.40/$1.60" },
   ],
   "openai-codex": [
     { value: "gpt-5.5", name: "GPT-5.5", description: "Latest frontier, reasoning, 272K ctx" },
@@ -79,31 +79,45 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       value: "gemini-3.1-pro-preview",
       name: "Gemini 3.1 Pro",
-      description: "Preview, latest gen, reasoning, 1M ctx",
+      description: "Preview, latest gen, reasoning, 1M ctx, $2/$12",
     },
-    { value: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Stable, 1M ctx, $1.25/M" },
-    { value: "gemini-2.5-flash", name: "Gemini 2.5 Flash", description: "Fast, 1M ctx, $0.30/M" },
+    {
+      value: "gemini-3.1-flash-lite-preview",
+      name: "Gemini 3.1 Flash Lite",
+      description: "Preview, fast & cheap, reasoning, 1M ctx, $0.25/$1.50",
+    },
+    { value: "gemini-2.5-pro", name: "Gemini 2.5 Pro", description: "Stable, 1M ctx, $1.25/$10" },
+    {
+      value: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash",
+      description: "Fast, 1M ctx, $0.30/$2.50",
+    },
     {
       value: "gemini-2.5-flash-lite",
       name: "Gemini 2.5 Flash Lite",
-      description: "Ultra cheap, 1M ctx, $0.10/M",
+      description: "Ultra cheap, 1M ctx, $0.10/$0.40",
     },
   ],
   xai: [
     {
       value: "grok-4.3",
       name: "Grok 4.3",
-      description: "Latest, reasoning, vision, 1M ctx, $1.25/M",
+      description: "Latest, reasoning, vision, 1M ctx, $1.25/$2.50",
     },
     {
       value: "grok-4.20-0309-reasoning",
       name: "Grok 4.20 Reasoning",
-      description: "Reasoning, vision, 2M ctx, $2/M",
+      description: "Reasoning, vision, 2M ctx, $2/$6",
     },
     {
       value: "grok-4.20-0309-non-reasoning",
       name: "Grok 4.20 Non-Reasoning",
-      description: "Fast, vision, 2M ctx, $2/M",
+      description: "Fast, vision, 2M ctx, $2/$6",
+    },
+    {
+      value: "grok-4-1-fast-non-reasoning",
+      name: "Grok 4.1 Fast",
+      description: "Fast, vision, 2M ctx, $0.20/$0.50",
     },
   ],
   groq: [
@@ -250,9 +264,8 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   ],
 };
 
-/** Get models for a provider (claude-code → anthropic, codex → openai-codex) */
+/** Get models for a provider (codex → openai-codex) */
 export function getModelsForProvider(provider: string): ModelOption[] {
-  const key =
-    provider === "claude-code" ? "anthropic" : provider === "codex" ? "openai-codex" : provider;
+  const key = provider === "codex" ? "openai-codex" : provider;
   return MODEL_OPTIONS[key] || [];
 }

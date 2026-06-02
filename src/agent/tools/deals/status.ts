@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import type { Deal } from "../../../deals/types.js";
+import { loadDealForActor } from "./load-deal.js";
 import { formatAsset } from "../../../deals/utils.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
@@ -26,26 +26,13 @@ export const dealStatusExecutor: ToolExecutor<DealStatusParams> = async (
   context
 ): Promise<ToolResult> => {
   try {
-    // Load deal from database
-    const deal = context.db.prepare(`SELECT * FROM deals WHERE id = ?`).get(params.dealId) as
-      | Deal
-      | undefined;
-
-    if (!deal) {
-      return {
-        success: false,
-        error: `Deal #${params.dealId} not found`,
-      };
-    }
-
-    // User-scoping: only deal owner or admins can view deal details
+    // Load deal + enforce owner/admin access
     const adminIds = context.config?.telegram.admin_ids ?? [];
-    if (context.senderId !== deal.user_telegram_id && !adminIds.includes(context.senderId)) {
-      return {
-        success: false,
-        error: `⛔ You can only view your own deals.`,
-      };
+    const loaded = loadDealForActor(context.db, params.dealId, context.senderId, adminIds, "view");
+    if (!loaded.ok) {
+      return { success: false, error: loaded.error };
     }
+    const deal = loaded.deal;
 
     // Format timestamps
     const createdAt = new Date(deal.created_at * 1000).toISOString();

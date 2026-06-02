@@ -9,15 +9,18 @@ import type {
 } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
 import { WalletContractV5R1, toNano, internal } from "@ton/ton";
-import { Address, SendMode } from "@ton/core";
+import { Address } from "@ton/core";
 import { getCachedTonClient, loadWallet, getKeyPair } from "../ton/wallet-service.js";
+import { sendWalletTx, walletTxLt, confirmWalletTx } from "../ton/confirm.js";
 import { StonApiClient } from "@ston-fi/api";
 import { dexFactory } from "@ston-fi/sdk";
 import { Factory, Asset, PoolType, ReadinessStatus, JettonRoot, VaultJetton } from "@dedust/sdk";
 import type { Pool } from "@dedust/sdk";
-import { DEDUST_FACTORY_MAINNET, DEDUST_GAS } from "../agent/tools/dedust/constants.js";
-import { getDecimals, toUnits, fromUnits } from "../agent/tools/dedust/asset-cache.js";
+import { DEDUST_FACTORY_MAINNET, DEDUST_GAS } from "../ton/dex-constants.js";
+import { getDecimals } from "../ton/dedust-assets.js";
+import { toUnits, fromUnits } from "../ton/units.js";
 import { withTxLock } from "../ton/tx-lock.js";
+import { STONFI_PTON_ADDRESS } from "../ton/dex-constants.js";
 
 import type { OpenedContract } from "@ton/ton";
 
@@ -43,7 +46,7 @@ async function findDedustPool(
   }
 }
 
-const STONFI_NATIVE_TON = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
+const STONFI_NATIVE_TON = STONFI_PTON_ADDRESS;
 
 const stonApiClient = new StonApiClient();
 
@@ -152,6 +155,34 @@ async function getDedustQuote(
   }
 }
 
+type SwapWallet = ReturnType<typeof WalletContractV5R1.create>;
+
+/**
+ * Thin wallet-provisioning wrapper shared by the STON.fi and DeDust swap paths:
+ * runs `fn` under the tx lock with a freshly derived key and opened V5R1 contract.
+ * The divergent txParams cores stay in each caller's `fn`.
+ */
+async function withSwapWallet<T>(
+  tonClient: Awaited<ReturnType<typeof getCachedTonClient>>,
+  fn: (ctx: {
+    keyPair: NonNullable<Awaited<ReturnType<typeof getKeyPair>>>;
+    wallet: SwapWallet;
+    walletContract: OpenedContract<SwapWallet>;
+  }) => Promise<T>
+): Promise<T> {
+  return withTxLock(async () => {
+    const keyPair = await getKeyPair();
+    if (!keyPair) {
+      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+    }
+
+    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
+    const walletContract = tonClient.open(wallet);
+
+    return fn({ keyPair, wallet, walletContract });
+  });
+}
+
 async function executeSTONfiSwap(
   params: DexSwapParams,
   _log: PluginLogger
@@ -188,15 +219,7 @@ async function executeSTONfiSwap(
   const contracts = dexFactory(routerInfo);
   const router = tonClient.open(contracts.Router.create(routerInfo.address));
 
-  return withTxLock(async () => {
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
-      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
-    }
-
-    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const walletContract = tonClient.open(wallet);
-    const seqno = await walletContract.getSeqno();
+  return withSwapWallet(tonClient, async ({ keyPair, walletContract }) => {
     const proxyTon = contracts.pTON.create(routerInfo.ptonMasterAddress);
 
     let txParams;
@@ -227,10 +250,8 @@ async function executeSTONfiSwap(
       });
     }
 
-    await walletContract.sendTransfer({
-      seqno,
+    const sent = await sendWalletTx(tonClient, walletContract, {
       secretKey: keyPair.secretKey,
-      sendMode: SendMode.PAY_GAS_SEPARATELY,
       messages: [
         internal({
           to: txParams.to,
@@ -240,6 +261,13 @@ async function executeSTONfiSwap(
         }),
       ],
     });
+
+    if (!sent) {
+      throw new PluginSDKError(
+        "Swap transaction failed or could not be confirmed on-chain",
+        "OPERATION_FAILED"
+      );
+    }
 
     const toDecimals = await getDecimals(isTonOutput ? "ton" : toAsset);
     const expectedOutput = fromUnits(BigInt(simulationResult.askUnits), toDecimals);
@@ -253,6 +281,7 @@ async function executeSTONfiSwap(
       expectedOutput: expectedOutput.toFixed(6),
       minOutput: minOutput.toFixed(6),
       slippage: `${(slippage * 100).toFixed(2)}%`,
+      txRef: sent.hash,
     };
   });
 }
@@ -293,42 +322,50 @@ async function executeDedustSwap(
   });
   const minAmountOut = amountOut - (amountOut * BigInt(Math.floor(slippage * 10000))) / 10000n;
 
-  return withTxLock(async () => {
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
-      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+  return withSwapWallet(tonClient, async ({ keyPair, walletContract }) => {
+    const sender = walletContract.sender(keyPair.secretKey);
+    const sinceLt = await walletTxLt(tonClient, walletContract.address);
+    let broadcastError: unknown;
+
+    try {
+      if (isTonInput) {
+        const tonVault = tonClient.open(await factory.getNativeVault());
+        await tonVault.sendSwap(sender, {
+          poolAddress: pool.address,
+          amount: amountIn,
+          limit: minAmountOut,
+          gasAmount: toNano(DEDUST_GAS.SWAP_TON_TO_JETTON),
+        });
+      } else {
+        const jettonAddress = Address.parse(fromAsset);
+        const jettonVault = tonClient.open(await factory.getJettonVault(jettonAddress));
+        const jettonRoot = tonClient.open(JettonRoot.createFromAddress(jettonAddress));
+        const jettonWallet = tonClient.open(
+          await jettonRoot.getWallet(Address.parse(walletData.address))
+        );
+        const swapPayload = VaultJetton.createSwapPayload({
+          poolAddress: pool.address,
+          limit: minAmountOut,
+        });
+        await jettonWallet.sendTransfer(sender, toNano(DEDUST_GAS.SWAP_JETTON_TO_ANY), {
+          destination: jettonVault.address,
+          amount: amountIn,
+          responseAddress: Address.parse(walletData.address),
+          forwardAmount: toNano(DEDUST_GAS.FORWARD_GAS),
+          forwardPayload: swapPayload,
+        });
+      }
+    } catch (error) {
+      broadcastError = error;
     }
 
-    const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
-    const walletContract = tonClient.open(wallet);
-    const sender = walletContract.sender(keyPair.secretKey);
-
-    if (isTonInput) {
-      const tonVault = tonClient.open(await factory.getNativeVault());
-      await tonVault.sendSwap(sender, {
-        poolAddress: pool.address,
-        amount: amountIn,
-        limit: minAmountOut,
-        gasAmount: toNano(DEDUST_GAS.SWAP_TON_TO_JETTON),
-      });
-    } else {
-      const jettonAddress = Address.parse(fromAsset);
-      const jettonVault = tonClient.open(await factory.getJettonVault(jettonAddress));
-      const jettonRoot = tonClient.open(JettonRoot.createFromAddress(jettonAddress));
-      const jettonWallet = tonClient.open(
-        await jettonRoot.getWallet(Address.parse(walletData.address))
+    const confirmed = await confirmWalletTx(tonClient, walletContract.address, sinceLt);
+    if (!confirmed) {
+      if (broadcastError) throw broadcastError;
+      throw new PluginSDKError(
+        "Swap transaction failed or could not be confirmed on-chain",
+        "OPERATION_FAILED"
       );
-      const swapPayload = VaultJetton.createSwapPayload({
-        poolAddress: pool.address,
-        limit: minAmountOut,
-      });
-      await jettonWallet.sendTransfer(sender, toNano(DEDUST_GAS.SWAP_JETTON_TO_ANY), {
-        destination: jettonVault.address,
-        amount: amountIn,
-        responseAddress: Address.parse(walletData.address),
-        forwardAmount: toNano(DEDUST_GAS.FORWARD_GAS),
-        forwardPayload: swapPayload,
-      });
     }
 
     const expectedOutput = fromUnits(amountOut, toDecimals);
@@ -342,6 +379,7 @@ async function executeDedustSwap(
       expectedOutput: expectedOutput.toFixed(6),
       minOutput: minOutput.toFixed(6),
       slippage: `${(slippage * 100).toFixed(2)}%`,
+      txRef: confirmed.hash,
     };
   });
 }

@@ -8,7 +8,7 @@
  * - elevenlabs: ElevenLabs API
  */
 
-import { spawn } from "child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "child_process";
 import { writeFileSync, mkdirSync, existsSync, unlinkSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -128,16 +128,67 @@ export async function generateSpeech(options: TTSOptions): Promise<TTSResult> {
   }
 }
 
+/** Ensure the shared TTS temp directory exists and return its path. */
+function ensureTtsTempDir(): string {
+  const tempDir = join(tmpdir(), "teleton-tts");
+  if (!existsSync(tempDir)) {
+    mkdirSync(tempDir, { recursive: true });
+  }
+  return tempDir;
+}
+
+/**
+ * Spawn a process and resolve when it exits successfully, else reject with a
+ * labelled error carrying stderr. Shared by the void-resolving TTS subprocesses.
+ */
+function spawnToPromise(
+  command: string,
+  args: string[],
+  options: SpawnOptions,
+  opts: {
+    label: string;
+    onSpawn?: (proc: ChildProcess) => void;
+    successCheck?: (code: number | null) => boolean;
+    spawnErrorMessage?: (err: Error) => string;
+  }
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    const proc = spawn(command, args, options);
+    opts.onSpawn?.(proc);
+
+    let stderr = "";
+    proc.stderr?.on("data", (data) => {
+      stderr += data.toString();
+    });
+
+    proc.on("close", (code) => {
+      const ok = opts.successCheck ? opts.successCheck(code) : code === 0;
+      if (ok) {
+        resolve();
+      } else {
+        reject(new Error(`${opts.label} failed (code ${code}): ${stderr}`));
+      }
+    });
+
+    proc.on("error", (err) => {
+      reject(
+        new Error(
+          opts.spawnErrorMessage
+            ? opts.spawnErrorMessage(err)
+            : `${opts.label} spawn error: ${err.message}`
+        )
+      );
+    });
+  });
+}
+
 /**
  * Generate TTS using Piper (offline neural TTS)
  * Uses custom voices from ~/.teleton/piper-voices/
  * Converts WAV to OGG/Opus for Telegram voice messages
  */
 async function generatePiperTTS(text: string, voice: string): Promise<TTSResult> {
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
+  const tempDir = ensureTtsTempDir();
 
   const id = randomUUID();
   const wavPath = join(tempDir, `${id}.wav`);
@@ -156,77 +207,38 @@ async function generatePiperTTS(text: string, voice: string): Promise<TTSResult>
   // Run piper from the Python venv
   const piperBin = join(PIPER_VENV, "bin", "piper");
 
-  await new Promise<void>((resolve, reject) => {
-    const proc = spawn(
-      piperBin,
-      [
-        "--model",
-        modelPath,
-        "--output_file",
-        wavPath,
-        "--sentence_silence",
-        "0.5", // 500ms pause between sentences
-      ],
-      {
-        stdio: ["pipe", "pipe", "pipe"],
-      }
-    );
-
-    // Send text via stdin
-    proc.stdin?.write(text);
-    proc.stdin?.end();
-
-    let stderr = "";
-    proc.stderr?.on("data", (data) => {
-      stderr += data.toString();
-    });
-
-    proc.on("close", (code) => {
-      if (code === 0 && existsSync(wavPath)) {
-        resolve();
-      } else {
-        reject(new Error(`Piper TTS failed (code ${code}): ${stderr}`));
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(new Error(`Piper spawn error: ${err.message}. Is Piper installed in ${PIPER_VENV}?`));
-    });
-  });
+  await spawnToPromise(
+    piperBin,
+    [
+      "--model",
+      modelPath,
+      "--output_file",
+      wavPath,
+      "--sentence_silence",
+      "0.5", // 500ms pause between sentences
+    ],
+    { stdio: ["pipe", "pipe", "pipe"] },
+    {
+      label: "Piper TTS",
+      onSpawn: (proc) => {
+        // Send text via stdin
+        proc.stdin?.write(text);
+        proc.stdin?.end();
+      },
+      successCheck: (code) => code === 0 && existsSync(wavPath),
+      spawnErrorMessage: (err) =>
+        `Piper spawn error: ${err.message}. Is Piper installed in ${PIPER_VENV}?`,
+    }
+  );
 
   // Convert WAV to OGG/Opus for Telegram voice messages
   try {
-    await new Promise<void>((resolve, reject) => {
-      const proc = spawn("ffmpeg", [
-        "-y",
-        "-i",
-        wavPath,
-        "-c:a",
-        "libopus",
-        "-b:a",
-        "48k",
-        "-application",
-        "voip",
-        oggPath,
-      ]);
-
-      let stderr = "";
-      proc.stderr?.on("data", (data) => {
-        stderr += data.toString();
-      });
-
-      proc.on("close", (code) => {
-        if (code === 0) {
-          resolve();
-        } else {
-          reject(new Error(`ffmpeg failed (code ${code}): ${stderr}`));
-        }
-      });
-
-      proc.on("error", (err) => {
-        reject(new Error(`ffmpeg spawn error: ${err.message}`));
-      });
-    });
+    await spawnToPromise(
+      "ffmpeg",
+      ["-y", "-i", wavPath, "-c:a", "libopus", "-b:a", "48k", "-application", "voip", oggPath],
+      {},
+      { label: "ffmpeg" }
+    );
 
     // Cleanup WAV
     unlinkSync(wavPath);
@@ -255,10 +267,7 @@ async function generateEdgeTTS(
   rate?: string,
   pitch?: string
 ): Promise<TTSResult> {
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
+  const tempDir = ensureTtsTempDir();
 
   const outputPath = join(tempDir, `${randomUUID()}.mp3`);
 
@@ -309,10 +318,7 @@ async function generateOpenAITTS(text: string, voice: string): Promise<TTSResult
     throw new Error("OPENAI_API_KEY not set. Use Edge TTS (free) or set API key.");
   }
 
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
+  const tempDir = ensureTtsTempDir();
 
   const outputPath = join(tempDir, `${randomUUID()}.mp3`);
 
@@ -355,10 +361,7 @@ async function generateElevenLabsTTS(text: string, voiceId: string): Promise<TTS
     throw new Error("ELEVENLABS_API_KEY not set. Use Edge TTS (free) or set API key.");
   }
 
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
+  const tempDir = ensureTtsTempDir();
 
   const outputPath = join(tempDir, `${randomUUID()}.mp3`);
 

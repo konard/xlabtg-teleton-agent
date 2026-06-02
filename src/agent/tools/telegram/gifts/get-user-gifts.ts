@@ -1,10 +1,11 @@
 import { Type } from "@sinclair/typebox";
-import type { ToolEntry } from "../../types.js";
+import type { Tool, ToolEntry } from "../../types.js";
 
-const tool = {
+const tool: Tool = {
   name: "telegram_get_user_gifts",
   description:
     "Get gifts publicly displayed on a user's Telegram profile via Bot API (requires bot_token). Only returns gifts the user has chosen to show. For the full received-gifts inventory including private ones, use telegram_get_my_gifts.",
+  category: "data-bearing",
   parameters: Type.Object({
     user_id: Type.Number({ description: "Telegram user ID to look up" }),
   }),
@@ -47,25 +48,31 @@ const executor = async (params: any, context: any) => {
   const result = data.result ?? { total_count: 0, gifts: [] };
   return {
     success: true,
-    total: result.total_count,
-    gifts: result.gifts.map((g) => ({
-      type: g.type,
-      gift_id: g.gift?.id,
-      star_count: g.gift?.star_count,
-      sender: g.sender_user
-        ? { id: g.sender_user.id, name: g.sender_user.first_name, username: g.sender_user.username }
-        : null,
-      date: g.send_date,
-      text: g.text || null,
-      private: g.is_private || false,
-      convert_stars: g.convert_star_count,
-    })),
+    data: {
+      total: result.total_count,
+      gifts: result.gifts.map((g) => ({
+        type: g.type,
+        gift_id: g.gift?.id,
+        star_count: g.gift?.star_count,
+        sender: g.sender_user
+          ? {
+              id: g.sender_user.id,
+              name: g.sender_user.first_name,
+              username: g.sender_user.username,
+            }
+          : null,
+        date: g.send_date,
+        text: g.text || null,
+        private: g.is_private || false,
+        convert_stars: g.convert_star_count,
+      })),
+    },
   };
 };
 
 export const getUserGiftsEntry: ToolEntry = {
   tool,
   executor,
-  requiredMode: "bot",
+  mode: "bot",
   tags: ["finance"],
 };

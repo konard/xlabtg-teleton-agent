@@ -95,6 +95,7 @@ function makeBridge() {
     setTyping: vi.fn().mockResolvedValue(undefined),
     fetchReplyContext: vi.fn().mockResolvedValue(null),
     getMode: vi.fn().mockReturnValue("user"),
+    requiresOffsetDedup: vi.fn().mockReturnValue(true),
   } as any;
 }
 

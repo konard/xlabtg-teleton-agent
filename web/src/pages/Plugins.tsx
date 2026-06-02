@@ -1,17 +1,49 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo, PluginManifest, MarketplacePlugin, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
-import { ToolRow } from '../components/ToolRow';
+import { ToolRow, LEVEL_OPTIONS } from '../components/ToolRow';
+import { PillTabs } from '../components/PillTabs';
 import { Select } from '../components/Select';
-import { SearchInput } from '../components/SearchInput';
+import { SearchBar } from '../components/SearchBar';
+import { Segmented } from '../components/Segmented';
+import { List, ListRow } from '../components/List';
 import { useToolManager } from '../hooks/useToolManager';
+import { errMsg } from '../lib/utils';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
+import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
+import { Alert } from '../components/Alert';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
 
 type Tab = 'installed' | 'marketplace';
 
+// Common access level across a plugin's tools, or '' when mixed.
+const pluginCommonLevel = (tools: ToolInfo[]): string => {
+  if (tools.length === 0) return '';
+  const set = new Set(tools.map((t) => t.level));
+  return set.size === 1 ? (set.values().next().value ?? '') : '';
+};
+
+interface PluginsData {
+  manifests: PluginManifest[];
+  pluginModules: ModuleInfo[];
+}
+
 export function Plugins() {
+  const confirm = useConfirm();
   const [tab, setTab] = useState<Tab>('installed');
-  const [manifests, setManifests] = useState<PluginManifest[]>([]);
-  const [pluginModules, setPluginModules] = useState<ModuleInfo[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const { data: pluginsData, loading, error, reload, setError } = useResource<PluginsData>(
+    () => Promise.all([api.getPlugins(), api.getTools()]).then(([pluginsRes, toolsRes]) => ({
+      manifests: pluginsRes.data,
+      pluginModules: toolsRes.data.filter((m) => m.isPlugin),
+    })),
+    [],
+  );
+
+  const manifests = pluginsData?.manifests ?? [];
+  const pluginModules = pluginsData?.pluginModules ?? [];
 
   // Marketplace state
   const [marketplace, setMarketplace] = useState<MarketplacePlugin[]>([]);
@@ -34,19 +66,7 @@ export function Plugins() {
   const [editingSecret, setEditingSecret] = useState<string | null>(null);
   const [secretInput, setSecretInput] = useState('');
 
-  const loadData = () => {
-    setLoading(true);
-    return Promise.all([api.getPlugins(), api.getTools()])
-      .then(([pluginsRes, toolsRes]) => {
-        setManifests(pluginsRes.data);
-        setPluginModules(toolsRes.data.filter((m) => m.isPlugin));
-        setLoading(false);
-      })
-      .catch((err) => {
-        tm.setError(err.message);
-        setLoading(false);
-      });
-  };
+  const { updating, updateLevel, bulkLevel } = useToolManager(reload);
 
   const loadMarketplace = (refresh = false) => {
     setMarketLoading(true);
@@ -56,16 +76,12 @@ export function Plugins() {
         setMarketLoading(false);
       })
       .catch((err) => {
-        tm.setError(err.message);
+        setError(errMsg(err));
         setMarketLoading(false);
       });
   };
 
-  const tm = useToolManager(loadData);
-  const { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope } = tm;
-
   useEffect(() => {
-    loadData();
     loadMarketplace();
   }, []);
 
@@ -74,7 +90,8 @@ export function Plugins() {
     setOperating(id);
     try {
       await api.installPlugin(id);
-      await Promise.all([loadMarketplace(), loadData()]);
+      await Promise.all([loadMarketplace(), reload()]);
+      toast.success('Plugin installed');
       if (plugin?.secrets && Object.keys(plugin.secrets).length > 0) {
         try {
           const existing = await api.getPluginSecrets(id);
@@ -88,20 +105,23 @@ export function Plugins() {
         setSecretValues({});
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setOperating(null);
     }
   };
 
   const handleUninstall = async (id: string) => {
-    if (!confirm(`Uninstall plugin "${id}"? This will remove its files.`)) return;
+    if (!(await confirm({ message: `Uninstall plugin "${id}"? This will remove its files.`, destructive: true, confirmLabel: 'Uninstall' }))) return;
     setOperating(id);
     try {
       await api.uninstallPlugin(id);
-      await Promise.all([loadMarketplace(), loadData()]);
+      await Promise.all([loadMarketplace(), reload()]);
+      toast.success('Plugin uninstalled');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -111,9 +131,11 @@ export function Plugins() {
     setOperating(id);
     try {
       await api.updatePlugin(id);
-      await Promise.all([loadMarketplace(), loadData()]);
+      await Promise.all([loadMarketplace(), reload()]);
+      toast.success('Plugin updated');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setOperating(null);
     }
@@ -121,17 +143,29 @@ export function Plugins() {
 
   const handleUpdateAll = async () => {
     const toUpdate = marketplace.filter((p) => p.status === 'updatable');
+    const total = toUpdate.length;
+    let succeeded = 0;
+    let failed = 0;
+    let lastError: string | null = null;
     for (const plugin of toUpdate) {
       setOperating(plugin.id);
       try {
         await api.updatePlugin(plugin.id);
+        succeeded++;
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        break;
+        failed++;
+        lastError = errMsg(err);
       }
     }
     setOperating(null);
-    await Promise.all([loadMarketplace(), loadData()]);
+    await Promise.all([loadMarketplace(), reload()]);
+    if (succeeded > 0) {
+      toast.success(`Updated ${succeeded}/${total} plugins`);
+    }
+    if (failed > 0) {
+      toast.error(`${failed} plugin${failed === 1 ? '' : 's'} failed to update`);
+      setError(lastError);
+    }
   };
 
   // Inline secrets helpers
@@ -147,7 +181,7 @@ export function Plugins() {
       setExpandedSecrets(pluginId);
       setEditingSecret(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -159,47 +193,52 @@ export function Plugins() {
       setSecretInput('');
       const res = await api.getPluginSecrets(pluginId);
       setSecretsInfo(res.data);
+      toast.success('Secret saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
   const removeSecret = async (pluginId: string, key: string) => {
+    if (!(await confirm({ message: `Remove secret "${key}"?`, destructive: true, confirmLabel: 'Remove' }))) return;
     try {
       await api.unsetPluginSecret(pluginId, key);
       const res = await api.getPluginSecrets(pluginId);
       setSecretsInfo(res.data);
+      toast.success('Secret removed');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
 
-  // Filter marketplace plugins
+  // Filters
   const filteredMarketplace = marketplace.filter((p) => {
     if (search) {
       const q = search.toLowerCase();
-      if (!p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) {
-        return false;
-      }
+      if (!p.name.toLowerCase().includes(q) && !p.description.toLowerCase().includes(q)) return false;
     }
-    if (tagFilter && !p.tags.includes(tagFilter)) {
-      return false;
-    }
+    if (tagFilter && !p.tags.includes(tagFilter)) return false;
     return true;
   });
 
   const allTags = Array.from(new Set(marketplace.flatMap((p) => p.tags))).sort();
   const updatableCount = marketplace.filter((p) => p.status === 'updatable').length;
 
-  if (loading) return <div className="loading">Loading...</div>;
+  if (loading) {
+    return (
+      <div>
+        <div className="header"><h1>Plugins</h1><p>Loading plugins…</p></div>
+        <SkeletonRows />
+      </div>
+    );
+  }
 
-  // Filter installed plugins
   const filteredInstalled = manifests.filter((plugin) => {
     if (search) {
       const q = search.toLowerCase();
-      if (!plugin.name.toLowerCase().includes(q) && !(plugin.description ?? '').toLowerCase().includes(q)) {
-        return false;
-      }
+      if (!plugin.name.toLowerCase().includes(q) && !(plugin.description ?? '').toLowerCase().includes(q)) return false;
     }
     if (tagFilter) {
       const entry = marketplace.find(p => p.name === plugin.name);
@@ -208,8 +247,7 @@ export function Plugins() {
     return true;
   });
 
-  const installedToolCount = pluginModules.reduce((sum, m) => sum + m.toolCount, 0);
-  const installedEnabledCount = pluginModules.reduce((sum, m) => sum + m.tools.filter(t => t.enabled).length, 0);
+  const filtering = !!search || !!tagFilter;
 
   return (
     <div>
@@ -219,320 +257,257 @@ export function Plugins() {
       </div>
 
       {error && (
-        <div className="alert error" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>{error}</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button className="btn-ghost btn-sm" onClick={() => setError(null)}>Dismiss</button>
-            <button className="btn-sm" onClick={() => { setError(null); loadData(); }}>Retry</button>
-          </div>
-        </div>
+        <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }}>
+          <button className="btn-sm" onClick={() => { setError(null); reload(); }}>Retry</button>
+        </Alert>
       )}
 
-      {/* Stats bar */}
-      <div className="card" style={{ padding: '10px 14px', marginBottom: '14px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', overflow: 'visible', position: 'relative', zIndex: 2, borderRadius: 'var(--radius-pill)' }}>
-        <div className="tabs" style={{ marginBottom: 0, flexShrink: 0, width: 'auto', display: 'inline-flex' }}>
-          <button
-            className={`tab ${tab === 'installed' ? 'active' : ''}`}
-            style={{ flex: 'none' }}
-            onClick={() => setTab('installed')}
-          >
-            Installed
-            <span className="tab-count">{manifests.length}</span>
-          </button>
-          <button
-            className={`tab ${tab === 'marketplace' ? 'active' : ''}`}
-            style={{ flex: 'none' }}
-            onClick={() => setTab('marketplace')}
-          >
-            Marketplace
-            {updatableCount > 0 && (
-              <span className="tab-count" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
-                {updatableCount}
-              </span>
-            )}
-          </button>
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
+        <Segmented<Tab>
+          value={tab}
+          onChange={setTab}
+          ariaLabel="Plugins view"
+          options={[
+            { value: 'installed', label: `Installed ${manifests.length}` },
+            { value: 'marketplace', label: updatableCount > 0 ? `Marketplace · ${updatableCount}` : 'Marketplace' },
+          ]}
+        />
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          <SearchBar value={search} onChange={setSearch} placeholder="Search plugins…" />
         </div>
-
-        {tab === 'installed' && manifests.length > 0 && (
-          <>
-            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              <span style={{ color: 'var(--green)', fontWeight: 600 }}>{installedEnabledCount}</span> enabled
-            </span>
-            <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-              <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{installedToolCount}</span> tools
-            </span>
-          </>
+        {allTags.length > 0 && (
+          <Select
+            value={tagFilter}
+            options={['', ...allTags]}
+            labels={['All tags', ...allTags]}
+            onChange={setTagFilter}
+            style={{ minWidth: '120px' }}
+          />
         )}
-
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search plugins..." style={{ borderRadius: '14px' }} />
-          {allTags.length > 0 && (
-            <Select
-              value={tagFilter}
-              options={['', ...allTags]}
-              labels={['All tags', ...allTags]}
-              onChange={(v) => setTagFilter(v)}
-              style={{ minWidth: '120px' }}
-            />
-          )}
-          {tab === 'installed' && updatableCount > 0 && (
-            <button
-              className="btn-sm"
-              onClick={handleUpdateAll}
-              disabled={!!operating || marketLoading}
-              style={{ whiteSpace: 'nowrap' }}
-            >
-              {operating ? 'Updating...' : `Update All (${updatableCount})`}
-            </button>
-          )}
-          {tab === 'marketplace' && (
-            <>
-              {updatableCount > 0 ? (
-                <button
-                  className="btn-sm"
-                  onClick={handleUpdateAll}
-                  disabled={!!operating || marketLoading}
-                  style={{ whiteSpace: 'nowrap' }}
-                >
-                  {operating ? 'Updating...' : `Update All (${updatableCount})`}
-                </button>
-              ) : marketplace.length > 0 ? (
-                <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>All up to date</span>
-              ) : null}
-              <button
-                className="btn-ghost"
-                onClick={() => loadMarketplace(true)}
-                disabled={marketLoading}
-                style={{ whiteSpace: 'nowrap' }}
-              >
-                {marketLoading ? 'Refreshing...' : 'Refresh'}
-              </button>
-            </>
-          )}
-        </div>
+        {updatableCount > 0 && (
+          <button className="btn-sm" onClick={handleUpdateAll} disabled={!!operating || marketLoading} style={{ whiteSpace: 'nowrap' }}>
+            {operating ? 'Updating…' : `Update all (${updatableCount})`}
+          </button>
+        )}
+        {tab === 'marketplace' && (
+          <RefreshButton onRefresh={() => loadMarketplace(true)} />
+        )}
       </div>
 
       {/* ── Installed tab ── */}
       {tab === 'installed' && (
-        <div className="card" style={{ padding: 0 }}>
-          {manifests.length === 0 ? (
-            <div style={{ padding: '40px 20px', textAlign: 'center' }}>
-              <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>No plugins installed yet</p>
-              <button className="btn-sm" onClick={() => setTab('marketplace')}>
-                Browse Marketplace
-              </button>
-            </div>
-          ) : filteredInstalled.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              No installed plugins match your search
-            </div>
-          ) : (
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-              <thead>
-                <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
-                  <th style={{ textAlign: 'left', padding: '8px 14px' }}>Plugin</th>
-                  <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Tools</th>
-                  <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Version</th>
-                  <th style={{ textAlign: 'right', padding: '8px 14px', width: 200 }}>Controls</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredInstalled.map((plugin) => {
-                  const module = pluginModules.find((m) => m.name === plugin.name);
-                  const marketEntry = marketplace.find(p => p.name === plugin.name);
-                  const hasSecrets = marketEntry?.secrets && Object.keys(marketEntry.secrets).length > 0;
-                  const isExpanded = expandedPlugin === plugin.name;
-                  const someEnabled = module ? module.tools.some((t) => t.enabled) : false;
-                  const noneEnabled = module ? module.tools.every((t) => !t.enabled) : true;
-                  const scopes = module ? new Set(module.tools.map((t) => t.scope)) : new Set<string>();
-                  const mixedScope = scopes.size > 1;
-                  const commonScope = mixedScope ? '' : (scopes.values().next().value ?? 'always');
-                  const isBusy = updating === plugin.name;
-                  const isUpdatable = marketEntry?.status === 'updatable';
+        manifests.length === 0 ? (
+          <div className="card" style={{ padding: 0 }}>
+            <EmptyState
+              title="No plugins installed"
+              description="Browse the marketplace to add capabilities to your agent."
+              action={<button className="btn-sm" onClick={() => setTab('marketplace')}>Browse Marketplace</button>}
+            />
+          </div>
+        ) : filteredInstalled.length === 0 ? (
+          <div className="card" style={{ padding: 0 }}>
+            <EmptyState
+              title="No plugins found"
+              description="No installed plugins match your filters."
+              action={<button className="btn-ghost btn-sm" onClick={() => { setSearch(''); setTagFilter(''); }}>Clear filters</button>}
+            />
+          </div>
+        ) : (
+          <List>
+            {filteredInstalled.map((plugin) => {
+              const module = pluginModules.find((m) => m.name === plugin.name);
+              const marketEntry = marketplace.find(p => p.name === plugin.name);
+              const hasSecrets = marketEntry?.secrets && Object.keys(marketEntry.secrets).length > 0;
+              const isExpanded = expandedPlugin === plugin.name;
+              const hasTools = !!module && module.tools.length > 0;
+              const commonLevel = pluginCommonLevel(module?.tools ?? []);
+              const isBusy = updating === plugin.name || operating === (marketEntry?.id ?? plugin.name);
+              const isUpdatable = marketEntry?.status === 'updatable';
 
-                  return (
-                    <React.Fragment key={plugin.name}>
-                      <tr
-                        onClick={() => setExpandedPlugin(isExpanded ? null : plugin.name)}
-                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPlugin(isExpanded ? null : plugin.name); } }}
-                        tabIndex={0}
-                        role="button"
-                        style={{
-                          cursor: 'pointer',
-                          borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                          backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                        }}
-                        className="file-row"
-                      >
-                        <td style={{ padding: '10px 14px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
-                              {isExpanded ? '\u25BC' : '\u25B6'}
-                            </span>
-                            <span style={{ fontWeight: 600 }}>{plugin.name}</span>
-                            {noneEnabled && module && module.tools.length > 0 && (
-                              <span className="badge warn">Disabled</span>
-                            )}
-                          </div>
-                          {plugin.description && (
-                            <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginTop: '2px', paddingLeft: '22px' }}>
-                              {plugin.description}
-                            </div>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                          {module ? <span className="badge count">{module.toolCount}</span> : <span style={{ color: 'var(--text-tertiary)' }}>-</span>}
-                        </td>
-                        <td style={{ textAlign: 'center', padding: '8px 10px' }} onClick={(e) => e.stopPropagation()}>
-                          {isUpdatable && marketEntry ? (
-                            <button
-                              className="btn-sm"
-                              onClick={() => handleUpdate(marketEntry.id)}
-                              disabled={!!operating}
-                              style={{ fontSize: '11px', padding: '3px 8px' }}
-                            >
-                              {operating === marketEntry.id ? '...' : `v${marketEntry.remoteVersion}`}
-                            </button>
-                          ) : (
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '12px' }}>v{plugin.version}</span>
-                          )}
-                        </td>
-                        <td style={{ textAlign: 'right', padding: '8px 14px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                            {module && module.tools.length > 0 && (
-                              <>
-                                <Select
-                                  value={commonScope}
-                                  options={['', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled']}
-                                  labels={[mixedScope ? 'Mixed' : 'Scope', 'All', 'DM only', 'Group only', 'Admin only', 'Allowlist', 'Disabled']}
-                                  onChange={(v) => v && bulkScope(module, v as ToolInfo['scope'])}
-                                  style={{ minWidth: '100px' }}
-                                />
-                                <label className="toggle">
-                                  <input
-                                    type="checkbox"
-                                    checked={someEnabled}
-                                    onChange={() => bulkToggle(module, !someEnabled)}
-                                    disabled={isBusy}
-                                  />
-                                  <span className="toggle-track" />
-                                  <span className="toggle-thumb" />
-                                </label>
-                              </>
-                            )}
-                            <button
-                              onClick={() => handleUninstall(marketEntry?.id ?? plugin.name)}
-                              title="Uninstall"
-                              disabled={!!operating}
-                              className="hover-fade"
-                              style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px', color: 'var(--red)', display: 'flex', alignItems: 'center' }}
-                            >
-                              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                                <line x1="10" y1="11" x2="10" y2="17" />
-                                <line x1="14" y1="11" x2="14" y2="17" />
-                              </svg>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                      {isExpanded && (
-                        <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                          <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
-                            {/* Tool rows */}
-                            {module && module.tools.length > 0 && (
-                              <div style={{ display: 'grid', gap: '6px', paddingTop: '6px' }}>
-                                {module.tools.map((tool) => (
-                                  <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} />
+              return (
+                <Fragment key={plugin.name}>
+                  <ListRow
+                    leading={plugin.name.charAt(0).toUpperCase()}
+                    title={
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        {plugin.name}
+                        {isUpdatable && <span className="badge" style={{ background: 'var(--accent-subtle)', color: 'var(--accent)' }}>Update</span>}
+                      </span>
+                    }
+                    subtitle={plugin.description || `v${plugin.version}`}
+                    disclosure
+                    expanded={isExpanded}
+                    onClick={() => setExpandedPlugin(isExpanded ? null : plugin.name)}
+                    trailing={hasTools ? (
+                      <PillTabs
+                        value={commonLevel}
+                        options={LEVEL_OPTIONS}
+                        onChange={(v) => bulkLevel(module!, v as ToolInfo['level'])}
+                        disabled={isBusy}
+                        ariaLabel={`Access level for all ${plugin.name} tools`}
+                      />
+                    ) : undefined}
+                  />
+                  {isExpanded && (
+                    <div className="ios-sublist">
+                      {hasTools && module!.tools.map((tool) => (
+                        <ToolRow key={tool.name} tool={tool} updating={updating} onLevel={updateLevel} />
+                      ))}
+
+                      {/* Actions */}
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 16px', flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>v{plugin.version}</span>
+                        {hasSecrets && marketEntry && (
+                          <button className="btn-ghost btn-sm" onClick={() => toggleSecrets(marketEntry.id)}>
+                            {expandedSecrets === marketEntry.id ? 'Hide secrets' : 'Manage secrets'}
+                          </button>
+                        )}
+                        {isUpdatable && marketEntry && (
+                          <button className="btn-sm" onClick={() => handleUpdate(marketEntry.id)} disabled={!!operating}>
+                            {operating === marketEntry.id ? 'Updating…' : `Update to v${marketEntry.remoteVersion}`}
+                          </button>
+                        )}
+                        <button
+                          className="btn-danger btn-sm"
+                          style={{ marginLeft: 'auto' }}
+                          onClick={() => handleUninstall(marketEntry?.id ?? plugin.name)}
+                          disabled={!!operating}
+                        >
+                          Uninstall
+                        </button>
+                      </div>
+
+                      {/* Secrets editor */}
+                      {hasSecrets && marketEntry && expandedSecrets === marketEntry.id && secretsInfo && (
+                        <div style={{ display: 'grid', gap: '6px', padding: '0 16px 14px' }}>
+                          {Object.entries(secretsInfo.declared).map(([key, decl]) => {
+                            const isSet = secretsInfo.configured.includes(key);
+                            return (
+                              <div key={key} className="card" style={{ padding: '10px 12px', display: 'flex', gap: '8px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <span style={{ fontWeight: 600, fontSize: 'var(--font-sm)' }}>{key}</span>
+                                  {decl.required && <span style={{ color: 'var(--text-secondary)', marginLeft: '4px', fontSize: 'var(--font-xs)' }}>required</span>}
+                                  <span className={`badge ${isSet ? 'always' : 'warn'}`} style={{ marginLeft: '8px', fontSize: '10px' }}>
+                                    {isSet ? 'Set' : 'Not set'}
+                                  </span>
+                                  {decl.description && <p style={{ fontSize: 'var(--font-sm)', color: 'var(--text-tertiary)', margin: '2px 0 0 0' }}>{decl.description}</p>}
+                                  {decl.env && <code style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', opacity: 0.7 }}>Env: {decl.env}</code>}
+                                </div>
+                                <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
+                                  {editingSecret === key ? (
+                                    <>
+                                      <input type="password" value={secretInput} onChange={e => setSecretInput(e.target.value)} placeholder="Enter value…" aria-label={`Value for ${key}`} style={{ width: '200px' }} />
+                                      <button className="btn-sm" onClick={() => saveSecret(marketEntry.id, key)}>Save</button>
+                                      <button className="btn-ghost btn-sm" onClick={() => setEditingSecret(null)}>Cancel</button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button className="btn-ghost btn-sm" onClick={() => { setEditingSecret(key); setSecretInput(''); }}>
+                                        {isSet ? 'Change' : 'Set'}
+                                      </button>
+                                      {isSet && <button className="btn-danger btn-sm" onClick={() => removeSecret(marketEntry.id, key)}>Remove</button>}
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </Fragment>
+              );
+            })}
+          </List>
+        )
+      )}
+
+      {/* ── Marketplace tab ── */}
+      {tab === 'marketplace' && (
+        marketLoading && marketplace.length === 0 ? (
+          <SkeletonRows />
+        ) : filteredMarketplace.length === 0 ? (
+          <div className="card" style={{ padding: 0 }}>
+            <EmptyState
+              title={filtering ? 'No plugins found' : 'Marketplace is empty'}
+              description={filtering ? 'No marketplace plugins match your filters.' : 'Check back later for new plugins.'}
+              action={filtering ? <button className="btn-ghost btn-sm" onClick={() => { setSearch(''); setTagFilter(''); }}>Clear filters</button> : undefined}
+            />
+          </div>
+        ) : (
+          <List>
+            {[...filteredMarketplace]
+              .sort((a, b) => ({ updatable: 0, installed: 1, available: 2 }[a.status] - { updatable: 0, installed: 1, available: 2 }[b.status]))
+              .map((plugin) => {
+                const isOp = operating === plugin.id;
+                const busy = !!operating;
+                const hasRequiredSecrets = plugin.secrets && Object.values(plugin.secrets).some(s => s.required);
+                const isExpanded = expandedPlugin === `market-${plugin.id}`;
+
+                return (
+                  <Fragment key={plugin.id}>
+                    <ListRow
+                      leading={plugin.name.charAt(0).toUpperCase()}
+                      title={
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                          {plugin.name}
+                          {hasRequiredSecrets && plugin.status === 'available' && <span className="badge warn">API Key</span>}
+                          {plugin.status === 'installed' && <span className="badge" style={{ background: 'var(--green-dim)', color: 'var(--green)' }}>Installed</span>}
+                        </span>
+                      }
+                      subtitle={`${plugin.description}  ·  v${plugin.remoteVersion}`}
+                      disclosure
+                      expanded={isExpanded}
+                      onClick={() => setExpandedPlugin(isExpanded ? null : `market-${plugin.id}`)}
+                      trailing={
+                        plugin.status === 'available' ? (
+                          <button className="btn-sm" onClick={() => handleInstall(plugin.id)} disabled={busy}>
+                            {isOp ? 'Installing…' : 'Install'}
+                          </button>
+                        ) : plugin.status === 'updatable' ? (
+                          <button className="btn-sm" onClick={() => handleUpdate(plugin.id)} disabled={busy}>
+                            {isOp ? 'Updating…' : 'Update'}
+                          </button>
+                        ) : (
+                          <button className="btn-danger btn-sm" onClick={() => handleUninstall(plugin.id)} disabled={busy}>
+                            {isOp ? 'Removing…' : 'Uninstall'}
+                          </button>
+                        )
+                      }
+                    />
+                    {isExpanded && (
+                      <div className="ios-sublist" style={{ padding: '10px 16px 14px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px 12px', fontSize: 'var(--font-sm)' }}>
+                          <span style={{ color: 'var(--text-secondary)' }}>Author</span>
+                          <span>{plugin.author}</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>Description</span>
+                          <span style={{ color: 'var(--text-secondary)' }}>{plugin.description}</span>
+                          {plugin.tags.length > 0 && (
+                            <>
+                              <span style={{ color: 'var(--text-secondary)' }}>Tags</span>
+                              <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                {plugin.tags.map((t) => (
+                                  <span key={t} className="tag-pill">{t}</span>
                                 ))}
                               </div>
-                            )}
-
-                            {/* Actions row */}
-                            <div style={{ display: 'flex', gap: '6px', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border)' }}>
-                              {hasSecrets && marketEntry && (
-                                <button
-                                  className="btn-ghost btn-sm"
-                                  onClick={() => toggleSecrets(marketEntry.id)}
-                                >
-                                  {expandedSecrets === marketEntry.id ? 'Hide Secrets' : 'Manage Secrets'}
-                                </button>
-                              )}
-                              {isUpdatable && marketEntry && (
-                                <button
-                                  className="btn-sm"
-                                  onClick={() => handleUpdate(marketEntry.id)}
-                                  disabled={!!operating}
-                                >
-                                  {operating === marketEntry.id ? 'Updating...' : `Update to v${marketEntry.remoteVersion}`}
-                                </button>
-                              )}
-                              {marketEntry && (
-                                <button
-                                  className="btn-danger btn-sm"
-                                  onClick={() => handleUninstall(marketEntry.id)}
-                                  disabled={!!operating}
-                                  style={{ marginLeft: 'auto' }}
-                                >
-                                  Uninstall
-                                </button>
-                              )}
-                            </div>
-
-                            {/* Secrets section */}
-                            {hasSecrets && marketEntry && expandedSecrets === marketEntry.id && secretsInfo && (
-                              <div style={{ marginTop: '8px', display: 'grid', gap: '6px' }}>
-                                {Object.entries(secretsInfo.declared).map(([key, decl]) => {
-                                  const isSet = secretsInfo.configured.includes(key);
-                                  return (
-                                    <div key={key} className="tool-row" style={{ padding: '8px 12px', flexWrap: 'wrap' }}>
-                                      <div style={{ flex: 1, minWidth: 0 }}>
-                                        <span style={{ fontWeight: 600, fontSize: '13px' }}>{key}</span>
-                                        {decl.required && <span style={{ color: 'var(--text-secondary)', marginLeft: '4px', fontSize: '11px' }}>required</span>}
-                                        <span className={`badge ${isSet ? 'always' : 'warn'}`} style={{ marginLeft: '8px', fontSize: '10px' }}>
-                                          {isSet ? 'Set' : 'Not set'}
-                                        </span>
-                                        <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '2px 0 0 0' }}>{decl.description}</p>
-                                        {decl.env && (
-                                          <code style={{ fontSize: '11px', color: 'var(--text-tertiary)', opacity: 0.7 }}>
-                                            Env: {decl.env}
-                                          </code>
-                                        )}
-                                      </div>
-                                      <div style={{ display: 'flex', gap: '4px', alignItems: 'center' }}>
-                                        {editingSecret === key ? (
-                                          <>
-                                            <input type="password" value={secretInput} onChange={e => setSecretInput(e.target.value)} placeholder="Enter value..." style={{ width: '200px' }} />
-                                            <button className="btn-sm" onClick={() => saveSecret(marketEntry.id, key)}>Save</button>
-                                            <button className="btn-ghost btn-sm" onClick={() => setEditingSecret(null)}>Cancel</button>
-                                          </>
-                                        ) : (
-                                          <>
-                                            <button className="btn-ghost btn-sm" onClick={() => { setEditingSecret(key); setSecretInput(''); }}>
-                                              {isSet ? 'Change' : 'Set'}
-                                            </button>
-                                            {isSet && (
-                                              <button className="btn-danger btn-sm" onClick={() => removeSecret(marketEntry.id, key)}>Remove</button>
-                                            )}
-                                          </>
-                                        )}
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-        </div>
+                            </>
+                          )}
+                          {plugin.tools && plugin.tools.length > 0 && (
+                            <>
+                              <span style={{ color: 'var(--text-secondary)' }}>Tools</span>
+                              <span style={{ color: 'var(--text-tertiary)' }}>{plugin.tools.map(t => t.name).join(', ')}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </Fragment>
+                );
+              })}
+          </List>
+        )
       )}
 
       {/* ── Secrets wizard modal ── */}
@@ -540,23 +515,20 @@ export function Plugins() {
         <div className="modal-overlay" onClick={() => !savingSecrets && setSecretsWizard(null)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <h2 style={{ marginBottom: '4px' }}>Configure {secretsWizard.pluginName}</h2>
-            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginBottom: '16px' }}>
+            <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-sm)', marginBottom: '16px' }}>
               This plugin needs API keys to work. You can configure them now or later.
             </p>
             {Object.entries(secretsWizard.secrets).map(([key, decl]) => (
               <div key={key} style={{ marginBottom: '12px' }}>
-                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '4px' }}>
+                <label htmlFor={`secret-${key}`} style={{ display: 'block', fontSize: 'var(--font-sm)', fontWeight: 600, marginBottom: '4px' }}>
                   {key} {decl.required && <span style={{ color: 'var(--text-secondary)' }}>*</span>}
                 </label>
-                <p style={{ fontSize: '12px', color: 'var(--text-tertiary)', margin: '0 0 4px 0' }}>{decl.description}</p>
-                {decl.env && (
-                  <code style={{ display: 'block', fontSize: '11px', color: 'var(--text-tertiary)', opacity: 0.7, marginBottom: '6px' }}>
-                    Env: {decl.env}
-                  </code>
-                )}
+                {decl.description && <p style={{ fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', margin: '0 0 4px 0' }}>{decl.description}</p>}
+                {decl.env && <code style={{ display: 'block', fontSize: 'var(--font-xs)', color: 'var(--text-tertiary)', opacity: 0.7, marginBottom: '6px' }}>Env: {decl.env}</code>}
                 <input
+                  id={`secret-${key}`}
                   type="password"
-                  placeholder={`Enter ${key}...`}
+                  placeholder={`Enter ${key}…`}
                   value={secretValues[key] || ''}
                   onChange={e => setSecretValues(prev => ({ ...prev, [key]: e.target.value }))}
                   style={{ width: '100%' }}
@@ -576,148 +548,22 @@ export function Plugins() {
                         await api.setPluginSecret(secretsWizard.pluginId, key, value.trim());
                       }
                     }
+                    toast.success('Secrets saved');
                     setSecretsWizard(null);
                   } catch (err) {
-                    setError(err instanceof Error ? err.message : String(err));
+                    setError(errMsg(err));
+                    toast.error(errMsg(err));
                   } finally {
                     setSavingSecrets(false);
                   }
                 }}
               >
-                {savingSecrets ? 'Saving...' : 'Save'}
+                {savingSecrets ? 'Saving…' : 'Save'}
               </button>
             </div>
           </div>
         </div>
       )}
-
-      {/* ── Marketplace tab ── */}
-      {tab === 'marketplace' && (
-        <div className="card" style={{ padding: 0 }}>
-          {marketLoading && marketplace.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center' }}>Loading marketplace...</div>
-          ) : filteredMarketplace.length === 0 ? (
-            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-              {search || tagFilter ? 'No plugins match your search' : 'Marketplace is empty'}
-            </div>
-          ) : (() => {
-            const sorted = [...filteredMarketplace].sort((a, b) => {
-              const order = { updatable: 0, installed: 1, available: 2 };
-              return order[a.status] - order[b.status];
-            });
-            return (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-                <thead>
-                  <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
-                    <th style={{ textAlign: 'left', padding: '8px 14px' }}>Plugin</th>
-                    <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Tools</th>
-                    <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Version</th>
-                    <th style={{ textAlign: 'right', padding: '8px 14px', width: 140 }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map((plugin) => {
-                    const isOp = operating === plugin.id;
-                    const busy = !!operating;
-                    const hasRequiredSecrets = plugin.secrets && Object.values(plugin.secrets).some(s => s.required);
-                    const isExpanded = expandedPlugin === `market-${plugin.id}`;
-
-                    return (
-                      <React.Fragment key={plugin.id}>
-                        <tr
-                          onClick={() => setExpandedPlugin(isExpanded ? null : `market-${plugin.id}`)}
-                          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedPlugin(isExpanded ? null : `market-${plugin.id}`); } }}
-                          tabIndex={0}
-                          role="button"
-                          style={{
-                            cursor: 'pointer',
-                            borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                            backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                          }}
-                          className="file-row"
-                        >
-                          <td style={{ padding: '10px 14px' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
-                                {isExpanded ? '\u25BC' : '\u25B6'}
-                              </span>
-                              <span style={{ fontWeight: 600 }}>{plugin.name}</span>
-                              {hasRequiredSecrets && plugin.status === 'available' && (
-                                <span className="badge warn">API Key</span>
-                              )}
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                            <span className="badge count">{plugin.toolCount}</span>
-                          </td>
-                          <td style={{ textAlign: 'center', padding: '8px 10px', color: 'var(--text-secondary)', fontSize: '12px' }}>
-                            v{plugin.remoteVersion}
-                          </td>
-                          <td style={{ textAlign: 'right', padding: '8px 14px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                            {plugin.status === 'available' && (
-                              <button className="btn-sm" onClick={() => handleInstall(plugin.id)} disabled={busy}>
-                                {isOp ? 'Installing...' : 'Install'}
-                              </button>
-                            )}
-                            {plugin.status === 'installed' && (
-                              <button className="btn-danger btn-sm" onClick={() => handleUninstall(plugin.id)} disabled={busy}>
-                                {isOp ? 'Removing...' : 'Uninstall'}
-                              </button>
-                            )}
-                            {plugin.status === 'updatable' && (
-                              <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-                                <button className="btn-sm" onClick={() => handleUpdate(plugin.id)} disabled={busy}>
-                                  {isOp ? 'Updating...' : 'Update'}
-                                </button>
-                                <button className="btn-danger btn-sm" onClick={() => handleUninstall(plugin.id)} disabled={busy}>
-                                  Uninstall
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                            <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
-                              <div style={{ display: 'grid', gridTemplateColumns: '80px 1fr', gap: '4px 12px', fontSize: '12px', padding: '8px 0' }}>
-                                <span style={{ color: 'var(--text-secondary)' }}>Author</span>
-                                <span>{plugin.author}</span>
-                                <span style={{ color: 'var(--text-secondary)' }}>Description</span>
-                                <span style={{ color: 'var(--text-secondary)' }}>{plugin.description}</span>
-                                {plugin.tags.length > 0 && (
-                                  <>
-                                    <span style={{ color: 'var(--text-secondary)' }}>Tags</span>
-                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                      {plugin.tags.map((t) => (
-                                        <span key={t} style={{ fontSize: '10px', padding: '1px 6px', borderRadius: '4px', background: 'var(--bg-glass)', color: 'var(--text-tertiary)' }}>
-                                          {t}
-                                        </span>
-                                      ))}
-                                    </div>
-                                  </>
-                                )}
-                                {plugin.tools && plugin.tools.length > 0 && (
-                                  <>
-                                    <span style={{ color: 'var(--text-secondary)' }}>Tools</span>
-                                    <span style={{ color: 'var(--text-tertiary)' }}>
-                                      {plugin.tools.map(t => t.name).join(', ')}
-                                    </span>
-                                  </>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </tbody>
-              </table>
-            );
-          })()}
-        </div>
-      )}
     </div>
   );
 }
-

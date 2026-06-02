@@ -1,11 +1,11 @@
 // src/agent/tools/web/search.ts
 
 import { Type } from "@sinclair/typebox";
-import { tavily } from "@tavily/core";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
+import type { Tool, ToolExecutor } from "../types.js";
 import { WEB_SEARCH_MAX_RESULTS } from "../../../constants/limits.js";
 import { sanitizeForContext } from "../../../utils/sanitize.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import { withToolErrors } from "../wrap.js";
+import { resolveTavily } from "./tavily.js";
 
 interface WebSearchParams {
   query: string;
@@ -33,24 +33,15 @@ export const webSearchTool: Tool = {
   }),
 };
 
-export const webSearchExecutor: ToolExecutor<WebSearchParams> = async (
-  params,
-  context
-): Promise<ToolResult> => {
-  try {
-    const apiKey = context.config?.tavily_api_key;
-    if (!apiKey) {
-      return {
-        success: false,
-        error:
-          "Tavily API key not configured. Set tavily_api_key in config.yaml (free at https://tavily.com)",
-      };
-    }
+export const webSearchExecutor: ToolExecutor<WebSearchParams> = withToolErrors<WebSearchParams>(
+  async (params, context) => {
+    const tav = resolveTavily(context);
+    if (!tav.ok) return tav.error;
 
     const { query, count = 5, topic = "general" } = params;
     const maxResults = Math.min(Math.max(1, count), WEB_SEARCH_MAX_RESULTS);
 
-    const client = tavily({ apiKey });
+    const client = tav.client;
     const response = await client.search(query, {
       maxResults,
       topic,
@@ -73,10 +64,5 @@ export const webSearchExecutor: ToolExecutor<WebSearchParams> = async (
         results,
       },
     };
-  } catch (error) {
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
   }
-};
+);

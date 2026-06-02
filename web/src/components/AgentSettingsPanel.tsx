@@ -2,6 +2,7 @@ import { ProviderMeta } from '../hooks/useConfigState';
 import { Select } from './Select';
 import { EditableField } from './EditableField';
 import { InfoTip } from './InfoTip';
+import { ProviderSwitchZone, PROVIDER_OPTIONS, PROVIDER_LABELS } from './ProviderControl';
 
 interface AgentSettingsPanelProps {
   getLocal: (key: string) => string;
@@ -22,6 +23,8 @@ interface AgentSettingsPanelProps {
   handleProviderCancel: () => void;
   /** Hide temperature/tokens/iterations (Dashboard mode) */
   compact?: boolean;
+  /** Hide the Provider select + switch zone (rendered elsewhere, e.g. Dashboard hero) */
+  hideProvider?: boolean;
 }
 
 export function AgentSettingsPanel({
@@ -31,64 +34,34 @@ export function AgentSettingsPanel({
   pendingValidating, pendingError, setPendingError,
   handleProviderChange, handleProviderConfirm, handleProviderCancel,
   compact = false,
+  hideProvider = false,
 }: AgentSettingsPanelProps) {
   return (
     <>
       <div style={{ display: 'grid', gap: '16px' }}>
-        <div className="form-group" style={{ marginBottom: 0 }}>
-          <label>Provider <InfoTip text="LLM provider" /></label>
-          <Select
-            value={pendingProvider ?? getLocal('agent.provider')}
-            options={['claude-code', 'anthropic', 'openai', 'google', 'xai', 'groq', 'openrouter', 'moonshot', 'mistral', 'cerebras', 'zai', 'minimax', 'huggingface', 'cocoon', 'local']}
-            labels={['Claude Code', 'Anthropic', 'OpenAI', 'Google', 'xAI', 'Groq', 'OpenRouter', 'Moonshot', 'Mistral', 'Cerebras', 'ZAI (Zhipu)', 'MiniMax', 'HuggingFace', 'Cocoon', 'Local']}
-            onChange={handleProviderChange}
-          />
-        </div>
-
-        {/* Gated provider switch zone */}
-        {pendingProvider && pendingMeta && (
-          <div className="provider-switch-zone">
-            <div style={{ fontSize: '13px', fontWeight: 500, marginBottom: '12px' }}>
-              Switching to {pendingMeta.displayName}
-            </div>
-            {pendingMeta.needsKey && (
-              <div className="form-group" style={{ marginBottom: '8px' }}>
-                <label>API Key</label>
-                <input
-                  type="password"
-                  placeholder={pendingMeta.keyHint}
-                  value={pendingApiKey}
-                  onChange={(e) => { setPendingApiKey(e.target.value); setPendingError(null); }}
-                  onKeyDown={(e) => e.key === 'Enter' && handleProviderConfirm()}
-                  style={{ width: '100%' }}
-                  autoFocus
-                />
-                {pendingMeta.consoleUrl && (
-                  <a
-                    href={pendingMeta.consoleUrl}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '4px', display: 'inline-block' }}
-                  >
-                    Get key at {new URL(pendingMeta.consoleUrl).hostname} ↗
-                  </a>
-                )}
-              </div>
-            )}
-            {pendingError && (
-              <div style={{ fontSize: '12px', color: 'var(--red)', marginBottom: '8px' }}>
-                {pendingError}
-              </div>
-            )}
-            <div style={{ display: 'flex', gap: '8px' }}>
-              <button className="btn-ghost btn-sm" onClick={handleProviderCancel} disabled={pendingValidating}>
-                Cancel
-              </button>
-              <button className="btn-sm" onClick={handleProviderConfirm} disabled={pendingValidating}>
-                {pendingValidating ? <><span className="spinner sm" /> Validating...</> : 'Validate & Save'}
-              </button>
-            </div>
+        {!hideProvider && (
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label>Provider <InfoTip text="LLM provider" /></label>
+            <Select
+              value={pendingProvider ?? getLocal('agent.provider')}
+              options={PROVIDER_OPTIONS}
+              labels={PROVIDER_LABELS}
+              onChange={handleProviderChange}
+            />
           </div>
+        )}
+
+        {!hideProvider && pendingProvider && pendingMeta && (
+          <ProviderSwitchZone
+            pendingMeta={pendingMeta}
+            pendingApiKey={pendingApiKey}
+            setPendingApiKey={setPendingApiKey}
+            pendingValidating={pendingValidating}
+            pendingError={pendingError}
+            setPendingError={setPendingError}
+            onConfirm={handleProviderConfirm}
+            onCancel={handleProviderCancel}
+          />
         )}
 
         <div className="form-group" style={{ marginBottom: 0 }}>

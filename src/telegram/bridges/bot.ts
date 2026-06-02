@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Bot, InlineKeyboard, InputFile, type Context } from "grammy";
 import { markdownToTelegramHtml } from "../formatting.js";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../constants/limits.js";
@@ -76,6 +75,10 @@ export class GrammyBotBridge implements ITelegramBridge {
     return "bot";
   }
 
+  requiresOffsetDedup(): boolean {
+    return false;
+  }
+
   isAvailable(): boolean {
     return this.connected;
   }
@@ -86,6 +89,15 @@ export class GrammyBotBridge implements ITelegramBridge {
 
   getUsername(): string | undefined {
     return this.botInfo?.username;
+  }
+
+  /**
+   * Convert a decimal-string chatId to the JS number the grammy/Bot API expects.
+   * The Bot API types chat ids as JS numbers; bridge-interface keeps them as
+   * strings, so this is the single conversion point for the whole bridge.
+   */
+  private toChatId(chatId: string): number {
+    return Number(chatId);
   }
 
   async sendMessage(options: SendMessageOptions): Promise<SentMessage> {
@@ -105,7 +117,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       return this.sendLongMessage(options.chatId, html, options.replyToId, replyMarkup);
     }
 
-    const result = await this.bot.api.sendMessage(Number(options.chatId), html, {
+    const result = await this.bot.api.sendMessage(this.toChatId(options.chatId), html, {
       parse_mode: "HTML",
       reply_to_message_id: options.replyToId,
       reply_markup: replyMarkup,
@@ -150,7 +162,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     for (let i = 0; i < chunks.length; i++) {
       const isFirst = i === 0;
       const isLast = i === chunks.length - 1;
-      const result = await this.bot.api.sendMessage(Number(chatId), chunks[i], {
+      const result = await this.bot.api.sendMessage(this.toChatId(chatId), chunks[i], {
         parse_mode: "HTML",
         reply_to_message_id: isFirst ? replyToId : undefined,
         reply_markup: isLast ? replyMarkup : undefined,
@@ -167,7 +179,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       : undefined;
 
     const result = await this.bot.api.editMessageText(
-      Number(options.chatId),
+      this.toChatId(options.chatId),
       options.messageId,
       markdownToTelegramHtml(options.text),
       { parse_mode: "HTML", reply_markup: replyMarkup }
@@ -185,7 +197,7 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async deleteMessage(chatId: string, messageId: number): Promise<boolean> {
-    await this.bot.api.deleteMessage(Number(chatId), messageId);
+    await this.bot.api.deleteMessage(this.toChatId(chatId), messageId);
     return true;
   }
 
@@ -195,8 +207,8 @@ export class GrammyBotBridge implements ITelegramBridge {
     messageId: number
   ): Promise<SentMessage> {
     const result = await this.bot.api.forwardMessage(
-      Number(toChatId),
-      Number(fromChatId),
+      this.toChatId(toChatId),
+      this.toChatId(fromChatId),
       messageId
     );
 
@@ -214,7 +226,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     replyToId?: number
   ): Promise<SentMessage> {
     const input = Buffer.isBuffer(photo) ? new InputFile(photo) : photo;
-    const result = await this.bot.api.sendPhoto(Number(chatId), input, {
+    const result = await this.bot.api.sendPhoto(this.toChatId(chatId), input, {
       caption,
       reply_to_message_id: replyToId,
     });
@@ -227,13 +239,13 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async pinMessage(chatId: string, messageId: number): Promise<boolean> {
-    await this.bot.api.pinChatMessage(Number(chatId), messageId);
+    await this.bot.api.pinChatMessage(this.toChatId(chatId), messageId);
     return true;
   }
 
   async sendDice(chatId: string, emoji?: string): Promise<SentMessage> {
     const result = await this.bot.api.sendDice(
-      Number(chatId),
+      this.toChatId(chatId),
       emoji as Parameters<typeof this.bot.api.sendDice>[1]
     );
 
@@ -245,7 +257,7 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async getChatInfo(chatId: string): Promise<ChatInfo> {
-    const chat = await this.bot.api.getChat(Number(chatId));
+    const chat = await this.bot.api.getChat(this.toChatId(chatId));
 
     return {
       id: String(chat.id),
@@ -270,14 +282,14 @@ export class GrammyBotBridge implements ITelegramBridge {
 
   async setTyping(chatId: string): Promise<void> {
     try {
-      await this.bot.api.sendChatAction(Number(chatId), "typing");
+      await this.bot.api.sendChatAction(this.toChatId(chatId), "typing");
     } catch {
       // 429 rate-limits on typing are harmless — swallow silently
     }
   }
 
   async sendReaction(chatId: string, messageId: number, emoji: string): Promise<void> {
-    await this.bot.api.setMessageReaction(Number(chatId), messageId, [
+    await this.bot.api.setMessageReaction(this.toChatId(chatId), messageId, [
       { type: "emoji", emoji } as Parameters<
         typeof this.bot.api.setMessageReaction
       >[2] extends (infer U)[]
@@ -299,7 +311,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     let fullText = "";
     let lastDraftTime = 0;
     const THROTTLE_MS = 300;
-    const numericChatId = Number(chatId);
+    const numericChatId = this.toChatId(chatId);
     // Leave headroom for HTML expansion from markdownToTelegramHtml
     const SPLIT_THRESHOLD = TELEGRAM_MAX_MESSAGE_LENGTH - 300;
 
@@ -359,7 +371,7 @@ export class GrammyBotBridge implements ITelegramBridge {
     const draftId = this.activeDraftIds.get(chatId);
     if (draftId) {
       try {
-        await this.bot.api.sendMessageDraft(Number(chatId), draftId, " ");
+        await this.bot.api.sendMessageDraft(this.toChatId(chatId), draftId, " ");
       } catch {
         /* best effort */
       }
@@ -387,7 +399,9 @@ export class GrammyBotBridge implements ITelegramBridge {
   }
 
   async getMessages(_chatId: string, _limit: number): Promise<TelegramMessage[]> {
-    return [];
+    throw new Error(
+      "getMessages is unavailable in bot mode — bots cannot read arbitrary chat history."
+    );
   }
 
   parseMessage(msg: GrammyMessage): TelegramMessage {
@@ -452,6 +466,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       mediaType,
       timestamp: new Date(msg.date * 1000),
       replyToId: msg.reply_to_message?.message_id,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- bot mode stores a Grammy message where the interface types a GramJS Api.Message
       _rawMessage: msg.reply_to_message ? (msg as any) : undefined,
     };
   }
@@ -512,6 +527,28 @@ export class GrammyBotBridge implements ITelegramBridge {
     });
   }
 
+  /** Register a handler for Bot API 10.0 guest queries. Reply text is sent via answerGuestQuery. */
+  onGuestMessage(handler: (msg: TelegramMessage) => Promise<string>): void {
+    this.bot.on("guest_message", async (ctx) => {
+      const gm = ctx.guestMessage;
+      if (!gm) return;
+      try {
+        const content = await handler(this.parseMessage(gm));
+        const text = content?.trim();
+        if (!text || text === "__SILENT__") return;
+        const html = markdownToTelegramHtml(text).slice(0, TELEGRAM_MAX_MESSAGE_LENGTH);
+        await ctx.answerGuestQuery({
+          type: "article",
+          id: String(gm.message_id),
+          title: this.botInfo?.firstName ?? "Reply",
+          input_message_content: { message_text: html, parse_mode: "HTML" },
+        });
+      } catch (err) {
+        log.error({ err }, "Error in guest message handler");
+      }
+    });
+  }
+
   async fetchReplyContext(rawMsg: unknown): Promise<ReplyContext | null> {
     const msg = rawMsg as GrammyMessage | undefined;
     if (!msg?.reply_to_message) return null;
@@ -527,14 +564,6 @@ export class GrammyBotBridge implements ITelegramBridge {
       senderName,
       isAgent,
     };
-  }
-
-  getPeer(_chatId: string): undefined {
-    return undefined;
-  }
-
-  getRawClient(): Bot {
-    return this.bot;
   }
 
   /** Set callback handler for synthetic message injection (from CallbackRouter) */
@@ -555,6 +584,7 @@ export class GrammyBotBridge implements ITelegramBridge {
       { command: "wallet", description: "Check TON wallet balance" },
       { command: "verbose", description: "Toggle verbose logging" },
       { command: "rag", description: "Toggle Tool RAG or view status" },
+      { command: "guest", description: "Toggle guest mode" },
       { command: "pause", description: "Pause the agent" },
       { command: "resume", description: "Resume the agent" },
       { command: "stop", description: "Emergency shutdown" },

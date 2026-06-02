@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { botInlineSendExecutor } from "../inline-send.js";
 
 // Mock the gramjs-bigint module
-vi.mock("../../../../utils/gramjs-bigint.js", () => ({
+vi.mock("../../../../../utils/gramjs-bigint.js", () => ({
   randomLong: () => BigInt(12345),
 }));
 
@@ -17,7 +17,7 @@ describe("bot_inline_send", () => {
   const mockBridge = {
     isAvailable: () => true,
     getMode: () => "user",
-    getRawClient: () => ({
+    getClient: () => ({
       getClient: () => mockGramJsClient,
     }),
   };

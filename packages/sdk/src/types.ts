@@ -47,7 +47,7 @@ export interface TonPrice {
 
 /** Result of a TON send operation */
 export interface TonSendResult {
-  /** Transaction reference (format: seqno_timestamp_amount) */
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
   txRef: string;
   /** Amount sent in TON */
   amount: number;
@@ -133,6 +133,8 @@ export interface JettonSendResult {
   success: boolean;
   /** Wallet sequence number used */
   seqno: number;
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
+  txRef?: string;
 }
 
 /**
@@ -339,6 +341,8 @@ export interface DexSwapResult {
   minOutput: string;
   /** Slippage used */
   slippage: string;
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
+  txRef?: string;
 }
 
 /** DEX sub-namespace on TonSDK */

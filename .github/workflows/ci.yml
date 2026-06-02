@@ -2,32 +2,35 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     branches: [main]
 
+# Cancel superseded runs on the same ref (rapid pushes / PR force-pushes).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege. The notify job authenticates to Telegram via its own secrets,
+# not GITHUB_TOKEN, so read-only repo access is enough everywhere.
+permissions:
+  contents: read
+
 jobs:
-  build:
+  # Node-version-independent static analysis — run once, not per matrix entry.
+  checks:
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        node-version: [20, 22]
-
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
-      - name: Use Node.js ${{ matrix.node-version }}
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
+          node-version: 20
           cache: npm
 
       - name: Install dependencies
         run: npm ci
-
-      - name: Install WebUI dependencies
-        run: cd web && npm ci
 
       - name: Build SDK workspace
         run: npm run build -w packages/sdk
@@ -50,14 +53,128 @@ jobs:
       - name: Duplicate code check
         run: npm run dupcheck
 
+      - name: Security audit
+        run: npm run audit:ci
+
+  # Build + test on each supported Node version.
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      matrix:
+        node-version: [20, 22]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            web/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install WebUI dependencies
+        run: cd web && npm ci
+
+      - name: Build SDK workspace
+        run: npm run build -w packages/sdk
+
       - name: Build
         run: npm run build
 
       - name: Test with coverage
         run: npm run test:coverage
 
-      - name: Security audit
-        run: npm run audit:ci
-
       - name: CLI smoke test
         run: node dist/cli/index.js --help
+
+  # ---- Telegram notification (after the full CI passes, pushes only) ----
+  # dev  : one message PER COMMIT, prefixed [DEV], paced 1/sec.
+  # main : one clean summary of how many stable commits were merged.
+  # Both walk the push range (before..after), not just the HEAD commit.
+  notify:
+    needs: [checks, test]
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Notify Telegram
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+          REPO: ${{ github.repository }}
+          BRANCH: ${{ github.ref_name }}
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          set -uo pipefail
+          ZERO=0000000000000000000000000000000000000000
+
+          # Resolve the commits in this push, oldest -> newest (merge commits excluded).
+          # Fallbacks (first push / force-push / unknown before) -> HEAD only.
+          if [ "$BEFORE" = "$ZERO" ] \
+             || ! git cat-file -e "${BEFORE}^{commit}" 2>/dev/null \
+             || ! git merge-base --is-ancestor "$BEFORE" "$AFTER" 2>/dev/null; then
+            SHAS=$(git log -1 --format=%H "$AFTER")
+            RANGE_OK=0
+          else
+            SHAS=$(git log --reverse --no-merges --format=%H "${BEFORE}..${AFTER}")
+            RANGE_OK=1
+          fi
+
+          COUNT=$(printf '%s\n' "$SHAS" | grep -c . || true)
+          if [ "$COUNT" -eq 0 ]; then echo "Nothing to notify"; exit 0; fi
+
+          esc() { printf '%s' "$1" | sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+          # Send one message, retrying until Telegram accepts it. IMPORTANT: no
+          # curl --fail here — on a 429 we must READ the body to get retry_after;
+          # --fail discards it, which silently drops rate-limited messages.
+          send() {
+            local text="$1" attempt resp ra
+            for attempt in 1 2 3 4 5 6; do
+              resp=$(curl -sS -m 25 -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+                -d chat_id="${TG_CHAT}" -d parse_mode=HTML -d disable_web_page_preview=true \
+                --data-urlencode "text=${text}" 2>/dev/null || true)
+              case "$resp" in
+                *'"ok":true'*) return 0 ;;
+              esac
+              # 429 -> honor retry_after; other transient error -> small backoff.
+              ra=$(printf '%s' "$resp" | grep -o '"retry_after":[0-9]*' | grep -o '[0-9]*' || true)
+              sleep "$(( ${ra:-2} + 1 ))"
+            done
+            echo "WARN: gave up sending after retries: ${text%%$'\n'*}"
+            return 1
+          }
+
+          if [ "$BRANCH" = "main" ]; then
+            # Clean summary: number of stable commits merged to main.
+            noun="commits"; [ "$COUNT" -eq 1 ] && noun="commit"
+            if [ "$RANGE_OK" = 1 ]; then
+              link="https://github.com/${REPO}/compare/${BEFORE}...${AFTER}"
+            else
+              link="https://github.com/${REPO}/commit/${AFTER}"
+            fi
+            send "🟢 <b>${COUNT}</b> stable ${noun} merged to <b>main</b>"$'\n'"<a href=\"${link}\">View changes</a>"
+          else
+            # Per-commit feed for dev (and any other non-main branch), [DEV] prefixed.
+            tag="[${BRANCH^^}]"
+            if [ "$COUNT" -gt 1 ]; then
+              send "📦 <b>${COUNT}</b> commits pushed to <b>${BRANCH}</b>"
+              sleep 1
+            fi
+            for sha in $SHAS; do
+              title=$(esc "$(git log -1 --format=%s "$sha")")
+              url="https://github.com/${REPO}/commit/${sha}"
+              send "${tag} <b>${title}</b>"$'\n'"<a href=\"${url}\">${sha:0:7}</a>"
+              sleep 1
+            done
+          fi

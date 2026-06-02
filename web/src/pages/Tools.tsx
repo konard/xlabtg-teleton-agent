@@ -1,193 +1,160 @@
-import { useEffect, useState } from 'react';
+import { useState, Fragment } from 'react';
 import { api, ToolInfo, ModuleInfo } from '../lib/api';
-import { ToolRow } from '../components/ToolRow';
-import { Select } from '../components/Select';
-import { SearchInput } from '../components/SearchInput';
+import { ToolRow, LEVEL_OPTIONS } from '../components/ToolRow';
+import { PillTabs } from '../components/PillTabs';
+import { SearchBar } from '../components/SearchBar';
+import { Segmented } from '../components/Segmented';
+import { List, ListRow } from '../components/List';
 import { useToolManager } from '../hooks/useToolManager';
+import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
+import { Alert } from '../components/Alert';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
+
+type Filter = 'all' | 'enabled' | 'disabled';
+
+// Common level across a module's tools, or '' when mixed.
+const commonLevel = (tools: ToolInfo[]): string => {
+  const set = new Set(tools.map((t) => t.level));
+  return set.size === 1 ? (set.values().next().value ?? '') : '';
+};
 
 export function Tools() {
-  const [modules, setModules] = useState<ModuleInfo[]>([]);
-  const [loading, setLoading] = useState(true);
   const [expandedModule, setExpandedModule] = useState<string | null>(null);
   const [search, setSearch] = useState('');
+  const [filter, setFilter] = useState<Filter>('all');
 
-  const loadTools = () => {
-    setLoading(true);
-    return api.getTools()
-      .then((toolsRes) => {
-        setModules(toolsRes.data);
-        setLoading(false);
-      })
-      .catch((err) => {
-        tm.setError(err instanceof Error ? err.message : String(err));
-        setLoading(false);
-      });
-  };
+  const { data: modules, loading, error, reload, setError } = useResource<ModuleInfo[]>(
+    () => api.getTools().then((r) => r.data),
+    [],
+  );
 
-  const tm = useToolManager(loadTools);
-  const { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope } = tm;
+  const { updating, updateLevel, bulkLevel } = useToolManager(reload);
 
-  useEffect(() => {
-    loadTools();
-  }, []);
+  if (loading) {
+    return (
+      <div>
+        <div className="header">
+          <h1>Tools</h1>
+          <p>Loading modules…</p>
+        </div>
+        <SkeletonRows />
+      </div>
+    );
+  }
 
-  if (loading) return <div className="loading">Loading...</div>;
-
-  const builtIn = modules.filter((m) => !m.isPlugin);
+  const allModules = modules ?? [];
+  const builtIn = allModules.filter((m) => !m.isPlugin);
   const builtInCount = builtIn.reduce((sum, m) => sum + m.toolCount, 0);
-  const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter(t => t.enabled).length, 0);
+  const enabledCount = builtIn.reduce((sum, m) => sum + m.tools.filter((t) => t.level !== 'off').length, 0);
 
   const trimmedSearch = search.trim().toLowerCase();
-  const filtered = trimmedSearch
-    ? builtIn.filter((m) =>
+  const filtered = builtIn.filter((m) => {
+    if (trimmedSearch) {
+      const match =
         m.name.toLowerCase().includes(trimmedSearch) ||
-        m.tools.some(t => t.name.toLowerCase().includes(trimmedSearch) || t.description.toLowerCase().includes(trimmedSearch))
-      )
-    : builtIn;
+        m.tools.some(
+          (t) =>
+            t.name.toLowerCase().includes(trimmedSearch) ||
+            t.description.toLowerCase().includes(trimmedSearch),
+        );
+      if (!match) return false;
+    }
+    if (filter === 'enabled') return m.tools.some((t) => t.level !== 'off');
+    if (filter === 'disabled') return m.tools.every((t) => t.level === 'off');
+    return true;
+  });
 
   return (
     <div>
       <div className="header">
         <h1>Tools</h1>
-        <p>{builtInCount} built-in tools across {builtIn.length} modules</p>
+        <p>
+          {builtInCount} built-in tools across {builtIn.length} modules
+        </p>
       </div>
 
       {error && (
-        <div className="alert error" style={{ marginBottom: '14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>{error}</span>
-          <div style={{ display: 'flex', gap: '6px' }}>
-            <button className="btn-ghost btn-sm" onClick={() => setError(null)}>Dismiss</button>
-            <button className="btn-sm" onClick={() => { setError(null); loadTools(); }}>Retry</button>
-          </div>
-        </div>
+        <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }}>
+          <button className="btn-sm" onClick={() => { setError(null); reload(); }}>Retry</button>
+        </Alert>
       )}
 
-      {/* Stats bar */}
-      <div className="card" style={{ padding: '10px 14px', marginBottom: '14px', display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap', overflow: 'visible', position: 'relative', zIndex: 2, borderRadius: 'var(--radius-pill)' }}>
-        <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-          <span style={{ color: 'var(--green)', fontWeight: 600 }}>{enabledCount}</span> enabled
-        </span>
-        <span style={{ fontSize: '13px', color: 'var(--text-secondary)' }}>
-          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>{builtInCount - enabledCount}</span> disabled
-        </span>
-
-        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <SearchInput value={search} onChange={setSearch} placeholder="Search tools..." />
-          {trimmedSearch && (
-            <span style={{ fontSize: '11px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-              {filtered.length} of {builtIn.length} modules
-            </span>
-          )}
-          <button
-            className="btn-ghost btn-sm"
-            onClick={loadTools}
-          >
-            Refresh
-          </button>
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px', flexWrap: 'wrap' }}>
+        <Segmented<Filter>
+          value={filter}
+          onChange={setFilter}
+          ariaLabel="Filter modules"
+          options={[
+            { value: 'all', label: `All ${builtIn.length}` },
+            { value: 'enabled', label: `Active ${enabledCount}` },
+            { value: 'disabled', label: `Off ${builtInCount - enabledCount}` },
+          ]}
+        />
+        <div style={{ flex: 1, minWidth: '180px' }}>
+          <SearchBar value={search} onChange={setSearch} placeholder="Search tools…" />
         </div>
+        <RefreshButton onRefresh={reload} />
       </div>
 
-      {/* Module table */}
-      <div className="card" style={{ padding: 0 }}>
-        {filtered.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            {trimmedSearch ? 'No modules match your search' : 'No modules found'}
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
-                <th style={{ textAlign: 'left', padding: '8px 14px' }}>Module</th>
-                <th style={{ textAlign: 'center', padding: '8px 10px', width: 60 }}>Tools</th>
-                <th style={{ textAlign: 'center', padding: '8px 10px', width: 70 }}>Enabled</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: 200 }}>Controls</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((module) => {
-                const isExpanded = expandedModule === module.name;
-                const someEnabled = module.tools.some((t) => t.enabled);
-                const noneEnabled = module.tools.every((t) => !t.enabled);
-                const enabledInModule = module.tools.filter(t => t.enabled).length;
-                const scopes = new Set(module.tools.map((t) => t.scope));
-                const mixedScope = scopes.size > 1;
-                const commonScope = mixedScope ? '' : (scopes.values().next().value ?? 'always');
-                const isBusy = updating === module.name;
+      {/* Module list */}
+      {filtered.length === 0 ? (
+        <div className="card" style={{ padding: 0 }}>
+          {trimmedSearch || filter !== 'all' ? (
+            <EmptyState
+              title="No modules found"
+              description="No modules match your filters."
+              action={
+                <button className="btn-ghost btn-sm" onClick={() => { setSearch(''); setFilter('all'); }}>
+                  Clear filters
+                </button>
+              }
+            />
+          ) : (
+            <EmptyState title="No modules found" description="No tool modules are available." />
+          )}
+        </div>
+      ) : (
+        <List>
+          {filtered.map((module) => {
+            const isExpanded = expandedModule === module.name;
+            const activeInModule = module.tools.filter((t) => t.level !== 'off').length;
+            const common = commonLevel(module.tools);
+            const isBusy = updating === module.name;
 
-                return (
-                  <>
-                    <tr
-                      key={module.name}
-                      onClick={() => setExpandedModule(isExpanded ? null : module.name)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpandedModule(isExpanded ? null : module.name); } }}
-                      tabIndex={0}
-                      role="button"
-                      style={{
-                        cursor: 'pointer',
-                        borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                        backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                      }}
-                      className="file-row"
-                    >
-                      <td style={{ padding: '10px 14px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)' }}>
-                            {isExpanded ? '\u25BC' : '\u25B6'}
-                          </span>
-                          <span style={{ fontWeight: 600 }}>{module.name}</span>
-                          {noneEnabled && (
-                            <span className="badge warn">Disabled</span>
-                          )}
-                        </div>
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                        <span className="badge count">{module.toolCount}</span>
-                      </td>
-                      <td style={{ textAlign: 'center', padding: '8px 10px' }}>
-                        <span style={{ fontSize: '12px', color: enabledInModule === module.toolCount ? 'var(--green)' : enabledInModule === 0 ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
-                          {enabledInModule}/{module.toolCount}
-                        </span>
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '8px 14px' }} onClick={(e) => e.stopPropagation()}>
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
-                          <Select
-                            value={commonScope}
-                            options={['', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled']}
-                            labels={[mixedScope ? 'Mixed' : 'Scope', 'All', 'DM only', 'Group only', 'Admin only', 'Allowlist', 'Disabled']}
-                            onChange={(v) => v && bulkScope(module, v as ToolInfo['scope'])}
-                            style={{ minWidth: '100px' }}
-                          />
-                          <label className="toggle">
-                            <input
-                              type="checkbox"
-                              checked={someEnabled}
-                              onChange={() => bulkToggle(module, !someEnabled)}
-                              disabled={isBusy}
-                            />
-                            <span className="toggle-track" />
-                            <span className="toggle-thumb" />
-                          </label>
-                        </div>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr key={`${module.name}-detail`} style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                        <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
-                          <div style={{ display: 'grid', gap: '6px', paddingTop: '6px' }}>
-                            {module.tools.map((tool) => (
-                              <ToolRow key={tool.name} tool={tool} updating={updating} onToggle={toggleEnabled} onScope={updateScope} />
-                            ))}
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+            return (
+              <Fragment key={module.name}>
+                <ListRow
+                  leading={module.name.charAt(0).toUpperCase()}
+                  title={module.name}
+                  subtitle={`${activeInModule}/${module.toolCount} active`}
+                  disclosure
+                  expanded={isExpanded}
+                  onClick={() => setExpandedModule(isExpanded ? null : module.name)}
+                  trailing={
+                    <PillTabs
+                      value={common}
+                      options={LEVEL_OPTIONS}
+                      onChange={(v) => bulkLevel(module, v as ToolInfo['level'])}
+                      disabled={isBusy}
+                      ariaLabel={`Access level for all ${module.name} tools`}
+                    />
+                  }
+                />
+                {isExpanded && (
+                  <div className="ios-sublist">
+                    {module.tools.map((tool) => (
+                      <ToolRow key={tool.name} tool={tool} updating={updating} onLevel={updateLevel} />
+                    ))}
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </List>
+      )}
     </div>
   );
 }

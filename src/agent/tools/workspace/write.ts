@@ -4,9 +4,9 @@ import { Type } from "@sinclair/typebox";
 import { writeFileSync, appendFileSync, mkdirSync, existsSync } from "fs";
 import { dirname } from "path";
 import { MAX_WRITE_SIZE } from "../../../constants/limits.js";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validateWritePath, WorkspaceSecurityError } from "../../../workspace/index.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import type { Tool, ToolExecutor } from "../types.js";
+import { validateWritePath, MEMORY_SCAN_FILES } from "../../../workspace/index.js";
+import { withToolErrors } from "../wrap.js";
 import { scanMemoryContent } from "../../../utils/memory-guard.js";
 
 interface WorkspaceWriteParams {
@@ -48,11 +48,8 @@ export const workspaceWriteTool: Tool = {
   }),
 };
 
-export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> = async (
-  params,
-  _context
-): Promise<ToolResult> => {
-  try {
+export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> =
+  withToolErrors<WorkspaceWriteParams>(async (params) => {
     const { path, content, encoding = "utf-8", append = false, createDirs = true } = params;
 
     // Validate the path (no extension enforcement - fix from audit)
@@ -64,12 +61,9 @@ export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> = async 
       mkdirSync(parentDir, { recursive: true });
     }
 
-    // SECURITY: Scan memory-sensitive files for injection attempts
+    // SECURITY: Scan memory-sensitive files (and anything under memory/) for injection
     const isMemoryFile =
-      validated.relativePath === "MEMORY.md" ||
-      validated.relativePath === "HEARTBEAT.md" ||
-      validated.relativePath === "USER.md" ||
-      validated.relativePath === "IDENTITY.md" ||
+      MEMORY_SCAN_FILES.includes(validated.relativePath) ||
       validated.relativePath.startsWith("memory/");
     if (isMemoryFile && encoding !== "base64") {
       const scan = scanMemoryContent(content);
@@ -115,16 +109,4 @@ export const workspaceWriteExecutor: ToolExecutor<WorkspaceWriteParams> = async 
         message: `File ${append ? "appended" : "written"} successfully`,
       },
     };
-  } catch (error) {
-    if (error instanceof WorkspaceSecurityError) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
-  }
-};
+  });

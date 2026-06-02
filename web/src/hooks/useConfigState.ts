@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { api, StatusData, MemoryStats, ToolRagStatus, ConfigKeyData } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 export interface ProviderMeta {
   needsKey: boolean;
@@ -70,7 +71,7 @@ export function useConfigState() {
       await api.setConfigKey(key, value.trim());
       await loadData();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -79,7 +80,7 @@ export function useConfigState() {
       const res = await api.updateToolRag(update);
       setToolRag(res.data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -121,7 +122,7 @@ export function useConfigState() {
         setPendingError(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -148,7 +149,7 @@ export function useConfigState() {
       setPendingMeta(null);
       setPendingApiKey('');
     } catch (err) {
-      setPendingError(err instanceof Error ? err.message : String(err));
+      setPendingError(errMsg(err));
     } finally {
       setPendingValidating(false);
     }

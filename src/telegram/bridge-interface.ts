@@ -103,8 +103,20 @@ export interface ITelegramBridge {
   // Chat info
   getChatInfo(chatId: string): Promise<ChatInfo>;
 
-  /** Stream a response token by token via message drafts (bot mode). Returns final sent message. */
+  // Capabilities
+  /** True when the handler must dedup messages via the offset store (user mode redelivers; bot mode dedupes via update_id). */
+  requiresOffsetDedup(): boolean;
+
+  /** Stream a response token by token via message drafts. Returns the final sent message. */
   streamResponse?(chatId: string, textStream: AsyncIterable<string>): Promise<SentMessage>;
+  /** Push a chunk to a streaming draft. Returns the un-sent remainder. */
+  streamDraft?(chatId: string, textStream: AsyncIterable<string>): Promise<string>;
+  /** Clear an active streaming draft. */
+  clearDraft?(chatId: string): Promise<void>;
+  /** Send the final draft as a real message. */
+  finalizeDraft?(chatId: string, text: string): Promise<SentMessage>;
+  /** Reset draft state for the next iteration. */
+  resetDraft?(chatId: string): void;
 
   // Events
   onNewMessage(
@@ -112,8 +124,4 @@ export interface ITelegramBridge {
     filters?: { incoming?: boolean; outgoing?: boolean; chats?: string[] }
   ): void;
   fetchReplyContext(rawMsg: unknown): Promise<ReplyContext | null>;
-
-  // Escape hatches (user-only tools)
-  getPeer(chatId: string): unknown | undefined;
-  getRawClient(): unknown;
 }

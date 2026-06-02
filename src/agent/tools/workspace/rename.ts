@@ -4,9 +4,9 @@ import { Type } from "@sinclair/typebox";
 import { renameSync, existsSync } from "fs";
 import { dirname } from "path";
 import { mkdirSync } from "fs";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validatePath, WorkspaceSecurityError } from "../../../workspace/index.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import type { Tool, ToolExecutor } from "../types.js";
+import { validatePath } from "../../../workspace/index.js";
+import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceRenameParams {
   from: string;
@@ -34,11 +34,8 @@ export const workspaceRenameTool: Tool = {
   }),
 };
 
-export const workspaceRenameExecutor: ToolExecutor<WorkspaceRenameParams> = async (
-  params,
-  _context
-): Promise<ToolResult> => {
-  try {
+export const workspaceRenameExecutor: ToolExecutor<WorkspaceRenameParams> =
+  withToolErrors<WorkspaceRenameParams>(async (params) => {
     const { from, to, overwrite = false } = params;
 
     // Validate source path (must exist)
@@ -79,16 +76,4 @@ export const workspaceRenameExecutor: ToolExecutor<WorkspaceRenameParams> = asyn
         message: `File renamed successfully`,
       },
     };
-  } catch (error) {
-    if (error instanceof WorkspaceSecurityError) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
-  }
-};
+  });

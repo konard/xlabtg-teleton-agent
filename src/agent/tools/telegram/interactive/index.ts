@@ -15,29 +15,31 @@ export const tools: ToolEntry[] = [
   {
     tool: telegramCreatePollTool,
     executor: telegramCreatePollExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["social"],
   },
   {
     tool: telegramCreateQuizTool,
     executor: telegramCreateQuizExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["social"],
   },
   {
     tool: telegramReplyKeyboardTool,
     executor: telegramReplyKeyboardExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["social"],
   },
   {
     tool: telegramReactTool,
     executor: telegramReactExecutor,
+    mode: "both",
     tags: ["core"],
   },
   {
     tool: telegramSendDiceTool,
     executor: telegramSendDiceExecutor,
+    mode: "both",
     tags: ["media"],
   },
 ];

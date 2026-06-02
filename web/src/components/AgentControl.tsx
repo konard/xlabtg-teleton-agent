@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { useAgentStatus, AgentState } from '../hooks/useAgentStatus';
+import { errMsg } from '../lib/utils';
 
 const API_BASE = '/api';
 const MAX_START_RETRIES = 3;
@@ -52,8 +53,6 @@ export function AgentControl() {
   const abortRef = useRef<AbortController | null>(null);
 
   const displayState = error && state === 'stopped' ? 'error' : state;
-  const config = STATE_CONFIG[displayState];
-
   const clearRetry = useCallback(() => {
     if (retryTimerRef.current) {
       clearTimeout(retryTimerRef.current);
@@ -86,11 +85,11 @@ export function AgentControl() {
           retryTimerRef.current = null;
           doStart(attempt + 1);
         }, delay);
-        setActionError(err instanceof Error ? err.message : String(err));
+        setActionError(errMsg(err));
         setInflight(false);
         return;
       }
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errMsg(err));
       setRetrying(false);
     } finally {
       setInflight(false);
@@ -116,7 +115,7 @@ export function AgentControl() {
         throw new Error(json.error);
       }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(errMsg(err));
     } finally {
       setInflight(false);
     }

@@ -1,12 +1,15 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { loadWallet, getKeyPair, getCachedTonClient } from "../../../ton/wallet-service.js";
-import { WalletContractV5R1, toNano, internal } from "@ton/ton";
-import { Address, SendMode, beginCell } from "@ton/core";
+import { loadWallet, getCachedTonClient } from "../../../ton/wallet-service.js";
+import { toNano, internal } from "@ton/ton";
+import { Address, beginCell } from "@ton/core";
+import { sendWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 import { tonapiFetch } from "../../../constants/api-endpoints.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { toUnits } from "../../../ton/units.js";
+import { openWallet } from "../../../ton/wallet-open.js";
 
 const log = createLogger("Tools");
 
@@ -103,9 +106,7 @@ export const jettonSendExecutor: ToolExecutor<JettonSendParams> = async (
     const currentBalance = BigInt(jettonBalance.balance);
 
     // Convert amount to blockchain units (string-based to avoid float precision loss)
-    const amountStr = amount.toFixed(decimals);
-    const [whole, frac = ""] = amountStr.split(".");
-    const amountInUnits = BigInt(whole + (frac + "0".repeat(decimals)).slice(0, decimals));
+    const amountInUnits = toUnits(amount, decimals);
 
     // Check sufficient balance
     if (amountInUnits > currentBalance) {
@@ -138,26 +139,17 @@ export const jettonSendExecutor: ToolExecutor<JettonSendParams> = async (
       .storeRef(comment ? forwardPayload : beginCell().endCell()) // forward_payload
       .endCell();
 
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
+    const client = await getCachedTonClient();
+    const opened = await openWallet(client);
+    if (!opened) {
       return { success: false, error: "Wallet key derivation failed." };
     }
-    const wallet = WalletContractV5R1.create({
-      workchain: 0,
-      publicKey: keyPair.publicKey,
-    });
-
-    const client = await getCachedTonClient();
-    const walletContract = client.open(wallet);
+    const { keyPair, contract: walletContract } = opened;
 
     return withTxLock(async () => {
-      const seqno = await walletContract.getSeqno();
-
       // Send transfer to our jetton wallet (NOT to recipient!)
-      await walletContract.sendTransfer({
-        seqno,
+      const sent = await sendWalletTx(client, walletContract, {
         secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY,
         messages: [
           internal({
             to: Address.parse(senderJettonWallet),
@@ -168,6 +160,13 @@ export const jettonSendExecutor: ToolExecutor<JettonSendParams> = async (
         ],
       });
 
+      if (!sent) {
+        return {
+          success: false,
+          error: "Jetton transfer failed or could not be confirmed on-chain.",
+        };
+      }
+
       return {
         success: true,
         data: {
@@ -177,7 +176,8 @@ export const jettonSendExecutor: ToolExecutor<JettonSendParams> = async (
           to,
           from: walletData.address,
           comment: comment || null,
-          message: `Sent ${amount} ${symbol} to ${to}${comment ? ` (${comment})` : ""}\n  Transaction sent (check balance in ~30 seconds)`,
+          txHash: sent.hash,
+          message: `Sent ${amount} ${symbol} to ${to}${comment ? ` (${comment})` : ""} — confirmed on-chain\n  tx ${sent.hash}\n  ${tonExplorerTxUrl(sent.hash)}`,
         },
       };
     });

@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Shell } from './Shell';
 import { AgentControl, AgentStatusBadge } from './AgentControl';
 import { ModeSwitch } from './ModeSwitch';
+import { ThemeToggle } from './ThemeToggle';
 import { logout } from '../lib/api';
 import { CSSProperties, ReactNode } from 'react';
 
@@ -103,6 +104,16 @@ function IconHooks() {
   );
 }
 
+function IconLogs() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="4" width="20" height="16" rx="2" />
+      <path d="m6 9 3 3-3 3" />
+      <path d="M13 15h5" />
+    </svg>
+  );
+}
+
 function IconConfig() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -118,8 +129,8 @@ const navLinkBase: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
-  padding: '10px 16px',
-  borderRadius: 'var(--radius-md)',
+  padding: '6px 12px',
+  borderRadius: 'var(--radius-sm)',
   color: 'var(--text-secondary)',
   textDecoration: 'none',
   fontSize: '13px',
@@ -171,7 +182,7 @@ function DashboardNav() {
     { to: '/',          icon: <IconDashboard />, label: 'Dashboard' },
     { to: '/tools',     icon: <IconTools />,     label: 'Tools' },
     { to: '/plugins',   icon: <IconPlugins />,   label: 'Plugins' },
-    { to: '/soul',      icon: <IconSoul />,      label: 'Soul' },
+    { to: '/soul',      icon: <IconSoul />,      label: 'System Prompt' },
     { to: '/memory',    icon: <IconMemory />,    label: 'Memory' },
     { to: '/conversations', icon: <IconConversations />, label: 'Chats' },
     { to: '/wallet',        icon: <IconWallet />,        label: 'Wallet' },
@@ -179,6 +190,7 @@ function DashboardNav() {
     { to: '/tasks',     icon: <IconTasks />,     label: 'Tasks' },
     { to: '/mcp',       icon: <IconMCP />,       label: 'MCP' },
     { to: '/hooks',     icon: <IconHooks />,     label: 'Hooks' },
+    { to: '/logs',      icon: <IconLogs />,      label: 'Logs' },
     { to: '/config',    icon: <IconConfig />,    label: 'Config' },
   ];
 
@@ -188,7 +200,7 @@ function DashboardNav() {
       <style>{`
         .nav-link-hover:hover:not(.active) {
           color: var(--text-primary) !important;
-          background: var(--bg-glass-hover, rgba(255, 255, 255, 0.10)) !important;
+          background: var(--bg-glass-hover) !important;
         }
         .nav-link-hover svg {
           flex-shrink: 0;
@@ -207,16 +219,16 @@ function DashboardNav() {
         ))}
       </nav>
 
-      <div style={{ marginTop: 'auto' }}>
-        <div style={{ marginBottom: '8px' }}>
+      <div style={{ marginTop: 'auto', paddingTop: '10px' }}>
+        <div style={{ marginBottom: '6px' }}>
           <AgentStatusBadge />
         </div>
         <ModeSwitch />
-        <div style={{ margin: '8px 0', padding: '0 4px' }}>
+        <div style={{ margin: '6px 0', padding: '0 4px' }}>
           <AgentControl />
         </div>
 
-        <div style={{ padding: '0 4px 14px' }}>
+        <div style={{ padding: '0 4px 4px' }}>
           <button
             onClick={handleLogout}
             style={{ width: '100%', opacity: 0.7, fontSize: '13px' }}
@@ -230,5 +242,5 @@ function DashboardNav() {
 }
 
 export function Layout() {
-  return <Shell sidebar={<DashboardNav />} />;
+  return <Shell sidebar={<DashboardNav />} topRight={<ThemeToggle />} />;
 }

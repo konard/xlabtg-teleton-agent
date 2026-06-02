@@ -1,23 +1,23 @@
 import { Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import { timeout } from "hono/timeout";
-import { streamSSE } from "hono/streaming";
-import { serve, type ServerType } from "@hono/node-server";
+import type { serve, ServerType } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
 import { createServer as createHttpsServer } from "node:https";
-import { randomBytes, createHash } from "node:crypto";
-import type { Server as HttpServer } from "node:http";
+import { randomBytes } from "node:crypto";
 
 import { HTTPException } from "hono/http-exception";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createLogger } from "../utils/logger.js";
+import { hashApiKey } from "../utils/crypto-tokens.js";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import { ensureTlsCert, type TlsCert } from "./tls.js";
 import type { ApiServerDeps } from "./deps.js";
 import { createDepsAdapter } from "./deps.js";
 import type { ApiConfig } from "../config/schema.js";
-import type { StateChangeEvent } from "../agent/lifecycle.js";
+import { createLifecycleSSE } from "../webui/lifecycle-sse.js";
+import { applySecurityMiddleware, sharedBodyLimit } from "../webui/http-common.js";
+import { startHonoServer, stopHonoServer } from "../utils/http-server.js";
 import { createProblem } from "./schemas/common.js";
 
 // Middleware
@@ -27,19 +27,7 @@ import { globalRateLimit, mutatingRateLimit, readRateLimit } from "./middleware/
 import { auditMiddleware } from "./middleware/audit.js";
 
 // Existing WebUI route factories
-import { createStatusRoutes } from "../webui/routes/status.js";
-import { createToolsRoutes } from "../webui/routes/tools.js";
-import { createLogsRoutes } from "../webui/routes/logs.js";
-import { createMemoryRoutes } from "../webui/routes/memory.js";
-import { createSoulRoutes } from "../webui/routes/soul.js";
-import { createPluginsRoutes } from "../webui/routes/plugins.js";
-import { createMcpRoutes } from "../webui/routes/mcp.js";
-import { createWorkspaceRoutes } from "../webui/routes/workspace.js";
-import { createTasksRoutes } from "../webui/routes/tasks.js";
-import { createConfigRoutes } from "../webui/routes/config.js";
-import { createMarketplaceRoutes } from "../webui/routes/marketplace.js";
-import { createHooksRoutes } from "../webui/routes/hooks.js";
-import { createTonProxyRoutes } from "../webui/routes/ton-proxy.js";
+import { SHARED_ROUTE_FACTORIES } from "../webui/routes/shared.js";
 import { createSetupRoutes } from "../webui/routes/setup.js";
 
 // New API routes
@@ -57,11 +45,6 @@ const KEY_PREFIX = "tltn_";
 /** Generate a new API key with tltn_ prefix */
 function generateApiKey(): string {
   return KEY_PREFIX + randomBytes(32).toString("base64url");
-}
-
-/** Hash an API key with SHA-256 */
-function hashApiKey(key: string): string {
-  return createHash("sha256").update(key).digest("hex");
 }
 
 /** Check setup completeness by probing key files */
@@ -143,18 +126,11 @@ export class ApiServer {
     // 2. Body limit (2MB)
     this.app.use(
       "*",
-      bodyLimit({
-        maxSize: 2 * 1024 * 1024,
-        onError: (c) => {
-          return c.json(
-            createProblem(413, "Payload Too Large", "Request body exceeds 2MB limit"),
-            413,
-            {
-              "Content-Type": "application/problem+json",
-            }
-          );
-        },
-      })
+      sharedBodyLimit((c) =>
+        c.json(createProblem(413, "Payload Too Large", "Request body exceeds 2MB limit"), 413, {
+          "Content-Type": "application/problem+json",
+        })
+      )
     );
 
     // 3. Timeout (30s) — exclude SSE endpoints
@@ -165,13 +141,8 @@ export class ApiServer {
       return timeout(30_000)(c, next);
     });
 
-    // 4. Security headers
-    this.app.use("*", async (c, next) => {
-      await next();
-      c.res.headers.set("X-Content-Type-Options", "nosniff");
-      c.res.headers.set("X-Frame-Options", "DENY");
-      c.res.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
-    });
+    // 4. Security headers (HSTS — HTTPS-only API)
+    applySecurityMiddleware(this.app, { hsts: true });
   }
 
   private setupRoutes(): void {
@@ -225,102 +196,14 @@ export class ApiServer {
     const adaptedDeps = createDepsAdapter(this.deps);
 
     // Mount existing WebUI route factories under /v1/
-    this.app.route("/v1/status", createStatusRoutes(adaptedDeps));
-    this.app.route("/v1/tools", createToolsRoutes(adaptedDeps));
-    this.app.route("/v1/logs", createLogsRoutes(adaptedDeps));
-    this.app.route("/v1/memory", createMemoryRoutes(adaptedDeps));
-    this.app.route("/v1/soul", createSoulRoutes(adaptedDeps));
-    this.app.route("/v1/plugins", createPluginsRoutes(adaptedDeps));
-    this.app.route("/v1/mcp", createMcpRoutes(adaptedDeps));
-    this.app.route("/v1/workspace", createWorkspaceRoutes(adaptedDeps));
-    this.app.route("/v1/tasks", createTasksRoutes(adaptedDeps));
-    this.app.route("/v1/config", createConfigRoutes(adaptedDeps));
-    this.app.route("/v1/marketplace", createMarketplaceRoutes(adaptedDeps));
-    this.app.route("/v1/hooks", createHooksRoutes(adaptedDeps));
-    this.app.route("/v1/ton-proxy", createTonProxyRoutes(adaptedDeps));
+    for (const [seg, make] of SHARED_ROUTE_FACTORIES) {
+      this.app.route(`/v1/${seg}`, make(adaptedDeps));
+    }
 
     // Setup routes (no agent deps needed, keyHash for config persistence)
     this.app.route("/v1/setup", createSetupRoutes({ keyHash: this.keyHash }));
 
-    // Agent lifecycle routes (inline, same pattern as WebUI)
-    this.app.post("/v1/agent/start", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json(
-          createProblem(503, "Service Unavailable", "Agent lifecycle not available"),
-          503,
-          {
-            "Content-Type": "application/problem+json",
-          }
-        );
-      }
-      const state = lifecycle.getState();
-      if (state === "running") {
-        return c.json({ state: "running" }, 409);
-      }
-      if (state === "stopping") {
-        return c.json(
-          createProblem(409, "Conflict", "Agent is currently stopping, please wait"),
-          409,
-          {
-            "Content-Type": "application/problem+json",
-          }
-        );
-      }
-      lifecycle.start().catch((err: Error) => {
-        log.error({ err }, "Agent start failed");
-      });
-      return c.json({ state: "starting" });
-    });
-
-    this.app.post("/v1/agent/stop", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json(
-          createProblem(503, "Service Unavailable", "Agent lifecycle not available"),
-          503,
-          {
-            "Content-Type": "application/problem+json",
-          }
-        );
-      }
-      const state = lifecycle.getState();
-      if (state === "stopped") {
-        return c.json({ state: "stopped" }, 409);
-      }
-      if (state === "starting") {
-        return c.json(
-          createProblem(409, "Conflict", "Agent is currently starting, please wait"),
-          409,
-          {
-            "Content-Type": "application/problem+json",
-          }
-        );
-      }
-      lifecycle.stop().catch((err: Error) => {
-        log.error({ err }, "Agent stop failed");
-      });
-      return c.json({ state: "stopping" });
-    });
-
-    this.app.get("/v1/agent/status", (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json(
-          createProblem(503, "Service Unavailable", "Agent lifecycle not available"),
-          503,
-          {
-            "Content-Type": "application/problem+json",
-          }
-        );
-      }
-      return c.json({
-        state: lifecycle.getState(),
-        uptime: lifecycle.getUptime(),
-        error: lifecycle.getError() ?? null,
-      });
-    });
-
+    // Agent lifecycle SSE stream (start/stop/status/restart live in createAgentRoutes)
     this.app.get("/v1/agent/events", (c) => {
       const lifecycle = this.deps.lifecycle;
       if (!lifecycle) {
@@ -333,51 +216,7 @@ export class ApiServer {
         );
       }
 
-      return streamSSE(c, async (stream) => {
-        let aborted = false;
-
-        stream.onAbort(() => {
-          aborted = true;
-        });
-
-        const now = Date.now();
-        await stream.writeSSE({
-          event: "status",
-          id: String(now),
-          data: JSON.stringify({
-            state: lifecycle.getState(),
-            error: lifecycle.getError() ?? null,
-            timestamp: now,
-          }),
-          retry: 3000,
-        });
-
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
-        lifecycle.on("stateChange", onStateChange);
-
-        while (!aborted) {
-          await stream.sleep(30_000);
-          if (aborted) break;
-          await stream.writeSSE({
-            event: "ping",
-            data: "",
-          });
-        }
-
-        lifecycle.off("stateChange", onStateChange);
-      });
+      return createLifecycleSSE(c, lifecycle);
     });
 
     // New API-only routes under /v1/
@@ -419,50 +258,33 @@ export class ApiServer {
     this.setupMiddleware();
     this.setupRoutes();
 
-    return new Promise((resolve, reject) => {
-      try {
-        this.server = serve(
-          {
-            fetch: this.app.fetch as Parameters<typeof serve>[0]["fetch"],
-            port: this.config.port,
-            createServer: createHttpsServer,
-            serverOptions: {
-              cert: tls.cert,
-              key: tls.key,
-            },
-          },
-          (info) => {
-            (this.server as HttpServer).maxConnections = 20;
-            log.info(`Management API server running on https://localhost:${info.port}`);
-            if (this.apiKey) {
-              log.info(
-                `API key: ${KEY_PREFIX}${this.apiKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 4)}...`
-              );
-            }
-            log.info(`TLS fingerprint: ${tls.fingerprint.slice(0, 16)}...`);
-            resolve();
+    try {
+      this.server = await startHonoServer({
+        fetch: this.app.fetch as Parameters<typeof serve>[0]["fetch"],
+        port: this.config.port,
+        createServer: createHttpsServer,
+        serverOptions: { cert: tls.cert, key: tls.key },
+        maxConnections: 20,
+        onListen: (info) => {
+          log.info(`Management API server running on https://localhost:${info.port}`);
+          if (this.apiKey) {
+            log.info(
+              `API key: ${KEY_PREFIX}${this.apiKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 4)}...`
+            );
           }
-        );
-
-        (this.server as HttpServer).on("error", (err: Error) => {
-          log.error({ err }, "Management API server error");
-          reject(err);
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
+          log.info(`TLS fingerprint: ${tls.fingerprint.slice(0, 16)}...`);
+        },
+      });
+    } catch (err) {
+      log.error({ err }, "Management API server error");
+      throw err;
+    }
   }
 
   async stop(): Promise<void> {
     if (this.server) {
-      return new Promise((resolve) => {
-        (this.server as HttpServer).closeAllConnections();
-        (this.server as HttpServer).close(() => {
-          log.info("Management API server stopped");
-          resolve();
-        });
-      });
+      await stopHonoServer(this.server);
+      log.info("Management API server stopped");
     }
   }
 

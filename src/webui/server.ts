@@ -1,16 +1,12 @@
 import { Hono } from "hono";
-import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { streamSSE } from "hono/streaming";
-import { bodyLimit } from "hono/body-limit";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
-import type { Server as HttpServer } from "node:http";
-import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
-import { join, dirname, resolve, relative } from "node:path";
-import { fileURLToPath } from "node:url";
 import type { WebUIServerDeps } from "./types.js";
-import type { StateChangeEvent } from "../agent/lifecycle.js";
+import { createLifecycleSSE } from "./lifecycle-sse.js";
+import { applySecurityMiddleware, sharedBodyLimit } from "./http-common.js";
+import { findWebDist, createStaticHandler } from "./static-serving.js";
+import { startHonoServer, stopHonoServer } from "../utils/http-server.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("WebUI");
@@ -22,47 +18,15 @@ import {
   COOKIE_MAX_AGE,
 } from "./middleware/auth.js";
 import { logInterceptor } from "./log-interceptor.js";
-import { createStatusRoutes } from "./routes/status.js";
-import { createToolsRoutes } from "./routes/tools.js";
-import { createLogsRoutes } from "./routes/logs.js";
-import { createMemoryRoutes } from "./routes/memory.js";
-import { createSoulRoutes } from "./routes/soul.js";
-import { createPluginsRoutes } from "./routes/plugins.js";
-import { createMcpRoutes } from "./routes/mcp.js";
-import { createWorkspaceRoutes } from "./routes/workspace.js";
-import { createTasksRoutes } from "./routes/tasks.js";
-import { createConfigRoutes } from "./routes/config.js";
-import { createMarketplaceRoutes } from "./routes/marketplace.js";
-import { createHooksRoutes } from "./routes/hooks.js";
-import { createTonProxyRoutes } from "./routes/ton-proxy.js";
+import { SHARED_ROUTE_FACTORIES } from "./routes/shared.js";
+import { createAgentRoutes } from "../api/routes/agent.js";
 import { createConversationRoutes } from "./routes/conversations.js";
 import { createWalletRoutes } from "./routes/wallet.js";
 import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
 
-function findWebDist(): string | null {
-  // Try common locations relative to CWD (where teleton is launched from)
-  const candidates = [
-    resolve("dist/web"), // npm start / teleton start (from project root)
-    resolve("web"), // fallback
-  ];
-  // Also try relative to the compiled file
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  candidates.push(
-    resolve(__dirname, "web"), // dist/web when __dirname = dist/
-    resolve(__dirname, "../dist/web") // when running with tsx from src/
-  );
-
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, "index.html"))) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
 export class WebUIServer {
   private app: Hono;
-  private server: ReturnType<typeof serve> | null = null;
+  private server: ServerType | null = null;
   private deps: WebUIServerDeps;
   private authToken: string;
 
@@ -115,19 +79,13 @@ export class WebUIServer {
     // Body size limit (defense-in-depth against oversized payloads)
     this.app.use(
       "*",
-      bodyLimit({
-        maxSize: 2 * 1024 * 1024, // 2MB
-        onError: (c) => c.json({ success: false, error: "Request body too large (max 2MB)" }, 413),
-      })
+      sharedBodyLimit((c) =>
+        c.json({ success: false, error: "Request body too large (max 2MB)" }, 413)
+      )
     );
 
     // Security headers for all responses
-    this.app.use("*", async (c, next) => {
-      await next();
-      c.res.headers.set("X-Content-Type-Options", "nosniff");
-      c.res.headers.set("X-Frame-Options", "DENY");
-      c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    });
+    applySecurityMiddleware(this.app, { referrerPolicy: "strict-origin-when-cross-origin" });
 
     // Auth for all /api/* routes
     // Accepts: HttpOnly cookie > Bearer header > ?token= query param (fallback)
@@ -203,72 +161,19 @@ export class WebUIServer {
     });
 
     // API routes (all require auth via middleware above)
-    this.app.route("/api/status", createStatusRoutes(this.deps));
-    this.app.route("/api/tools", createToolsRoutes(this.deps));
-    this.app.route("/api/logs", createLogsRoutes(this.deps));
-    this.app.route("/api/memory", createMemoryRoutes(this.deps));
-    this.app.route("/api/soul", createSoulRoutes(this.deps));
-    this.app.route("/api/plugins", createPluginsRoutes(this.deps));
-    this.app.route("/api/mcp", createMcpRoutes(this.deps));
-    this.app.route("/api/workspace", createWorkspaceRoutes(this.deps));
-    this.app.route("/api/tasks", createTasksRoutes(this.deps));
-    this.app.route("/api/config", createConfigRoutes(this.deps));
-    this.app.route("/api/marketplace", createMarketplaceRoutes(this.deps));
-    this.app.route("/api/hooks", createHooksRoutes(this.deps));
-    this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
+    for (const [seg, make] of SHARED_ROUTE_FACTORIES) {
+      this.app.route(`/api/${seg}`, make(this.deps));
+    }
     this.app.route("/api/conversations", createConversationRoutes(this.deps));
     this.app.route("/api/wallet", createWalletRoutes(this.deps));
 
-    // Agent lifecycle routes
-    this.app.post("/api/agent/start", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      const state = lifecycle.getState();
-      if (state === "running") {
-        return c.json({ state: "running" }, 409);
-      }
-      if (state === "stopping") {
-        return c.json({ error: "Agent is currently stopping, please wait" }, 409);
-      }
-      // Fire-and-forget: start is async, we return immediately
-      lifecycle.start().catch((err: Error) => {
-        log.error({ err }, "Agent start failed");
-      });
-      return c.json({ state: "starting" });
-    });
-
-    this.app.post("/api/agent/stop", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      const state = lifecycle.getState();
-      if (state === "stopped") {
-        return c.json({ state: "stopped" }, 409);
-      }
-      if (state === "starting") {
-        return c.json({ error: "Agent is currently starting, please wait" }, 409);
-      }
-      // Fire-and-forget: stop is async, we return immediately
-      lifecycle.stop().catch((err: Error) => {
-        log.error({ err }, "Agent stop failed");
-      });
-      return c.json({ state: "stopping" });
-    });
-
-    this.app.get("/api/agent/status", (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      return c.json({
-        state: lifecycle.getState(),
-        uptime: lifecycle.getUptime(),
-        error: lifecycle.getError() ?? null,
-      });
-    });
+    // Agent lifecycle routes (start/stop/status/restart) with WebUI error envelope
+    this.app.route(
+      "/api/agent",
+      createAgentRoutes(this.deps.lifecycle, {
+        errorResponse: (c, status, _title, detail) => c.json({ error: detail }, status as 503),
+      })
+    );
 
     this.app.get("/api/agent/mode", (c) => {
       const raw = readRawConfig(this.deps.configPath);
@@ -360,103 +265,13 @@ export class WebUIServer {
         return c.json({ error: "Agent lifecycle not available" }, 503);
       }
 
-      return streamSSE(c, async (stream) => {
-        let aborted = false;
-
-        stream.onAbort(() => {
-          aborted = true;
-        });
-
-        // Push current state immediately on connection
-        const now = Date.now();
-        await stream.writeSSE({
-          event: "status",
-          id: String(now),
-          data: JSON.stringify({
-            state: lifecycle.getState(),
-            error: lifecycle.getError() ?? null,
-            timestamp: now,
-          }),
-          retry: 3000,
-        });
-
-        // Listen for state changes
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
-        lifecycle.on("stateChange", onStateChange);
-
-        // Heartbeat loop + keep connection alive
-        while (!aborted) {
-          await stream.sleep(30_000);
-          if (aborted) break;
-          await stream.writeSSE({
-            event: "ping",
-            data: "",
-          });
-        }
-
-        lifecycle.off("stateChange", onStateChange);
-      });
+      return createLifecycleSSE(c, lifecycle);
     });
 
-    // Serve static files in production (if built)
+    // Serve static files in production (if built) with SPA fallback
     const webDist = findWebDist();
     if (webDist) {
-      const indexHtml = readFile(join(webDist, "index.html"), "utf-8");
-
-      const mimeTypes: Record<string, string> = {
-        js: "application/javascript",
-        css: "text/css",
-        svg: "image/svg+xml",
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        ico: "image/x-icon",
-        json: "application/json",
-        woff2: "font/woff2",
-        woff: "font/woff",
-      };
-
-      // Serve static files (assets, images, etc.) with SPA fallback
-      this.app.get("*", async (c) => {
-        const filePath = resolve(join(webDist, c.req.path));
-        // Prevent path traversal — resolved path must stay inside webDist
-        const rel = relative(webDist, filePath);
-        if (rel.startsWith("..") || resolve(filePath) !== filePath) {
-          return c.html(await indexHtml);
-        }
-
-        // Try serving the actual file
-        try {
-          const content = await readFile(filePath);
-          const ext = filePath.split(".").pop() || "";
-          if (mimeTypes[ext]) {
-            const immutable = c.req.path.startsWith("/assets/");
-            return c.body(content, 200, {
-              "Content-Type": mimeTypes[ext],
-              "Cache-Control": immutable
-                ? "public, max-age=31536000, immutable"
-                : "public, max-age=3600",
-            });
-          }
-        } catch {
-          // File not found — fall through to SPA
-        }
-
-        // SPA fallback: serve index.html for all non-file routes
-        return c.html(await indexHtml);
-      });
+      this.app.get("*", createStaticHandler(webDist, { async: true }));
     }
 
     // Error handler
@@ -473,44 +288,33 @@ export class WebUIServer {
   }
 
   async start(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        // Install log interceptor
-        logInterceptor.install();
+    // Install log interceptor
+    logInterceptor.install();
 
-        // Start HTTP server
-        this.server = serve(
-          {
-            fetch: this.app.fetch,
-            hostname: this.deps.config.host,
-            port: this.deps.config.port,
-          },
-          (info) => {
-            const url = `http://${info.address}:${info.port}`;
+    try {
+      this.server = await startHonoServer({
+        fetch: this.app.fetch,
+        hostname: this.deps.config.host,
+        port: this.deps.config.port,
+        onListen: (info) => {
+          const url = `http://${info.address}:${info.port}`;
 
-            log.info(`WebUI server running`);
-            log.info(`URL: ${url}/auth/exchange?token=${this.authToken}`);
-            log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
-            resolve();
-          }
-        );
-      } catch (error) {
-        logInterceptor.uninstall();
-        reject(error);
-      }
-    });
+          log.info(`WebUI server running`);
+          log.info(`URL: ${url}/auth/exchange?token=${this.authToken}`);
+          log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
+        },
+      });
+    } catch (error) {
+      logInterceptor.uninstall();
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
     if (this.server) {
-      return new Promise((resolve) => {
-        (this.server as HttpServer).closeAllConnections();
-        this.server?.close(() => {
-          logInterceptor.uninstall();
-          log.info("WebUI server stopped");
-          resolve();
-        });
-      });
+      await stopHonoServer(this.server);
+      logInterceptor.uninstall();
+      log.info("WebUI server stopped");
     }
   }
 

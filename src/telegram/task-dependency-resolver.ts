@@ -187,17 +187,17 @@ export class TaskDependencyResolver {
           log.warn(`↳ Cannot trigger [TASK:${taskId}]: no admin_id configured in bot mode`);
         }
       } else {
-        // User mode: send to Saved Messages via GramJS
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- user-only MTProto path
-        const gramJsClient = this.bridge.getRawClient() as any;
-        const me = await gramJsClient.getMe();
-
-        // Send task message immediately (no scheduling)
-        await gramJsClient.sendMessage(me, {
-          message: `[TASK:${taskId}] ${task.description}`,
-        });
-
-        log.info(`↳ Sent [TASK:${taskId}] to Saved Messages`);
+        // User mode: send to Saved Messages (the agent's own chat)
+        const ownId = this.bridge.getOwnUserId();
+        if (ownId) {
+          await this.bridge.sendMessage({
+            chatId: String(ownId),
+            text: `[TASK:${taskId}] ${task.description}`,
+          });
+          log.info(`↳ Sent [TASK:${taskId}] to Saved Messages`);
+        } else {
+          log.warn(`↳ Cannot trigger [TASK:${taskId}]: own user id unavailable`);
+        }
       }
     } catch (error) {
       log.error({ err: error }, `Error triggering task ${taskId}`);

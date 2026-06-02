@@ -4,6 +4,78 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Memory");
 
+// ── Shared DDL ─────────────────────────────────────────────────────────
+// Single source for table DDL that is otherwise duplicated verbatim between
+// ensureSchema (fresh DB) and a historical migration (existing DB). Only tables
+// whose inline and migration DDL were already byte-identical are factored here.
+// Tables whose two definitions diverge (exec_audit) or whose migration replaces
+// rather than creates (tg_messages FTS triggers: DROP+CREATE vs CREATE IF NOT
+// EXISTS) are deliberately left inline to avoid changing applied-migration
+// semantics on existing databases.
+
+const DDL_TASK_DEPENDENCIES = `
+    CREATE TABLE IF NOT EXISTS task_dependencies (
+      task_id TEXT NOT NULL,
+      depends_on_task_id TEXT NOT NULL,
+      PRIMARY KEY (task_id, depends_on_task_id),
+      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
+      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
+    CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
+`;
+
+const DDL_EMBEDDING_CACHE = `
+    CREATE TABLE IF NOT EXISTS embedding_cache (
+      hash TEXT NOT NULL,
+      model TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      embedding BLOB NOT NULL,
+      dims INTEGER NOT NULL,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      accessed_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      PRIMARY KEY (hash, model, provider)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_embedding_cache_accessed ON embedding_cache(accessed_at);
+`;
+
+const DDL_PLUGIN_CONFIG = `
+    CREATE TABLE IF NOT EXISTS plugin_config (
+      plugin_name TEXT PRIMARY KEY,
+      priority INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+`;
+
+const DDL_USER_HOOK_CONFIG = `
+    CREATE TABLE IF NOT EXISTS user_hook_config (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+`;
+
+/**
+ * Idempotent ALTER TABLE ... ADD COLUMN: swallows the "duplicate column name"
+ * error so migrations can re-run. Single definition shared by all migrations.
+ */
+function addColumnIfNotExists(
+  db: Database.Database,
+  table: string,
+  column: string,
+  type: string
+): void {
+  try {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  } catch (error: unknown) {
+    if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
+      throw error;
+    }
+  }
+}
+
 function compareSemver(a: string, b: string): number {
   const parseVersion = (v: string) => {
     const parts = v.split("-")[0].split(".").map(Number);
@@ -135,16 +207,7 @@ export function ensureSchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_tasks_created_by ON tasks(created_by) WHERE created_by IS NOT NULL;
 
     -- Task Dependencies (for chained tasks)
-    CREATE TABLE IF NOT EXISTS task_dependencies (
-      task_id TEXT NOT NULL,
-      depends_on_task_id TEXT NOT NULL,
-      PRIMARY KEY (task_id, depends_on_task_id),
-      FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-      FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
-    CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
+    ${DDL_TASK_DEPENDENCIES}
 
     -- ============================================
     -- TELEGRAM FEED
@@ -243,18 +306,7 @@ export function ensureSchema(db: Database.Database): void {
     -- EMBEDDING CACHE
     -- ============================================
 
-    CREATE TABLE IF NOT EXISTS embedding_cache (
-      hash TEXT NOT NULL,
-      model TEXT NOT NULL,
-      provider TEXT NOT NULL,
-      embedding BLOB NOT NULL,
-      dims INTEGER NOT NULL,
-      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      accessed_at INTEGER NOT NULL DEFAULT (unixepoch()),
-      PRIMARY KEY (hash, model, provider)
-    );
-
-    CREATE INDEX IF NOT EXISTS idx_embedding_cache_accessed ON embedding_cache(accessed_at);
+    ${DDL_EMBEDDING_CACHE}
 
     -- =====================================================
     -- EXEC AUDIT (Command Execution History)
@@ -284,21 +336,13 @@ export function ensureSchema(db: Database.Database): void {
     -- PLUGIN CONFIG (Plugin Priority Order)
     -- =====================================================
 
-    CREATE TABLE IF NOT EXISTS plugin_config (
-      plugin_name TEXT PRIMARY KEY,
-      priority INTEGER NOT NULL DEFAULT 0,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    ${DDL_PLUGIN_CONFIG}
 
     -- =====================================================
     -- USER HOOK CONFIG (Keyword Blocklist + Context Triggers)
     -- =====================================================
 
-    CREATE TABLE IF NOT EXISTS user_hook_config (
-      key TEXT PRIMARY KEY,
-      value TEXT NOT NULL,
-      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-    );
+    ${DDL_USER_HOOK_CONFIG}
 
     -- =====================================================
     -- JOURNAL (Trading & Business Operations)
@@ -356,7 +400,7 @@ export function setSchemaVersion(db: Database.Database, version: string): void {
   ).run(version);
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.18.0";
+export const CURRENT_SCHEMA_VERSION = "1.19.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -393,18 +437,7 @@ export function runMigrations(db: Database.Database): void {
         `CREATE INDEX IF NOT EXISTS idx_tasks_scheduled ON tasks(scheduled_for) WHERE scheduled_for IS NOT NULL`
       );
 
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS task_dependencies (
-          task_id TEXT NOT NULL,
-          depends_on_task_id TEXT NOT NULL,
-          PRIMARY KEY (task_id, depends_on_task_id),
-          FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE,
-          FOREIGN KEY (depends_on_task_id) REFERENCES tasks(id) ON DELETE CASCADE
-        );
-
-        CREATE INDEX IF NOT EXISTS idx_task_deps_task ON task_dependencies(task_id);
-        CREATE INDEX IF NOT EXISTS idx_task_deps_parent ON task_dependencies(depends_on_task_id);
-      `);
+      db.exec(DDL_TASK_DEPENDENCIES);
 
       log.info("Migration 1.1.0 complete: Scheduled tasks support added");
     } catch (error) {
@@ -417,28 +450,19 @@ export function runMigrations(db: Database.Database): void {
       log.info("Running migration 1.2.0: Extend sessions table for SQLite backend");
 
       // Add missing columns to sessions table
-      const addColumnIfNotExists = (table: string, column: string, type: string) => {
-        try {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-        } catch (error: unknown) {
-          if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
-            throw error;
-          }
-        }
-      };
-
       addColumnIfNotExists(
+        db,
         "sessions",
         "updated_at",
         "INTEGER NOT NULL DEFAULT (unixepoch() * 1000)"
       );
-      addColumnIfNotExists("sessions", "last_message_id", "INTEGER");
-      addColumnIfNotExists("sessions", "last_channel", "TEXT");
-      addColumnIfNotExists("sessions", "last_to", "TEXT");
-      addColumnIfNotExists("sessions", "context_tokens", "INTEGER");
-      addColumnIfNotExists("sessions", "model", "TEXT");
-      addColumnIfNotExists("sessions", "provider", "TEXT");
-      addColumnIfNotExists("sessions", "last_reset_date", "TEXT");
+      addColumnIfNotExists(db, "sessions", "last_message_id", "INTEGER");
+      addColumnIfNotExists(db, "sessions", "last_channel", "TEXT");
+      addColumnIfNotExists(db, "sessions", "last_to", "TEXT");
+      addColumnIfNotExists(db, "sessions", "context_tokens", "INTEGER");
+      addColumnIfNotExists(db, "sessions", "model", "TEXT");
+      addColumnIfNotExists(db, "sessions", "provider", "TEXT");
+      addColumnIfNotExists(db, "sessions", "last_reset_date", "TEXT");
 
       const sessions = db.prepare("SELECT started_at FROM sessions LIMIT 1").all() as Array<{
         started_at: number;
@@ -461,19 +485,7 @@ export function runMigrations(db: Database.Database): void {
     log.info("Running migration 1.9.0: Upgrade embedding_cache to BLOB storage");
     try {
       db.exec(`DROP TABLE IF EXISTS embedding_cache`);
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS embedding_cache (
-          hash TEXT NOT NULL,
-          model TEXT NOT NULL,
-          provider TEXT NOT NULL,
-          embedding BLOB NOT NULL,
-          dims INTEGER NOT NULL,
-          created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-          accessed_at INTEGER NOT NULL DEFAULT (unixepoch()),
-          PRIMARY KEY (hash, model, provider)
-        );
-        CREATE INDEX IF NOT EXISTS idx_embedding_cache_accessed ON embedding_cache(accessed_at);
-      `);
+      db.exec(DDL_EMBEDDING_CACHE);
       log.info("Migration 1.9.0 complete: embedding_cache upgraded to BLOB storage");
     } catch (error) {
       log.error({ err: error }, "Migration 1.9.0 failed");
@@ -597,18 +609,8 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.13.0")) {
     log.info("Running migration 1.13.0: Add token usage columns to sessions");
     try {
-      const addColumnIfNotExists = (table: string, column: string, type: string) => {
-        try {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-        } catch (error: unknown) {
-          if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
-            throw error;
-          }
-        }
-      };
-
-      addColumnIfNotExists("sessions", "input_tokens", "INTEGER DEFAULT 0");
-      addColumnIfNotExists("sessions", "output_tokens", "INTEGER DEFAULT 0");
+      addColumnIfNotExists(db, "sessions", "input_tokens", "INTEGER DEFAULT 0");
+      addColumnIfNotExists(db, "sessions", "output_tokens", "INTEGER DEFAULT 0");
 
       log.info("Migration 1.13.0 complete: Token usage columns added to sessions");
     } catch (error) {
@@ -620,13 +622,7 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.14.0")) {
     log.info("Running migration 1.14.0: Add plugin_config table for plugin priority");
     try {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS plugin_config (
-          plugin_name TEXT PRIMARY KEY,
-          priority INTEGER NOT NULL DEFAULT 0,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-      `);
+      db.exec(DDL_PLUGIN_CONFIG);
       log.info("Migration 1.14.0 complete: plugin_config table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.14.0 failed");
@@ -637,13 +633,7 @@ export function runMigrations(db: Database.Database): void {
   if (!currentVersion || versionLessThan(currentVersion, "1.15.0")) {
     log.info("Running migration 1.15.0: Add user_hook_config table");
     try {
-      db.exec(`
-        CREATE TABLE IF NOT EXISTS user_hook_config (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL,
-          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
-        );
-      `);
+      db.exec(DDL_USER_HOOK_CONFIG);
       log.info("Migration 1.15.0 complete: user_hook_config table created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.15.0 failed");
@@ -685,21 +675,11 @@ export function runMigrations(db: Database.Database): void {
       "Running migration 1.17.0: Add importance, access tracking, and lifecycle columns to knowledge"
     );
     try {
-      const addColumnIfNotExists = (table: string, column: string, type: string) => {
-        try {
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
-        } catch (error: unknown) {
-          if (!(error instanceof Error) || !error.message.includes("duplicate column name")) {
-            throw error;
-          }
-        }
-      };
-
-      addColumnIfNotExists("knowledge", "importance", "REAL DEFAULT 0.5");
-      addColumnIfNotExists("knowledge", "access_count", "INTEGER DEFAULT 0");
-      addColumnIfNotExists("knowledge", "last_accessed_at", "INTEGER");
-      addColumnIfNotExists("knowledge", "status", "TEXT DEFAULT 'active'");
-      addColumnIfNotExists("knowledge", "memory_type", "TEXT DEFAULT 'semantic'");
+      addColumnIfNotExists(db, "knowledge", "importance", "REAL DEFAULT 0.5");
+      addColumnIfNotExists(db, "knowledge", "access_count", "INTEGER DEFAULT 0");
+      addColumnIfNotExists(db, "knowledge", "last_accessed_at", "INTEGER");
+      addColumnIfNotExists(db, "knowledge", "status", "TEXT DEFAULT 'active'");
+      addColumnIfNotExists(db, "knowledge", "memory_type", "TEXT DEFAULT 'semantic'");
 
       db.exec(`CREATE INDEX IF NOT EXISTS idx_knowledge_status ON knowledge(status)`);
 
@@ -748,6 +728,59 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.18.0 complete: tool_config scope CHECK constraint extended");
     } catch (error) {
       log.error({ err: error }, "Migration 1.18.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.19.0")) {
+    log.info(
+      "Running migration 1.19.0: Add tool_config.scope_level (per-tool access: all/allowlist/admin/off)"
+    );
+    try {
+      const tableExists = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tool_config'")
+        .get();
+
+      if (tableExists) {
+        db.transaction(() => {
+          // Additive: keep the legacy enabled/scope columns intact (rollback to
+          // pre-1.19 code still reads a coherent table) and add scope_level.
+          addColumnIfNotExists(
+            db,
+            "tool_config",
+            "scope_level",
+            "TEXT NOT NULL DEFAULT 'all' CHECK(scope_level IN ('all', 'allowlist', 'admin', 'off'))"
+          );
+          // Backfill from the legacy (enabled, scope) pair. enabled=0 wins → off.
+          // The old context dimension (dm-only/group-only) collapses to 'all' —
+          // channel gating now lives in the global DM/Group policies. Full
+          // recompute (no WHERE) so a re-run is idempotent.
+          db.exec(`
+            UPDATE tool_config SET
+              scope_level = CASE
+                WHEN enabled = 0 THEN 'off'
+                WHEN scope = 'admin-only' THEN 'admin'
+                WHEN scope = 'allowlist' THEN 'allowlist'
+                WHEN scope = 'disabled' THEN 'off'
+                ELSE 'all'
+              END;
+          `);
+        })();
+      } else {
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS tool_config (
+            tool_name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+            scope TEXT CHECK(scope IN ('always', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled')),
+            scope_level TEXT NOT NULL DEFAULT 'all' CHECK(scope_level IN ('all', 'allowlist', 'admin', 'off')),
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_by INTEGER
+          );
+        `);
+      }
+      log.info("Migration 1.19.0 complete: tool_config.scope_level added");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.19.0 failed");
       throw error;
     }
   }

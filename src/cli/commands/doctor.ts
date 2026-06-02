@@ -9,6 +9,7 @@ import {
   type SupportedProvider,
 } from "../../config/providers.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { GREEN, YELLOW, RED } from "../prompts.js";
 
 interface CheckResult {
   name: string;
@@ -16,20 +17,19 @@ interface CheckResult {
   message: string;
 }
 
-const green = "\x1b[32m";
-const yellow = "\x1b[33m";
-const red = "\x1b[31m";
-const reset = "\x1b[0m";
+// ASCII banner colors (raw ANSI — chalk has no equivalent blue export)
 const blue = "\x1b[34m";
+const reset = "\x1b[0m";
 
 function formatResult(result: CheckResult): string {
   const icon =
-    result.status === "ok"
-      ? `${green}✓${reset}`
-      : result.status === "warn"
-        ? `${yellow}⚠${reset}`
-        : `${red}✗${reset}`;
+    result.status === "ok" ? GREEN("✓") : result.status === "warn" ? YELLOW("⚠") : RED("✗");
   return `${icon} ${result.name}: ${result.message}`;
+}
+
+/** Read and YAML-parse the config file (shared by the config-dependent checks). */
+function readAndParseConfig(configPath: string) {
+  return parse(readFileSync(configPath, "utf-8"));
 }
 
 async function checkConfig(workspaceDir: string): Promise<CheckResult> {
@@ -44,8 +44,7 @@ async function checkConfig(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const raw = parse(content);
+    const raw = readAndParseConfig(configPath);
     const result = ConfigSchema.safeParse(raw);
 
     if (!result.success) {
@@ -82,8 +81,7 @@ async function checkTelegramCredentials(workspaceDir: string): Promise<CheckResu
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     if (!config.telegram?.api_id || !config.telegram?.api_hash) {
       return {
@@ -127,8 +125,7 @@ async function checkApiKey(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     const provider = (config.agent?.provider || "anthropic") as SupportedProvider;
     const apiKey = config.agent?.api_key;
@@ -334,8 +331,7 @@ async function checkModel(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     const provider = (config.agent?.provider || "anthropic") as SupportedProvider;
     let model = config.agent?.model;
@@ -373,8 +369,7 @@ async function checkAdmins(workspaceDir: string): Promise<CheckResult> {
   }
 
   try {
-    const content = readFileSync(configPath, "utf-8");
-    const config = parse(content);
+    const config = readAndParseConfig(configPath);
 
     const admins = config.telegram?.admin_ids || [];
 
@@ -464,14 +459,16 @@ ${blue}  ┌──────────────────────�
 
   if (errors > 0) {
     console.log(
-      `${red}  ✗ ${errors} error${errors > 1 ? "s" : ""} found - run 'teleton setup' to fix${reset}`
+      RED(`  ✗ ${errors} error${errors > 1 ? "s" : ""} found - run 'teleton setup' to fix`)
     );
   } else if (warnings > 0) {
     console.log(
-      `${yellow}  ⚠ ${warnings} warning${warnings > 1 ? "s" : ""} - agent may work with limited features${reset}`
+      YELLOW(
+        `  ⚠ ${warnings} warning${warnings > 1 ? "s" : ""} - agent may work with limited features`
+      )
     );
   } else {
-    console.log(`${green}  ✓ All ${ok} checks passed - system ready${reset}`);
+    console.log(GREEN(`  ✓ All ${ok} checks passed - system ready`));
   }
 
   console.log("");

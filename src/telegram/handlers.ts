@@ -10,7 +10,7 @@ import { PendingHistory } from "../memory/pending-history.js";
 import type { ToolContext } from "../agent/tools/types.js";
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import { isSilentReply } from "../constants/tokens.js";
-import { telegramTranscribeAudioExecutor } from "../agent/tools/telegram/media/transcribe-audio.js";
+import { transcribeAudio } from "../sdk/telegram-utils.js";
 import { TYPING_REFRESH_MS } from "../constants/timeouts.js";
 import { createLogger } from "../utils/logger.js";
 import { getErrorMessage } from "../utils/errors.js";
@@ -201,8 +201,8 @@ export class MessageHandler {
   analyzeMessage(message: TelegramMessage): MessageContext {
     const isAdmin = this.config.admin_ids.includes(message.senderId);
 
-    // Skip offset dedup in bot mode — Grammy handles dedup via update_id internally
-    if (this.bridge.getMode() !== "bot") {
+    // Bridges that redeliver (user mode) need handler-side dedup; bot mode dedupes via update_id.
+    if (this.bridge.requiresOffsetDedup()) {
       const chatOffset = readOffset(message.chatId) ?? 0;
       if (message.id <= chatOffset) {
         return {
@@ -391,9 +391,8 @@ export class MessageHandler {
     await this.chatQueue.enqueue(message.chatId, async () => {
       try {
         // Re-check offset after queue wait to prevent duplicate processing
-        // (GramJS may fire duplicate NewMessage events during reconnection)
-        // Skip in bot mode — Grammy handles dedup via update_id
-        if (this.bridge.getMode() !== "bot") {
+        // (GramJS may fire duplicate NewMessage events during reconnection).
+        if (this.bridge.requiresOffsetDedup()) {
           const postQueueOffset = readOffset(message.chatId) ?? 0;
           if (message.id <= postQueueOffset) {
             log.debug(`Skipping message ${message.id} (already processed after queue wait)`);
@@ -430,20 +429,13 @@ export class MessageHandler {
           let transcriptionText: string | null = null;
           if (message.mediaType === "voice" || message.mediaType === "audio") {
             try {
-              const transcribeResult = await telegramTranscribeAudioExecutor(
-                { chatId: message.chatId, messageId: message.id },
-                {
-                  bridge: this.bridge,
-                  db: this.db,
-                  chatId: message.chatId,
-                  senderId: message.senderId,
-                  isGroup: message.isGroup,
-                  config: this.fullConfig,
-                }
+              const transcribeResult = await transcribeAudio(
+                this.bridge,
+                message.chatId,
+                message.id
               );
-              const transcribeData = transcribeResult.data as Record<string, unknown> | undefined;
-              if (transcribeResult.success && transcribeData?.text) {
-                transcriptionText = transcribeData.text as string;
+              if (transcribeResult.text) {
+                transcriptionText = transcribeResult.text;
                 log.info(
                   `Auto-transcribed voice msg ${message.id}: "${transcriptionText?.substring(0, 80)}..."`
                 );
@@ -473,7 +465,7 @@ export class MessageHandler {
             : message.text;
           const streamMode = this.fullConfig?.telegram?.stream_mode ?? "all";
           const streamToChat =
-            this.bridge.getMode() === "bot" && this.bridge.streamResponse && streamMode !== "off"
+            this.bridge.streamResponse && streamMode !== "off"
               ? {
                   chatId: message.chatId,
                   bridge: this.bridge,
@@ -573,9 +565,8 @@ export class MessageHandler {
             this.pendingHistory.clearPending(message.chatId);
           }
 
-          // Mark as processed AFTER successful handling (prevents message loss on crash)
-          // Skip in bot mode — Grammy handles dedup via update_id
-          if (this.bridge.getMode() !== "bot") {
+          // Mark as processed AFTER successful handling (prevents message loss on crash).
+          if (this.bridge.requiresOffsetDedup()) {
             writeOffset(message.id, message.chatId);
           }
         } finally {

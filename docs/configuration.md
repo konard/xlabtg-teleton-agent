@@ -38,7 +38,7 @@ LLM provider and agentic loop configuration.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`. |
+| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `codex`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`. |
 | `agent.api_key` | `string` | `""` | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
 | `agent.model` | `string` | `"claude-haiku-4-5-20251001"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
 | `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-haiku-4-5-20251001` for Anthropic, `gpt-4o-mini` for OpenAI). |
@@ -84,7 +84,6 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 | Provider | Default Model | Default Utility Model |
 |----------|--------------|----------------------|
 | `anthropic` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5-20251001` |
-| `claude-code` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5-20251001` |
 | `codex` | `gpt-5.5` | `gpt-5.1-codex-mini` |
 | `openai` | `gpt-5.5` | `gpt-4o-mini` |
 | `google` | `gemini-2.5-flash` | `gemini-2.0-flash-lite` |

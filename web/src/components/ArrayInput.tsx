@@ -13,12 +13,10 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
   const [inputValue, setInputValue] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [focusedChip, setFocusedChip] = useState(-1);
-  const [hoverRemove, setHoverRemove] = useState(-1);
 
   const inputRef = useRef<HTMLInputElement>(null);
   const chipRefs = useRef<(HTMLDivElement | null)[]>([]);
 
-  // Reset draft when props.value changes
   useEffect(() => {
     setDraft(value);
   }, [value]);
@@ -43,17 +41,14 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
 
   const removeItem = useCallback((index: number) => {
     setDraft(prev => prev.filter((_, i) => i !== index));
-    // Focus adjacent chip or input
     if (draft.length <= 1) {
       inputRef.current?.focus();
       setFocusedChip(-1);
     } else if (index >= draft.length - 1) {
-      // Removed last chip, focus the new last
       const newIdx = index - 1;
       setFocusedChip(newIdx);
       setTimeout(() => chipRefs.current[newIdx]?.focus(), 0);
     } else {
-      // Focus the chip that takes this position
       setFocusedChip(index);
       setTimeout(() => chipRefs.current[index]?.focus(), 0);
     }
@@ -120,16 +115,13 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
   const handlePaste = useCallback((e: React.ClipboardEvent) => {
     const text = e.clipboardData.getData('text');
     const items = text.split(/[,;\n\t]+/).map(s => s.trim()).filter(Boolean);
-    if (items.length <= 1) return; // Let normal paste handle single values
+    if (items.length <= 1) return;
 
     e.preventDefault();
     const toAdd: string[] = [];
     for (const item of items) {
       if (draft.includes(item) || toAdd.includes(item)) continue;
-      if (validate) {
-        const err = validate(item);
-        if (err) continue; // Skip invalid items silently on paste
-      }
+      if (validate && validate(item)) continue;
       toAdd.push(item);
     }
     if (toAdd.length > 0) {
@@ -142,19 +134,9 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
   const handleCancel = () => { setDraft(value); setError(null); };
 
   return (
-    <div style={{ opacity: disabled ? 0.5 : 1 }}>
-      {/* Chips */}
+    <div className={`array-input${disabled ? ' disabled' : ''}`}>
       {draft.length > 0 && (
-        <div
-          role="listbox"
-          aria-orientation="horizontal"
-          style={{
-            display: 'flex',
-            flexWrap: 'wrap',
-            gap: '6px',
-            marginBottom: 'var(--space-sm)',
-          }}
-        >
+        <div className="tags" role="listbox" aria-orientation="horizontal">
           {draft.map((item, idx) => (
             <div
               key={`${item}-${idx}`}
@@ -165,51 +147,30 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
               onKeyDown={e => handleChipKeyDown(e, idx)}
               onFocus={() => setFocusedChip(idx)}
               onBlur={() => { if (focusedChip === idx) setFocusedChip(-1); }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '4px',
-                padding: '2px 8px',
-                background: 'color-mix(in srgb, var(--accent) 15%, transparent)',
-                border: 'none',
-                color: 'var(--text-primary)',
-                borderRadius: '6px',
-                fontSize: 'var(--font-sm)',
-                lineHeight: '1.4',
-                outline: focusedChip === idx ? '2px solid var(--border-strong)' : 'none',
-                outlineOffset: focusedChip === idx ? '1px' : undefined,
-                cursor: 'default',
-              }}
+              className={`tag${focusedChip === idx ? ' focused' : ''}`}
             >
-              <span style={{ fontFamily: 'var(--font-mono)', letterSpacing: '-0.2px' }}>{item}</span>
+              <span className="tag-label">{item}</span>
               <button
                 type="button"
+                className="tag-remove"
                 aria-label={`Remove ${item}`}
                 disabled={disabled}
                 onClick={e => { e.stopPropagation(); removeItem(idx); }}
-                onMouseEnter={() => setHoverRemove(idx)}
-                onMouseLeave={() => setHoverRemove(-1)}
-                style={{
-                  all: 'unset',
-                  color: hoverRemove === idx ? 'var(--red)' : 'var(--text-tertiary)',
-                  cursor: disabled ? 'not-allowed' : 'pointer',
-                  fontSize: '12px',
-                  lineHeight: '1',
-                  transition: 'color 0.15s',
-                }}
               >
-                &times;
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                  <path d="M5 5l14 14M19 5 5 19" />
+                </svg>
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {/* Input row */}
-      <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+      <div className="tag-input-row">
         <input
           ref={inputRef}
           type="text"
+          className="tag-input"
           value={inputValue}
           onChange={e => { setInputValue(e.target.value); setError(null); }}
           onKeyDown={handleInputKeyDown}
@@ -217,51 +178,17 @@ export function ArrayInput({ value, onChange, validate, placeholder, disabled }:
           placeholder={placeholder ?? 'Add pattern…'}
           disabled={disabled}
           aria-invalid={error ? true : undefined}
-          style={{
-            flex: 1,
-            background: 'var(--bg-glass)',
-            border: '1px solid var(--border-glass)',
-            color: 'var(--text-primary)',
-            fontSize: 'var(--font-sm)',
-            padding: '5px 10px',
-            outline: 'none',
-            fontFamily: 'var(--font-mono)',
-          }}
-          onFocus={e => { e.target.style.borderColor = 'var(--border-strong)'; }}
-          onBlur={e => { e.target.style.borderColor = 'var(--border-glass)'; }}
         />
-        <button
-          type="button"
-          disabled={disabled || !inputValue.trim()}
-          onClick={() => addItem(inputValue)}
-          style={{
-            padding: '4px 10px',
-            fontSize: 'var(--font-sm)',
-            minHeight: 'auto',
-            lineHeight: '1.4',
-          }}
-        >
+        <button type="button" className="btn-sm" disabled={disabled || !inputValue.trim()} onClick={() => addItem(inputValue)}>
           Add
         </button>
       </div>
 
-      {error && (
-        <div style={{ fontSize: 'var(--font-sm)', color: 'var(--red)', marginTop: '4px' }}>
-          {error}
-        </div>
-      )}
+      {error && <div className="tag-error">{error}</div>}
       {isDirty && (
-        <div style={{ display: 'flex', gap: '6px', marginTop: 'var(--space-sm)' }}>
-          <button type="button" onClick={handleSave} disabled={disabled}
-            style={{ padding: '4px 12px', fontSize: 'var(--font-sm)', minHeight: 'auto' }}
-          >
-            Save
-          </button>
-          <button type="button" className="btn-ghost" onClick={handleCancel} disabled={disabled}
-            style={{ padding: '4px 12px', fontSize: 'var(--font-sm)', minHeight: 'auto' }}
-          >
-            Cancel
-          </button>
+        <div className="tag-actions">
+          <button type="button" className="btn-sm" onClick={handleSave} disabled={disabled}>Save</button>
+          <button type="button" className="btn-ghost btn-sm" onClick={handleCancel} disabled={disabled}>Cancel</button>
         </div>
       )}
     </div>

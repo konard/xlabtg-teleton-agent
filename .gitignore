@@ -36,3 +36,6 @@ TODOS/
 # TTS voice models (large binaries)
 piper-voices/
 
+
+# Claude Code session logs
+.claude-session/

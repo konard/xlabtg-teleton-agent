@@ -1,34 +1,57 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { api, MemorySourceFile, MemoryChunk } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { useState, useEffect, Fragment } from 'react';
+import { api, MemorySourceFile, MemoryChunk, SearchResult } from '../lib/api';
+import { formatDate, errMsg } from '../lib/utils';
+import { SearchBar } from '../components/SearchBar';
+import { List, ListRow } from '../components/List';
+import { CodeBlock } from '../components/CodeBlock';
+import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
+import { Alert } from '../components/Alert';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 
 export function Memory() {
   const [filter, setFilter] = useState('');
-  const [sources, setSources] = useState<MemorySourceFile[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const { data: sources, loading, error, reload, setError } = useResource<MemorySourceFile[]>(
+    () => api.getMemorySources().then((r) => r.data ?? []),
+    [],
+  );
 
   // Expanded source state
   const [expandedSource, setExpandedSource] = useState<string | null>(null);
   const [chunks, setChunks] = useState<MemoryChunk[]>([]);
   const [chunksLoading, setChunksLoading] = useState(false);
 
-  const loadSources = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.getMemorySources();
-      setSources(res.data ?? []);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  // Semantic search state (wired to GET /memory/search)
+  const [results, setResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const query = filter.trim();
 
+  // Debounced semantic search across indexed knowledge (hybrid vector + keyword).
   useEffect(() => {
-    loadSources();
-  }, [loadSources]);
+    if (!query) {
+      setResults([]);
+      setSearching(false);
+      return;
+    }
+    let cancelled = false;
+    setSearching(true);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await api.searchKnowledge(query);
+        if (!cancelled) setResults(res.data ?? []);
+      } catch (err) {
+        if (!cancelled) setError(errMsg(err));
+      } finally {
+        if (!cancelled) setSearching(false);
+      }
+    }, 300);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [query]);
 
   const toggleSource = async (sourceKey: string) => {
     if (expandedSource === sourceKey) {
@@ -36,157 +59,127 @@ export function Memory() {
       setChunks([]);
       return;
     }
-
     setExpandedSource(sourceKey);
     setChunksLoading(true);
     try {
       const res = await api.getSourceChunks(sourceKey);
       setChunks(res.data ?? []);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setChunksLoading(false);
     }
   };
 
-  const lowerFilter = filter.toLowerCase();
-  const filtered = lowerFilter
-    ? sources.filter((s) => s.source.toLowerCase().includes(lowerFilter))
-    : sources;
+  const allSources = sources ?? [];
+  const totalChunks = allSources.reduce((sum, s) => sum + s.entryCount, 0);
 
   return (
     <div>
       <div className="header">
         <h1>Memory</h1>
-        <p>Browse indexed knowledge sources</p>
+        <p>
+          {allSources.length} {allSources.length === 1 ? 'source' : 'sources'} · {totalChunks} chunks indexed
+        </p>
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
-        {/* Search + refresh bar */}
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', padding: '12px 14px', borderBottom: '1px solid var(--border)' }}>
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter sources..."
-            style={{ flex: 1, padding: '6px 10px', fontSize: '13px' }}
-          />
-          <button
-            onClick={loadSources}
-            disabled={loading}
-            className="btn-ghost btn-sm"
-          >
-            {loading ? 'Loading...' : 'Refresh'}
-          </button>
+      {error && (
+        <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />
+      )}
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px' }}>
+        <div style={{ flex: 1 }}>
+          <SearchBar value={filter} onChange={setFilter} placeholder="Search memory content…" />
         </div>
+        <RefreshButton onRefresh={reload} />
+      </div>
 
-        {error && (
-          <div className="alert error" style={{ margin: '12px 14px' }}>
-            {error}
-            <button onClick={() => setError(null)} style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}>Dismiss</button>
-          </div>
-        )}
-
-        {/* Sources table */}
-        {loading ? (
-          <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-            {filter ? 'No matching sources' : 'No memory files indexed'}
+      {query ? (
+        /* ── Semantic search results ── */
+        searching ? (
+          <SkeletonRows />
+        ) : results.length === 0 ? (
+          <div className="card" style={{ padding: 0 }}>
+            <EmptyState
+              title="No results"
+              description={`No matches for "${query}".`}
+              action={<button className="btn-ghost btn-sm" onClick={() => setFilter('')}>Clear search</button>}
+            />
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
-                <th style={{ textAlign: 'left', padding: '8px 14px' }}>Source</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '80px' }}>Chunks</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '140px' }}>Last Updated</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((src) => {
-                const isExpanded = expandedSource === src.source;
-                return (
-                  <React.Fragment key={src.source}>
-                    <tr
-                      onClick={() => toggleSource(src.source)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSource(src.source); } }}
-                      tabIndex={0}
-                      role="button"
-                      style={{
-                        cursor: 'pointer',
-                        borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                        backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                      }}
-                      className="file-row"
-                    >
-                      <td style={{ padding: '6px 14px' }}>
-                        <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)', marginRight: '8px' }}>
-                          {isExpanded ? '\u25BC' : '\u25B6'}
-                        </span>
-                        {src.source}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-                        {src.entryCount}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-                        {formatDate(src.lastUpdated, 1000)}
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                        <td colSpan={3} style={{ padding: '0 14px 14px 14px' }}>
-                          {chunksLoading ? (
-                            <div style={{ padding: '12px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px' }}>Loading chunks...</div>
-                          ) : chunks.length === 0 ? (
-                            <div style={{ padding: '12px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '12px' }}>No chunks</div>
-                          ) : (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingTop: '8px' }}>
-                              {chunks.map((chunk) => (
-                                <div
-                                  key={chunk.id}
-                                  style={{
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--border)',
-                                    borderRadius: '4px',
-                                    backgroundColor: 'var(--bg-glass)',
-                                  }}
-                                >
-                                  <div style={{ fontSize: '11px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
-                                    {chunk.startLine != null && chunk.endLine != null && (
-                                      <span>Lines {chunk.startLine}–{chunk.endLine} &middot; </span>
-                                    )}
-                                    {formatDate(chunk.updatedAt, 1000)}
-                                  </div>
-                                  <pre style={{
-                                    margin: 0,
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-word',
-                                    fontSize: '12px',
-                                    fontFamily: 'monospace',
-                                    lineHeight: '1.5',
-                                    maxHeight: '300px',
-                                    minHeight: '60px',
-                                    overflow: 'auto',
-                                    resize: 'vertical',
-                                    color: 'var(--text-primary)',
-                                  }}>
-                                    {chunk.text}
-                                  </pre>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                        </td>
-                      </tr>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            {results.map((r) => (
+              <CodeBlock
+                key={r.id}
+                header={
+                  <>
+                    <span style={{ wordBreak: 'break-all' }}>{r.source}</span>
+                    <span className="badge count" style={{ flexShrink: 0 }}>score {r.score.toFixed(3)}</span>
+                  </>
+                }
+              >
+                {r.text}
+              </CodeBlock>
+            ))}
+          </div>
+        )
+      ) : loading ? (
+        <SkeletonRows />
+      ) : allSources.length === 0 ? (
+        <div className="card" style={{ padding: 0 }}>
+          <EmptyState title="No memory files indexed" description="Indexed knowledge sources will appear here once content is added." />
+        </div>
+      ) : (
+        /* ── Sources list ── */
+        <List>
+          {allSources.map((src) => {
+            const isExpanded = expandedSource === src.source;
+            return (
+              <Fragment key={src.source}>
+                <ListRow
+                  leading={src.source.charAt(0).toUpperCase()}
+                  title={src.source}
+                  subtitle={`${src.entryCount} ${src.entryCount === 1 ? 'chunk' : 'chunks'} · ${formatDate(src.lastUpdated, 1000)}`}
+                  disclosure
+                  expanded={isExpanded}
+                  onClick={() => toggleSource(src.source)}
+                />
+                {isExpanded && (
+                  <div className="ios-sublist" style={{ padding: '10px 14px 14px' }}>
+                    {chunksLoading ? (
+                      <SkeletonRows rows={3} />
+                    ) : chunks.length === 0 ? (
+                      <div style={{ padding: '8px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>
+                        No chunks
+                      </div>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {chunks.map((chunk) => (
+                          <CodeBlock
+                            key={chunk.id}
+                            resizable
+                            header={
+                              <span>
+                                {chunk.startLine != null && chunk.endLine != null && (
+                                  <span>Lines {chunk.startLine}–{chunk.endLine} · </span>
+                                )}
+                                {formatDate(chunk.updatedAt, 1000)}
+                              </span>
+                            }
+                          >
+                            {chunk.text}
+                          </CodeBlock>
+                        ))}
+                      </div>
                     )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </List>
+      )}
     </div>
   );
 }

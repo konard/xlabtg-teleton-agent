@@ -10,7 +10,7 @@
 
 import { randomUUID } from "crypto";
 import { createLogger } from "../utils/logger.js";
-import type { Tool } from "@mariozechner/pi-ai";
+import type { Tool, UserMessage, ToolResultMessage } from "@mariozechner/pi-ai";
 
 const log = createLogger("Cocoon");
 
@@ -214,4 +214,33 @@ export function extractPlainText(text: string): string {
 export function wrapToolResult(resultText: string): string {
   const safe = resultText.replace(/]]>/g, "]]]]><![CDATA[>");
   return `<tool_response>\n<![CDATA[${safe}]]>\n</tool_response>`;
+}
+
+/**
+ * Build the message that carries a tool result back to the model. Cocoon has no
+ * native tool-result role, so its results are wrapped as a plain user message;
+ * every other provider uses the standard toolResult message. Centralising the
+ * branch here keeps the cocoon-specific shape out of the agentic loop.
+ */
+export function buildToolResultMessage(
+  provider: string,
+  block: { id: string; name: string },
+  resultText: string,
+  isError: boolean
+): UserMessage | ToolResultMessage {
+  if (provider === "cocoon") {
+    return {
+      role: "user",
+      content: [{ type: "text", text: wrapToolResult(resultText) }],
+      timestamp: Date.now(),
+    };
+  }
+  return {
+    role: "toolResult",
+    toolCallId: block.id,
+    toolName: block.name,
+    content: [{ type: "text", text: resultText }],
+    isError,
+    timestamp: Date.now(),
+  };
 }

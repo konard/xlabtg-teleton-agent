@@ -8,6 +8,7 @@ import {
   TOOL_RAG_KEYWORD_WEIGHT,
 } from "../../constants/limits.js";
 import { createLogger } from "../../utils/logger.js";
+import { escapeFts5Query, bm25ToScore } from "../../memory/search/fts-utils.js";
 
 const log = createLogger("ToolRAG");
 
@@ -23,24 +24,6 @@ export interface ToolSearchResult {
   score: number;
   vectorScore?: number;
   keywordScore?: number;
-}
-
-/**
- * Escape FTS5 special characters to prevent syntax errors.
- */
-function escapeFts5Query(query: string): string {
-  return query
-    .replace(/["\*\-\+\(\)\:\^\~\?\.\@\#\$\%\&\!\[\]\{\}\|\\\/<>=,;'`]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
-/**
- * Convert BM25 rank to normalized score.
- * FTS5 rank is negative; more negative = better match.
- */
-function bm25ToScore(rank: number): number {
-  return 1 / (1 + Math.exp(rank));
 }
 
 /**

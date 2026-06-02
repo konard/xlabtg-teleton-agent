@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { setup, BotValidation } from '../../lib/api';
-import { Select } from '../Select';
 import { Stepper } from '../Stepper';
 import { PasswordInput } from './PasswordInput';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
 
 export function ConfigStep({ data, onChange }: StepProps) {
   const [botLoading, setBotLoading] = useState(false);
@@ -29,7 +29,7 @@ export function ConfigStep({ data, onChange }: StepProps) {
         setBotError(result.error || 'Invalid bot token');
       }
     } catch (err) {
-      setBotError(err instanceof Error ? err.message : String(err));
+      setBotError(errMsg(err));
     } finally {
       setBotLoading(false);
     }

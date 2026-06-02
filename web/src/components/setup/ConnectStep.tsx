@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, lazy, Suspense } from 'react'
 import { QRCodeSVG } from 'qrcode.react';
 import { setup } from '../../lib/api';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
 
 const Lottie = lazy(() => import('lottie-react'));
 
@@ -83,7 +84,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
       setPhase('qr_waiting');
       startQrPolling(result.authSessionId);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       if (msg.includes('FLOOD') || msg.includes('Rate limited')) {
         const seconds = parseInt(msg.match(/(\d+)/)?.[1] || '60');
         setFloodWait(seconds);
@@ -136,7 +137,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
       setPhase('code_sent');
       setCanResend(false);
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errMsg(err);
       if (msg.includes('FLOOD')) {
         const seconds = parseInt(msg.match(/(\d+)/)?.[1] || '60');
         setFloodWait(seconds);
@@ -162,7 +163,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
         setPhase('2fa');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -180,7 +181,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
         setPhase('done');
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }
@@ -196,7 +197,7 @@ export function ConnectStep({ data, onChange }: StepProps) {
       setCode('');
       setCanResend(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setLoading(false);
     }

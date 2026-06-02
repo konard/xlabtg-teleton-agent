@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { parse, stringify } from "yaml";
 import { expandPath } from "./loader.js";
-import { ConfigSchema } from "./schema.js";
+import { ConfigSchema, DMPolicy, GroupPolicy, ExecMode, ExecScope } from "./schema.js";
 import { getSupportedProviders } from "./providers.js";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -282,6 +282,7 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     description: "Who can message the bot in private",
     sensitive: false,
     hotReload: "instant",
+    // UI order intentionally differs from the schema enum order
     options: ["admin-only", "allowlist", "open", "disabled"],
     optionLabels: {
       "admin-only": "Admin Only",
@@ -289,7 +290,7 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
       open: "Open",
       disabled: "Disabled",
     },
-    validate: enumValidator(["open", "allowlist", "admin-only", "disabled"]),
+    validate: enumValidator([...DMPolicy.options]),
     mask: identity,
     parse: identity,
   },
@@ -300,14 +301,14 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     description: "Which groups the bot can respond in",
     sensitive: false,
     hotReload: "instant",
-    options: ["open", "allowlist", "admin-only", "disabled"],
+    options: [...GroupPolicy.options],
     optionLabels: {
       open: "Open",
       allowlist: "Allow Groups",
       "admin-only": "Admin Only",
       disabled: "Disabled",
     },
-    validate: enumValidator(["open", "allowlist", "admin-only", "disabled"]),
+    validate: enumValidator([...GroupPolicy.options]),
     mask: identity,
     parse: identity,
   },
@@ -457,6 +458,17 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     mask: identity,
     parse: (v) => Number(v),
   },
+  "telegram.guest_mode": {
+    type: "boolean",
+    category: "Telegram",
+    label: "Guest Mode",
+    description: "Answer guest queries in chats the bot is not a member of",
+    sensitive: false,
+    hotReload: "instant",
+    validate: enumValidator(["true", "false"]),
+    mask: identity,
+    parse: (v) => v === "true",
+  },
 
   // ─── Embedding ─────────────────────────────────────────────────────
   "embedding.provider": {
@@ -596,9 +608,9 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     description: "System execution: off (disabled) or yolo (full system access)",
     sensitive: false,
     hotReload: "restart",
-    options: ["off", "yolo"],
+    options: [...ExecMode.options],
     optionLabels: { off: "Disabled", yolo: "YOLO" },
-    validate: enumValidator(["off", "yolo"]),
+    validate: enumValidator([...ExecMode.options]),
     mask: identity,
     parse: identity,
   },
@@ -609,9 +621,9 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     description: "Who can trigger exec tools",
     sensitive: false,
     hotReload: "restart",
-    options: ["admin-only", "allowlist", "all"],
+    options: [...ExecScope.options],
     optionLabels: { "admin-only": "Admin Only", allowlist: "Allowlist", all: "Everyone" },
-    validate: enumValidator(["admin-only", "allowlist", "all"]),
+    validate: enumValidator([...ExecScope.options]),
     mask: identity,
     parse: identity,
   },

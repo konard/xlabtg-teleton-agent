@@ -1,52 +1,32 @@
-import { ToolInfo } from '../lib/api';
+import { ToolInfo, ToolAccessLevel } from '../lib/api';
+import { PillTabs } from './PillTabs';
 
 interface ToolRowProps {
   tool: ToolInfo;
   updating: string | null;
-  onToggle: (name: string, enabled: boolean) => void;
-  onScope: (name: string, scope: ToolInfo['scope']) => void;
+  onLevel: (tool: ToolInfo, level: ToolAccessLevel) => void;
 }
 
-export function ToolRow({ tool, updating, onToggle, onScope }: ToolRowProps) {
+export const LEVEL_OPTIONS: { value: string; label: string }[] = [
+  { value: 'all', label: 'All' },
+  { value: 'allowlist', label: 'List' },
+  { value: 'admin', label: 'Admin' },
+  { value: 'off', label: 'Off' },
+];
+
+export function ToolRow({ tool, updating, onLevel }: ToolRowProps) {
+  const busy = updating === tool.name;
+
   return (
-    <div
-      className="tool-row"
-      style={{
-        opacity: tool.enabled ? 1 : 0.5,
-        display: 'grid',
-        gridTemplateColumns: '1fr auto auto',
-        gap: '10px',
-        alignItems: 'center',
-      }}
-    >
-      <div style={{ minWidth: 0 }}>
-        <div className="tool-name">{tool.name}</div>
-        <div className="tool-desc">{tool.description}</div>
-      </div>
-
-      <div className={`scope-seg${!tool.enabled || updating === tool.name ? ' disabled' : ''}`}>
-        {(['open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled'] as const).map((s) => (
-          <button
-            key={s}
-            className={tool.scope === s || (s === 'open' && tool.scope === 'always') ? 'active' : ''}
-            disabled={!tool.enabled || updating === tool.name}
-            onClick={() => onScope(tool.name, s)}
-          >
-            {s === 'open' ? 'All' : s === 'dm-only' ? 'DM' : s === 'group-only' ? 'Group' : s === 'admin-only' ? 'Admin' : s === 'allowlist' ? 'List' : 'Off'}
-          </button>
-        ))}
-      </div>
-
-      <label className="toggle">
-        <input
-          type="checkbox"
-          checked={tool.enabled}
-          onChange={() => onToggle(tool.name, tool.enabled)}
-          disabled={updating === tool.name}
-        />
-        <span className="toggle-track" />
-        <span className="toggle-thumb" />
-      </label>
+    <div className="tool-row2" style={{ opacity: tool.level === 'off' ? 0.55 : 1 }}>
+      <div className="ios-row-title tool-row2-main" title={tool.description}>{tool.name}</div>
+      <PillTabs
+        value={tool.level}
+        options={LEVEL_OPTIONS}
+        onChange={(v) => onLevel(tool, v as ToolAccessLevel)}
+        disabled={busy}
+        ariaLabel={`Access level for ${tool.name}`}
+      />
     </div>
   );
 }

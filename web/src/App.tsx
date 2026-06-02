@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import React, { useEffect, useState, Suspense } from 'react';
 import { Layout } from './components/Layout';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -17,6 +17,7 @@ const Tasks = React.lazy(() => import('./pages/Tasks').then(m => ({ default: m.T
 const Mcp = React.lazy(() => import('./pages/Mcp').then(m => ({ default: m.Mcp })));
 const Config = React.lazy(() => import('./pages/Config').then(m => ({ default: m.Config })));
 const Hooks = React.lazy(() => import('./pages/Hooks').then(m => ({ default: m.Hooks })));
+const Logs = React.lazy(() => import('./pages/Logs').then(m => ({ default: m.Logs })));
 const Conversations = React.lazy(() => import('./pages/Conversations').then(m => ({ default: m.Conversations })));
 const Wallet = React.lazy(() => import('./pages/Wallet').then(m => ({ default: m.Wallet })));
 
@@ -129,30 +130,39 @@ function AuthenticatedApp() {
 
   return (
     <BrowserRouter>
-      <ErrorBoundary>
-        <Suspense fallback={null}>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="tools" element={<Tools />} />
-              <Route path="plugins" element={<Plugins />} />
-              <Route path="soul" element={<Soul />} />
-              <Route path="memory" element={<Memory />} />
-              <Route path="conversations" element={<Conversations />} />
-              <Route path="wallet" element={<Wallet />} />
-              <Route path="workspace" element={<Workspace />} />
-              <Route path="tasks" element={<Tasks />} />
-              <Route path="mcp" element={<Mcp />} />
-              <Route path="config" element={<Config />} />
-              <Route path="hooks" element={<Hooks />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-        </Suspense>
-      </ErrorBoundary>
+      <RoutedContent />
     </BrowserRouter>
   );
 }
 
+// Keyed by pathname so a crashed page's error boundary clears on navigation
+// (otherwise a broken route traps the user until manual "Try Again").
+function RoutedContent() {
+  const location = useLocation();
+  return (
+    <ErrorBoundary resetKey={location.pathname}>
+      <Suspense fallback={<div className="loading">Loading...</div>}>
+        <Routes>
+          <Route path="/" element={<Layout />}>
+            <Route index element={<Dashboard />} />
+            <Route path="tools" element={<Tools />} />
+            <Route path="plugins" element={<Plugins />} />
+            <Route path="soul" element={<Soul />} />
+            <Route path="memory" element={<Memory />} />
+            <Route path="conversations" element={<Conversations />} />
+            <Route path="wallet" element={<Wallet />} />
+            <Route path="workspace" element={<Workspace />} />
+            <Route path="tasks" element={<Tasks />} />
+            <Route path="mcp" element={<Mcp />} />
+            <Route path="config" element={<Config />} />
+            <Route path="hooks" element={<Hooks />} />
+            <Route path="logs" element={<Logs />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Route>
+        </Routes>
+        </Suspense>
+      </ErrorBoundary>
+  );
+}
+
 export default App;
-export { AuthenticatedApp };

@@ -1,8 +1,7 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import type { ExecConfig } from "../../../config/schema.js";
-import { runCommand } from "./runner.js";
-import { insertAuditEntry, updateAuditEntry } from "./audit.js";
+import { runAudited } from "./audited-run.js";
 import type Database from "better-sqlite3";
 
 interface ExecRunParams {
@@ -26,38 +25,12 @@ export function createExecRunExecutor(
 ): ToolExecutor<ExecRunParams> {
   return async (params, context): Promise<ToolResult> => {
     const { command } = params;
-    const { timeout, max_output } = execConfig.limits;
-
-    let auditId: number | undefined;
-    if (execConfig.audit.log_commands) {
-      auditId = insertAuditEntry(db, {
-        userId: context.senderId,
-        username: undefined,
-        tool: "exec_run",
-        command,
-        status: "running",
-        truncated: false,
-      });
-    }
-
-    const result = await runCommand(command, {
-      timeout: timeout * 1000,
-      maxOutput: max_output,
+    const { result } = await runAudited(db, execConfig, {
+      tool: "exec_run",
+      command,
+      senderId: context.senderId,
     });
-
-    const status = result.timedOut ? "timeout" : result.exitCode === 0 ? "success" : "failed";
-
-    if (auditId !== undefined) {
-      updateAuditEntry(db, auditId, {
-        status,
-        exitCode: result.exitCode ?? undefined,
-        signal: result.signal ?? undefined,
-        duration: result.duration,
-        stdout: result.stdout,
-        stderr: result.stderr,
-        truncated: result.truncated,
-      });
-    }
+    const { timeout } = execConfig.limits;
 
     return {
       success: result.exitCode === 0 && !result.timedOut,

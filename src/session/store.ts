@@ -6,6 +6,11 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Session");
 
+/** Build the DB session key for a chat. Centralised so the prefix can't drift. */
+function sessionKeyFor(chatId: string): string {
+  return `telegram:${chatId}`;
+}
+
 export interface SessionEntry {
   sessionId: string;
   chatId: string;
@@ -24,6 +29,29 @@ export interface SessionEntry {
 }
 
 export type SessionStore = Record<string, SessionEntry>;
+
+/**
+ * camelCase field → snake_case column for the fields updateSession can write.
+ * `updated_at` is always set separately; `chatId`/`createdAt` are immutable.
+ * Single source for the dynamic UPDATE so the SET clause can't drift from the
+ * field list. rowToSession keeps its own (non-mechanical) coercions.
+ */
+const SESSION_UPDATE_COLUMNS: Record<
+  keyof Omit<SessionEntry, "chatId" | "createdAt" | "updatedAt">,
+  string
+> = {
+  sessionId: "id",
+  messageCount: "message_count",
+  lastMessageId: "last_message_id",
+  lastChannel: "last_channel",
+  lastTo: "last_to",
+  contextTokens: "context_tokens",
+  model: "model",
+  provider: "provider",
+  lastResetDate: "last_reset_date",
+  inputTokens: "input_tokens",
+  outputTokens: "output_tokens",
+};
 
 interface SessionRow {
   id: string;
@@ -123,7 +151,7 @@ export function saveSessionStore(store: SessionStore): void {
 }
 export function getOrCreateSession(chatId: string): SessionEntry {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   const row = db.prepare("SELECT * FROM sessions WHERE chat_id = ?").get(sessionKey) as
     | SessionRow
@@ -169,7 +197,7 @@ export function updateSession(
   update: Partial<Omit<SessionEntry, "chatId" | "createdAt">>
 ): SessionEntry {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   const existing = db.prepare("SELECT * FROM sessions WHERE chat_id = ?").get(sessionKey) as
     | SessionRow
@@ -182,49 +210,15 @@ export function updateSession(
   const updates: string[] = [];
   const values: unknown[] = [];
 
-  if (update.sessionId !== undefined) {
-    updates.push("id = ?");
-    values.push(update.sessionId);
-  }
-  if (update.messageCount !== undefined) {
-    updates.push("message_count = ?");
-    values.push(update.messageCount);
-  }
-  if (update.lastMessageId !== undefined) {
-    updates.push("last_message_id = ?");
-    values.push(update.lastMessageId);
-  }
-  if (update.lastChannel !== undefined) {
-    updates.push("last_channel = ?");
-    values.push(update.lastChannel);
-  }
-  if (update.lastTo !== undefined) {
-    updates.push("last_to = ?");
-    values.push(update.lastTo);
-  }
-  if (update.contextTokens !== undefined) {
-    updates.push("context_tokens = ?");
-    values.push(update.contextTokens);
-  }
-  if (update.model !== undefined) {
-    updates.push("model = ?");
-    values.push(update.model);
-  }
-  if (update.provider !== undefined) {
-    updates.push("provider = ?");
-    values.push(update.provider);
-  }
-  if (update.lastResetDate !== undefined) {
-    updates.push("last_reset_date = ?");
-    values.push(update.lastResetDate);
-  }
-  if (update.inputTokens !== undefined) {
-    updates.push("input_tokens = ?");
-    values.push(update.inputTokens);
-  }
-  if (update.outputTokens !== undefined) {
-    updates.push("output_tokens = ?");
-    values.push(update.outputTokens);
+  for (const [field, column] of Object.entries(SESSION_UPDATE_COLUMNS) as [
+    keyof typeof SESSION_UPDATE_COLUMNS,
+    string,
+  ][]) {
+    const value = update[field];
+    if (value !== undefined) {
+      updates.push(`${column} = ?`);
+      values.push(value);
+    }
   }
 
   updates.push("updated_at = ?");
@@ -247,7 +241,7 @@ export function updateSession(
 }
 export function incrementMessageCount(chatId: string): void {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   const result = db
     .prepare(
@@ -265,7 +259,7 @@ export function incrementMessageCount(chatId: string): void {
 }
 export function getSession(chatId: string): SessionEntry | null {
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
   const row = db.prepare("SELECT * FROM sessions WHERE chat_id = ?").get(sessionKey) as
     | SessionRow
     | undefined;
@@ -290,7 +284,7 @@ export function resetSession(chatId: string): SessionEntry {
   };
 
   const db = getDb();
-  const sessionKey = `telegram:${chatId}`;
+  const sessionKey = sessionKeyFor(chatId);
 
   db.prepare(
     `
@@ -340,7 +334,7 @@ export function shouldResetSession(session: SessionEntry, policy: SessionResetPo
 
   return false;
 }
-export function resetSessionWithPolicy(chatId: string, _policy: SessionResetPolicy): SessionEntry {
+export function resetSessionWithPolicy(chatId: string): SessionEntry {
   resetSession(chatId);
   const today = new Date().toISOString().split("T")[0];
 

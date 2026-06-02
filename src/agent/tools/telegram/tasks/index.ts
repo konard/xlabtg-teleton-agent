@@ -10,7 +10,7 @@ export const tools: ToolEntry[] = [
   {
     tool: telegramCreateScheduledTaskTool,
     executor: telegramCreateScheduledTaskExecutor,
-    requiredMode: "user",
+    mode: "user",
     tags: ["automation"],
   },
 ];

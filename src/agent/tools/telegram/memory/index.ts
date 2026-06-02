@@ -10,8 +10,26 @@ export { memorySearchTool, memorySearchExecutor };
 export { sessionSearchTool, sessionSearchExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: memoryWriteTool, executor: memoryWriteExecutor, scope: "dm-only", tags: ["core"] },
-  { tool: memoryReadTool, executor: memoryReadExecutor, tags: ["core"] },
-  { tool: memorySearchTool, executor: memorySearchExecutor, scope: "dm-only", tags: ["core"] },
-  { tool: sessionSearchTool, executor: sessionSearchExecutor, scope: "dm-only", tags: ["core"] },
+  {
+    tool: memoryWriteTool,
+    executor: memoryWriteExecutor,
+    scope: "dm-only",
+    mode: "both",
+    tags: ["core"],
+  },
+  { tool: memoryReadTool, executor: memoryReadExecutor, mode: "both", tags: ["core"] },
+  {
+    tool: memorySearchTool,
+    executor: memorySearchExecutor,
+    scope: "dm-only",
+    mode: "both",
+    tags: ["core"],
+  },
+  {
+    tool: sessionSearchTool,
+    executor: sessionSearchExecutor,
+    scope: "dm-only",
+    mode: "both",
+    tags: ["core"],
+  },
 ];

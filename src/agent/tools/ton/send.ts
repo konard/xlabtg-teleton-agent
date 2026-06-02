@@ -57,12 +57,13 @@ export const tonSendExecutor: ToolExecutor<SendParams> = async (
       };
     }
 
-    const txRef = await sendTon({ toAddress: to, amount, comment });
+    const result = await sendTon({ toAddress: to, amount, comment });
 
-    if (!txRef) {
+    if (!result) {
       return {
         success: false,
-        error: "TON transfer failed — check blockchain node connectivity.",
+        error:
+          "TON transfer failed or could not be confirmed on-chain — check wallet balance and node connectivity.",
       };
     }
 
@@ -73,7 +74,8 @@ export const tonSendExecutor: ToolExecutor<SendParams> = async (
         amount,
         comment: comment || null,
         from: walletData.address,
-        message: `Sent ${amount} TON to ${to}${comment ? ` (${comment})` : ""}`,
+        txHash: result.hash,
+        message: `Sent ${amount} TON to ${to}${comment ? ` (${comment})` : ""} — tx ${result.hash}`,
       },
     };
   } catch (error) {

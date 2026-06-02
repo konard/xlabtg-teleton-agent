@@ -15,6 +15,7 @@ const log = createLogger("Tools");
 interface CreateScheduledTaskParams {
   description: string;
   scheduleDate?: string;
+  scheduleInSeconds?: number;
   payload?: string;
   reason?: string;
   priority?: number;
@@ -57,10 +58,17 @@ export const telegramCreateScheduledTaskTool: Tool = {
     description: Type.String({
       description: "What the task is about (e.g., 'Check TON price and alert if > $5')",
     }),
+    scheduleInSeconds: Type.Optional(
+      Type.Number({
+        description:
+          "PREFERRED for relative timing ('in 60 seconds', 'every minute', 'in 2 hours'): number of seconds from now until execution. Timezone-proof — the server computes the exact moment. Always use this for delays instead of scheduleDate.",
+        minimum: 1,
+      })
+    ),
     scheduleDate: Type.Optional(
       Type.String({
         description:
-          "When to execute the task (ISO 8601 format, e.g., '2024-12-25T10:00:00Z' or Unix timestamp). Optional if dependsOn is provided - task will execute when dependencies complete.",
+          "Absolute execution time, ISO 8601. IMPORTANT: must be UTC ('Z' suffix) or carry an explicit offset (e.g. '+02:00'). Message timestamps are shown in LOCAL time, so do NOT copy the local wall-clock and append 'Z' — that shifts the task by your UTC offset. For relative delays use scheduleInSeconds. Optional if dependsOn is provided.",
       })
     ),
     payload: Type.Optional(
@@ -108,19 +116,30 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
   context
 ): Promise<ToolResult> => {
   try {
-    const { description, scheduleDate, payload, reason, priority, dependsOn } = params;
+    const { description, scheduleDate, scheduleInSeconds, payload, reason, priority, dependsOn } =
+      params;
 
-    // Validate: either scheduleDate OR dependsOn must be provided
-    if (!scheduleDate && (!dependsOn || dependsOn.length === 0)) {
+    // Validate: scheduleInSeconds, scheduleDate, OR dependsOn must be provided
+    if (
+      scheduleInSeconds === undefined &&
+      !scheduleDate &&
+      (!dependsOn || dependsOn.length === 0)
+    ) {
       return {
         success: false,
-        error: "Either scheduleDate or dependsOn must be provided",
+        error: "One of scheduleInSeconds, scheduleDate, or dependsOn must be provided",
       };
     }
 
-    // Parse schedule date if provided
+    // Resolve the schedule timestamp. Relative (scheduleInSeconds) is timezone-proof
+    // and takes precedence over the absolute scheduleDate.
     let scheduleTimestamp: number | undefined;
-    if (scheduleDate) {
+    if (scheduleInSeconds !== undefined) {
+      if (!Number.isFinite(scheduleInSeconds) || scheduleInSeconds < 1) {
+        return { success: false, error: "scheduleInSeconds must be a positive number of seconds" };
+      }
+      scheduleTimestamp = Math.floor(Date.now() / 1000) + Math.floor(scheduleInSeconds);
+    } else if (scheduleDate) {
       const parsedDate = new Date(scheduleDate);
       if (!isNaN(parsedDate.getTime())) {
         scheduleTimestamp = Math.floor(parsedDate.getTime() / 1000);

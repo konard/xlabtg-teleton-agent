@@ -1,65 +1,37 @@
 import { useState } from 'react';
-import { api, ToolInfo, ModuleInfo } from '../lib/api';
+import { api, ToolInfo, ModuleInfo, ToolAccessLevel } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 export function useToolManager(reloadFn: () => Promise<void>) {
   const [updating, setUpdating] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const toggleEnabled = async (toolName: string, currentEnabled: boolean) => {
-    setUpdating(toolName);
+  // Shared envelope: mark `key` updating, run the mutation, reload, surface errors.
+  const runUpdate = async (key: string, body: () => Promise<unknown>) => {
+    setUpdating(key);
     try {
-      await api.updateToolConfig(toolName, { enabled: !currentEnabled });
+      await body();
       await reloadFn();
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setUpdating(null);
     }
   };
 
-  const updateScope = async (toolName: string, newScope: ToolInfo['scope']) => {
-    setUpdating(toolName);
-    try {
-      await api.updateToolConfig(toolName, { scope: newScope });
-      await reloadFn();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdating(null);
-    }
-  };
+  // Set the access level for a single tool.
+  const updateLevel = (tool: ToolInfo, level: ToolAccessLevel) =>
+    runUpdate(tool.name, () => api.updateToolConfig(tool.name, { level }));
 
-  const bulkToggle = async (module: ModuleInfo, enabled: boolean) => {
-    setUpdating(module.name);
-    try {
+  // Set the access level for every tool in a module.
+  const bulkLevel = (module: ModuleInfo, level: ToolAccessLevel) =>
+    runUpdate(module.name, async () => {
       for (const tool of module.tools) {
-        if (tool.enabled !== enabled) {
-          await api.updateToolConfig(tool.name, { enabled });
+        if (tool.level !== level) {
+          await api.updateToolConfig(tool.name, { level });
         }
       }
-      await reloadFn();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdating(null);
-    }
-  };
+    });
 
-  const bulkScope = async (module: ModuleInfo, scope: ToolInfo['scope']) => {
-    setUpdating(module.name);
-    try {
-      for (const tool of module.tools) {
-        if (tool.scope !== scope) {
-          await api.updateToolConfig(tool.name, { scope });
-        }
-      }
-      await reloadFn();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setUpdating(null);
-    }
-  };
-
-  return { updating, error, setError, toggleEnabled, updateScope, bulkToggle, bulkScope };
+  return { updating, error, setError, updateLevel, bulkLevel };
 }

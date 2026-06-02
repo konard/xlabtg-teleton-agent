@@ -2,12 +2,13 @@ import { Outlet } from 'react-router-dom';
 import { Shell } from '../Shell';
 import { SetupProvider } from './SetupContext';
 import { SetupNav } from './SetupNav';
+import { ThemeToggle } from '../ThemeToggle';
 
 const DASHBOARD_LINKS = [
   { label: 'Dashboard', path: '/' },
   { label: 'Tools', path: '/tools' },
   { label: 'Plugins', path: '/plugins' },
-  { label: 'Soul', path: '/soul' },
+  { label: 'System Prompt', path: '/soul' },
   { label: 'Memory', path: '/memory' },
   { label: 'Logs', path: '/logs' },
   { label: 'Workspace', path: '/workspace' },
@@ -40,7 +41,7 @@ function SetupMain() {
 export function SetupLayout() {
   return (
     <SetupProvider>
-      <Shell sidebar={<DisabledNav />}>
+      <Shell sidebar={<DisabledNav />} topRight={<ThemeToggle />}>
         <SetupMain />
       </Shell>
     </SetupProvider>

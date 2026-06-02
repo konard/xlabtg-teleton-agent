@@ -2,24 +2,14 @@
 
 import { Type } from "@sinclair/typebox";
 import { unlinkSync, rmdirSync, readdirSync, rmSync } from "fs";
-import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { validatePath, WorkspaceSecurityError } from "../../../workspace/index.js";
-import { getErrorMessage } from "../../../utils/errors.js";
+import type { Tool, ToolExecutor } from "../types.js";
+import { validatePath, PROTECTED_WORKSPACE_FILES } from "../../../workspace/index.js";
+import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceDeleteParams {
   path: string;
   recursive?: boolean;
 }
-
-// Files that cannot be deleted (core workspace files)
-const PROTECTED_WORKSPACE_FILES = [
-  "SOUL.md",
-  "STRATEGY.md",
-  "SECURITY.md",
-  "MEMORY.md",
-  "IDENTITY.md",
-  "USER.md",
-];
 
 export const workspaceDeleteTool: Tool = {
   name: "workspace_delete",
@@ -38,11 +28,8 @@ export const workspaceDeleteTool: Tool = {
   }),
 };
 
-export const workspaceDeleteExecutor: ToolExecutor<WorkspaceDeleteParams> = async (
-  params,
-  _context
-): Promise<ToolResult> => {
-  try {
+export const workspaceDeleteExecutor: ToolExecutor<WorkspaceDeleteParams> =
+  withToolErrors<WorkspaceDeleteParams>(async (params) => {
     const { path, recursive = false } = params;
 
     // Validate the path
@@ -86,16 +73,4 @@ export const workspaceDeleteExecutor: ToolExecutor<WorkspaceDeleteParams> = asyn
         message: `Successfully deleted ${validated.isDirectory ? "directory" : "file"}`,
       },
     };
-  } catch (error) {
-    if (error instanceof WorkspaceSecurityError) {
-      return {
-        success: false,
-        error: error.message,
-      };
-    }
-    return {
-      success: false,
-      error: getErrorMessage(error),
-    };
-  }
-};
+  });

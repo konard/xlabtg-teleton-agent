@@ -11,6 +11,7 @@ This guide covers obtaining Telegram API credentials, configuring the agent's me
 - [First-Time Authentication](#first-time-authentication)
 - [2FA Handling](#2fa-handling)
 - [Bot Token (Optional)](#bot-token-optional)
+- [Guest Mode](#guest-mode)
 - [DM Policies](#dm-policies)
 - [Group Policies](#group-policies)
 - [Admin IDs](#admin-ids)
@@ -150,6 +151,33 @@ telegram:
 ```
 
 The bot must be added to any groups where you want inline buttons to work.
+
+---
+
+## Guest Mode
+
+Guest Mode is a Telegram Bot API 10.0 feature that lets the bot answer **guest queries** -- messages from users in chats the bot is **not a member of**. It applies to bot mode only.
+
+### Prerequisite: enable it in BotFather
+
+Guest Mode must be enabled for your bot in [@BotFather](https://t.me/BotFather) first. Without this, Telegram never delivers guest queries and the agent has nothing to answer.
+
+### Configuration
+
+```yaml
+telegram:
+  guest_mode: false   # Default. Set to true to answer guest queries.
+```
+
+`guest_mode` can be toggled three ways, all writing the same config key:
+
+- The config file directly.
+- The WebUI **Config** page (Telegram category).
+- The `/guest on` / `/guest off` admin command.
+
+### Behaviour
+
+Guest queries are handled with **group-mode capabilities**: agent memory and trading strategy are not exposed, and the agent replies once per query. Because the bot is not a member of the chat, message-sending tools are disabled on this path -- the answer is delivered through the guest-query reply channel.
 
 ---
 
@@ -313,12 +341,13 @@ All admin commands require the sender's Telegram user ID to be listed in `admin_
 | 7 | `/plugin` | `/plugin <set\|unset\|keys> ...` | Manage plugin secrets (API keys, tokens). |
 | 8 | `/wallet` | `/wallet` | Check TON wallet balance and address. |
 | 9 | `/verbose` | `/verbose` | Toggle verbose debug logging on/off. |
-| 10 | `/pause` | `/pause` | Pause the agent (ignores non-admin messages). |
-| 11 | `/resume` | `/resume` | Resume the agent after pause. |
-| 12 | `/stop` | `/stop` | Emergency shutdown (terminates process). |
-| 13 | `/clear` | `/clear [chat_id]` | Clear conversation history for a chat. |
-| 14 | `/ping` | `/ping` | Health check (returns "Pong!"). |
-| 15 | `/help` | `/help` | Display all available commands. |
+| 10 | `/guest` | `/guest [on\|off]` | View or toggle guest mode. |
+| 11 | `/pause` | `/pause` | Pause the agent (ignores non-admin messages). |
+| 12 | `/resume` | `/resume` | Resume the agent after pause. |
+| 13 | `/stop` | `/stop` | Emergency shutdown (terminates process). |
+| 14 | `/clear` | `/clear [chat_id]` | Clear conversation history for a chat. |
+| 15 | `/ping` | `/ping` | Health check (returns "Pong!"). |
+| 16 | `/help` | `/help` | Display all available commands. |
 
 > `/task <description>` and `/boot` are also available but handled by the message handler layer, not AdminHandler directly.
 

@@ -26,13 +26,6 @@ export interface SetupProvider {
   keyPrefix: string | null;
   consoleUrl: string | null;
   requiresApiKey: boolean;
-  autoDetectsKey?: boolean;
-}
-
-export interface ClaudeCodeKeyDetection {
-  found: boolean;
-  maskedKey: string | null;
-  valid: boolean;
 }
 
 export interface SetupModelOption {
@@ -180,13 +173,19 @@ export interface WalletTransaction {
   nftAddress?: string;
 }
 
+export type ToolAccessLevel = 'all' | 'allowlist' | 'admin' | 'off';
+
 export interface ToolInfo {
   name: string;
   description: string;
   module: string;
-  scope: 'open' | 'always' | 'dm-only' | 'group-only' | 'admin-only' | 'allowlist' | 'disabled';
+  /** Per-tool access: who may use this tool (context-independent). */
+  level: ToolAccessLevel;
   category?: string;
-  enabled: boolean;
+  /** Legacy single-value scope (derived) — present for backward compatibility. */
+  scope?: string;
+  /** Derived: false only when the tool is off. */
+  enabled?: boolean;
 }
 
 export interface ModuleInfo {
@@ -239,8 +238,9 @@ export interface WorkspaceInfo {
 
 export interface ToolConfigData {
   tool: string;
-  enabled: boolean;
-  scope: string;
+  level: ToolAccessLevel;
+  scope?: string;
+  enabled?: boolean;
 }
 
 export interface ToolRagStatus {
@@ -319,7 +319,11 @@ interface APIResponse<T> {
 
 // ── Fetch helpers ───────────────────────────────────────────────────
 
-async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  endpoint: string,
+  options: RequestInit | undefined,
+  opts: { credentials?: boolean; unwrapData?: boolean }
+): Promise<T> {
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
     ...options?.headers,
@@ -328,6 +332,7 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
+    ...(opts.credentials ? { credentials: 'include' } : {}), // send HttpOnly cookie automatically
   });
 
   if (!response.ok) {
@@ -336,27 +341,15 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   }
 
   const json = await response.json();
-  return json.data !== undefined ? json.data : json;
+  return opts.unwrapData ? (json.data !== undefined ? json.data : json) : json;
+}
+
+async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  return fetchJson<T>(endpoint, options, { unwrapData: true });
 }
 
 async function fetchAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const headers: HeadersInit = {
-    'Content-Type': 'application/json',
-    ...options?.headers,
-  };
-
-  const response = await fetch(`${API_BASE}${endpoint}`, {
-    ...options,
-    headers,
-    credentials: 'include', // send HttpOnly cookie automatically
-  });
-
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: response.statusText }));
-    throw new Error(error.error || `HTTP ${response.status}`);
-  }
-
-  return response.json();
+  return fetchJson<T>(endpoint, options, { credentials: true });
 }
 
 // ── Auth ────────────────────────────────────────────────────────────
@@ -497,7 +490,7 @@ export const api = {
 
   async updateToolConfig(
     toolName: string,
-    config: { enabled?: boolean; scope?: ToolInfo['scope'] }
+    config: { level?: ToolAccessLevel }
   ) {
     return fetchAPI<APIResponse<ToolConfigData>>(`/tools/${toolName}`, {
       method: 'PUT',
@@ -754,9 +747,6 @@ export const setup = {
       method: 'POST',
       body: JSON.stringify({ provider, apiKey }),
     }),
-
-  detectClaudeCodeKey: () =>
-    fetchSetupAPI<ClaudeCodeKeyDetection>('/setup/detect-claude-code-key'),
 
   validateBotToken: (token: string) =>
     fetchSetupAPI<BotValidation>('/setup/validate/bot-token', {

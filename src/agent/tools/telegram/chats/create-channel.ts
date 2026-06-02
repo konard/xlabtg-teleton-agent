@@ -3,14 +3,9 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
-import { getClient } from "../../../../sdk/telegram-utils.js";
+import { getClient, validateChannelUsername } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
-
-/**
- * Parameters for telegram_create_channel tool
- */
-const USERNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$/;
 
 interface CreateChannelParams {
   title: string;
@@ -90,12 +85,12 @@ export const telegramCreateChannelExecutor: ToolExecutor<CreateChannelParams> = 
 
     // Set username if provided (best-effort — creation still succeeds on failure)
     if (username && channel) {
-      const clean = username.replace(/^@/, "");
+      const validation = validateChannelUsername(username);
 
-      if (!USERNAME_REGEX.test(clean)) {
-        data.usernameError =
-          "Invalid username format. Must be 5-32 characters, alphanumeric and underscores only, cannot start/end with underscore.";
+      if (!validation.ok) {
+        data.usernameError = validation.error;
       } else {
+        const clean = validation.clean;
         try {
           await gramJsClient.invoke(
             new Api.channels.UpdateUsername({

@@ -1,9 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { errMsg } from '../lib/utils';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
+import { Segmented } from '../components/Segmented';
 
 const SOUL_FILES = ['SOUL.md', 'SECURITY.md', 'STRATEGY.md', 'MEMORY.md', 'HEARTBEAT.md'] as const;
 
 export function Soul() {
+  const confirm = useConfirm();
   const [activeTab, setActiveTab] = useState<string>(SOUL_FILES[0]);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
@@ -13,6 +18,11 @@ export function Soul() {
 
   const dirty = content !== savedContent;
 
+  // Editor stats — token count is an estimate (~4 chars/token, no client tokenizer).
+  const chars = content.length;
+  const words = content.trim() ? content.trim().split(/\s+/).length : 0;
+  const estTokens = Math.ceil(chars / 4);
+
   const loadFile = useCallback(async (filename: string) => {
     setLoading(true);
     setMessage(null);
@@ -21,7 +31,7 @@ export function Soul() {
       setContent(res.data.content);
       setSavedContent(res.data.content);
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      setMessage({ type: 'error', text: errMsg(err) });
     } finally {
       setLoading(false);
     }
@@ -34,8 +44,10 @@ export function Soul() {
       const res = await api.updateSoulFile(activeTab, content);
       setSavedContent(content);
       setMessage({ type: 'success', text: res.data.message });
+      toast.success('Saved');
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      setMessage({ type: 'error', text: errMsg(err) });
+      toast.error(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -51,9 +63,9 @@ export function Soul() {
   }, [dirty]);
 
   // Confirm before switching tabs with unsaved changes
-  const handleTabSwitch = (file: string) => {
+  const handleTabSwitch = async (file: string) => {
     if (file === activeTab) return;
-    if (dirty && !window.confirm('You have unsaved changes. Discard them?')) return;
+    if (dirty && !(await confirm({ message: 'You have unsaved changes. Discard them?', confirmLabel: 'Discard', destructive: true }))) return;
     setActiveTab(file);
   };
 
@@ -64,8 +76,8 @@ export function Soul() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 64px)', overflow: 'hidden' }}>
       <div className="header" style={{ marginBottom: '16px' }}>
-        <h1>Soul Editor</h1>
-        <p>Edit system prompt files</p>
+        <h1>System Prompt</h1>
+        <p>Edit your agent's system prompt files</p>
       </div>
 
       {message && (
@@ -73,16 +85,16 @@ export function Soul() {
       )}
 
       <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: '12px' }}>
-        <div className="tabs" style={{ marginBottom: '8px' }}>
-          {SOUL_FILES.map((file) => (
-            <button
-              key={file}
-              className={`tab ${activeTab === file ? 'active' : ''}`}
-              onClick={() => handleTabSwitch(file)}
-            >
-              {file}{activeTab === file && dirty ? ' *' : ''}
-            </button>
-          ))}
+        <div style={{ marginBottom: '10px', overflowX: 'auto' }}>
+          <Segmented<string>
+            value={activeTab}
+            onChange={(f) => { void handleTabSwitch(f); }}
+            ariaLabel="System prompt file"
+            options={SOUL_FILES.map((file) => ({
+              value: file,
+              label: file + (file === activeTab && dirty ? ' •' : ''),
+            }))}
+          />
         </div>
 
         {loading ? (
@@ -95,11 +107,16 @@ export function Soul() {
               placeholder={`Edit ${activeTab}...`}
               style={{ flex: 1, minHeight: '200px' }}
             />
-            <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <button onClick={saveFile} disabled={saving || !dirty}>
-                {saving ? 'Saving...' : 'Save'}
-              </button>
-              {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>Unsaved changes</span>}
+            <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px' }}>
+              <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--font-xs)', fontVariantNumeric: 'tabular-nums' }}>
+                ~{estTokens.toLocaleString()} tokens · {words.toLocaleString()} words · {chars.toLocaleString()} chars
+              </span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                {dirty && <span style={{ color: 'var(--text-secondary)', fontSize: 'var(--font-sm)' }}>Unsaved changes</span>}
+                <button className="btn-sm" onClick={saveFile} disabled={saving || !dirty}>
+                  {saving ? 'Saving…' : 'Save'}
+                </button>
+              </div>
             </div>
           </>
         )}

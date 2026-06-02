@@ -1,9 +1,18 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, Fragment } from 'react';
 import { api, FileEntry, WorkspaceInfo } from '../lib/api';
-import { formatDate } from '../lib/utils';
+import { formatDate, errMsg } from '../lib/utils';
+import { useResource } from '../hooks/useResource';
+import { toast } from '../lib/toast';
+import { useConfirm } from '../components/ConfirmDialog';
+import { List, ListRow } from '../components/List';
+import { Menu } from '../components/Menu';
+import { Alert } from '../components/Alert';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
+import { RefreshButton } from '../components/RefreshButton';
 
 function formatSize(bytes: number): string {
-  if (bytes === 0) return '-';
+  if (bytes === 0) return '—';
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -15,60 +24,69 @@ const BINARY_EXTENSIONS = new Set(['zip', 'tar', 'gz', 'bin', 'exe', 'dll', 'so'
 function getExtension(path: string): string {
   return path.split('/').pop()?.split('.').pop()?.toLowerCase() ?? '';
 }
-function isImageFile(path: string): boolean {
-  return IMAGE_EXTENSIONS.has(getExtension(path));
-}
-function isBinaryFile(path: string): boolean {
-  return BINARY_EXTENSIONS.has(getExtension(path));
-}
+const isImageFile = (p: string) => IMAGE_EXTENSIONS.has(getExtension(p));
+const isBinaryFile = (p: string) => BINARY_EXTENSIONS.has(getExtension(p));
+
+const FolderIcon = () => (
+  <svg width="17" height="17" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M4 7a2 2 0 0 1 2-2h3.2a2 2 0 0 1 1.6.8l.6.8a1 1 0 0 0 .8.4H18a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7Z" />
+  </svg>
+);
+const DocIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M7 3h6l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z" />
+  </svg>
+);
+const PencilIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+    <path d="m15 5 4 4" />
+  </svg>
+);
+const TrashIcon = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 6h18" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+    <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    <line x1="10" x2="10" y1="11" y2="17" />
+    <line x1="14" x2="14" y1="11" y2="17" />
+  </svg>
+);
+const PlusIcon = () => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
+    <path d="M12 5v14M5 12h14" />
+  </svg>
+);
 
 export function Workspace() {
+  const confirm = useConfirm();
   const [currentPath, setCurrentPath] = useState('');
-  const [entries, setEntries] = useState<FileEntry[]>([]);
-  const [info, setInfo] = useState<WorkspaceInfo | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
-  // Editor state
+  const { data: dirData, loading, error, reload, setError } = useResource(
+    () => api.workspaceList(currentPath).then((r) => r.data),
+    [currentPath],
+  );
+
+  const entries: FileEntry[] = dirData?.entries ?? [];
+  const sorted = [...entries].sort((a, b) =>
+    a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1,
+  );
+
+  const [info, setInfo] = useState<WorkspaceInfo | null>(null);
+
   const [editingFile, setEditingFile] = useState<string | null>(null);
   const [editContent, setEditContent] = useState('');
   const [editDirty, setEditDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [fileMode, setFileMode] = useState<'text' | 'image' | 'binary'>('text');
 
-  // Dialog state
   const [dialog, setDialog] = useState<{ type: 'newFile' | 'newFolder' | 'rename'; target?: string } | null>(null);
   const [dialogInput, setDialogInput] = useState('');
 
-  const loadDir = useCallback(async (path: string) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.workspaceList(path);
-      setEntries(res.data?.entries ?? []);
-      setCurrentPath(path);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const refreshInfo = () => api.workspaceInfo().then((r) => setInfo(r.data ?? null)).catch(() => {});
 
-  const loadInfo = useCallback(async () => {
-    try {
-      const res = await api.workspaceInfo();
-      setInfo(res.data ?? null);
-    } catch {
-      // non-critical
-    }
-  }, []);
+  useEffect(() => { refreshInfo(); }, []);
 
-  useEffect(() => {
-    loadDir('');
-    loadInfo();
-  }, [loadDir, loadInfo]);
-
-  // Warn on tab close when dirty
   useEffect(() => {
     if (!editDirty) return;
     const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
@@ -76,15 +94,29 @@ export function Workspace() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [editDirty]);
 
-  const navigateTo = (path: string) => {
-    if (!closeEditor()) return;
-    loadDir(path);
-  };
-
-  // Breadcrumb segments
   const breadcrumbs = currentPath ? currentPath.split('/') : [];
 
-  // Editor
+  const resetEditor = () => {
+    setEditingFile(null);
+    setEditContent('');
+    setEditDirty(false);
+    setFileMode('text');
+  };
+
+  const closeEditor = async (): Promise<boolean> => {
+    if (fileMode === 'text' && editDirty &&
+        !(await confirm({ message: 'Discard unsaved changes?', confirmLabel: 'Discard', destructive: true }))) {
+      return false;
+    }
+    resetEditor();
+    return true;
+  };
+
+  const navigateTo = async (path: string) => {
+    if (!(await closeEditor())) return;
+    setCurrentPath(path);
+  };
+
   const openFile = async (path: string) => {
     try {
       setError(null);
@@ -106,26 +138,14 @@ export function Workspace() {
         setEditDirty(false);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
-  const closeEditor = (): boolean => {
-    if (fileMode === 'text' && editDirty && !confirm('You have unsaved changes. Discard?')) return false;
-    setEditingFile(null);
-    setEditContent('');
-    setEditDirty(false);
-    setFileMode('text');
-    return true;
-  };
-
-  const handleFileClick = (path: string) => {
-    if (editingFile === path) {
-      closeEditor();
-    } else {
-      if (!closeEditor()) return;
-      openFile(path);
-    }
+  const handleFileClick = async (path: string) => {
+    if (editingFile === path) { await closeEditor(); return; }
+    if (!(await closeEditor())) return;
+    openFile(path);
   };
 
   const saveFile = async () => {
@@ -134,9 +154,11 @@ export function Workspace() {
     try {
       await api.workspaceWrite(editingFile, editContent);
       setEditDirty(false);
-      loadDir(currentPath);
+      reload();
+      toast.success('Saved');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     } finally {
       setSaving(false);
     }
@@ -144,26 +166,27 @@ export function Workspace() {
 
   const deleteEntry = async (entry: FileEntry) => {
     const label = entry.isDirectory ? 'directory' : 'file';
-    if (!confirm(`Delete ${label} "${entry.name}"?`)) return;
-
+    if (!(await confirm({ message: `Delete ${label} "${entry.name}"?`, destructive: true, confirmLabel: 'Delete' }))) return;
     try {
       await api.workspaceDelete(entry.path, entry.isDirectory);
-      if (editingFile === entry.path) {
-        setEditingFile(null);
-        setEditContent('');
-        setEditDirty(false);
-      }
-      loadDir(currentPath);
-      loadInfo();
+      if (editingFile === entry.path) resetEditor();
+      reload();
+      refreshInfo();
+      toast.success('Deleted');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     }
+  };
+
+  const openDialog = (type: 'newFile' | 'newFolder' | 'rename', target?: string) => {
+    setDialog({ type, target });
+    setDialogInput(type === 'rename' ? target?.split('/').pop() ?? '' : '');
   };
 
   const handleDialogSubmit = async () => {
     const name = dialogInput.trim();
     if (!name || !dialog) return;
-
     const fullPath = currentPath ? `${currentPath}/${name}` : name;
     try {
       if (dialog.type === 'newFile') {
@@ -171,289 +194,153 @@ export function Workspace() {
       } else if (dialog.type === 'newFolder') {
         await api.workspaceMkdir(fullPath);
       } else if (dialog.type === 'rename' && dialog.target) {
-        const parentPath = currentPath ? `${currentPath}/${name}` : name;
-        await api.workspaceRename(dialog.target, parentPath);
-        if (editingFile === dialog.target) {
-          setEditingFile(null);
-          setEditContent('');
-          setEditDirty(false);
-        }
+        await api.workspaceRename(dialog.target, fullPath);
+        if (editingFile === dialog.target) resetEditor();
       }
       setDialog(null);
       setDialogInput('');
-      loadDir(currentPath);
-      loadInfo();
+      reload();
+      refreshInfo();
+      toast.success(dialog.type === 'rename' ? 'Renamed' : 'Created');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
+      toast.error(errMsg(err));
     }
   };
+
+  const dialogLabel = dialog?.type === 'newFile' ? 'New file' : dialog?.type === 'newFolder' ? 'New folder' : 'Rename to';
 
   return (
     <div>
       <div className="header">
         <h1>Workspace</h1>
-        <p>
-          Browse and manage agent workspace files
-          {info && (
-            <span style={{ marginLeft: '12px', fontSize: '12px', color: 'var(--text-secondary)' }}>
-              {info.totalFiles} files · {formatSize(info.totalSize)}
-            </span>
-          )}
-        </p>
+        <p>{info ? `${info.totalFiles} files · ${formatSize(info.totalSize)}` : 'Agent workspace files'}</p>
       </div>
 
-      {error && (
-        <div className="alert error" style={{ marginBottom: '14px' }}>
-          {error}
-          <button
-            onClick={() => setError(null)}
-            style={{ marginLeft: '10px', padding: '2px 8px', fontSize: '12px' }}
-          >
-            Dismiss
-          </button>
-        </div>
-      )}
+      {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
 
-      {/* Breadcrumb */}
-      <div className="card" style={{ padding: '8px 14px', marginBottom: '14px', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
-        <span
-          onClick={() => navigateTo('')}
-          style={{ cursor: 'pointer', fontWeight: currentPath ? 'normal' : 'bold', color: 'var(--accent)' }}
-        >
-          workspace
-        </span>
-        {breadcrumbs.map((seg, i) => {
-          const path = breadcrumbs.slice(0, i + 1).join('/');
-          const isLast = i === breadcrumbs.length - 1;
-          return (
-            <span key={path}>
-              <span style={{ color: 'var(--text-secondary)', margin: '0 2px' }}>/</span>
-              <span
-                onClick={() => !isLast && navigateTo(path)}
-                style={{
-                  cursor: isLast ? 'default' : 'pointer',
-                  fontWeight: isLast ? 'bold' : 'normal',
-                  color: isLast ? 'var(--text-primary)' : 'var(--accent)',
-                }}
-              >
-                {seg}
-              </span>
-            </span>
-          );
-        })}
-
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: '6px' }}>
-          <button
-            className="btn-ghost btn-sm"
-            onClick={() => { setDialog({ type: 'newFile' }); setDialogInput(''); }}
-          >
-            + File
-          </button>
-          <button
-            className="btn-ghost btn-sm"
-            onClick={() => { setDialog({ type: 'newFolder' }); setDialogInput(''); }}
-          >
-            + Folder
-          </button>
-        </div>
+      <div className="ws-path">
+        <nav className="ws-crumbs" aria-label="Path">
+          <button className={`ws-crumb${currentPath ? '' : ' current'}`} onClick={() => void navigateTo('')}>workspace</button>
+          {breadcrumbs.map((seg, i) => {
+            const path = breadcrumbs.slice(0, i + 1).join('/');
+            const isLast = i === breadcrumbs.length - 1;
+            return (
+              <Fragment key={path}>
+                <span className="ws-crumb-sep">/</span>
+                <button
+                  className={`ws-crumb${isLast ? ' current' : ''}`}
+                  onClick={() => !isLast && void navigateTo(path)}
+                >
+                  {seg}
+                </button>
+              </Fragment>
+            );
+          })}
+        </nav>
+        <Menu
+          ariaLabel="New"
+          triggerClassName="ws-add"
+          trigger={<PlusIcon />}
+          items={[
+            { label: 'New File', icon: <DocIcon />, onClick: () => openDialog('newFile') },
+            { label: 'New Folder', icon: <FolderIcon />, onClick: () => openDialog('newFolder') },
+          ]}
+        />
+        <RefreshButton onRefresh={reload} />
       </div>
 
-      {/* Dialog */}
       {dialog && (
-        <div className="card" style={{ padding: '10px 14px', marginBottom: '14px', display: 'flex', gap: '8px', alignItems: 'center', borderRadius: 'var(--radius-pill)' }}>
-          <span style={{ fontSize: '13px', whiteSpace: 'nowrap' }}>
-            {dialog.type === 'newFile' ? 'New file:' : dialog.type === 'newFolder' ? 'New folder:' : 'Rename to:'}
-          </span>
+        <div className="ws-prompt">
+          <span className="ws-prompt-label">{dialogLabel}</span>
           <input
             type="text"
             value={dialogInput}
             onChange={(e) => setDialogInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleDialogSubmit()}
-            placeholder="name..."
+            onKeyDown={(e) => { if (e.key === 'Enter') handleDialogSubmit(); if (e.key === 'Escape') setDialog(null); }}
+            placeholder="name…"
             autoFocus
-            style={{ flex: 1, padding: '4px 8px', fontSize: '13px' }}
           />
-          <button style={{ padding: '4px 10px', fontSize: '12px' }} onClick={handleDialogSubmit}>
-            OK
-          </button>
-          <button
-            style={{ padding: '4px 10px', fontSize: '12px', opacity: 0.7 }}
-            onClick={() => setDialog(null)}
-          >
-            Cancel
-          </button>
+          <button className="btn-sm" onClick={handleDialogSubmit}>OK</button>
+          <button className="btn-ghost btn-sm" onClick={() => setDialog(null)}>Cancel</button>
         </div>
       )}
 
-      {/* File list */}
-      <div className="card" style={{ padding: 0 }}>
-        {loading ? (
-          <div style={{ padding: '20px', textAlign: 'center' }}>Loading...</div>
-        ) : entries.length === 0 ? (
-          <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-secondary)' }}>
-            Empty directory
-          </div>
-        ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid var(--border)', color: 'var(--text-secondary)', fontSize: '11px', textTransform: 'uppercase' }}>
-                <th style={{ textAlign: 'left', padding: '8px 14px' }}>Name</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '80px' }}>Size</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '140px' }}>Modified</th>
-                <th style={{ textAlign: 'right', padding: '8px 14px', width: '70px' }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {/* Parent directory link */}
-              {currentPath && (
-                <tr
-                  onClick={() => {
-                    const parts = currentPath.split('/');
-                    parts.pop();
-                    navigateTo(parts.join('/'));
-                  }}
-                  onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); const parts = currentPath.split('/'); parts.pop(); navigateTo(parts.join('/')); } }}
-                  tabIndex={0}
-                  role="button"
-                  style={{ cursor: 'pointer', borderBottom: '1px solid var(--border)' }}
-                  className="file-row"
-                >
-                  <td style={{ padding: '6px 14px' }}>
-                    <span style={{ marginRight: '8px' }}>&#128194;</span>..
-                  </td>
-                  <td />
-                  <td />
-                  <td />
-                </tr>
-              )}
-              {entries.map((entry) => {
-                const isExpanded = !entry.isDirectory && editingFile === entry.path;
-                return (
-                  <React.Fragment key={entry.path}>
-                    <tr
-                      onClick={() => entry.isDirectory ? navigateTo(entry.path) : handleFileClick(entry.path)}
-                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); entry.isDirectory ? navigateTo(entry.path) : handleFileClick(entry.path); } }}
-                      tabIndex={0}
-                      role="button"
-                      style={{
-                        cursor: 'pointer',
-                        borderBottom: isExpanded ? 'none' : '1px solid var(--border)',
-                        backgroundColor: isExpanded ? 'var(--glass-micro)' : undefined,
-                      }}
-                      className="file-row"
-                    >
-                      <td style={{ padding: '6px 14px' }}>
-                        {entry.isDirectory ? (
-                          <span style={{ marginRight: '8px' }}>{'\u{1F4C2}'}</span>
-                        ) : (
-                          <span style={{ display: 'inline-block', width: '14px', fontSize: '10px', color: 'var(--text-secondary)', marginRight: '8px' }}>
-                            {isExpanded ? '\u25BC' : '\u25B6'}
-                          </span>
+      {loading ? (
+        <SkeletonRows />
+      ) : sorted.length === 0 ? (
+        <div className="card" style={{ padding: 0 }}>
+          <EmptyState title="Empty directory" description="This folder has no files." />
+        </div>
+      ) : (
+        <List>
+          {sorted.map((entry) => {
+            const isExpanded = !entry.isDirectory && editingFile === entry.path;
+            const actions = (
+              <div className="ws-row-actions">
+                <button className="ws-act" aria-label="Rename" title="Rename"
+                  onClick={() => openDialog('rename', entry.path)}><PencilIcon /></button>
+                <button className="ws-act delete" aria-label="Delete" title="Delete"
+                  onClick={() => deleteEntry(entry)}><TrashIcon /></button>
+              </div>
+            );
+            return (
+              <Fragment key={entry.path}>
+                <ListRow
+                  leading={entry.isDirectory ? <FolderIcon /> : <DocIcon />}
+                  leadingClassName={entry.isDirectory ? undefined : 'muted'}
+                  title={entry.name}
+                  subtitle={entry.isDirectory ? 'Folder' : `${formatSize(entry.size)} · ${formatDate(entry.mtime)}`}
+                  trailing={actions}
+                  disclosure
+                  expanded={isExpanded}
+                  insetSeparator
+                  onClick={() => entry.isDirectory ? void navigateTo(entry.path) : void handleFileClick(entry.path)}
+                />
+                {isExpanded && (
+                  <div className="ios-sublist" style={{ padding: '12px 16px 16px' }}>
+                    <div className="ws-editor-head">
+                      <span className="ws-editor-name">
+                        {editingFile}
+                        {fileMode === 'text' && editDirty && <span className="dot">•</span>}
+                      </span>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        {fileMode === 'text' && (
+                          <button className="btn-sm" onClick={saveFile} disabled={saving || !editDirty}>
+                            {saving ? 'Saving…' : 'Save'}
+                          </button>
                         )}
-                        {entry.name}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-                        {entry.isDirectory ? '' : formatSize(entry.size)}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 14px', color: 'var(--text-secondary)' }}>
-                        {formatDate(entry.mtime)}
-                      </td>
-                      <td style={{ textAlign: 'right', padding: '6px 14px', whiteSpace: 'nowrap' }} onClick={(e) => e.stopPropagation()}>
-                        <button
-                          className="icon-button"
-                          onClick={() => { setDialog({ type: 'rename', target: entry.path }); setDialogInput(entry.name); }}
-                          title="Rename"
-                        >
-                          &#9998;
-                        </button>
-                        <button
-                          className="icon-button"
-                          onClick={() => deleteEntry(entry)}
-                          title="Delete"
-                        >
-                          &#128465;
-                        </button>
-                      </td>
-                    </tr>
-                    {isExpanded && (
-                      <tr style={{ backgroundColor: 'var(--glass-micro)', borderBottom: '1px solid var(--border)' }}>
-                        <td colSpan={4} style={{ padding: '0 14px 14px 14px' }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0' }}>
-                            <span style={{ fontSize: '13px', fontWeight: 600 }}>
-                              {editingFile}
-                              {fileMode === 'text' && editDirty && <span style={{ color: 'var(--accent)', marginLeft: '6px' }}>*</span>}
-                            </span>
-                            <div style={{ display: 'flex', gap: '6px' }}>
-                              {fileMode === 'text' && (
-                                <button
-                                  style={{ padding: '4px 12px', fontSize: '12px' }}
-                                  onClick={saveFile}
-                                  disabled={saving || !editDirty}
-                                >
-                                  {saving ? 'Saving...' : 'Save'}
-                                </button>
-                              )}
-                              <button
-                                style={{ padding: '4px 12px', fontSize: '12px', opacity: 0.7 }}
-                                onClick={() => closeEditor()}
-                              >
-                                Close
-                              </button>
-                            </div>
-                          </div>
-                          {fileMode === 'text' && (
-                            <textarea
-                              value={editContent}
-                              onChange={(e) => { setEditContent(e.target.value); setEditDirty(true); }}
-                              onKeyDown={(e) => {
-                                if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-                                  e.preventDefault();
-                                  saveFile();
-                                }
-                              }}
-                              style={{
-                                width: '100%',
-                                minHeight: '300px',
-                                maxHeight: '500px',
-                                fontFamily: 'monospace',
-                                fontSize: '13px',
-                                padding: '10px',
-                                border: '1px solid var(--border)',
-                                borderRadius: '4px',
-                                backgroundColor: 'var(--bg-glass)',
-                                color: 'var(--text-primary)',
-                                resize: 'vertical',
-                                tabSize: 2,
-                              }}
-                              spellCheck={false}
-                            />
-                          )}
-                          {fileMode === 'image' && editingFile && (
-                            <div style={{ display: 'flex', justifyContent: 'center', padding: '20px 0' }}>
-                              <img
-                                src={api.workspaceRawUrl(editingFile)}
-                                alt={editingFile}
-                                style={{ maxWidth: '100%', maxHeight: '60vh', objectFit: 'contain', borderRadius: '8px' }}
-                                onError={(e) => { (e.target as HTMLImageElement).alt = 'Failed to load image'; }}
-                              />
-                            </div>
-                          )}
-                          {fileMode === 'binary' && (
-                            <div style={{ padding: '20px 0', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
-                              Binary file - preview not available
-                            </div>
-                          )}
-                        </td>
-                      </tr>
+                        <button className="btn-ghost btn-sm" onClick={() => void closeEditor()}>Close</button>
+                      </div>
+                    </div>
+                    {fileMode === 'text' && (
+                      <textarea
+                        className="ws-editor"
+                        value={editContent}
+                        onChange={(e) => { setEditContent(e.target.value); setEditDirty(true); }}
+                        onKeyDown={(e) => {
+                          if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); saveFile(); }
+                        }}
+                        spellCheck={false}
+                      />
                     )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
-
+                    {fileMode === 'image' && editingFile && (
+                      <div className="ws-preview">
+                        <img
+                          src={api.workspaceRawUrl(editingFile)}
+                          alt={editingFile}
+                          onError={(e) => { (e.target as HTMLImageElement).alt = 'Failed to load image'; }}
+                        />
+                      </div>
+                    )}
+                    {fileMode === 'binary' && <div className="ws-binary">Binary file — preview not available</div>}
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </List>
+      )}
     </div>
   );
 }
