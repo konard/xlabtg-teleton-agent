@@ -2,6 +2,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { Shell } from './Shell';
 import { AgentControl, AgentStatusBadge } from './AgentControl';
 import { ModeSwitch } from './ModeSwitch';
+import { ThemeToggle } from './ThemeToggle';
 import { logout } from '../lib/api';
 import { CSSProperties, ReactNode } from 'react';
 
@@ -118,8 +119,8 @@ const navLinkBase: CSSProperties = {
   display: 'flex',
   alignItems: 'center',
   gap: '10px',
-  padding: '10px 16px',
-  borderRadius: 'var(--radius-md)',
+  padding: '6px 12px',
+  borderRadius: 'var(--radius-sm)',
   color: 'var(--text-secondary)',
   textDecoration: 'none',
   fontSize: '13px',
@@ -207,16 +208,16 @@ function DashboardNav() {
         ))}
       </nav>
 
-      <div style={{ marginTop: 'auto' }}>
-        <div style={{ marginBottom: '8px' }}>
+      <div style={{ marginTop: 'auto', paddingTop: '10px' }}>
+        <div style={{ marginBottom: '6px' }}>
           <AgentStatusBadge />
         </div>
         <ModeSwitch />
-        <div style={{ margin: '8px 0', padding: '0 4px' }}>
+        <div style={{ margin: '6px 0', padding: '0 4px' }}>
           <AgentControl />
         </div>
 
-        <div style={{ padding: '0 4px 14px' }}>
+        <div style={{ padding: '0 4px 4px' }}>
           <button
             onClick={handleLogout}
             style={{ width: '100%', opacity: 0.7, fontSize: '13px' }}
@@ -230,5 +231,5 @@ function DashboardNav() {
 }
 
 export function Layout() {
-  return <Shell sidebar={<DashboardNav />} />;
+  return <Shell sidebar={<DashboardNav />} topRight={<ThemeToggle />} />;
 }

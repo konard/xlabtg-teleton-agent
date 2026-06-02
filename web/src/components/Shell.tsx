@@ -4,17 +4,19 @@ import { Outlet } from 'react-router-dom';
 interface ShellProps {
   sidebar: ReactNode;
   children?: ReactNode;
+  topRight?: ReactNode;
 }
 
 const SIDEBAR_WIDTH = 260;
 const SIDEBAR_MARGIN = 12;
 
-export function Shell({ sidebar, children }: ShellProps) {
+export function Shell({ sidebar, children, topRight }: ShellProps) {
   return (
     <div
       className="container"
       style={{ position: 'relative', alignItems: 'stretch' }}
     >
+      {topRight && <div className="shell-topright">{topRight}</div>}
       {/* Floating glass sidebar */}
       <aside
         className="sidebar"
@@ -32,13 +34,13 @@ export function Shell({ sidebar, children }: ShellProps) {
           border: '1px solid var(--border-glass)',
           // Reset styles that come from .sidebar CSS class
           borderRight: 'none',
-          padding: '20px 12px',
+          padding: '14px 10px',
           overflowY: 'auto',
           overflowX: 'hidden',
         }}
       >
         <div className="sidebar-brand">
-          <img src="/logo_dark.png" alt="Teleton" style={{ height: '64px' }} />
+          <img src="/logo_dark.png" alt="Teleton" style={{ height: '72px' }} />
         </div>
         {sidebar}
       </aside>

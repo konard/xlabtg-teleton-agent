@@ -7,70 +7,22 @@
   padding: 0;
 }
 
+/* ─────────────────────────────────────────────────────────────
+   Design tokens — grounded in the Telegram iOS UI Kit.
+   Theme-independent tokens live in :root; color tokens are themed.
+   The useTheme hook sets [data-theme="light|dark"] on <html>.
+   Variable NAMES are preserved so existing rules keep working.
+   ───────────────────────────────────────────────────────────── */
 :root {
-  color-scheme: dark;
+  color-scheme: light dark;
 
-  /* ── Surfaces (midnight blue) ── */
-  --bg-primary: #0b1120;
-  --bg-secondary: rgba(255, 255, 255, 0.06);
-  --bg-tertiary: rgba(255, 255, 255, 0.08);
-  --bg-muted: rgba(255, 255, 255, 0.06);
-  --bg-glass: rgba(255, 255, 255, 0.05);
-  --bg-glass-hover: rgba(255, 255, 255, 0.10);
-
-  /* ── Glass system (5 levels) ── */
-  --glass-ultrathin: rgba(255, 255, 255, 0.02);
-  --glass-micro: rgba(255,255,255,0.03);
-  --glass-thin: rgba(255, 255, 255, 0.04);
-  --glass-regular: rgba(255, 255, 255, 0.06);
-  --glass-thick: rgba(255, 255, 255, 0.10);
-  --glass-ultrathick: rgba(255, 255, 255, 0.14);
-
-  /* ── Borders ── */
-  --border: rgba(255, 255, 255, 0.10);
-  --border-glass: rgba(255, 255, 255, 0.08);
-  --border-strong: rgba(255, 255, 255, 0.20);
-
-  /* ── Text ── */
-  --text-primary: #e8e8ed;
-  --text-secondary: #8e8e93;
-  --text-tertiary: rgba(255, 255, 255, 0.38);
-  --text-on-accent: #ffffff;
-
-  /* ── Accent (electric blue) ── */
-  --accent: #2d8cf0;
-  --accent-hover: #1a6dd6;
-  --accent-subtle: rgba(45, 140, 240, 0.10);
-  --accent-soft: #5aa8f5;
-  --accent-dim: rgba(45, 140, 240, 0.12);
-  --accent-shadow: none;
-
-  /* ── Semantic (pastel / desaturated) ── */
-  --success: #7dd8a0;
-  --warning: #f0c878;
-  --error: #f09090;
-  --info: #a0a4f0;
-  --green: #7dd8a0;
-  --green-dim: rgba(125, 216, 160, 0.15);
-  --red: #f09090;
-  --red-dim: rgba(240, 144, 144, 0.12);
-  --purple: #c8a0f0;
-  --purple-dim: rgba(200, 160, 240, 0.12);
-  --cyan: #90d8f0;
-  --cyan-dim: rgba(144, 216, 240, 0.12);
-
-  /* ── Radii ── */
+  /* ── Radii (iOS) ── */
   --radius-pill: 999px;
-  --radius-card: 24px;
-  --radius-sm: 12px;
-  --radius-md: 14px;
-  --radius-lg: 20px;
-  --radius-xl: 26px;
-
-  /* ── Shadows ── */
-  --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-  --glass-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.3);
+  --radius-card: 22px;
+  --radius-sm: 10px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 20px;
 
   /* ── Animation ── */
   --easing-spring: cubic-bezier(.34, 1.56, .64, 1);
@@ -89,9 +41,9 @@
   --space-xl: 24px;
   --space-2xl: 32px;
 
-  /* ── Typography (Major Third scale 1.25, base 15px) ── */
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
+  /* ── Typography (SF Pro / system) ── */
+  --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'SF Pro Display', 'Inter', system-ui, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', ui-monospace, 'Fira Code', monospace;
   --font-xs: 12px;
   --font-sm: 13px;
   --font-md: 14px;
@@ -104,6 +56,125 @@
   --leading-tight: 1.2;
   --leading-normal: 1.5;
   --leading-relaxed: 1.6;
+}
+
+/* ── Light theme (default) ───────────────────────────────────── */
+:root,
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  /* Surfaces — iOS grouped backgrounds */
+  --bg-primary: #f2f2f7;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: rgba(118, 118, 128, 0.12);
+  --bg-muted: rgba(118, 118, 128, 0.08);
+  --bg-glass: rgba(255, 255, 255, 0.72);
+  --bg-glass-hover: rgba(255, 255, 255, 0.88);
+
+  /* Glass / system fills (gray translucencies, read on white or gray) */
+  --glass-ultrathin: rgba(118, 118, 128, 0.04);
+  --glass-micro: rgba(118, 118, 128, 0.06);
+  --glass-thin: rgba(118, 118, 128, 0.08);
+  --glass-regular: rgba(118, 118, 128, 0.12);
+  --glass-thick: rgba(118, 118, 128, 0.16);
+  --glass-ultrathick: rgba(118, 118, 128, 0.20);
+
+  /* Separators */
+  --border: rgba(60, 60, 67, 0.18);
+  --border-glass: rgba(60, 60, 67, 0.12);
+  --border-strong: rgba(60, 60, 67, 0.28);
+
+  /* Labels */
+  --text-primary: #000000;
+  --text-secondary: rgba(60, 60, 67, 0.60);
+  --text-tertiary: rgba(60, 60, 67, 0.30);
+  --text-on-accent: #ffffff;
+
+  /* Accent — Telegram blue (kit) */
+  --accent: #008bff;
+  --accent-hover: #0072d6;
+  --accent-subtle: rgba(0, 139, 255, 0.10);
+  --accent-soft: #4daaff;
+  --accent-dim: rgba(0, 139, 255, 0.12);
+  --accent-shadow: none;
+
+  /* Semantic — iOS system colors */
+  --success: #34c759;
+  --warning: #ff9f0a;
+  --error: #ff3b30;
+  --info: #5856d6;
+  --green: #34c759;
+  --green-dim: rgba(52, 199, 89, 0.14);
+  --red: #ff3b30;
+  --red-dim: rgba(255, 59, 48, 0.12);
+  --purple: #af52de;
+  --purple-dim: rgba(175, 82, 222, 0.12);
+  --cyan: #32ade6;
+  --cyan-dim: rgba(50, 173, 230, 0.12);
+
+  /* Shadows */
+  --panel-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+  --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.10);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+/* ── Dark theme ──────────────────────────────────────────────── */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  /* Surfaces — iOS grouped backgrounds (dark) */
+  --bg-primary: #000000;
+  --bg-secondary: #1c1c1e;
+  --bg-tertiary: #2c2c2e;
+  --bg-muted: rgba(118, 118, 128, 0.18);
+  --bg-glass: rgba(28, 28, 30, 0.72);
+  --bg-glass-hover: rgba(44, 44, 46, 0.82);
+
+  /* Glass / system fills (white translucencies) */
+  --glass-ultrathin: rgba(255, 255, 255, 0.04);
+  --glass-micro: rgba(255, 255, 255, 0.06);
+  --glass-thin: rgba(255, 255, 255, 0.08);
+  --glass-regular: rgba(255, 255, 255, 0.10);
+  --glass-thick: rgba(255, 255, 255, 0.14);
+  --glass-ultrathick: rgba(255, 255, 255, 0.18);
+
+  /* Separators */
+  --border: rgba(255, 255, 255, 0.12);
+  --border-glass: rgba(255, 255, 255, 0.10);
+  --border-strong: rgba(255, 255, 255, 0.22);
+
+  /* Labels */
+  --text-primary: #ffffff;
+  --text-secondary: rgba(235, 235, 245, 0.60);
+  --text-tertiary: rgba(235, 235, 245, 0.30);
+  --text-on-accent: #ffffff;
+
+  /* Accent — iOS systemBlue (dark) */
+  --accent: #0a84ff;
+  --accent-hover: #3a9bff;
+  --accent-subtle: rgba(10, 132, 255, 0.16);
+  --accent-soft: #5aa8f5;
+  --accent-dim: rgba(10, 132, 255, 0.18);
+  --accent-shadow: none;
+
+  /* Semantic — iOS system colors (dark) */
+  --success: #30d158;
+  --warning: #ff9f0a;
+  --error: #ff453a;
+  --info: #5e5ce6;
+  --green: #30d158;
+  --green-dim: rgba(48, 209, 88, 0.16);
+  --red: #ff453a;
+  --red-dim: rgba(255, 69, 58, 0.16);
+  --purple: #bf5af2;
+  --purple-dim: rgba(191, 90, 242, 0.16);
+  --cyan: #64d2ff;
+  --cyan-dim: rgba(100, 210, 255, 0.16);
+
+  /* Shadows */
+  --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.40);
+  --glass-shadow: 0 4px 16px rgba(0, 0, 0, 0.50);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.50);
 }
 
 html, body {
@@ -150,7 +221,10 @@ body {
 }
 
 .sidebar-brand {
-  padding: 4px 12px 20px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 6px 8px 14px;
   font-size: var(--font-lg);
   font-weight: 600;
   letter-spacing: -0.2px;
@@ -392,11 +466,11 @@ button {
   background: var(--accent);
   color: var(--text-on-accent);
   border: none;
-  height: 48px;
-  padding: 8px 16px;
+  height: 36px;
+  padding: 0 16px;
   border-radius: var(--radius-pill);
   cursor: pointer;
-  font-size: 17px;
+  font-size: 14px;
   font-weight: 500;
   transition: all var(--duration-color) var(--easing-standard);
 }
@@ -419,21 +493,27 @@ button:disabled {
 
 input, textarea, select {
   font-family: var(--font-sans);
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--glass-thin);
   border: 1px solid var(--border-glass);
   color: var(--text-primary);
-  height: 44px;
-  padding: 10px 14px;
-  border-radius: var(--radius-pill);
+  height: 38px;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
   font-size: var(--font-md);
   outline: none;
   transition: border-color var(--duration-color) var(--easing-standard), box-shadow var(--duration-color) var(--easing-standard);
 }
 
+textarea {
+  height: auto;
+  min-height: 76px;
+  line-height: var(--leading-normal);
+}
+
 select {
   appearance: none;
   -webkit-appearance: none;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='rgba(255,255,255,0.55)' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238e8e93' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 36px;
@@ -1789,8 +1869,9 @@ button.btn-sm {
 /* ---- Button sizes ---- */
 
 button.btn-lg {
-  padding: 12px 24px;
-  font-size: var(--font-base);
+  height: 40px;
+  padding: 0 20px;
+  font-size: var(--font-md);
   font-weight: 600;
 }
 
@@ -1957,3 +2038,43 @@ button.btn-lg {
 .hover-fade:hover { opacity: 0.9; }
 .hover-fade-half { opacity: 0.5; transition: opacity 0.15s; }
 .hover-fade-half:hover { opacity: 0.9; }
+
+/* ── Floating top-right slot (dashboard theme toggle) ── */
+.shell-topright {
+  position: fixed;
+  top: 16px;
+  right: 20px;
+  z-index: 50;
+}
+
+/* ── Theme toggle (iOS segmented) ── */
+.theme-toggle {
+  display: inline-flex;
+  gap: 2px;
+  padding: 2px;
+  border-radius: var(--radius-pill);
+  background: var(--glass-regular);
+  border: 1px solid var(--border-glass);
+}
+.theme-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 24px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--duration-color) var(--easing-standard),
+    background var(--duration-color) var(--easing-standard);
+}
+.theme-toggle-btn:hover { color: var(--text-primary); }
+.theme-toggle-btn.active {
+  background: var(--bg-secondary);
+  color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
