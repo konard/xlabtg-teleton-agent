@@ -427,7 +427,7 @@ export function Tasks() {
                                 style={{
                                   padding: '8px',
                                   borderRadius: '4px',
-                                  backgroundColor: 'rgba(0,0,0,0.2)',
+                                  backgroundColor: 'var(--glass-thin)',
                                   fontSize: '11px',
                                   overflow: 'auto',
                                   maxHeight: '150px',
@@ -454,7 +454,7 @@ export function Tasks() {
                                 style={{
                                   padding: '8px',
                                   borderRadius: '4px',
-                                  backgroundColor: 'rgba(0,0,0,0.2)',
+                                  backgroundColor: 'var(--glass-thin)',
                                   fontSize: '11px',
                                   overflow: 'auto',
                                   maxHeight: '200px',

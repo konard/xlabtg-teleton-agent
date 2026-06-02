@@ -244,7 +244,7 @@ export function Plugins() {
           >
             Marketplace
             {updatableCount > 0 && (
-              <span className="tab-count" style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}>
+              <span className="tab-count" style={{ background: 'var(--glass-thick)', color: 'var(--text-secondary)' }}>
                 {updatableCount}
               </span>
             )}

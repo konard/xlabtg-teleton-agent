@@ -646,7 +646,7 @@ a:hover {
 }
 
 .badge.count { color: var(--text-primary); }
-.badge.warn { color: var(--text-secondary); border-color: rgba(255, 255, 255, 0.12); }
+.badge.warn { color: var(--text-secondary); border-color: var(--border); }
 .badge.error { color: var(--red); border-color: color-mix(in srgb, var(--red) 30%, transparent); }
 .badge.always { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 30%, transparent); }
 
@@ -797,15 +797,15 @@ button.btn-sm {
 }
 
 .alert.success {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-thin);
   color: var(--text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-glass);
 }
 
 .alert.error {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-thin);
   color: var(--text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-glass);
 }
 
 /* ---- File rows (table rows in Workspace, Tasks) ---- */
@@ -1031,12 +1031,12 @@ button.btn-sm {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--glass-thick);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--glass-ultrathick);
 }
 
 /* ---- Segmented Control ---- */
@@ -1113,7 +1113,7 @@ button.btn-sm {
 .toggle-track {
   position: absolute;
   inset: 0;
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--glass-thick);
   border-radius: 14px;
   transition: background 0.25s var(--easing-spring);
 }
@@ -1195,7 +1195,7 @@ button.btn-sm {
 
 .info-banner {
   border-radius: var(--radius-sm);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--glass-micro);
   border: 1px solid var(--border-glass);
   overflow: hidden;
   margin-bottom: var(--space-md);
@@ -1252,10 +1252,10 @@ button.btn-sm {
 }
 
 .modal {
-  background: rgba(30, 30, 35, 0.65);
+  background: var(--bg-glass);
   backdrop-filter: blur(50px) saturate(1.8);
   -webkit-backdrop-filter: blur(50px) saturate(1.8);
-  border: 1px solid rgba(255, 255, 255, 0.12);
+  border: 1px solid var(--border);
   border-radius: var(--radius-xl);
   padding: 28px;
   max-width: 480px;
@@ -1449,8 +1449,8 @@ button.btn-sm {
 }
 
 .provider-card.selected {
-  border-color: rgba(255, 255, 255, 0.3);
-  background: rgba(255, 255, 255, 0.08);
+  border-color: var(--border-strong);
+  background: var(--glass-thick);
 }
 
 .provider-card h3 {
@@ -1497,8 +1497,8 @@ button.btn-sm {
 .guide-dropdown {
   margin-bottom: 20px;
   border-radius: var(--radius-sm);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-glass);
+  background: var(--glass-micro);
 }
 
 .guide-dropdown summary {
@@ -1535,7 +1535,7 @@ button.btn-sm {
   font-size: 13px;
   line-height: 1.6;
   color: var(--text-secondary);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--border-glass);
 }
 
 .guide-section {
@@ -1563,7 +1563,7 @@ button.btn-sm {
 }
 
 .guide-section code {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--glass-thick);
   padding: 1px 5px;
   border-radius: 3px;
   font-size: 12px;
@@ -1577,9 +1577,9 @@ button.btn-sm {
   margin-bottom: 16px;
   font-size: 13px;
   line-height: 1.6;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-thin);
   color: var(--text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-glass);
 }
 
 .warning-card strong {
@@ -1594,9 +1594,9 @@ button.btn-sm {
   margin-bottom: 16px;
   font-size: 13px;
   line-height: 1.5;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--glass-thin);
   color: var(--text-secondary);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--border-glass);
 }
 
 /* ---- Code Input (Telegram verification) ---- */

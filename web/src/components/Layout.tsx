@@ -189,7 +189,7 @@ function DashboardNav() {
       <style>{`
         .nav-link-hover:hover:not(.active) {
           color: var(--text-primary) !important;
-          background: var(--bg-glass-hover, rgba(255, 255, 255, 0.10)) !important;
+          background: var(--bg-glass-hover) !important;
         }
         .nav-link-hover svg {
           flex-shrink: 0;
