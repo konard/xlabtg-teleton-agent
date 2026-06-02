@@ -59,11 +59,17 @@ export function createStaticHandler(
   webDist: string,
   options: { async: boolean }
 ): (c: Context) => Response | Promise<Response> {
-  const indexHtml = options.async
-    ? readFile(join(webDist, "index.html"), "utf-8")
-    : readFileSync(join(webDist, "index.html"), "utf-8");
+  const indexPath = join(webDist, "index.html");
 
-  const renderIndex = async (c: Context): Promise<Response> => c.html(await indexHtml);
+  // Read index.html fresh per request (cheap) so a web rebuild is picked up
+  // without restarting the server, and serve it with no-cache so browsers
+  // always revalidate and fetch the current hashed chunk references.
+  const renderIndex = async (c: Context): Promise<Response> => {
+    const html = options.async
+      ? await readFile(indexPath, "utf-8")
+      : readFileSync(indexPath, "utf-8");
+    return c.html(html, 200, { "Cache-Control": "no-cache" });
+  };
 
   return async (c: Context): Promise<Response> => {
     const filePath = resolve(join(webDist, c.req.path));
