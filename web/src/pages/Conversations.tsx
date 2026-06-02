@@ -3,7 +3,7 @@ import { api, ConversationChat, ConversationMessage } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchBar } from '../components/SearchBar';
 import { Markdown } from '../components/Markdown';
-import { List, ListRow } from '../components/List';
+import { ListRow } from '../components/List';
 import { useResource } from '../hooks/useResource';
 import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
@@ -63,7 +63,7 @@ export function Conversations() {
 
       <div className="chat-layout">
         <aside className="chat-list-pane">
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <div className="chat-list-head">
             <div style={{ flex: 1 }}>
               <SearchBar value={filter} onChange={setFilter} placeholder="Filter chats…" />
             </div>
@@ -72,7 +72,7 @@ export function Conversations() {
 
           <div className="chat-list-scroll">
             {loading ? (
-              <SkeletonRows />
+              <div style={{ padding: '12px' }}><SkeletonRows /></div>
             ) : filtered.length === 0 ? (
               <EmptyState
                 title={filter ? 'No matching chats' : 'No conversations'}
@@ -80,21 +80,19 @@ export function Conversations() {
                 action={filter ? <button className="btn-ghost btn-sm" onClick={() => setFilter('')}>Clear filter</button> : undefined}
               />
             ) : (
-              <List>
-                {filtered.map((chat) => {
-                  const name = chat.title || chat.username || chat.id;
-                  return (
-                    <ListRow
-                      key={chat.id}
-                      className={chat.id === selectedId ? 'selected' : undefined}
-                      leading={name.charAt(0).toUpperCase()}
-                      title={name}
-                      subtitle={`${chat.type} · ${chat.message_count} ${chat.message_count === 1 ? 'msg' : 'msgs'}`}
-                      onClick={() => selectChat(chat.id)}
-                    />
-                  );
-                })}
-              </List>
+              filtered.map((chat) => {
+                const name = chat.title || chat.username || chat.id;
+                return (
+                  <ListRow
+                    key={chat.id}
+                    className={chat.id === selectedId ? 'selected' : undefined}
+                    leading={name.charAt(0).toUpperCase()}
+                    title={name}
+                    subtitle={`${chat.type} · ${chat.message_count} ${chat.message_count === 1 ? 'msg' : 'msgs'}`}
+                    onClick={() => selectChat(chat.id)}
+                  />
+                );
+              })
             )}
           </div>
         </aside>

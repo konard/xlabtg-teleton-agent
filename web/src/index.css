@@ -2132,20 +2132,31 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 .empty-state-desc { font-size: var(--font-md); color: var(--text-secondary); max-width: 380px; }
 .empty-state-action { margin-top: 12px; }
 
-/* ── Chat master-detail ── */
+/* ── Chat master-detail (single integrated card) ── */
 .chat-layout {
   display: flex;
-  gap: 14px;
   height: calc(100vh - 168px);
   min-height: 420px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
 }
 .chat-list-pane {
-  width: 300px;
+  width: 280px;
   flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  gap: 10px;
   min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.chat-list-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 .chat-list-scroll { flex: 1; overflow-y: auto; min-height: 0; }
 .chat-detail-pane {
@@ -2153,10 +2164,6 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border-glass);
-  border-radius: var(--radius-lg);
-  overflow: hidden;
 }
 .chat-detail-head {
   display: flex;
@@ -2169,7 +2176,7 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 .chat-detail-body { flex: 1; min-height: 0; overflow-y: auto; }
 @media (max-width: 768px) {
   .chat-layout { flex-direction: column; height: auto; }
-  .chat-list-pane { width: 100%; }
+  .chat-list-pane { width: 100%; border-right: none; border-bottom: 1px solid var(--border); max-height: 280px; }
   .chat-detail-pane { min-height: 360px; }
 }
 
