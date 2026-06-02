@@ -1146,63 +1146,20 @@ button.btn-sm {
   flex-shrink: 0;
 }
 
-/* ---- Info Banner (collapsible) ---- */
-
-.info-banner {
-  border-radius: var(--radius-sm);
-  background: var(--glass-micro);
-  border: 1px solid var(--border-glass);
-  overflow: hidden;
-  margin-bottom: var(--space-md);
-}
-
-.info-banner-trigger {
-  all: unset;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 8px 12px;
-  font-size: 12px;
-  color: var(--text-tertiary);
-  cursor: pointer;
-  transition: color 0.15s ease;
-  box-sizing: border-box;
-}
-
-.info-banner-trigger:hover {
-  color: var(--text-secondary);
-}
-
-.info-banner-chevron {
-  margin-left: auto;
-  transition: transform 0.2s ease;
-  opacity: 0.5;
-}
-
-.info-banner[data-open] .info-banner-chevron {
-  transform: rotate(180deg);
-}
-
-.info-banner-content {
-  padding: 0 12px 10px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: var(--text-secondary);
-}
-
-/* ── Config head (compact tab header) ── */
-.config-head {
+/* ── Config card (grouped section with integrated header) ── */
+.config-card { padding: 0; overflow: hidden; }
+.config-card-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 12px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--border);
 }
-.config-head .info-banner { flex: 0 0 auto; max-width: 100%; margin-bottom: 0; }
-.config-head-right { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
-.config-enable { display: inline-flex; align-items: center; gap: 8px; }
-.config-enable-label { font-size: var(--font-sm); color: var(--text-secondary); }
+.config-card-title { font-size: var(--font-base); font-weight: 600; color: var(--text-primary); }
+.config-card-action { display: inline-flex; align-items: center; gap: 12px; flex-shrink: 0; }
+.config-card-body { padding: 16px; transition: opacity var(--duration-color) var(--easing-standard); }
+.config-card-body.dimmed { opacity: 0.4; pointer-events: none; user-select: none; }
 .config-status { display: inline-flex; align-items: center; gap: 6px; font-size: var(--font-xs); color: var(--text-secondary); }
 .config-status.running { color: var(--green); }
 .config-spinner {
@@ -2882,24 +2839,32 @@ button.btn-destructive:hover { background: var(--red); opacity: 0.9; }
 }
 .dash-hero-sub { font-size: var(--font-sm); color: var(--text-secondary); margin-top: 3px; }
 
-.stat-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
-  gap: 10px;
+/* Compact menu-bar-style stats strip */
+.dash-statbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 2px 6px;
+  padding: 6px 10px;
   margin-bottom: 16px;
-}
-.stat-card {
-  display: flex; flex-direction: column; gap: 3px;
-  padding: 14px 16px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-glass);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-pill);
 }
-.stat-card.clickable { cursor: pointer; transition: border-color var(--duration-color) var(--easing-standard), background var(--duration-color) var(--easing-standard); }
-.stat-card.clickable:hover { border-color: var(--accent); background: var(--glass-thin); }
-.stat-value { font-size: var(--font-xl); font-weight: 600; letter-spacing: -0.4px; color: var(--text-primary); line-height: 1.1; }
-.stat-value.mono { font-family: var(--font-mono); font-size: var(--font-lg); }
-.stat-label { font-size: var(--font-xs); font-weight: 500; text-transform: uppercase; letter-spacing: 0.4px; color: var(--text-secondary); }
+.stat-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+  padding: 3px 9px;
+  border-radius: var(--radius-pill);
+}
+.stat-item .stat-v { font-size: var(--font-sm); font-weight: 600; color: var(--text-primary); }
+.stat-item .stat-v.mono { font-family: var(--font-mono); }
+.stat-item .stat-k { font-size: var(--font-xs); color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.3px; }
+.stat-item.clickable { cursor: pointer; transition: background var(--duration-color) var(--easing-standard); }
+.stat-item.clickable:hover { background: var(--glass-thin); }
+.stat-item.clickable:hover .stat-k { color: var(--text-secondary); }
 
 .dashboard-settings { margin-bottom: 16px; }
 .dash-logs { padding: 0; overflow: hidden; flex: 1; min-height: 0; display: flex; flex-direction: column; }

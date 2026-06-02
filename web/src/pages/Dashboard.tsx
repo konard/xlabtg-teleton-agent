@@ -16,18 +16,18 @@ function fmtUptime(sec: number): string {
   return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
 }
 
-function StatCard({ label, value, mono, to }: { label: string; value: string | number; mono?: boolean; to?: string }) {
+function StatItem({ label, value, mono, to }: { label: string; value: string | number; mono?: boolean; to?: string }) {
   const navigate = useNavigate();
   const clickable = !!to;
   return (
-    <div
-      className={`stat-card${clickable ? ' clickable' : ''}`}
+    <span
+      className={`stat-item${clickable ? ' clickable' : ''}`}
       onClick={clickable ? () => navigate(to) : undefined}
       {...(clickable ? { role: 'button', tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter') navigate(to); } } : {})}
     >
-      <span className={`stat-value${mono ? ' mono' : ''}`}>{value}</span>
-      <span className="stat-label">{label}</span>
-    </div>
+      <span className={`stat-v${mono ? ' mono' : ''}`}>{value}</span>
+      <span className="stat-k">{label}</span>
+    </span>
   );
 }
 
@@ -64,9 +64,7 @@ export function Dashboard() {
       <div className="dashboard-root">
         <div className="header"><h1>Dashboard</h1><p>System overview</p></div>
         <div className="card dash-hero"><Skeleton width={40} height={40} /><Skeleton width={220} height={28} /></div>
-        <div className="stat-grid">
-          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} height={68} />)}
-        </div>
+        <div className="dash-statbar"><Skeleton width="100%" height={18} /></div>
       </div>
     );
   }
@@ -98,15 +96,15 @@ export function Dashboard() {
       </div>
 
       {/* ── Metrics ── */}
-      <div className="stat-grid">
-        <StatCard label="Messages" value={stats.messages.toLocaleString()} to="/conversations" />
-        <StatCard label="Chats" value={stats.chats} to="/conversations" />
-        <StatCard label="Knowledge" value={stats.knowledge} to="/memory" />
-        <StatCard label="Tools" value={s.toolCount} to="/tools" />
-        <StatCard label="Sessions" value={s.sessionCount} />
-        <StatCard label="Tokens" value={s.tokenUsage ? `${(s.tokenUsage.totalTokens / 1000).toFixed(1)}K` : '0'} mono />
-        <StatCard label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
-        <StatCard label="GRAM" value={balance ?? '—'} mono to="/wallet" />
+      <div className="dash-statbar">
+        <StatItem label="Messages" value={stats.messages.toLocaleString()} to="/conversations" />
+        <StatItem label="Chats" value={stats.chats} to="/conversations" />
+        <StatItem label="Knowledge" value={stats.knowledge} to="/memory" />
+        <StatItem label="Tools" value={s.toolCount} to="/tools" />
+        <StatItem label="Sessions" value={s.sessionCount} />
+        <StatItem label="Tokens" value={s.tokenUsage ? `${(s.tokenUsage.totalTokens / 1000).toFixed(1)}K` : '0'} mono />
+        <StatItem label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
+        <StatItem label="GRAM" value={balance ?? '—'} mono to="/wallet" />
       </div>
 
       {/* ── Settings (side by side) ── */}
