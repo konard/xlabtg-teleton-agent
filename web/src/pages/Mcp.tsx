@@ -1,11 +1,22 @@
-import { useState } from 'react';
+import { useState, Fragment } from 'react';
 import { api, McpServerInfo } from '../lib/api';
 import { errMsg } from '../lib/utils';
-import { Loading } from '../components/Loading';
+import { List, ListRow } from '../components/List';
 import { useResource } from '../hooks/useResource';
+import { RefreshButton } from '../components/RefreshButton';
 import { Alert } from '../components/Alert';
+import { SkeletonRows } from '../components/Skeleton';
+import { EmptyState } from '../components/EmptyState';
 import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
+
+function PlugIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M9 2v6M15 2v6M7 8h10v3a5 5 0 0 1-10 0V8ZM12 16v6" />
+    </svg>
+  );
+}
 
 export function Mcp() {
   const confirm = useConfirm();
@@ -21,13 +32,11 @@ export function Mcp() {
   const [envPairs, setEnvPairs] = useState<{ key: string; value: string; id: string }[]>([]);
   const [adding, setAdding] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
 
   const toggleExpand = (name: string) => {
     setExpanded((prev) => {
       const next = new Set(prev);
-      if (next.has(name)) next.delete(name);
-      else next.add(name);
+      next.has(name) ? next.delete(name) : next.add(name);
       return next;
     });
   };
@@ -49,7 +58,6 @@ export function Mcp() {
         args: isUrl ? undefined : args,
         env: Object.keys(env).length > 0 ? env : undefined,
       });
-      setSuccess(res.data.message);
       toast.success(res.data.message);
       setAddPkg('');
       setAddArgs('');
@@ -70,8 +78,7 @@ export function Mcp() {
     setRemoving(name);
     setError(null);
     try {
-      const res = await api.removeMcpServer(name);
-      setSuccess(res.data.message);
+      await api.removeMcpServer(name);
       toast.success('Server removed');
       reload();
     } catch (err) {
@@ -82,271 +89,154 @@ export function Mcp() {
     }
   };
 
-  if (loading) return <Loading />;
-
   const allServers = servers ?? [];
   const connectedCount = allServers.filter((s) => s.connected).length;
+  const toolTotal = allServers.reduce((sum, s) => sum + s.toolCount, 0);
 
   return (
     <div>
       <div className="header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <h1>MCP Servers</h1>
-            <p>External tool servers connected via Model Context Protocol</p>
-          </div>
-          <button onClick={() => setShowAdd(!showAdd)} style={{ fontSize: '13px' }}>
-            {showAdd ? 'Cancel' : '+ Add Server'}
-          </button>
-        </div>
+        <h1>MCP Servers</h1>
+        <p>External tool servers connected via Model Context Protocol</p>
       </div>
 
       {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
-      {success && <Alert type="success" message={success} onDismiss={() => setSuccess(null)} style={{ marginBottom: '14px' }} />}
+
+      {/* Controls */}
+      <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '14px' }}>
+        <span style={{ flex: 1, fontSize: 'var(--font-sm)', color: 'var(--text-secondary)' }}>
+          {allServers.length > 0
+            ? `${connectedCount}/${allServers.length} connected · ${toolTotal} tools`
+            : 'No servers configured'}
+        </span>
+        <RefreshButton onRefresh={reload} />
+        <button className="btn-sm" onClick={() => setShowAdd((v) => !v)}>
+          {showAdd ? 'Cancel' : '+ Add Server'}
+        </button>
+      </div>
 
       {showAdd && (
-        <div className="card" style={{ marginBottom: '14px' }}>
-          <h2 style={{ margin: '0 0 10px' }}>Add MCP Server</h2>
-          <div style={{ display: 'grid', gap: '8px' }}>
-            <div>
-              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                Package or URL *
-              </label>
-              <input
-                type="text"
-                value={addPkg}
-                onChange={(e) => setAddPkg(e.target.value)}
-                placeholder="@modelcontextprotocol/server-filesystem  or  http://localhost:3001/mcp"
-                style={{ width: '100%', fontSize: '13px' }}
-              />
+        <div className="card mcp-add">
+          <div className="section-title">Add MCP Server</div>
+          <div className="field">
+            <label className="field-label">Package or URL *</label>
+            <input
+              type="text"
+              value={addPkg}
+              onChange={(e) => setAddPkg(e.target.value)}
+              placeholder="@modelcontextprotocol/server-filesystem  or  http://localhost:3001/mcp"
+              style={{ width: '100%' }}
+            />
+          </div>
+          <div className="mcp-add-grid">
+            <div className="field">
+              <label className="field-label">Arguments (space-separated)</label>
+              <input type="text" value={addArgs} onChange={(e) => setAddArgs(e.target.value)} placeholder="/tmp /home/user/docs" style={{ width: '100%' }} />
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  Arguments (space-separated)
-                </label>
-                <input
-                  type="text"
-                  value={addArgs}
-                  onChange={(e) => setAddArgs(e.target.value)}
-                  placeholder="/tmp /home/user/docs"
-                  style={{ width: '100%', fontSize: '13px' }}
-                />
-              </div>
-              <div>
-                <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>
-                  Name (auto-derived if empty)
-                </label>
-                <input
-                  type="text"
-                  value={addName}
-                  onChange={(e) => setAddName(e.target.value)}
-                  placeholder="filesystem"
-                  style={{ width: '100%', fontSize: '13px' }}
-                />
-              </div>
-            </div>
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                <label style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                  Environment Variables
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setEnvPairs([...envPairs, { key: '', value: '', id: crypto.randomUUID() }])}
-                  style={{ fontSize: '11px', padding: '1px 6px', opacity: 0.7 }}
-                >
-                  + Add
-                </button>
-              </div>
-              {envPairs.map((pair, i) => (
-                <div key={pair.id} style={{ display: 'grid', gridTemplateColumns: '1fr 2fr auto', gap: '6px', marginBottom: '4px' }}>
-                  <input
-                    type="text"
-                    value={pair.key}
-                    onChange={(e) => {
-                      const next = [...envPairs];
-                      next[i] = { ...next[i], key: e.target.value };
-                      setEnvPairs(next);
-                    }}
-                    placeholder="BRAVE_API_KEY"
-                    style={{ fontSize: '12px', fontFamily: 'monospace' }}
-                  />
-                  <input
-                    type="password"
-                    value={pair.value}
-                    onChange={(e) => {
-                      const next = [...envPairs];
-                      next[i] = { ...next[i], value: e.target.value };
-                      setEnvPairs(next);
-                    }}
-                    placeholder="sk-xxx..."
-                    style={{ fontSize: '12px', fontFamily: 'monospace' }}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))}
-                    style={{ fontSize: '11px', padding: '2px 6px', opacity: 0.6 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '4px' }}>
-              <button onClick={() => setShowAdd(false)} style={{ fontSize: '13px', opacity: 0.7 }}>
-                Cancel
-              </button>
-              <button onClick={handleAdd} disabled={adding || !addPkg.trim()} style={{ fontSize: '13px' }}>
-                {adding ? 'Adding...' : 'Add Server'}
-              </button>
+            <div className="field">
+              <label className="field-label">Name (auto-derived if empty)</label>
+              <input type="text" value={addName} onChange={(e) => setAddName(e.target.value)} placeholder="filesystem" style={{ width: '100%' }} />
             </div>
           </div>
-          <p style={{ fontSize: '11px', color: 'var(--text-secondary)', margin: '8px 0 0' }}>
-            Changes are saved to config.yaml. Restart teleton to connect.
-          </p>
+          <div className="field">
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+              <label className="field-label" style={{ margin: 0 }}>Environment Variables</label>
+              <button type="button" className="btn-ghost btn-sm" onClick={() => setEnvPairs([...envPairs, { key: '', value: '', id: crypto.randomUUID() }])}>
+                + Add
+              </button>
+            </div>
+            {envPairs.map((pair, i) => (
+              <div key={pair.id} className="mcp-env-row">
+                <input
+                  type="text"
+                  value={pair.key}
+                  onChange={(e) => { const next = [...envPairs]; next[i] = { ...next[i], key: e.target.value }; setEnvPairs(next); }}
+                  placeholder="BRAVE_API_KEY"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-xs)' }}
+                />
+                <input
+                  type="password"
+                  value={pair.value}
+                  onChange={(e) => { const next = [...envPairs]; next[i] = { ...next[i], value: e.target.value }; setEnvPairs(next); }}
+                  placeholder="sk-xxx…"
+                  style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--font-xs)' }}
+                />
+                <button type="button" className="chip-remove" onClick={() => setEnvPairs(envPairs.filter((_, j) => j !== i))} aria-label="Remove variable">&#x2715;</button>
+              </div>
+            ))}
+          </div>
+          <div className="mcp-add-actions">
+            <span className="mcp-add-hint">Saved to config.yaml · restart teleton to connect</span>
+            <button className="btn-ghost btn-sm" onClick={() => setShowAdd(false)}>Cancel</button>
+            <button className="btn-sm" onClick={handleAdd} disabled={adding || !addPkg.trim()}>
+              {adding ? 'Adding…' : 'Add Server'}
+            </button>
+          </div>
         </div>
       )}
 
-      {allServers.length === 0 && !showAdd && (
-        <div className="empty">
-          <p>No MCP servers configured</p>
-          <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginTop: '8px' }}>
-            Click "+ Add Server" above or use CLI: <code>teleton mcp add @modelcontextprotocol/server-filesystem /tmp</code>
-          </p>
-        </div>
-      )}
-      {allServers.length > 0 && (
-        <>
-          <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '14px' }}>
-            {connectedCount}/{allServers.length} connected · {allServers.reduce((sum, s) => sum + s.toolCount, 0)} tools total
+      {loading ? (
+        <SkeletonRows />
+      ) : allServers.length === 0 ? (
+        !showAdd && (
+          <div className="card" style={{ padding: 0 }}>
+            <EmptyState
+              title="No MCP servers configured"
+              description="Add one above, or via CLI: teleton mcp add @modelcontextprotocol/server-filesystem /tmp"
+            />
           </div>
-
-          {allServers.map((server) => (
-            <div key={server.name} className="card" style={{ marginBottom: '10px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <h2 style={{ margin: 0 }}>{server.name}</h2>
-                  <span style={{
-                    fontSize: '11px',
-                    padding: '1px 6px',
-                    borderRadius: '3px',
-                    background: 'var(--bg-glass)',
-                    color: 'var(--text-secondary)',
-                  }}>
-                    {server.type}
-                  </span>
-                  {server.scope !== 'always' && (
-                    <span style={{
-                      fontSize: '11px',
-                      padding: '1px 6px',
-                      borderRadius: '3px',
-                      background: 'var(--bg-glass)',
-                      color: 'var(--text-secondary)',
-                    }}>
-                      {server.scope}
+        )
+      ) : (
+        <List>
+          {allServers.map((s) => {
+            const isOpen = expanded.has(s.name);
+            return (
+              <Fragment key={s.name}>
+                <ListRow
+                  className={`mcp-${s.connected ? 'on' : 'off'}${s.enabled ? '' : ' dimmed'}`}
+                  leading={<PlugIcon />}
+                  title={
+                    <span className="mcp-title">
+                      {s.name}
+                      <span className="badge">{s.type}</span>
+                      {s.scope !== 'always' && <span className="badge">{s.scope}</span>}
+                      {!s.enabled && <span className="badge">disabled</span>}
                     </span>
-                  )}
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                    fontSize: '12px',
-                    color: server.connected ? 'var(--green)' : 'var(--red)',
-                  }}>
-                    <span style={{
-                      width: '6px',
-                      height: '6px',
-                      borderRadius: '50%',
-                      background: server.connected ? 'var(--green)' : 'var(--red)',
-                    }} />
-                    {server.connected ? 'Connected' : 'Disconnected'}
-                  </span>
-                  {!server.enabled && (
-                    <span style={{ fontSize: '11px', color: 'var(--text-secondary)' }}>disabled</span>
-                  )}
-                  <button
-                    onClick={() => handleRemove(server.name)}
-                    disabled={removing === server.name}
-                    style={{
-                      fontSize: '11px',
-                      padding: '2px 8px',
-                      opacity: 0.6,
-                      cursor: removing === server.name ? 'wait' : 'pointer',
-                    }}
-                  >
-                    {removing === server.name ? '...' : 'Remove'}
-                  </button>
-                </div>
-              </div>
-
-              <div style={{ fontSize: '12px', fontFamily: 'monospace', color: 'var(--text-secondary)', marginBottom: '8px' }}>
-                {server.target}
-              </div>
-
-              {server.envKeys.length > 0 && (
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginBottom: '8px' }}>
-                  {server.envKeys.map((k) => (
-                    <span
-                      key={k}
-                      style={{
-                        fontSize: '11px',
-                        padding: '1px 6px',
-                        borderRadius: '3px',
-                        background: 'var(--bg-glass)',
-                        color: 'var(--text-secondary)',
-                        fontFamily: 'monospace',
-                      }}
-                    >
-                      {k}=••••
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {server.toolCount > 0 && (
-                <div>
-                  <button
-                    onClick={() => toggleExpand(server.name)}
-                    style={{
-                      background: 'none',
-                      border: 'none',
-                      padding: 0,
-                      fontSize: '12px',
-                      color: 'var(--accent)',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {expanded.has(server.name) ? '▾' : '▸'} {server.toolCount} tools
-                  </button>
-
-                  {expanded.has(server.name) && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', marginTop: '8px' }}>
-                      {server.tools.map((tool) => (
-                        <span
-                          key={tool}
-                          style={{
-                            fontSize: '11px',
-                            padding: '2px 6px',
-                            borderRadius: '3px',
-                            background: 'var(--bg-glass)',
-                            color: 'var(--text-secondary)',
-                          }}
-                        >
-                          {tool}
-                        </span>
-                      ))}
+                  }
+                  subtitle={s.target}
+                  trailing={s.toolCount > 0 ? <span className="badge count">{s.toolCount} tools</span> : undefined}
+                  disclosure
+                  expanded={isOpen}
+                  onClick={() => toggleExpand(s.name)}
+                />
+                {isOpen && (
+                  <div className="ios-sublist mcp-detail">
+                    <div className={`mcp-status ${s.connected ? 'on' : 'off'}`}>
+                      <span className="mcp-dot" />
+                      {s.connected ? 'Connected' : 'Disconnected'}
                     </div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </>
+                    {s.envKeys.length > 0 && (
+                      <div className="mcp-chips">
+                        {s.envKeys.map((k) => <span key={k} className="chip chip-mono">{k}=••••</span>)}
+                      </div>
+                    )}
+                    {s.tools.length > 0 && (
+                      <div className="mcp-chips">
+                        {s.tools.map((t) => <span key={t} className="chip chip-mono">{t}</span>)}
+                      </div>
+                    )}
+                    <div className="mcp-detail-actions">
+                      <button className="btn-danger btn-sm" onClick={() => handleRemove(s.name)} disabled={removing === s.name}>
+                        {removing === s.name ? 'Removing…' : 'Remove'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
+        </List>
       )}
     </div>
   );
 }
-
