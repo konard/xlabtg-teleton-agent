@@ -1,18 +1,32 @@
 import { useEffect, useRef, useSyncExternalStore, useState, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useConfigState } from '../hooks/useConfigState';
 import { AgentSettingsPanel } from '../components/AgentSettingsPanel';
 import { TelegramSettingsPanel } from '../components/TelegramSettingsPanel';
 import { ExecSettingsPanel } from '../components/ExecSettingsPanel';
 import { logStore } from '../lib/log-store';
 import { api, StatusData } from '../lib/api';
-import { Skeleton, SkeletonText } from '../components/Skeleton';
+import { Skeleton } from '../components/Skeleton';
 import { Alert } from '../components/Alert';
 
-function Metric({ label, value, mono }: { label: string; value: string | number; mono?: boolean }) {
+const PLATFORM_LABEL: Record<string, string> = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' };
+
+function fmtUptime(sec: number): string {
+  if (sec < 3600) return `${Math.floor(sec / 60)}m`;
+  return `${Math.floor(sec / 3600)}h ${Math.floor((sec % 3600) / 60)}m`;
+}
+
+function StatCard({ label, value, mono, to }: { label: string; value: string | number; mono?: boolean; to?: string }) {
+  const navigate = useNavigate();
+  const clickable = !!to;
   return (
-    <div className="metric">
-      <span className="metric-label">{label}</span>
-      <span className={`metric-value${mono ? ' mono' : ''}`}>{value}</span>
+    <div
+      className={`stat-card${clickable ? ' clickable' : ''}`}
+      onClick={clickable ? () => navigate(to) : undefined}
+      {...(clickable ? { role: 'button', tabIndex: 0, onKeyDown: (e: React.KeyboardEvent) => { if (e.key === 'Enter') navigate(to); } } : {})}
+    >
+      <span className={`stat-value${mono ? ' mono' : ''}`}>{value}</span>
+      <span className="stat-label">{label}</span>
     </div>
   );
 }
@@ -27,88 +41,75 @@ export function Dashboard() {
     handleProviderChange, handleProviderConfirm, handleProviderCancel,
   } = useConfigState();
 
-  // Poll /api/status every 10s for live metrics (tokens, uptime)
+  // Poll /api/status every 10s for live metrics (tokens, uptime).
   const [liveStatus, setLiveStatus] = useState<StatusData | null>(null);
+  const [balance, setBalance] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
-    const poll = () => {
-      api.getStatus().then((res) => { if (active) setLiveStatus(res.data); }).catch(() => {});
-    };
+    const poll = () => api.getStatus().then((r) => { if (active) setLiveStatus(r.data); }).catch(() => {});
     const id = setInterval(poll, 10_000);
+    api.getWallet().then((r) => { if (active) setBalance(r.data?.balance ?? null); }).catch(() => {});
     return () => { active = false; clearInterval(id); };
   }, []);
 
-  const currentStatus = liveStatus ?? status;
-
-  const logs = useSyncExternalStore(
-    (cb) => logStore.subscribe(cb),
-    () => logStore.getLogs()
-  );
-  const connected = useSyncExternalStore(
-    (cb) => logStore.subscribe(cb),
-    () => logStore.isConnected()
-  );
+  const logs = useSyncExternalStore((cb) => logStore.subscribe(cb), () => logStore.getLogs());
+  const connected = useSyncExternalStore((cb) => logStore.subscribe(cb), () => logStore.isConnected());
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    logStore.connect();
-  }, []);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [logs]);
+  useEffect(() => { logStore.connect(); }, []);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logs]);
 
   if (loading) {
     return (
       <div className="dashboard-root">
-        <div className="header">
-          <h1>Dashboard</h1>
-          <p>System overview</p>
-        </div>
-        <div className="card status-bar" style={{ display: 'flex', gap: '24px', flexWrap: 'wrap' }}>
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} width={80} height={36} />
-          ))}
-        </div>
-        <div className="dashboard-settings">
-          <div className="card"><SkeletonText lines={4} /></div>
-          <div className="card"><SkeletonText lines={4} /></div>
+        <div className="header"><h1>Dashboard</h1><p>System overview</p></div>
+        <div className="card dash-hero"><Skeleton width={40} height={40} /><Skeleton width={220} height={28} /></div>
+        <div className="stat-grid">
+          {Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} height={68} />)}
         </div>
       </div>
     );
   }
   if (!status || !stats) return <div className="alert error">Failed to load dashboard data</div>;
 
-  const s = currentStatus ?? status;
-  const uptime = s.uptime < 3600
-    ? `${Math.floor(s.uptime / 60)}m`
-    : `${Math.floor(s.uptime / 3600)}h ${Math.floor((s.uptime % 3600) / 60)}m`;
+  const s = liveStatus ?? status;
+  const platform = s.platform ? (PLATFORM_LABEL[s.platform] ?? s.platform) : null;
+  const provider = s.provider ? s.provider.charAt(0).toUpperCase() + s.provider.slice(1) : null;
+  const modelLabel = modelOptions.find((m) => m.value === s.model)?.name ?? s.model;
 
   return (
     <div className="dashboard-root">
-      <div className="header">
-        <h1>Dashboard</h1>
-        <p>System overview</p>
-      </div>
+      <div className="header"><h1>Dashboard</h1><p>System overview</p></div>
 
       {error && <Alert type="error" message={error} onDismiss={() => setError(null)} style={{ marginBottom: '14px' }} />}
 
-
-      {/* ── Status bar ─────────────────────────────────────── */}
-      <div className="card status-bar">
-        <div className="status-row">
-          <Metric label="Uptime" value={uptime} />
-          <Metric label="Sessions" value={s.sessionCount} />
-          <Metric label="Tools" value={s.toolCount} />
-          <Metric label="Knowledge" value={stats.knowledge} />
-          <Metric label="Messages" value={stats.messages.toLocaleString()} />
-          <Metric label="Chats" value={stats.chats} />
-          <Metric label="Tokens" value={s.tokenUsage ? `${(s.tokenUsage.totalTokens / 1000).toFixed(1)}K` : '0'} mono />
-          <Metric label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
+      {/* ── Status hero ── */}
+      <div className="card dash-hero">
+        <span className="dash-orb" aria-hidden="true" />
+        <div className="dash-hero-main">
+          <div className="dash-hero-title">
+            {modelLabel || 'Agent'}
+            <span className="dash-hero-state">Running</span>
+          </div>
+          <div className="dash-hero-sub">
+            {[provider, `up ${fmtUptime(s.uptime)}`, platform].filter(Boolean).join(' · ')}
+          </div>
         </div>
       </div>
 
-      {/* ── Settings (side by side) ────────────────────────── */}
+      {/* ── Metrics ── */}
+      <div className="stat-grid">
+        <StatCard label="Messages" value={stats.messages.toLocaleString()} to="/conversations" />
+        <StatCard label="Chats" value={stats.chats} to="/conversations" />
+        <StatCard label="Knowledge" value={stats.knowledge} to="/memory" />
+        <StatCard label="Tools" value={s.toolCount} to="/tools" />
+        <StatCard label="Sessions" value={s.sessionCount} />
+        <StatCard label="Tokens" value={s.tokenUsage ? `${(s.tokenUsage.totalTokens / 1000).toFixed(1)}K` : '0'} mono />
+        <StatCard label="Cost" value={s.tokenUsage ? `$${s.tokenUsage.totalCost.toFixed(3)}` : '$0.000'} mono />
+        <StatCard label="GRAM" value={balance ?? '—'} mono to="/wallet" />
+      </div>
+
+      {/* ── Settings (side by side) ── */}
       <div className="dashboard-settings">
         <div className="card">
           <AgentSettingsPanel
@@ -149,35 +150,14 @@ function LogsPanel({ logs, connected, bottomRef }: {
   const toggle = useCallback(() => setOpen((v) => !v), []);
 
   return (
-    <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: '12px' }}>
-      <button
-        onClick={toggle}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          width: '100%',
-          padding: '10px 14px',
-          background: 'none',
-          border: 'none',
-          cursor: 'pointer',
-          color: 'var(--text-primary)',
-          fontSize: '13px',
-          fontWeight: 600,
-        }}
-      >
+    <div className="card dash-logs">
+      <button className="dash-logs-toggle" onClick={toggle}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span className={`status-dot ${connected ? 'connected' : 'disconnected'}`} />
           Live Logs
-          {logs.length > 0 && (
-            <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', fontWeight: 400 }}>
-              ({logs.length})
-            </span>
-          )}
+          {logs.length > 0 && <span className="dash-logs-count">({logs.length})</span>}
         </span>
-        <span style={{ fontSize: '11px', color: 'var(--text-tertiary)', transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'none' }}>
-          &#9660;
-        </span>
+        <span className="dash-logs-chevron" style={{ transform: open ? 'rotate(180deg)' : 'none' }}>&#9660;</span>
       </button>
       {open && (
         <>
@@ -186,16 +166,14 @@ function LogsPanel({ logs, connected, bottomRef }: {
           </div>
           <div className="dashboard-logs-scroll">
             {logs.length === 0 ? (
-              <div className="empty">Waiting for logs...</div>
+              <div className="empty">Waiting for logs…</div>
             ) : (
               logs.map((log, i) => (
                 <div key={i} className="log-entry">
                   <span className={`badge ${log.level === 'warn' ? 'warn' : log.level === 'error' ? 'error' : 'info'}`}>
                     {log.level.toUpperCase()}
                   </span>{' '}
-                  <span style={{ color: 'var(--text-tertiary)' }}>
-                    {new Date(log.timestamp).toLocaleTimeString()}
-                  </span>{' '}
+                  <span style={{ color: 'var(--text-tertiary)' }}>{new Date(log.timestamp).toLocaleTimeString()}</span>{' '}
                   {log.message}
                 </div>
               ))
