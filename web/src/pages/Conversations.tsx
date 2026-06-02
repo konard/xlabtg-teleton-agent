@@ -2,6 +2,7 @@ import { useState, Fragment } from 'react';
 import { api, ConversationChat, ConversationMessage } from '../lib/api';
 import { formatDate, errMsg } from '../lib/utils';
 import { SearchBar } from '../components/SearchBar';
+import { Markdown } from '../components/Markdown';
 import { List, ListRow } from '../components/List';
 import { useResource } from '../hooks/useResource';
 import { RefreshButton } from '../components/RefreshButton';
@@ -115,12 +116,16 @@ export function Conversations() {
                       <div className="chat-thread">
                         {messages.map((msg) => {
                           const out = msg.is_from_agent === 1;
-                          const body = msg.text || (msg.has_media ? `[${msg.media_type || 'media'}]` : '[empty]');
-                          const isMedia = !msg.text && !!msg.has_media;
                           return (
                             <div key={msg.id} className={`chat-msg ${out ? 'out' : 'in'}`}>
                               {!out && isGroup && <span className="chat-sender">{msg.sender_id || 'Unknown'}</span>}
-                              <div className={`chat-bubble${isMedia ? ' media' : ''}`}>{body}</div>
+                              {msg.text ? (
+                                <div className="chat-bubble"><Markdown>{msg.text}</Markdown></div>
+                              ) : (
+                                <div className="chat-bubble media">
+                                  {msg.has_media ? `[${msg.media_type || 'media'}]` : '[empty]'}
+                                </div>
+                              )}
                               <span className="chat-time">{formatDate(msg.timestamp, 1000)}</span>
                             </div>
                           );
