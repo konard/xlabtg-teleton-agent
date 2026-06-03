@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.28](https://github.com/xlabtg/teleton-agent/compare/v0.8.27...v0.8.28) (2026-06-03)
+
+
+### Bug Fixes
+
+* **integrations:** не хранить AES-ключ в той же БД, что и шифртекст (WORK4-003) ([dc6b2fa](https://github.com/xlabtg/teleton-agent/commit/dc6b2fae143a4c8efc5074bf00d517b030bba1d9))
+* **integrations:** прекратить хранение AES-ключа в той же БД, что и шифртекст (WORK4-003) ([8aacae9](https://github.com/xlabtg/teleton-agent/commit/8aacae90202b39e7c64a93a7b560b68229b7ffd6)), closes [#525](https://github.com/xlabtg/teleton-agent/issues/525)
+
+
+### Documentation
+
+* обновить версию форка в README с 0.8.26 до 0.8.27 ([f80cac0](https://github.com/xlabtg/teleton-agent/commit/f80cac099ce54c06a69bca0ff2c4f94874b7e762))
+
 ## [0.8.27](https://github.com/xlabtg/teleton-agent/compare/v0.8.26...v0.8.27) (2026-06-03)
 
 
