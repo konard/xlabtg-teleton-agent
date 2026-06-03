@@ -26,3 +26,4 @@ export {
   clientConfigPath,
   runnerBaseUrl,
 } from "./paths.js";
+export { GocoonSseProxy, completionToSse, type GocoonSseProxyOptions } from "./sse-proxy.js";

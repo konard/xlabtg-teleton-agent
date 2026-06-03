@@ -19,7 +19,7 @@ import { setToncenterApiKey } from "./ton/endpoint.js";
 import { TELETON_ROOT } from "./workspace/paths.js";
 import { join } from "path";
 import { existsSync } from "fs";
-import type { GocoonSupervisor } from "./gocoon/index.js";
+import type { GocoonSupervisor, GocoonSseProxy } from "./gocoon/index.js";
 import { ToolRegistry } from "./agent/tools/registry.js";
 import { registerAllTools } from "./agent/tools/register-all.js";
 import { type PluginModuleWithHooks } from "./agent/tools/plugin-loader.js";
@@ -70,6 +70,7 @@ export class TeletonApp {
   private apiServer: ApiServer | null = null;
   private pluginWatcher: PluginWatcher | null = null;
   private gocoonSupervisor: GocoonSupervisor | null = null;
+  private gocoonProxy: GocoonSseProxy | null = null;
   private mcpConnections: McpConnection[] = [];
   private callbackHandlerRegistered = false;
   private messageHandlersRegistered = false;
@@ -709,12 +710,20 @@ ${blue}  ┌──────────────────────�
           await this.gocoonSupervisor.start();
           log.info(`Gocoon runner started on port ${port}`);
         }
+        // pi-ai always streams and only parses SSE; the gocoon runner returns a
+        // single JSON document. Front the runner with a local proxy that frames
+        // its reply as SSE so streaming clients parse it. Keeps gocoon untouched.
+        const { GocoonSseProxy } = await import("./gocoon/index.js");
+        this.gocoonProxy = new GocoonSseProxy({ runnerPort: port });
+        await this.gocoonProxy.start();
         const { registerGocoonModels } = await import("./agent/client.js");
-        const models = await registerGocoonModels(port);
+        const models = await registerGocoonModels(this.gocoonProxy.port);
         if (models.length === 0) {
           throw new Error(`No models found on port ${port}`);
         }
-        log.info(`Gocoon ready: ${models.length} model(s) on port ${port}`);
+        log.info(
+          `Gocoon ready: ${models.length} model(s) (runner ${port}, sse-proxy ${this.gocoonProxy.port})`
+        );
       } catch (error: unknown) {
         // Non-fatal: keep the agent and WebUI alive so gocoon can be installed and
         // funded from the Gocoon page, then a restart activates it.
@@ -1127,7 +1136,14 @@ ${blue}  ┌──────────────────────�
       }
     }
 
-    // Stop the gocoon runner (when teleton supervises it)
+    // Stop the gocoon SSE proxy and runner (when teleton supervises them)
+    if (this.gocoonProxy) {
+      try {
+        this.gocoonProxy.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon sse-proxy stop failed");
+      }
+    }
     if (this.gocoonSupervisor) {
       try {
         this.gocoonSupervisor.stop();
