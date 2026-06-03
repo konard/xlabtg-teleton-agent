@@ -13,7 +13,7 @@
 
 import type { Tool } from "@mariozechner/pi-ai";
 
-const UNSUPPORTED_KEYS: ReadonlySet<string> = new Set([
+const UNSUPPORTED_KEYS = [
   "$schema",
   "$id",
   "$ref",
@@ -22,15 +22,15 @@ const UNSUPPORTED_KEYS: ReadonlySet<string> = new Set([
   "title",
   "default",
   "examples",
-]);
+] as const;
 
 export function sanitizeSchema(schema: Record<string, unknown>): Record<string, unknown> {
   if (!schema || typeof schema !== "object") return schema;
 
   const result: Record<string, unknown> = { ...schema };
 
-  for (const key of UNSUPPORTED_KEYS) {
-    delete result[key];
+  for (let i = 0; i < UNSUPPORTED_KEYS.length; i++) {
+    delete result[UNSUPPORTED_KEYS[i]];
   }
 
   if (Array.isArray(result.anyOf)) {
@@ -89,12 +89,24 @@ export function sanitizeSchema(schema: Record<string, unknown>): Record<string, 
   return result;
 }
 
+// Cache sanitized tools by identity — the tool set is stable within a session.
+const _sanitizedToolCache = new WeakMap<object, Tool>();
+
 export function sanitizeToolsForGemini(tools: Tool[]): Tool[] {
-  return tools.map(
-    (tool) =>
-      ({
+  const out: Tool[] = new Array(tools.length);
+  for (let i = 0; i < tools.length; i++) {
+    const tool = tools[i];
+    const cached = _sanitizedToolCache.get(tool as object);
+    if (cached) {
+      out[i] = cached;
+    } else {
+      const sanitized = {
         ...tool,
-        parameters: sanitizeSchema({ ...tool.parameters }),
-      }) as Tool
-  );
+        parameters: sanitizeSchema({ ...(tool.parameters as Record<string, unknown>) }),
+      } as Tool;
+      _sanitizedToolCache.set(tool as object, sanitized);
+      out[i] = sanitized;
+    }
+  }
+  return out;
 }
