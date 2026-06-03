@@ -44,6 +44,7 @@ import type {
   ToolCall,
   AssistantMessage,
   Message,
+  ToolResultMessage,
 } from "@mariozechner/pi-ai";
 import { CompactionManager, DEFAULT_COMPACTION_CONFIG } from "../memory/compaction.js";
 import { maskOldToolResults } from "../memory/observation-masking.js";
@@ -1029,13 +1030,14 @@ export class AgentRuntime {
         log.warn(`Tool result too large, truncated to ${resultText.length} chars`);
       }
 
-      const { buildToolResultMessage } = await import("../cocoon/tool-adapter.js");
-      const resultMsg = buildToolResultMessage(
-        sink.provider,
-        block,
-        resultText,
-        !exec.result.success
-      );
+      const resultMsg: ToolResultMessage = {
+        role: "toolResult",
+        toolCallId: block.id,
+        toolName: block.name,
+        content: [{ type: "text", text: resultText }],
+        isError: !exec.result.success,
+        timestamp: Date.now(),
+      };
       resultMessages.push(resultMsg);
       appendToTranscript(sink.sessionId, resultMsg);
     }

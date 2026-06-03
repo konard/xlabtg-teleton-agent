@@ -27,7 +27,7 @@ export function ProviderStep({ data, onChange }: StepProps) {
 
   // Load models when provider changes
   useEffect(() => {
-    if (!data.provider || data.provider === 'cocoon' || data.provider === 'local') {
+    if (!data.provider || data.provider === 'gocoon' || data.provider === 'local') {
       setModels([]);
       return;
     }
@@ -139,23 +139,23 @@ export function ProviderStep({ data, onChange }: StepProps) {
         </div>
       )}
 
-      {selected && !selected.requiresApiKey && selected.id === 'cocoon' && (
+      {selected && !selected.requiresApiKey && selected.id === 'gocoon' && (
         <div style={{ marginTop: '16px' }}>
           <div className="info-panel">
-            Cocoon Network uses a local proxy. No API key required.
+            Gocoon runs a local decentralized LLM on TON. No API key required.
           </div>
           <div className="form-group">
-            <label>Cocoon Proxy Port</label>
+            <label>gocoon-runner Port</label>
             <input
               type="number"
-              value={data.cocoonPort}
-              onChange={(e) => onChange({ ...data, cocoonPort: parseInt(e.target.value) || 0 })}
+              value={data.gocoonPort}
+              onChange={(e) => onChange({ ...data, gocoonPort: parseInt(e.target.value) || 0 })}
               min={1}
               max={65535}
               className="w-full"
             />
             <div className="helper-text">
-              Port where the Cocoon client proxy is running (1-65535).
+              Port where the gocoon runner is listening (1-65535).
             </div>
           </div>
         </div>
@@ -182,7 +182,7 @@ export function ProviderStep({ data, onChange }: StepProps) {
         </div>
       )}
 
-      {selected && selected.id !== 'cocoon' && selected.id !== 'local' && (
+      {selected && selected.id !== 'gocoon' && selected.id !== 'local' && (
         <div className="form-group" style={{ marginTop: '16px' }}>
           <label>Model</label>
           {loadingModels ? (

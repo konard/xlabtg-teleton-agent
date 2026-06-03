@@ -18,6 +18,8 @@ import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
 import { TELETON_ROOT } from "./workspace/paths.js";
 import { join } from "path";
+import { existsSync } from "fs";
+import type { GocoonSupervisor } from "./gocoon/index.js";
 import { ToolRegistry } from "./agent/tools/registry.js";
 import { registerAllTools } from "./agent/tools/register-all.js";
 import { type PluginModuleWithHooks } from "./agent/tools/plugin-loader.js";
@@ -67,6 +69,7 @@ export class TeletonApp {
   private webuiServer: WebUIServer | null = null;
   private apiServer: ApiServer | null = null;
   private pluginWatcher: PluginWatcher | null = null;
+  private gocoonSupervisor: GocoonSupervisor | null = null;
   private mcpConnections: McpConnection[] = [];
   private callbackHandlerRegistered = false;
   private messageHandlersRegistered = false;
@@ -429,7 +432,7 @@ ${blue}  ┌──────────────────────�
     // Initialize context builder for RAG search in agent
     this.agent.initializeContextBuilder(this.memory.embedder, getDatabase().isVectorSearchReady());
 
-    // Register provider-specific models (Cocoon / local LLM)
+    // Register provider-specific models (gocoon / local LLM)
     await this.initializeProviders();
 
     // Connect to Telegram
@@ -669,24 +672,37 @@ ${blue}  ┌──────────────────────�
   }
 
   /**
-   * Register provider-specific models (Cocoon Network / local LLM).
+   * Register provider-specific models (gocoon / local LLM).
    */
   private async initializeProviders(): Promise<void> {
-    if (this.config.agent.provider === "cocoon") {
+    if (this.config.agent.provider === "gocoon") {
+      const port = this.config.gocoon?.port ?? 10000;
+      const autoStart = this.config.gocoon?.auto_start ?? true;
       try {
-        const { registerCocoonModels } = await import("./agent/client.js");
-        const port = this.config.cocoon?.port ?? 10000;
-        const models = await registerCocoonModels(port);
+        if (autoStart) {
+          const { ensureGocoonBinaries, GocoonSupervisor, runnerBaseUrl, clientConfigPath } =
+            await import("./gocoon/index.js");
+          if (!existsSync(clientConfigPath())) {
+            throw new Error("gocoon is not set up yet — run `teleton gocoon init` first");
+          }
+          await ensureGocoonBinaries();
+          this.gocoonSupervisor = new GocoonSupervisor({
+            configPath: clientConfigPath(),
+            healthUrl: `${runnerBaseUrl(port)}/v1/models`,
+          });
+          await this.gocoonSupervisor.start();
+          log.info(`Gocoon runner started on port ${port}`);
+        }
+        const { registerGocoonModels } = await import("./agent/client.js");
+        const models = await registerGocoonModels(port);
         if (models.length === 0) {
           throw new Error(`No models found on port ${port}`);
         }
-        log.info(`Cocoon Network ready — ${models.length} model(s) on port ${port}`);
+        log.info(`Gocoon ready — ${models.length} model(s) on port ${port}`);
       } catch (error: unknown) {
-        log.error(
-          `Cocoon Network unavailable on port ${this.config.cocoon?.port ?? 10000}: ${getErrorMessage(error)}`
-        );
-        log.error("Start the Cocoon client first: cocoon start");
-        throw new Error(`Cocoon Network unavailable: ${getErrorMessage(error)}`);
+        log.error(`Gocoon unavailable on port ${port}: ${getErrorMessage(error)}`);
+        if (!autoStart) log.error("Start the gocoon runner first: teleton gocoon status");
+        throw new Error(`Gocoon unavailable: ${getErrorMessage(error)}`);
       }
     }
 
@@ -1089,6 +1105,15 @@ ${blue}  ┌──────────────────────�
         await this.pluginWatcher.stop();
       } catch (error: unknown) {
         log.error({ err: error }, "Plugin watcher stop failed");
+      }
+    }
+
+    // Stop the gocoon runner (when teleton supervises it)
+    if (this.gocoonSupervisor) {
+      try {
+        this.gocoonSupervisor.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon supervisor stop failed");
       }
     }
 

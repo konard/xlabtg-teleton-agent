@@ -140,7 +140,7 @@ async function checkApiKey(workspaceDir: string): Promise<CheckResult> {
       };
     }
 
-    if (provider === "cocoon" || provider === "local") {
+    if (provider === "gocoon" || provider === "local") {
       return {
         name: `${meta.displayName}`,
         status: "ok",

@@ -92,7 +92,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       toolLimit: p.toolLimit,
       keyPrefix: p.keyPrefix,
       consoleUrl: p.consoleUrl,
-      requiresApiKey: p.id !== "cocoon" && p.id !== "local",
+      requiresApiKey: p.id !== "gocoon" && p.id !== "local",
       requiresBaseUrl: p.id === "local",
     }));
     return c.json({ success: true, data: providers });
@@ -542,7 +542,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         },
         mcp: { servers: {} },
         plugins: {},
-        ...(input.cocoon ? { cocoon: input.cocoon } : {}),
+        ...(input.gocoon ? { gocoon: input.gocoon } : {}),
         ...(input.tonapi_key ? { tonapi_key: input.tonapi_key } : {}),
         ...(input.toncenter_api_key ? { toncenter_api_key: input.toncenter_api_key } : {}),
         ...(input.tavily_api_key ? { tavily_api_key: input.tavily_api_key } : {}),

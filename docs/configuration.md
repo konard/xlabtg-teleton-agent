@@ -23,7 +23,7 @@ Run `teleton setup` to generate a config file interactively, or copy `config.exa
 - [plugins](#plugins)
 - [ton_proxy](#ton_proxy)
 - [api](#api)
-- [cocoon](#cocoon)
+- [gocoon](#gocoon)
 - [tonapi_key](#tonapi_key)
 - [toncenter_api_key](#toncenter_api_key)
 - [tavily_api_key](#tavily_api_key)
@@ -38,7 +38,7 @@ LLM provider and agentic loop configuration.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `codex`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`. |
+| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `codex`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `gocoon`, `local`. |
 | `agent.api_key` | `string` | `""` | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
 | `agent.model` | `string` | `"claude-haiku-4-5-20251001"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
 | `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-haiku-4-5-20251001` for Anthropic, `gpt-4o-mini` for OpenAI). |
@@ -96,7 +96,7 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 | `zai` | `glm-5.1` | `glm-4.5-air` |
 | `minimax` | `MiniMax-M2.7` | `MiniMax-M2.7` |
 | `huggingface` | `deepseek-ai/DeepSeek-V3.2` | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
-| `cocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
+| `gocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
 | `local` | `auto` | `auto` |
 
 ---
@@ -485,20 +485,20 @@ api:
 
 ---
 
-## cocoon
+## gocoon
 
-Cocoon Network configuration. The Cocoon provider is a decentralized LLM proxy that pays in TON. It requires an external `cocoon-cli` process running on the specified port.
+Gocoon configuration. Gocoon is a pure-Go COCOON client — a decentralized LLM that pays in TON. It exposes a native OpenAI-compatible API (with function calling) and requires the `gocoon-runner` process running on the specified port.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `cocoon.port` | `number` | `10000` | HTTP port of the `cocoon-cli` proxy (1-65535). |
+| `gocoon.port` | `number` | `10000` | HTTP port of the `gocoon-runner` OpenAI-compatible API (1-65535). |
 
-The `cocoon` section is optional. Only needed when `agent.provider` is set to `"cocoon"`.
+The `gocoon` section is optional. Only needed when `agent.provider` is set to `"gocoon"`.
 
 ### Example
 
 ```yaml
-cocoon:
+gocoon:
   port: 10000
 ```
 

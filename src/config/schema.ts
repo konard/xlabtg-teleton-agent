@@ -356,17 +356,21 @@ export const ConfigSchema = z.object({
     .record(z.string(), z.unknown())
     .default({})
     .describe("Per-plugin config (key = plugin name with underscores)"),
-  cocoon: z
+  gocoon: z
     .object({
       port: z
         .number()
         .min(1)
         .max(65535)
         .default(10000)
-        .describe("HTTP port of the cocoon-cli proxy"),
+        .describe("HTTP port of the gocoon-runner OpenAI-compatible API"),
+      auto_start: z
+        .boolean()
+        .optional()
+        .describe("Auto-install and supervise the gocoon-runner on start (default: true)"),
     })
     .optional()
-    .describe("Cocoon Network — expects external cocoon-cli running on this port"),
+    .describe("Gocoon — pure-Go COCOON client (decentralized LLM on TON)"),
   tonapi_key: z
     .string()
     .optional()

@@ -262,7 +262,7 @@ interface BuildConfigInput {
   tonapiKey?: string;
   toncenterApiKey?: string;
   tavilyApiKey?: string;
-  cocoonPort?: number;
+  gocoonPort?: number;
   sessionPath: string;
   workspaceRoot: string;
 }
@@ -367,8 +367,8 @@ function buildConfig(input: BuildConfigInput): Config {
       self_configurable: false,
     },
     plugins: {},
-    ...(input.provider === "cocoon" && input.cocoonPort
-      ? { cocoon: { port: input.cocoonPort } }
+    ...(input.provider === "gocoon" && input.gocoonPort
+      ? { gocoon: { port: input.gocoonPort } }
       : {}),
     tonapi_key: input.tonapiKey,
     toncenter_api_key: input.toncenterApiKey,
@@ -466,7 +466,7 @@ interface OnboardState {
   selectedModel: string;
   apiKey: string;
   localBaseUrl: string;
-  cocoonInstance: number;
+  gocoonInstance: number;
   apiId: number;
   apiHash: string;
   phone: string;
@@ -592,7 +592,7 @@ async function stepProvider(
   selectedProvider: SupportedProvider;
   apiKey: string;
   localBaseUrl: string;
-  cocoonInstance: number;
+  gocoonInstance: number;
   selectedModel: string;
 }> {
   redraw(1);
@@ -622,16 +622,16 @@ async function stepProvider(
     );
   }
 
-  // API key (or Cocoon / Local setup)
+  // API key (or Gocoon / Local setup)
   let apiKey = "";
   let localBaseUrl = "";
-  let cocoonInstance = 10000;
-  if (selectedProvider === "cocoon") {
-    // Cocoon Network — no API key, managed externally via cocoon-cli
+  let gocoonInstance = 10000;
+  if (selectedProvider === "gocoon") {
+    // Gocoon — no API key, decentralized LLM on TON via the gocoon-runner
     apiKey = "";
 
-    const cocoonPort = await input({
-      message: "Cocoon proxy HTTP port",
+    const gocoonPort = await input({
+      message: "gocoon-runner HTTP port",
       default: "10000",
       theme,
       validate: (value = "") => {
@@ -639,17 +639,17 @@ async function stepProvider(
         return n >= 1 && n <= 65535 ? true : "Must be a port number (1-65535)";
       },
     });
-    cocoonInstance = parseInt(cocoonPort.trim(), 10);
+    gocoonInstance = parseInt(gocoonPort.trim(), 10);
 
     noteBox(
-      "Cocoon Network — Decentralized LLM on TON\n" +
-        "No API key needed. Requires cocoon-cli running externally.\n" +
-        `Teleton will connect to http://localhost:${cocoonInstance}/v1/`,
-      "Cocoon Network",
+      "Gocoon — Decentralized LLM on TON\n" +
+        "No API key needed. Requires the gocoon runner running externally.\n" +
+        `Teleton will connect to http://localhost:${gocoonInstance}/v1/`,
+      "Gocoon",
       TON
     );
 
-    STEPS[1].value = `${providerMeta.displayName}  ${DIM(`port ${cocoonInstance}`)}`;
+    STEPS[1].value = `${providerMeta.displayName}  ${DIM(`port ${gocoonInstance}`)}`;
   } else if (selectedProvider === "local") {
     // Local LLM — no API key, needs base URL
     apiKey = "";
@@ -733,7 +733,7 @@ async function stepProvider(
   // Model selection (advanced mode only, after provider + API key)
   let selectedModel = providerMeta.defaultModel;
 
-  if (selectedProvider !== "cocoon" && selectedProvider !== "local") {
+  if (selectedProvider !== "gocoon" && selectedProvider !== "local") {
     const providerModels = getModelsForProvider(selectedProvider);
     const modelChoices = [
       ...providerModels,
@@ -762,7 +762,7 @@ async function stepProvider(
     STEPS[1].value = `${STEPS[1].value ?? providerMeta.displayName}, ${modelLabel}`;
   }
 
-  return { selectedProvider, apiKey, localBaseUrl, cocoonInstance, selectedModel };
+  return { selectedProvider, apiKey, localBaseUrl, gocoonInstance, selectedModel };
 }
 
 /** Step 2: Config — admin user ID, DM/group policies, iterations, exec mode. */
@@ -1255,7 +1255,7 @@ async function stepConnect(
     tonapiKey: state.tonapiKey,
     toncenterApiKey: state.toncenterApiKey,
     tavilyApiKey: state.tavilyApiKey,
-    cocoonPort: state.selectedProvider === "cocoon" ? state.cocoonInstance : undefined,
+    gocoonPort: state.selectedProvider === "gocoon" ? state.gocoonInstance : undefined,
     sessionPath: workspace.sessionPath,
     workspaceRoot: workspace.root,
   });
@@ -1324,7 +1324,7 @@ async function runInteractiveOnboarding(
     selectedModel: "",
     apiKey: "",
     localBaseUrl: "",
-    cocoonInstance: 10000,
+    gocoonInstance: 10000,
     apiId: 0,
     apiHash: "",
     phone: "",
@@ -1360,7 +1360,7 @@ async function runInteractiveOnboarding(
   state.selectedProvider = provider.selectedProvider;
   state.apiKey = provider.apiKey;
   state.localBaseUrl = provider.localBaseUrl;
-  state.cocoonInstance = provider.cocoonInstance;
+  state.gocoonInstance = provider.gocoonInstance;
   state.selectedModel = provider.selectedModel;
 
   // Step 2: Config
@@ -1418,7 +1418,7 @@ async function runNonInteractiveOnboarding(
 ): Promise<void> {
   const selectedProvider = options.provider || "anthropic";
   const nonInteractiveMode = options.mode || "user";
-  const needsApiKey = selectedProvider !== "cocoon" && selectedProvider !== "local";
+  const needsApiKey = selectedProvider !== "gocoon" && selectedProvider !== "local";
   if (nonInteractiveMode === "bot") {
     if (!options.botToken) {
       prompter.error("Non-interactive bot mode requires: --bot-token");

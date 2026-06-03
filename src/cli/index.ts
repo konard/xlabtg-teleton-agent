@@ -4,6 +4,7 @@ import { doctorCommand } from "./commands/doctor.js";
 import { mcpAddCommand, mcpRemoveCommand, mcpListCommand } from "./commands/mcp.js";
 import { configCommand } from "./commands/config.js";
 import { apiRotateKeyCommand, apiFingerprintCommand } from "./commands/api.js";
+import { registerGocoonCommand } from "./commands/gocoon.js";
 import { main as startApp } from "../index.js";
 import { configExists, getDefaultConfigPath } from "../config/loader.js";
 import { readFileSync, existsSync } from "fs";
@@ -238,6 +239,9 @@ program
       process.exit(1);
     }
   });
+
+// gocoon — decentralized LLM on TON (install, setup, top-up, withdraw)
+registerGocoonCommand(program);
 
 program.action(() => {
   program.help();

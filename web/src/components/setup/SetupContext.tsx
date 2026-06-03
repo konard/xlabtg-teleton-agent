@@ -27,7 +27,7 @@ export interface WizardData {
   agentName: string;
   provider: string;
   apiKey: string;
-  cocoonPort: number;
+  gocoonPort: number;
   localUrl: string;
   apiId: number;
   apiHash: string;
@@ -71,7 +71,7 @@ const DEFAULTS: WizardData = {
   agentName: 'Nova',
   provider: '',
   apiKey: '',
-  cocoonPort: 11435,
+  gocoonPort: 10000,
   localUrl: 'http://localhost:11434/v1',
   apiId: 0,
   apiHash: '',
@@ -113,8 +113,8 @@ function validateStep(step: number, data: WizardData): boolean {
       return data.riskAccepted;
     case 1:
       if (!data.provider) return false;
-      if (data.provider === 'cocoon') {
-        return data.cocoonPort >= 1 && data.cocoonPort <= 65535;
+      if (data.provider === 'gocoon') {
+        return data.gocoonPort >= 1 && data.gocoonPort <= 65535;
       }
       if (data.provider === 'local') {
         try { new URL(data.localUrl); return true; }
@@ -123,7 +123,7 @@ function validateStep(step: number, data: WizardData): boolean {
       return data.apiKey.length > 0;
     case 2: {
       // Config
-      if (data.provider !== 'cocoon' && data.provider !== 'local') {
+      if (data.provider !== 'gocoon' && data.provider !== 'local') {
         const modelValue = data.model === '__custom__' ? data.customModel : data.model;
         if (!modelValue) return false;
       }
@@ -204,7 +204,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
     return {
       agent: {
         provider: data.provider,
-        ...(data.provider !== 'cocoon' && data.provider !== 'local' && data.apiKey ? { api_key: data.apiKey } : {}),
+        ...(data.provider !== 'gocoon' && data.provider !== 'local' && data.apiKey ? { api_key: data.apiKey } : {}),
         ...(data.provider === 'local' ? { base_url: data.localUrl } : {}),
         ...(resolvedModel ? { model: resolvedModel } : {}),
         max_agentic_iterations: data.maxIterations,
@@ -222,7 +222,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
         ...(data.botToken ? { bot_token: data.botToken } : {}),
         ...(data.botUsername ? { bot_username: data.botUsername } : {}),
       },
-      ...(data.provider === 'cocoon' ? { cocoon: { port: data.cocoonPort } } : {}),
+      ...(data.provider === 'gocoon' ? { gocoon: { port: data.gocoonPort } } : {}),
       deals: {
         enabled: !!data.botToken,
         ...(data.customizeThresholds

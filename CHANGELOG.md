@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Replaced the `cocoon` provider with `gocoon`** — a native OpenAI-compatible, pure-Go COCOON client ([gocoon](https://github.com/TONresistor/gocoon)). Tool-calling now uses the model's native `tools`/`tool_calls` instead of the old XML-injection shim, which has been removed (`src/cocoon/` deleted). **Breaking:** set `agent.provider: gocoon` and rename the `cocoon:` config block to `gocoon:` (`gocoon.port`, default `10000`).
+
 ## [0.8.1] - 2026-03-05
 
 ### Added

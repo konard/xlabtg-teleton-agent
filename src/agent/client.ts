@@ -19,7 +19,7 @@ import { getProviderModel } from "../providers/model-resolver.js";
 // layer so non-agent consumers (e.g. memory) can resolve models without importing
 // from agent/. Re-exported here for backward compatibility with existing importers.
 export {
-  registerCocoonModels,
+  registerGocoonModels,
   registerLocalModels,
   getProviderModel,
   getUtilityModel,
@@ -43,10 +43,10 @@ export function isOAuthToken(apiKey: string, provider?: string): boolean {
   return apiKey.startsWith("sk-ant-oat01-");
 }
 
-/** Resolve the effective API key for a provider (local/cocoon need no real key) */
+/** Resolve the effective API key for a provider (local/gocoon need no real key) */
 export function getEffectiveApiKey(provider: string, rawKey: string): string {
   if (provider === "local") return "local";
-  if (provider === "cocoon") return "";
+  if (provider === "gocoon") return "gocoon";
   if (provider === "codex") return getCodexApiKey(rawKey);
   return rawKey;
 }
@@ -71,7 +71,7 @@ const THINK_RE = /<think>[\s\S]*?<\/think>/g;
 
 /**
  * Shared post-processing for both complete() and stream() responses: strip
- * <think> blocks (Cocoon, Mistral, etc.), persist the transcript, extract the
+ * <think> blocks (Mistral, local models, etc.), persist the transcript, extract the
  * text content, and append the response to the context.
  */
 function finalizeResponse(
@@ -106,23 +106,10 @@ export async function chatWithContext(
 ): Promise<ChatResponse> {
   const provider = (config.provider || "anthropic") as SupportedProvider;
   const model = getProviderModel(provider, config.model);
-  const isCocoon = provider === "cocoon";
-
-  let tools =
+  const tools =
     provider === "google" && options.tools ? sanitizeToolsForGemini(options.tools) : options.tools;
 
-  // Cocoon: disable thinking mode + inject tools into system prompt
-  let systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
-  let cocoonAllowedTools: Set<string> | undefined;
-  if (isCocoon) {
-    systemPrompt = "/no_think\n" + systemPrompt;
-    if (tools && tools.length > 0) {
-      cocoonAllowedTools = new Set(tools.map((t) => t.name));
-      const { injectToolsIntoSystemPrompt } = await import("../cocoon/tool-adapter.js");
-      systemPrompt = injectToolsIntoSystemPrompt(systemPrompt, tools);
-      tools = undefined; // Don't send via API
-    }
-  }
+  const systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
 
   const context: Context = {
     ...options.context,
@@ -139,10 +126,6 @@ export async function chatWithContext(
     sessionId: options.sessionId,
     cacheRetention: "long",
   };
-  if (isCocoon) {
-    const { stripCocoonPayload } = await import("../cocoon/tool-adapter.js");
-    completeOptions.onPayload = stripCocoonPayload;
-  }
 
   let response = await complete(model, context, completeOptions as ProviderStreamOptions);
 
@@ -154,24 +137,6 @@ export async function chatWithContext(
     if (refreshedKey) {
       completeOptions.apiKey = refreshedKey;
       response = await complete(model, context, completeOptions as ProviderStreamOptions);
-    }
-  }
-
-  // Cocoon: parse <tool_call> from text response
-  if (isCocoon) {
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (textBlock?.type === "text" && textBlock.text.includes("<tool_call>")) {
-      const { parseToolCallsFromText, extractPlainText } =
-        await import("../cocoon/tool-adapter.js");
-      const syntheticCalls = parseToolCallsFromText(textBlock.text, cocoonAllowedTools);
-      if (syntheticCalls.length > 0) {
-        const plainText = extractPlainText(textBlock.text);
-        response.content = [
-          ...(plainText ? [{ type: "text" as const, text: plainText }] : []),
-          ...syntheticCalls,
-        ];
-        (response as { stopReason: AssistantMessage["stopReason"] }).stopReason = "toolUse";
-      }
     }
   }
 

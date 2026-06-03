@@ -85,7 +85,7 @@
 ## Prerequisites
 
 - **Node.js 20.0.0+** - [Download](https://nodejs.org/)
-- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Codex (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
+- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens) — or keyless: Codex (auto-detect), Gocoon (TON), Local (Ollama/vLLM)
 - **Telegram Account** - Dedicated account recommended for security
 - **Telegram API Credentials** - From [my.telegram.org/apps](https://my.telegram.org/apps)
 - **Your Telegram User ID** - Message [@userinfobot](https://t.me/userinfobot)
@@ -172,7 +172,7 @@ The `teleton setup` wizard generates a fully configured `~/.teleton/config.yaml`
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
+  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | gocoon | local
   api_key: "sk-ant-api03-..."
   model: "claude-haiku-4-5-20251001"
   utility_model: "claude-haiku-4-5-20251001"  # for summarization, compaction, vision
@@ -235,7 +235,7 @@ ton_proxy:                   # Optional: .ton domain proxy
 <td align="center"><br><b>ZAI</b><br>GLM-5<br><br></td>
 <td align="center"><br><b>MiniMax</b><br>M2.5<br><br></td>
 <td align="center"><br><b>Hugging Face</b><br>DeepSeek V3.2<br><br></td>
-<td align="center"><br><b>Cocoon</b><br>Decentralized (TON)<br><br></td>
+<td align="center"><br><b>Gocoon</b><br>Decentralized (TON)<br><br></td>
 <td align="center"><br><b>Local</b><br>Ollama, vLLM, LM Studio<br><br></td>
 </tr>
 </table>
@@ -475,7 +475,7 @@ The SDK provides namespaced access to core services:
 
 | Layer | Technology |
 |-------|------------|
-| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Codex, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Cocoon, Local) |
+| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (15 providers: Anthropic, Codex, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, Gocoon, Local) |
 | Telegram Userbot | [GramJS](https://gram.js.org/) Layer 223 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |
@@ -593,7 +593,7 @@ packages/sdk/               # Published @teleton-agent/sdk
 | **Payment security** | `INSERT OR IGNORE` on tx hashes prevents double-spend, atomic status transitions prevent race conditions |
 | **Exec audit** | All YOLO mode commands logged to `exec_audit` table with user, command, output, and timestamps |
 | **Pino redaction** | Structured logging with automatic redaction of apiKey, password, secret, token, mnemonic fields |
-| **Tool scoping** | Financial tools DM-only, moderation group-only, admin-only policies, per-chat permissions configurable at runtime |
+| **Tool access control** | Per-tool access level (all, allow-list, admin, off), DM vs group gated by global policies, per-group module permissions, all runtime-configurable |
 
 ### Reporting Vulnerabilities
 
