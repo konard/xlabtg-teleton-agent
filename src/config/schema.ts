@@ -370,7 +370,7 @@ export const ConfigSchema = z.object({
         .describe("Auto-install and supervise the gocoon-runner on start (default: true)"),
     })
     .optional()
-    .describe("Gocoon — pure-Go COCOON client (decentralized LLM on TON)"),
+    .describe("Gocoon: pure-Go COCOON client (decentralized LLM on TON)"),
   tonapi_key: z
     .string()
     .optional()

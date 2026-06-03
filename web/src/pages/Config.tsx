@@ -11,7 +11,6 @@ import { EditableField } from '../components/EditableField';
 import { ConfigSection } from '../components/ConfigSection';
 import { InfoTip } from '../components/InfoTip';
 import { Alert } from '../components/Alert';
-import { GocoonPanel } from '../components/GocoonPanel';
 import { errMsg } from '../lib/utils';
 import { toast } from '../lib/toast';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -144,30 +143,6 @@ export function Config() {
               handleProviderCancel={config.handleProviderCancel}
             />
           </div>
-
-          {config.getLocal('agent.provider') === 'gocoon' && (
-            <>
-              <div className="config-subhead">Gocoon</div>
-              <GocoonPanel />
-              <div className="card">
-                <EditableField
-                  label="Runner Port"
-                  description="gocoon-runner port"
-                  configKey="gocoon.port"
-                  type="text"
-                  value={config.getLocal('gocoon.port')}
-                  serverValue={config.getServer('gocoon.port')}
-                  onChange={(v) => config.setLocal('gocoon.port', v)}
-                  onSave={(v) => config.saveConfig('gocoon.port', v)}
-                  onCancel={() => config.cancelLocal('gocoon.port')}
-                  min={1}
-                  max={65535}
-                  placeholder="10000"
-                  hotReload="restart"
-                />
-              </div>
-            </>
-          )}
         </>
       )}
 

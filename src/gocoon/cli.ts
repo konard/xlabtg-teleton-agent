@@ -1,6 +1,6 @@
 import { execFile, spawn } from "child_process";
 import { promisify } from "util";
-import { mkdirSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { createLogger } from "../utils/logger.js";
 import { fetchWithTimeout } from "../utils/fetch.js";
 import { ensureGocoonBinaries } from "./installer.js";
@@ -10,7 +10,7 @@ const log = createLogger("gocoon");
 const execFileAsync = promisify(execFile);
 const MAX_BUFFER = 8 * 1024 * 1024;
 
-/** Run a gocoon subcommand and capture stdout. Use for `--json` / short commands. */
+// Run a gocoon subcommand and capture stdout (for --json / short commands).
 export async function runGocoon(args: string[], timeoutMs = 60_000): Promise<string> {
   const { gocoon } = await ensureGocoonBinaries();
   const { stdout } = await execFileAsync(gocoon, args, {
@@ -20,11 +20,7 @@ export async function runGocoon(args: string[], timeoutMs = 60_000): Promise<str
   return stdout;
 }
 
-/**
- * Run a long-running / streaming gocoon subcommand (wait-funded, channel close,
- * wallet withdraw…), forwarding each output line to `onLine`. Resolves on exit 0,
- * rejects otherwise.
- */
+// Run a long-running gocoon subcommand, forwarding output lines. Resolves on exit 0.
 export async function streamGocoon(args: string[], onLine?: (line: string) => void): Promise<void> {
   const { gocoon } = await ensureGocoonBinaries();
   await new Promise<void>((resolve, reject) => {
@@ -62,8 +58,23 @@ export interface InitSummary {
   configPath: string;
 }
 
-/** `gocoon init --dir <data> --json --force` — generates the COCOON wallet + config (spends nothing). */
+export function walletExists(): boolean {
+  return existsSync(walletPath()) && existsSync(clientConfigPath());
+}
+
+// Create the COCOON wallet, or reuse the existing one (stable funding address).
 export async function gocoonInit(): Promise<InitSummary> {
+  if (walletExists()) {
+    const info = await walletInfo();
+    return {
+      fundAddress: info.fundAddress,
+      ownerAddress: info.ownerAddress,
+      recommendedFundingTon: info.recommendedFundingTon,
+      recommendedFundingNano: "",
+      walletPath: walletPath(),
+      configPath: clientConfigPath(),
+    };
+  }
   mkdirSync(gocoonDataDir(), { recursive: true });
   const j = parseJson(
     await runGocoon(["init", "--dir", gocoonDataDir(), "--json", "--force"], 120_000)
@@ -84,9 +95,9 @@ export interface WalletInfo {
   balanceNano: bigint;
   balanceTon: string;
   funded: boolean;
+  recommendedFundingTon: string;
 }
 
-/** `gocoon wallet info --json` — current COCOON wallet balance + funding state. */
 export async function walletInfo(): Promise<WalletInfo> {
   const j = parseJson(
     await runGocoon([
@@ -105,10 +116,10 @@ export async function walletInfo(): Promise<WalletInfo> {
     balanceNano: BigInt(String(j.balance_nano ?? "0")),
     balanceTon: String(j.balance_ton ?? "0"),
     funded: Boolean(j.funded),
+    recommendedFundingTon: String(j.recommended_funding_ton ?? "20"),
   };
 }
 
-/** Block until the COCOON wallet funding confirms on-chain (`gocoon wallet wait-funded`). */
 export async function waitFunded(onLine?: (line: string) => void): Promise<void> {
   await streamGocoon(
     ["wallet", "wait-funded", "--wallet", walletPath(), "--config", clientConfigPath()],
@@ -116,22 +127,19 @@ export async function waitFunded(onLine?: (line: string) => void): Promise<void>
   );
 }
 
-/**
- * Read the active proxy's `client_sc` (channel smart-contract) address from the
- * running runner's /jsonstats. Required by channel topup/close. The runner must
- * be up with a registered proxy.
- */
+// Read the active proxy's client_sc from the running runner. Needed by topup/close.
 export async function fetchClientSC(port: number): Promise<string> {
   const res = await fetchWithTimeout(`${runnerBaseUrl(port)}/jsonstats`, { timeoutMs: 3_000 });
-  if (!res.ok)
-    throw new Error(`runner /jsonstats → HTTP ${res.status} (is the gocoon runner active?)`);
+  if (!res.ok) {
+    throw new Error(`runner /jsonstats returned HTTP ${res.status} (is the gocoon runner active?)`);
+  }
   const j = (await res.json()) as { proxies?: { sc_address?: string }[] };
   const addr = j.proxies?.[0]?.sc_address?.trim();
-  if (!addr) throw new Error("runner has no proxy/client_sc yet — wait for discovery and retry");
+  if (!addr) throw new Error("runner has no proxy/client_sc yet; wait for discovery and retry");
   return addr;
 }
 
-/** Convert a decimal TON string into integer nanoTON (≤ 9 decimals). */
+// Decimal TON string to integer nanoTON (max 9 decimals).
 export function tonToNano(ton: string): string {
   const s = ton.trim();
   if (!/^\d+(\.\d{1,9})?$/.test(s)) throw new Error(`invalid TON amount: "${ton}"`);

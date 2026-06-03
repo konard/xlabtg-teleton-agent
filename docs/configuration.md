@@ -487,7 +487,7 @@ api:
 
 ## gocoon
 
-Gocoon configuration. Gocoon is a pure-Go COCOON client — a decentralized LLM that pays in TON. It exposes a native OpenAI-compatible API (with function calling) and requires the `gocoon-runner` process running on the specified port.
+Gocoon configuration. Gocoon is a pure-Go COCOON client: a decentralized LLM that pays in TON. It exposes a native OpenAI-compatible API (with function calling) and requires the `gocoon-runner` process running on the specified port.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|

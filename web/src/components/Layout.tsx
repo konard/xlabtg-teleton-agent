@@ -70,6 +70,16 @@ function IconWallet() {
   );
 }
 
+function IconGocoon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h12l4 6-10 13L2 9Z" />
+      <path d="M11 3 8 9l4 13 4-13-3-6" />
+      <path d="M2 9h20" />
+    </svg>
+  );
+}
+
 function IconWorkspace() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
@@ -186,6 +196,7 @@ function DashboardNav() {
     { to: '/memory',    icon: <IconMemory />,    label: 'Memory' },
     { to: '/conversations', icon: <IconConversations />, label: 'Chats' },
     { to: '/wallet',        icon: <IconWallet />,        label: 'Wallet' },
+    { to: '/gocoon',        icon: <IconGocoon />,        label: 'Gocoon' },
     { to: '/workspace', icon: <IconWorkspace />, label: 'Workspace' },
     { to: '/tasks',     icon: <IconTasks />,     label: 'Tasks' },
     { to: '/mcp',       icon: <IconMCP />,       label: 'MCP' },

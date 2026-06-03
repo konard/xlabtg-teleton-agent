@@ -14,16 +14,12 @@ import {
   type GocoonProgress,
 } from "../../gocoon/index.js";
 
-/**
- * Gocoon management routes — thin shells over the shared lifecycle core, so the
- * WebUI drives the exact same install/setup/top-up/withdraw flow as the CLI.
- * Mounted at /api/gocoon (WebUI) and /v1/gocoon (Management API).
- */
+// gocoon management routes (install/setup/top-up/withdraw), thin shells over the
+// same lifecycle the CLI uses. Mounted at /api/gocoon and /v1/gocoon.
 export function createGocoonRoutes(deps: WebUIServerDeps) {
   const app = new Hono();
   const port = (): number => deps.agent.getConfig().gocoon?.port ?? GOCOON_DEFAULT_PORT;
 
-  // One withdraw at a time: POST starts it, GET polls progress (myduckai pattern).
   let withdraw: {
     running: boolean;
     done: boolean;
@@ -38,7 +34,14 @@ export function createGocoonRoutes(deps: WebUIServerDeps) {
     };
     try {
       const w = await walletInfo();
-      data.wallet = { ownerAddress: w.ownerAddress, balanceTon: w.balanceTon, funded: w.funded };
+      data.wallet = {
+        fundAddress: w.fundAddress,
+        ownerAddress: w.ownerAddress,
+        balanceTon: w.balanceTon,
+        balanceNano: w.balanceNano.toString(),
+        funded: w.funded,
+        recommendedFundingTon: w.recommendedFundingTon,
+      };
     } catch {
       data.wallet = null;
     }
@@ -71,7 +74,7 @@ export function createGocoonRoutes(deps: WebUIServerDeps) {
     }
   });
 
-  // Poll this until `funded` flips true after the user sends the TON.
+  // Poll this until funded flips true after the user sends the TON.
   app.get("/balance", async (c) => {
     try {
       const w = await walletInfo();
@@ -97,6 +100,7 @@ export function createGocoonRoutes(deps: WebUIServerDeps) {
     }
   });
 
+  // Async: POST starts a withdraw, GET polls its progress.
   app.post("/withdraw", async (c) => {
     if (withdraw?.running) {
       return c.json(

@@ -190,7 +190,7 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     displayName: "Gocoon (Decentralized, TON)",
     envVar: "",
     keyPrefix: null,
-    keyHint: "No API key needed — pays in TON",
+    keyHint: "No API key, pays in TON",
     consoleUrl: "https://github.com/TONresistor/gocoon",
     defaultModel: "Qwen/Qwen3-32B",
     utilityModel: "Qwen/Qwen3-32B",

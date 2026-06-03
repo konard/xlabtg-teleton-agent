@@ -392,9 +392,9 @@ export const api = {
     return fetchAPI<APIResponse<StatusData>>('/status');
   },
 
-  // ── gocoon — decentralized LLM on TON ──
+  // gocoon: decentralized LLM on TON
   async gocoonStatus() {
-    return fetchAPI<APIResponse<{ installed: boolean; version: string | null; wallet: { ownerAddress: string; balanceTon: string; funded: boolean } | null; runner: boolean }>>('/gocoon/status');
+    return fetchAPI<APIResponse<{ installed: boolean; version: string | null; wallet: { fundAddress: string; ownerAddress: string; balanceTon: string; balanceNano: string; funded: boolean; recommendedFundingTon: string } | null; runner: boolean }>>('/gocoon/status');
   },
   async gocoonInstall() {
     return fetchAPI<APIResponse<{ version: string }>>('/gocoon/install', { method: 'POST' });

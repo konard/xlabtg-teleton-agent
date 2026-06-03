@@ -680,15 +680,31 @@ ${blue}  ┌──────────────────────�
       const autoStart = this.config.gocoon?.auto_start ?? true;
       try {
         if (autoStart) {
-          const { ensureGocoonBinaries, GocoonSupervisor, runnerBaseUrl, clientConfigPath } =
-            await import("./gocoon/index.js");
+          const {
+            ensureGocoonBinaries,
+            GocoonSupervisor,
+            runnerBaseUrl,
+            clientConfigPath,
+            walletInfo,
+          } = await import("./gocoon/index.js");
           if (!existsSync(clientConfigPath())) {
-            throw new Error("gocoon is not set up yet — run `teleton gocoon init` first");
+            throw new Error(
+              "gocoon is not set up yet; run `teleton gocoon init` (or use the Gocoon page) first"
+            );
           }
           await ensureGocoonBinaries();
+          // Opening the channel needs free TON on-chain; fail clearly instead of a health timeout.
+          const wallet = await walletInfo();
+          if (wallet.balanceNano < 2_000_000_000n) {
+            throw new Error(
+              `COCOON wallet has ${wallet.balanceTon} TON; gocoon needs at least 2 TON free to open the channel. ` +
+                `Fund ${wallet.fundAddress} (Gocoon page or \`teleton gocoon init\`), then restart.`
+            );
+          }
           this.gocoonSupervisor = new GocoonSupervisor({
             configPath: clientConfigPath(),
             healthUrl: `${runnerBaseUrl(port)}/v1/models`,
+            startGraceMs: 60_000, // first on-chain channel registration can take ~60s
           });
           await this.gocoonSupervisor.start();
           log.info(`Gocoon runner started on port ${port}`);
@@ -698,11 +714,14 @@ ${blue}  ┌──────────────────────�
         if (models.length === 0) {
           throw new Error(`No models found on port ${port}`);
         }
-        log.info(`Gocoon ready — ${models.length} model(s) on port ${port}`);
+        log.info(`Gocoon ready: ${models.length} model(s) on port ${port}`);
       } catch (error: unknown) {
-        log.error(`Gocoon unavailable on port ${port}: ${getErrorMessage(error)}`);
-        if (!autoStart) log.error("Start the gocoon runner first: teleton gocoon status");
-        throw new Error(`Gocoon unavailable: ${getErrorMessage(error)}`);
+        // Non-fatal: keep the agent and WebUI alive so gocoon can be installed and
+        // funded from the Gocoon page, then a restart activates it.
+        log.warn(`Gocoon not ready: ${getErrorMessage(error)}`);
+        log.warn(
+          "Agent is up but can't chat until gocoon is funded. Open the Gocoon page (or run `teleton gocoon init`), then restart."
+        );
       }
     }
 

@@ -3195,3 +3195,85 @@ select:focus-visible,
   color: var(--accent);
   box-shadow: var(--shadow-sm);
 }
+
+/* Gocoon page */
+.gocoon-steps {
+  display: flex;
+  align-items: center;
+  padding: var(--space-md) var(--space-lg);
+  margin-bottom: var(--space-lg);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-glass);
+  border-radius: var(--radius-card);
+}
+.gocoon-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.gocoon-step:last-child {
+  flex: 0 0 auto;
+}
+.gocoon-step-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-pill);
+  font-size: var(--font-xs);
+  font-weight: 700;
+  flex-shrink: 0;
+  border: 1.5px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-tertiary);
+  transition: all var(--duration-color) var(--easing-standard);
+}
+.gocoon-step-dot.done {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--text-on-accent);
+}
+.gocoon-step-dot.current {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.gocoon-step-label {
+  font-size: var(--font-sm);
+  font-weight: 600;
+  color: var(--text-tertiary);
+  white-space: nowrap;
+}
+.gocoon-step-label.done,
+.gocoon-step-label.current {
+  color: var(--text-primary);
+}
+.gocoon-step-line {
+  flex: 1;
+  height: 1.5px;
+  margin: 0 10px;
+  min-width: 14px;
+  background: var(--border);
+  border-radius: 2px;
+}
+.gocoon-step-line.done {
+  background: var(--accent);
+}
+.gocoon-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-lg);
+}
+.gocoon-meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--border-glass);
+  font-size: var(--font-sm);
+  color: var(--text-secondary);
+}

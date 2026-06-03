@@ -24,7 +24,6 @@ interface Platform {
   arch: "amd64" | "arm64";
 }
 
-/** Map Node's platform/arch onto gocoon's release asset naming. */
 export function detectPlatform(): Platform {
   const osMap: Record<string, Platform["os"]> = {
     darwin: "darwin",
@@ -35,9 +34,7 @@ export function detectPlatform(): Platform {
   const os = osMap[process.platform];
   const arch = archMap[process.arch];
   if (!os || !arch) {
-    throw new Error(
-      `gocoon: unsupported platform ${process.platform}/${process.arch} (need darwin|linux|windows × amd64|arm64)`
-    );
+    throw new Error(`gocoon: unsupported platform ${process.platform}/${process.arch}`);
   }
   return { os, arch };
 }
@@ -47,30 +44,31 @@ export interface GocoonBinaries {
   runner: string;
 }
 
-/**
- * Ensure the `gocoon` + `gocoon-runner` binaries are installed and return their
- * paths. Downloads the pinned release ({@link GOCOON_VERSION}) for the current
- * platform, verifies its SHA-256, and extracts both binaries into `~/.teleton/bin`.
- *
- * Idempotent: a version sentinel short-circuits re-download once installed.
- */
+export function isInstalled(): boolean {
+  return (
+    existsSync(versionSentinel()) &&
+    readFileSync(versionSentinel(), "utf-8").trim() === GOCOON_VERSION &&
+    existsSync(gocoonBin()) &&
+    existsSync(runnerBin())
+  );
+}
+
+// Download the pinned release, verify its SHA-256, extract both binaries into
+// ~/.teleton/bin. Idempotent via the version sentinel.
 export async function ensureGocoonBinaries(): Promise<GocoonBinaries> {
   const out: GocoonBinaries = { gocoon: gocoonBin(), runner: runnerBin() };
-
   if (isInstalled()) return out;
 
   const { os, arch } = detectPlatform();
   const archive = `gocoon-${GOCOON_VERSION}-${os}-${arch}.tar.gz`;
   const base = `https://github.com/${REPO}/releases/download/${GOCOON_VERSION}`;
-  log.info(`Installing gocoon ${GOCOON_VERSION} (${os}/${arch})…`);
+  log.info(`Installing gocoon ${GOCOON_VERSION} (${os}/${arch})`);
 
-  // 1. Download tarball + its checksum.
   const [tar, shaLine] = await Promise.all([
     fetchBuffer(`${base}/${archive}`),
     fetchText(`${base}/${archive}.sha256`),
   ]);
 
-  // 2. Verify SHA-256 (`.sha256` format: "<hash>  <filename>").
   const expected = shaLine.trim().split(/\s+/)[0]?.toLowerCase();
   const actual = createHash("sha256").update(tar).digest("hex");
   if (!expected || expected !== actual) {
@@ -79,9 +77,8 @@ export async function ensureGocoonBinaries(): Promise<GocoonBinaries> {
     );
   }
 
-  // 3. Extract both binaries. Temp dir lives under binDir so the final rename
-  //    stays on the same filesystem (no EXDEV across volumes).
   mkdirSync(binDir(), { recursive: true });
+  // Temp dir under binDir so the final rename stays on one filesystem (no EXDEV).
   const tmp = join(binDir(), `.extract-${process.pid}`);
   rmSync(tmp, { recursive: true, force: true });
   mkdirSync(tmp, { recursive: true });
@@ -103,30 +100,19 @@ export async function ensureGocoonBinaries(): Promise<GocoonBinaries> {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  // 4. Stamp the sentinel last, so a crash mid-install retries cleanly.
   writeFileSync(versionSentinel(), GOCOON_VERSION);
-  log.info(`gocoon ${GOCOON_VERSION} installed → ${binDir()}`);
+  log.info(`gocoon ${GOCOON_VERSION} installed`);
   return out;
-}
-
-/** True when the pinned version is already on disk (both binaries + matching sentinel). */
-export function isInstalled(): boolean {
-  return (
-    existsSync(versionSentinel()) &&
-    readFileSync(versionSentinel(), "utf-8").trim() === GOCOON_VERSION &&
-    existsSync(gocoonBin()) &&
-    existsSync(runnerBin())
-  );
 }
 
 async function fetchBuffer(url: string): Promise<Buffer> {
   const res = await fetchWithTimeout(url, { timeoutMs: DOWNLOAD_TIMEOUT_MS });
-  if (!res.ok) throw new Error(`gocoon: download failed ${url} → HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`gocoon: download failed ${url} (HTTP ${res.status})`);
   return Buffer.from(await res.arrayBuffer());
 }
 
 async function fetchText(url: string): Promise<string> {
   const res = await fetchWithTimeout(url, { timeoutMs: DOWNLOAD_TIMEOUT_MS });
-  if (!res.ok) throw new Error(`gocoon: download failed ${url} → HTTP ${res.status}`);
+  if (!res.ok) throw new Error(`gocoon: download failed ${url} (HTTP ${res.status})`);
   return res.text();
 }

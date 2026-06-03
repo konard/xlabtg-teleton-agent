@@ -1,28 +1,64 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { api } from '../lib/api';
 import { errMsg } from '../lib/utils';
 import { toast } from '../lib/toast';
+import { RefreshButton } from './RefreshButton';
 
+interface Wallet {
+  fundAddress: string;
+  ownerAddress: string;
+  balanceTon: string;
+  balanceNano: string;
+  funded: boolean;
+  recommendedFundingTon: string;
+}
 interface GocoonStatus {
   installed: boolean;
   version: string | null;
-  wallet: { ownerAddress: string; balanceTon: string; funded: boolean } | null;
+  wallet: Wallet | null;
   runner: boolean;
 }
-
 type WEvent = { stage: string; status: string; message: string };
 
-const short = (a: string): string => (a.length > 18 ? `${a.slice(0, 8)}…${a.slice(-6)}` : a);
+// 1 TON: above this free balance the wallet is treated as provisioned, since the
+// stake (~15 TON) drops the free balance below gocoon's "funded" threshold.
+const PROVISIONED_NANO = 1_000_000_000n;
 
-/**
- * Gocoon management — install, set up + fund the COCOON wallet, top up, and
- * withdraw. Thin UI over /api/gocoon/* (the same lifecycle the CLI drives).
- */
+function GemIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+      <path d="M6 3h12l4 6-10 13L2 9Z" />
+      <path d="M11 3 8 9l4 13 4-13-3-6" />
+      <path d="M2 9h20" />
+    </svg>
+  );
+}
+function CopyIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="8" width="14" height="14" rx="2" />
+      <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2" />
+    </svg>
+  );
+}
+function ExternalIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 3h6v6" />
+      <path d="M10 14 21 3" />
+      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+    </svg>
+  );
+}
+
+const successBadge: CSSProperties = {
+  color: 'var(--success)',
+  borderColor: 'color-mix(in srgb, var(--success) 32%, transparent)',
+};
+
 export function GocoonPanel() {
   const [status, setStatus] = useState<GocoonStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
-  const [fund, setFund] = useState<{ fundAddress: string; recommendedFundingTon: string } | null>(null);
-  const [waitingFunds, setWaitingFunds] = useState(false);
   const [topupAmount, setTopupAmount] = useState('');
   const [withdrawDest, setWithdrawDest] = useState('');
   const [events, setEvents] = useState<WEvent[]>([]);
@@ -44,23 +80,18 @@ export function GocoonPanel() {
     };
   }, []);
 
-  // Poll the balance after init until the funding lands on-chain.
+  const w = status?.wallet ?? null;
+  const running = !!status?.runner;
+  const balNano = w ? BigInt(w.balanceNano || '0') : 0n;
+  const hasFunds = !!w && (w.funded || balNano > PROVISIONED_NANO);
+  const awaitingDeposit = !!status?.installed && !!w && !running && !hasFunds;
+
+  // While waiting for the first deposit, poll so the balance is auto-detected.
   useEffect(() => {
-    if (!waitingFunds) return;
-    const t = setInterval(async () => {
-      try {
-        const r = await api.gocoonBalance();
-        if (r.success && r.data.funded) {
-          setWaitingFunds(false);
-          toast.success('COCOON wallet funded');
-          void refresh();
-        }
-      } catch {
-        /* retry */
-      }
-    }, 5000);
+    if (!awaitingDeposit) return;
+    const t = setInterval(() => void refresh(), 5000);
     return () => clearInterval(t);
-  }, [waitingFunds]);
+  }, [awaitingDeposit]);
 
   const run = async (label: string, fn: () => Promise<void>): Promise<void> => {
     setBusy(label);
@@ -80,11 +111,10 @@ export function GocoonPanel() {
       await refresh();
     });
 
-  const onInit = (): Promise<void> =>
-    run('init', async () => {
-      const r = await api.gocoonInit();
-      setFund(r.data);
-      setWaitingFunds(true);
+  const onSetup = (): Promise<void> =>
+    run('setup', async () => {
+      await api.gocoonInit();
+      await refresh();
     });
 
   const onTopup = (): Promise<void> =>
@@ -117,113 +147,218 @@ export function GocoonPanel() {
       }, 1500);
     });
 
-  if (!status) return <div className="card">Loading gocoon…</div>;
+  const copy = (s: string): void => {
+    void navigator.clipboard?.writeText(s).then(() => toast.success('Address copied')).catch(() => {});
+  };
 
-  const wallet = status.wallet;
+  if (!status) {
+    return (
+      <div className="wallet-hero">
+        <div className="wallet-hero-empty">Loading gocoon...</div>
+      </div>
+    );
+  }
+
+  const heroBadge: { text: string; cls?: string; style?: CSSProperties } = running
+    ? { text: 'Running', style: successBadge }
+    : hasFunds
+      ? { text: 'Ready', style: successBadge }
+      : { text: 'Awaiting funds', cls: 'warn' };
 
   return (
-    <div className="card config-card">
-      {/* Status rows */}
-      <div className="config-card-body" style={{ display: 'grid', gap: 6 }}>
-        <Row label="Installed">
-          {status.installed ? (
-            <span className="badge">{status.version}</span>
-          ) : (
-            <button className="btn-sm" disabled={busy !== null} onClick={onInstall}>
-              {busy === 'install' ? 'Installing…' : 'Install gocoon'}
-            </button>
-          )}
-        </Row>
-        <Row label="Wallet">{wallet ? short(wallet.ownerAddress) : <span className="helper-text">not set up</span>}</Row>
-        {wallet && (
-          <Row label="Balance">
-            {wallet.balanceTon} TON{' '}
-            <span className="badge">{wallet.funded ? 'funded' : 'not funded'}</span>
-          </Row>
+    <>
+      <div className="wallet-hero">
+        <GemIcon className="wallet-diamond" />
+        {!status.installed ? (
+          <div className="wallet-hero-empty">gocoon is not installed yet</div>
+        ) : !w ? (
+          <div className="wallet-hero-empty">No funding wallet yet, create one below</div>
+        ) : (
+          <>
+            <div className="wallet-hero-label" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span>COCOON Wallet</span>
+              <span className={`badge${heroBadge.cls ? ' ' + heroBadge.cls : ''}`} style={heroBadge.style}>
+                {heroBadge.text}
+              </span>
+            </div>
+            <div className="wallet-balance">
+              <span className="wallet-balance-amount">{w.balanceTon}</span>
+              <span className="wallet-balance-unit">TON</span>
+            </div>
+            <div className="wallet-address">
+              <code>{w.fundAddress}</code>
+              <button className="wallet-addr-btn" onClick={() => copy(w.fundAddress)} aria-label="Copy address">
+                <CopyIcon />
+              </button>
+              <a className="wallet-addr-btn" href={`https://tonviewer.com/${w.fundAddress}`} target="_blank" rel="noopener noreferrer" aria-label="View on TonViewer">
+                <ExternalIcon />
+              </a>
+            </div>
+          </>
         )}
-        <Row label="Runner">{status.runner ? <span className="badge always">running</span> : <span className="helper-text">not running</span>}</Row>
       </div>
 
-      {/* Set up + fund */}
-      {status.installed && !wallet?.funded && (
-        <div className="config-card-body" style={{ marginTop: 10 }}>
-          {!fund ? (
-            <button className="btn-sm" disabled={busy !== null} onClick={onInit}>
-              {busy === 'init' ? 'Setting up…' : 'Set up COCOON wallet'}
-            </button>
-          ) : (
-            <div className="info-panel">
-              <div>
-                Send <b>{fund.recommendedFundingTon} TON</b> (mainnet) to:
-              </div>
-              <code style={{ wordBreak: 'break-all' }}>{fund.fundAddress}</code>
-              <div className="helper-text">
-                {waitingFunds ? 'Waiting for funding to confirm on-chain…' : 'Funded.'}
-              </div>
-            </div>
+      <Steps installed={status.installed} hasWallet={!!w} funded={hasFunds} running={running} />
+
+      <div className="card config-card" style={{ marginBottom: 'var(--space-lg)' }}>
+        <div className="config-card-body">
+          {!status.installed && (
+            <Action
+              title="Install gocoon"
+              hint="One-time download of the gocoon runner for your platform."
+              right={
+                <button className="btn-sm" disabled={!!busy} onClick={onInstall}>
+                  {busy === 'install' ? 'Installing...' : 'Install gocoon'}
+                </button>
+              }
+            />
           )}
-        </div>
-      )}
-
-      {/* Top up */}
-      {wallet && (
-        <div className="config-card-body form-group" style={{ marginTop: 10 }}>
-          <label>Top up channel</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="w-full"
-              type="number"
-              placeholder="TON (e.g. 5)"
-              value={topupAmount}
-              onChange={(e) => setTopupAmount(e.target.value)}
+          {status.installed && !w && (
+            <Action
+              title="Create funding wallet"
+              hint="Generates your COCOON wallet. The address is fixed and reused afterwards."
+              right={
+                <button className="btn-sm" disabled={!!busy} onClick={onSetup}>
+                  {busy === 'setup' ? 'Creating...' : 'Create funding wallet'}
+                </button>
+              }
             />
-            <button className="btn-sm" disabled={busy !== null || !topupAmount.trim()} onClick={onTopup}>
-              {busy === 'topup' ? 'Topping up…' : 'Top up'}
-            </button>
-          </div>
-          <div className="helper-text">Adds stake to the payment channel (the runner must be active).</div>
-        </div>
-      )}
-
-      {/* Withdraw everything */}
-      {wallet && (
-        <div className="config-card-body form-group" style={{ marginTop: 10 }}>
-          <label>Withdraw everything</label>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <input
-              className="w-full"
-              type="text"
-              placeholder="TON address or .ton domain"
-              value={withdrawDest}
-              onChange={(e) => setWithdrawDest(e.target.value)}
+          )}
+          {awaitingDeposit && (
+            <Action
+              title={`Send ${w?.recommendedFundingTon ?? '20'} TON to the address above`}
+              hint="Mainnet. Detected automatically."
+              right={
+                <span className="helper-text" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span className="spinner sm" /> Waiting for funds
+                </span>
+              }
             />
-            <button className="btn-sm" disabled={busy !== null || !withdrawDest.trim()} onClick={onWithdraw}>
-              {busy === 'withdraw' ? 'Withdrawing…' : 'Withdraw'}
-            </button>
+          )}
+          {!running && hasFunds && (
+            <Action
+              title="Ready to run"
+              hint="Set the provider to Gocoon and start the agent. The runner and payment channel start automatically."
+              right={<span className="badge" style={successBadge}>Funded</span>}
+            />
+          )}
+          {running && (
+            <Action
+              title="Running"
+              hint="The agent is serving on gocoon. The payment channel is staked and active."
+              right={<span className="badge always">live</span>}
+            />
+          )}
+
+          <div className="gocoon-meta">
+            <span>
+              <span className={`status-dot ${running ? 'connected' : 'disconnected'}`} /> Runner{' '}
+              {running ? 'running' : 'stopped'}
+            </span>
+            {status.installed && status.version && <span className="helper-text">gocoon {status.version}</span>}
+            <span style={{ marginLeft: 'auto' }}>
+              <RefreshButton onRefresh={() => void refresh()} />
+            </span>
           </div>
-          <div className="helper-text">
-            Closes the channel and drains the COCOON + agent wallets. Stop the agent first. Irreversible.
+        </div>
+      </div>
+
+      {w && (
+        <div className="card config-card">
+          <div className="config-card-head">
+            <span className="config-card-title">Manage</span>
           </div>
-          {events.length > 0 && (
-            <div className="info-panel" style={{ marginTop: 8 }}>
-              {events.map((e, i) => (
-                <div key={i} className="helper-text">
-                  {e.status === 'ok' ? '✓' : e.status === 'error' ? '✗' : '›'} [{e.stage}] {e.message}
+          <div className="config-card-body" style={{ display: 'grid', gap: 'var(--space-lg)' }}>
+            {hasFunds && (
+              <div className="form-group">
+                <label>Top up channel</label>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  <input
+                    className="w-full"
+                    type="number"
+                    placeholder="TON (e.g. 5)"
+                    value={topupAmount}
+                    onChange={(e) => setTopupAmount(e.target.value)}
+                  />
+                  <button className="btn-sm" disabled={!!busy || !topupAmount.trim()} onClick={onTopup}>
+                    {busy === 'topup' ? 'Topping up...' : 'Top up'}
+                  </button>
                 </div>
-              ))}
+                <div className="helper-text">Adds stake to the channel (the runner must be active).</div>
+              </div>
+            )}
+
+            <div className="form-group">
+              <label>Withdraw everything</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  className="w-full"
+                  type="text"
+                  placeholder="TON address or .ton domain"
+                  value={withdrawDest}
+                  onChange={(e) => setWithdrawDest(e.target.value)}
+                />
+                <button className="btn-sm" disabled={!!busy || !withdrawDest.trim()} onClick={onWithdraw}>
+                  {busy === 'withdraw' ? 'Withdrawing...' : 'Withdraw'}
+                </button>
+              </div>
+              <div className="helper-text">
+                Stop the agent first. Closes the channel and drains the COCOON + agent wallets. Irreversible.
+              </div>
+              {events.length > 0 && (
+                <div className="info-panel" style={{ marginTop: 8 }}>
+                  {events.map((e, i) => (
+                    <div key={i} className="helper-text">
+                      {e.status === 'ok' ? '[ok]' : e.status === 'error' ? '[x]' : '[..]'} [{e.stage}] {e.message}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          )}
+          </div>
         </div>
       )}
+    </>
+  );
+}
+
+function Steps({ installed, hasWallet, funded, running }: {
+  installed: boolean;
+  hasWallet: boolean;
+  funded: boolean;
+  running: boolean;
+}) {
+  const steps = [
+    { label: 'Install', done: installed },
+    { label: 'Wallet', done: hasWallet },
+    { label: 'Fund', done: funded },
+    { label: 'Run', done: running },
+  ];
+  const current = steps.findIndex((s) => !s.done);
+  return (
+    <div className="gocoon-steps">
+      {steps.map((s, i) => {
+        const state = s.done ? 'done' : i === current ? 'current' : 'pending';
+        return (
+          <div key={s.label} className="gocoon-step">
+            <span className={`gocoon-step-dot ${state}`}>{s.done ? '✓' : i + 1}</span>
+            <span className={`gocoon-step-label ${state}`}>{s.label}</span>
+            {i < steps.length - 1 && <span className={`gocoon-step-line ${s.done ? 'done' : ''}`} />}
+          </div>
+        );
+      })}
     </div>
   );
 }
 
-function Row({ label, children }: { label: string; children: React.ReactNode }) {
+function Action({ title, hint, right }: { title: string; hint: string; right: ReactNode }) {
   return (
-    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-      <span className="config-card-title">{label}</span>
-      <span>{children}</span>
+    <div className="gocoon-action">
+      <div style={{ minWidth: 0 }}>
+        <div className="config-card-title">{title}</div>
+        <div className="helper-text" style={{ marginTop: 2 }}>{hint}</div>
+      </div>
+      <div style={{ flexShrink: 0 }}>{right}</div>
     </div>
   );
 }

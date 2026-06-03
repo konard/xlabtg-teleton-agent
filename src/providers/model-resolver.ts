@@ -121,7 +121,9 @@ export function getProviderModel(provider: SupportedProvider, modelId: string): 
   if (meta.piAiProvider === "gocoon") {
     let model = GOCOON_MODELS[modelId];
     if (!model) {
-      model = Object.values(GOCOON_MODELS)[0];
+      // Fall back to the provider default (a served model), not the first registered
+      // one, which may be an unusable model with no workers.
+      model = GOCOON_MODELS[meta.defaultModel] ?? Object.values(GOCOON_MODELS)[0];
       if (model) log.warn(`gocoon model "${modelId}" not found, using "${model.id}"`);
     }
     if (model) {

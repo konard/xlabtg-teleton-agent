@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Replaced the `cocoon` provider with `gocoon`** — a native OpenAI-compatible, pure-Go COCOON client ([gocoon](https://github.com/TONresistor/gocoon)). Tool-calling now uses the model's native `tools`/`tool_calls` instead of the old XML-injection shim, which has been removed (`src/cocoon/` deleted). **Breaking:** set `agent.provider: gocoon` and rename the `cocoon:` config block to `gocoon:` (`gocoon.port`, default `10000`).
+- **Replaced the `cocoon` provider with `gocoon`**: a native OpenAI-compatible, pure-Go COCOON client ([gocoon](https://github.com/TONresistor/gocoon)). Tool-calling now uses the model's native `tools`/`tool_calls` instead of the old XML-injection shim, which has been removed (`src/cocoon/` deleted). **Breaking:** set `agent.provider: gocoon` and rename the `cocoon:` config block to `gocoon:` (`gocoon.port`, default `10000`). Turnkey lifecycle: auto-install the gocoon runner, supervise it, and set up/top-up/withdraw the TON channel from the CLI (`teleton gocoon`) or the WebUI Gocoon page.
 
 ## [0.8.1] - 2026-03-05
 

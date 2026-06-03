@@ -1,4 +1,3 @@
-// Public gocoon API surface — CLI and WebUI import from here.
 export {
   ensureGocoonBinaries,
   isInstalled,

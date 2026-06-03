@@ -262,6 +262,13 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
       description: "Reasoning, 204K ctx, $0.30/M",
     },
   ],
+  gocoon: [
+    {
+      value: "Qwen/Qwen3-32B",
+      name: "Qwen3-32B",
+      description: "Decentralized inference on TON",
+    },
+  ],
 };
 
 /** Get models for a provider (codex → openai-codex) */

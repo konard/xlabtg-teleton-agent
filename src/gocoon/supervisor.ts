@@ -7,17 +7,11 @@ import { runnerBin } from "./paths.js";
 const log = createLogger("gocoon");
 
 export interface SupervisorOptions {
-  /** Path to client-config.json produced by `gocoon init`. */
   configPath: string;
-  /** Readiness probe, e.g. http://127.0.0.1:10000/v1/models. */
   healthUrl: string;
-  /** Max wait for the first healthy probe (default 30s). */
   startGraceMs?: number;
-  /** gocoon-runner verbosity flag (-v N); 0 disables it. */
   verbosity?: number;
-  /** Restart backoff ceiling (default 60s). */
   backoffCapMs?: number;
-  /** Receives runner stdout/stderr lines (default: debug log). */
   onLog?: (line: string) => void;
 }
 
@@ -26,12 +20,8 @@ const READY_POLL_INTERVAL_MS = 250;
 const KILL_GRACE_MS = 5_000;
 const MAX_RESTART_FAILURES = 5;
 
-/**
- * Supervises a long-lived `gocoon-runner` child: starts it, waits for the health
- * URL to come up, then auto-restarts on crash with exponential backoff until
- * {@link GocoonSupervisor.stop} is called. Node port of myduckai's
- * `supervisor.go` + `health.go`.
- */
+// Spawns gocoon-runner, waits for the health URL, then auto-restarts on crash
+// with exponential backoff until stop() is called.
 export class GocoonSupervisor {
   private child: ChildProcess | null = null;
   private stopped = false;
@@ -55,7 +45,6 @@ export class GocoonSupervisor {
     this.onLog = opts.onLog ?? ((line) => log.debug(line));
   }
 
-  /** Launch the runner and resolve once it is healthy. Throws if it never becomes ready. */
   async start(): Promise<void> {
     this.stopped = false;
     this.failures = 0;
@@ -64,15 +53,13 @@ export class GocoonSupervisor {
     try {
       await waitReady(this.healthUrl, this.startGraceMs);
     } catch (err) {
-      // Abort supervision: mark stopped first so the exit handler doesn't respawn.
-      this.stopped = true;
+      this.stopped = true; // prevent the exit handler from respawning
       this.killChild();
       throw new Error(`gocoon-runner did not become healthy: ${getErrorMessage(err)}`);
     }
     log.info(`gocoon-runner ready (pid ${this.child?.pid ?? "?"})`);
   }
 
-  /** Signal shutdown and kill the runner (idempotent). */
   stop(): void {
     if (this.stopped) return;
     this.stopped = true;
@@ -86,12 +73,10 @@ export class GocoonSupervisor {
   private spawnChild(): void {
     const args = ["--config", this.configPath];
     if (this.verbosity > 0) args.push(`-v${this.verbosity}`);
-
     const child = spawn(runnerBin(), args, { detached: true, stdio: ["ignore", "pipe", "pipe"] });
     this.child = child;
     this.runningFlag = true;
     log.info(`gocoon-runner started (pid ${child.pid ?? "?"})`);
-
     const onData = (buf: Buffer): void => {
       const line = buf.toString().trimEnd();
       if (line) this.onLog(line);
@@ -109,7 +94,7 @@ export class GocoonSupervisor {
       return;
     }
     log.warn(
-      `gocoon-runner exited unexpectedly (code=${code ?? "null"} signal=${signal ?? "null"}); restarting in ${this.backoffMs}ms`
+      `gocoon-runner exited (code=${code ?? "null"} signal=${signal ?? "null"}); restarting in ${this.backoffMs}ms`
     );
     setTimeout(() => void this.restart(), this.backoffMs);
   }
@@ -128,14 +113,13 @@ export class GocoonSupervisor {
       if (this.failures >= MAX_RESTART_FAILURES) {
         this.stopped = true;
         this.killChild();
-        log.error(`gocoon-runner failed ${this.failures}× — giving up supervision`);
+        log.error(`gocoon-runner failed ${this.failures} times, giving up`);
         return;
       }
       log.error(
         `gocoon-runner restart unhealthy (${this.failures}/${MAX_RESTART_FAILURES}): ${getErrorMessage(err)}`
       );
-      // Kill the unhealthy child; its 'exit' event reschedules the next restart.
-      this.killChild();
+      this.killChild(); // its exit event reschedules the next restart
     }
   }
 
@@ -146,39 +130,34 @@ export class GocoonSupervisor {
   }
 }
 
-/**
- * Kill a child's whole process group: SIGTERM then SIGKILL after `graceMs`
- * (POSIX, requires the child spawned `detached`); `taskkill /T /F` on Windows.
- * Shared by the supervisor and the transient runner in the withdraw flow.
- */
+// SIGTERM the whole process group, then SIGKILL after graceMs. taskkill on Windows.
 export function killProcessGroup(pid: number, graceMs = KILL_GRACE_MS): void {
   if (process.platform === "win32") {
     try {
       execFileSync("taskkill", ["/pid", String(pid), "/T", "/F"], { stdio: "ignore" });
     } catch {
-      /* already gone */
+      /* gone */
     }
     return;
   }
   try {
-    process.kill(-pid, "SIGTERM"); // negative pid → whole process group
+    process.kill(-pid, "SIGTERM");
     setTimeout(() => {
       try {
         process.kill(-pid, "SIGKILL");
       } catch {
-        /* already reaped */
+        /* gone */
       }
     }, graceMs);
   } catch {
     try {
       process.kill(pid, "SIGKILL");
     } catch {
-      /* already gone */
+      /* gone */
     }
   }
 }
 
-/** Poll `url` with GET until it returns 2xx, or reject after `timeoutMs`. Port of health.go WaitReady. */
 export async function waitReady(url: string, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
