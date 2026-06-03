@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.27](https://github.com/xlabtg/teleton-agent/compare/v0.8.26...v0.8.27) (2026-06-03)
+
+
+### Bug Fixes
+
+* **ci:** update README fork version to 0.8.26 and optimize schema sanitizer ([ee18d4b](https://github.com/xlabtg/teleton-agent/commit/ee18d4b519958e147cdda947b7628a9519d6dbf9))
+* **plugin-loader:** restrict migrateFromMainDb to allow-listed tables (WORK4-002) ([418749e](https://github.com/xlabtg/teleton-agent/commit/418749ec03233ed55aabedbb69cb2b2fdaee1163))
+* **plugin-loader:** restrict migrateFromMainDb to allow-listed tables (WORK4-002) ([849fb62](https://github.com/xlabtg/teleton-agent/commit/849fb622f141f83dbe4516bd622ae7794609686e)), closes [#524](https://github.com/xlabtg/teleton-agent/issues/524)
+
 ## [0.8.26](https://github.com/xlabtg/teleton-agent/compare/v0.8.25...v0.8.26) (2026-06-02)
 
 
