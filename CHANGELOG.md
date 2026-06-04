@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.31](https://github.com/xlabtg/teleton-agent/compare/v0.8.30...v0.8.31) (2026-06-04)
+
+
+### Bug Fixes
+
+* **workflows:** блокировать ssrf в call_api ([d0a7481](https://github.com/xlabtg/teleton-agent/commit/d0a74815c4a7f1bcacf8bfe058fa1aa027c92148))
+* **workflows:** блокировать SSRF в call_api ([53cdbce](https://github.com/xlabtg/teleton-agent/commit/53cdbce36d6949935a9b8237cbc538ad4b62a93e))
+
 ## [0.8.30](https://github.com/xlabtg/teleton-agent/compare/v0.8.29...v0.8.30) (2026-06-04)
 
 
