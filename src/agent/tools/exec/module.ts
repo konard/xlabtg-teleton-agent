@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import type { Config, ExecConfig } from "../../../config/schema.js";
-import type { PluginModule, ToolScope } from "../types.js";
+import type { PluginModule, ToolExecutor, ToolScope } from "../types.js";
 import { createLogger } from "../../../utils/logger.js";
 import { execRunTool, createExecRunExecutor } from "./run.js";
 import { execInstallTool, createExecInstallExecutor } from "./install.js";
@@ -17,10 +17,28 @@ function resolveScope(scope: ExecConfig["scope"]): ToolScope {
     case "admin-only":
       return "admin-only";
     case "allowlist":
-      return "admin-only";
+      return "always";
     case "all":
       return "always";
   }
+}
+
+function enforceUserAllowlist<TParams>(
+  execCfg: ExecConfig,
+  executor: ToolExecutor<TParams>
+): ToolExecutor<TParams> {
+  if (execCfg.scope !== "allowlist") return executor;
+
+  return async (params, context) => {
+    if (!execCfg.allowlist.includes(context.senderId)) {
+      return {
+        success: false,
+        error: "Exec tools are restricted to users listed in capabilities.exec.allowlist",
+      };
+    }
+
+    return executor(params, context);
+  };
 }
 
 const execModule: PluginModule = {
@@ -57,10 +75,26 @@ const execModule: PluginModule = {
     const db = moduleDb;
 
     return [
-      { tool: execRunTool, executor: createExecRunExecutor(db, execCfg), scope },
-      { tool: execInstallTool, executor: createExecInstallExecutor(db, execCfg), scope },
-      { tool: execServiceTool, executor: createExecServiceExecutor(db, execCfg), scope },
-      { tool: execStatusTool, executor: createExecStatusExecutor(db, execCfg), scope },
+      {
+        tool: execRunTool,
+        executor: enforceUserAllowlist(execCfg, createExecRunExecutor(db, execCfg)),
+        scope,
+      },
+      {
+        tool: execInstallTool,
+        executor: enforceUserAllowlist(execCfg, createExecInstallExecutor(db, execCfg)),
+        scope,
+      },
+      {
+        tool: execServiceTool,
+        executor: enforceUserAllowlist(execCfg, createExecServiceExecutor(db, execCfg)),
+        scope,
+      },
+      {
+        tool: execStatusTool,
+        executor: enforceUserAllowlist(execCfg, createExecStatusExecutor(db, execCfg)),
+        scope,
+      },
     ];
   },
 

@@ -3,12 +3,17 @@ import Database from "better-sqlite3";
 import { ensureSchema } from "../../../../memory/schema.js";
 import type { Config } from "../../../../config/schema.js";
 import { ConfigSchema } from "../../../../config/schema.js";
+import { ToolRegistry } from "../../registry.js";
+import type { ToolContext } from "../../types.js";
 import execModule from "../module.js";
 
-function makeConfig(execOverrides?: Record<string, unknown>): Config {
+function makeConfig(
+  execOverrides?: Record<string, unknown>,
+  telegramOverrides?: Record<string, unknown>
+): Config {
   return ConfigSchema.parse({
     agent: { provider: "anthropic", api_key: "test" },
-    telegram: { api_id: 1, api_hash: "a", phone: "+1" },
+    telegram: { api_id: 1, api_hash: "a", phone: "+1", ...telegramOverrides },
     capabilities: {
       exec: {
         mode: "yolo",
@@ -115,5 +120,50 @@ describe("execModule", () => {
 
     if (origPlatform) Object.defineProperty(process, "platform", origPlatform);
     else Object.defineProperty(process, "platform", { value: "linux" });
+  });
+
+  it("enforces exec.allowlist membership when scope is allowlist", async () => {
+    const origPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    Object.defineProperty(process, "platform", { value: "linux" });
+
+    try {
+      const config = makeConfig(
+        { scope: "allowlist", allowlist: [123], sandbox_mode: "dry-run" },
+        { admin_ids: [999] }
+      );
+      execModule.configure!(config);
+      execModule.migrate!(db);
+
+      const registry = new ToolRegistry();
+      for (const { tool, executor, scope } of execModule.tools(config)) {
+        registry.register(tool, executor, scope);
+      }
+
+      const makeContext = (senderId: number): ToolContext => ({
+        bridge: {} as ToolContext["bridge"],
+        db,
+        chatId: "123",
+        senderId,
+        isGroup: false,
+        config,
+      });
+
+      const allowed = await registry.execute(
+        { name: "exec_run", arguments: { command: "echo ok" } },
+        makeContext(123)
+      );
+      expect(allowed.success).toBe(true);
+      expect(allowed.data).toMatchObject({ dryRun: true });
+
+      const denied = await registry.execute(
+        { name: "exec_run", arguments: { command: "echo ok" } },
+        makeContext(999)
+      );
+      expect(denied.success).toBe(false);
+      expect(denied.error).toContain("allowlist");
+    } finally {
+      if (origPlatform) Object.defineProperty(process, "platform", origPlatform);
+      else Object.defineProperty(process, "platform", { value: "linux" });
+    }
   });
 });
