@@ -348,6 +348,7 @@ function buildConfig(input: BuildConfigInput): Config {
       ],
       skip_unlimited_providers: false,
     },
+    tool_search: { enabled: true },
     logging: { level: "info", pretty: true },
     mcp: { servers: {} },
     capabilities: {

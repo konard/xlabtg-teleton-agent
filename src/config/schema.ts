@@ -262,7 +262,7 @@ export const McpConfigSchema = _McpObject.default(_McpObject.parse({}));
 const _ToolSearchObject = z.object({
   enabled: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe("Enable ToolSearch mode: core tools + meta-tool replaces RAG pre-selection"),
 });
 export const ToolSearchConfigSchema = _ToolSearchObject.default(_ToolSearchObject.parse({}));
@@ -346,7 +346,7 @@ export const ConfigSchema = z.object({
   logging: LoggingConfigSchema,
   dev: DevConfigSchema,
   tool_rag: ToolRagConfigSchema,
-  tool_search: ToolSearchConfigSchema.optional(),
+  tool_search: ToolSearchConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
   ton_proxy: TonProxyConfigSchema,
