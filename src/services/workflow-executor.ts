@@ -1,6 +1,7 @@
 import type { TelegramBridge } from "../telegram/bridge.js";
 import type { WorkflowStore } from "./workflows.js";
 import type { CallApiAction, Workflow, WorkflowAction } from "./workflows.js";
+import { validateWorkflowCallApiUrl } from "./workflow-security.js";
 import { createLogger } from "../utils/logger.js";
 import {
   DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS,
@@ -76,6 +77,8 @@ export class WorkflowExecutor {
 
   private async fetchWithTimeout(action: CallApiAction, init: RequestInit): Promise<Response> {
     const timeoutMs = workflowHttpTimeoutMs(action);
+    await validateWorkflowCallApiUrl(action.url);
+
     const controller = new AbortController();
     let timeoutError: Error | null = null;
     const fetchPromise = fetch(action.url, { ...init, signal: controller.signal });

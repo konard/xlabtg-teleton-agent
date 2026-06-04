@@ -1,8 +1,14 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import Database from "better-sqlite3";
 import { createWorkflowsRoutes } from "../routes/workflows.js";
 import type { WebUIServerDeps } from "../types.js";
 import { MAX_WORKFLOW_HTTP_TIMEOUT_MS } from "../../constants/timeouts.js";
+
+const dnsMocks = vi.hoisted(() => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("node:dns/promises", () => dnsMocks);
 
 function createTestDb(): Database.Database {
   const db = new Database(":memory:");
@@ -33,6 +39,11 @@ function makeDeps(): WebUIServerDeps {
 }
 
 describe("workflows routes", () => {
+  beforeEach(() => {
+    dnsMocks.lookup.mockReset();
+    dnsMocks.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
+  });
+
   it("accepts a valid call_api timeoutMs override", async () => {
     const app = createWorkflowsRoutes(makeDeps());
 
@@ -85,5 +96,58 @@ describe("workflows routes", () => {
     expect(res.status).toBe(400);
     const body = await res.json();
     expect(body.error).toContain("call_api timeoutMs");
+  });
+
+  it("rejects call_api actions targeting metadata IPs", async () => {
+    const app = createWorkflowsRoutes(makeDeps());
+
+    const res = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Invalid API workflow",
+        config: {
+          trigger: { type: "webhook" },
+          actions: [
+            {
+              type: "call_api",
+              method: "GET",
+              url: "http://169.254.169.254/latest/meta-data/",
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/private|loopback|metadata|not allowed/i);
+  });
+
+  it("rejects call_api actions when hostnames resolve to metadata IPs", async () => {
+    dnsMocks.lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }]);
+    const app = createWorkflowsRoutes(makeDeps());
+
+    const res = await app.request("/", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        name: "Invalid API workflow",
+        config: {
+          trigger: { type: "webhook" },
+          actions: [
+            {
+              type: "call_api",
+              method: "GET",
+              url: "https://rebind.example.com/latest/meta-data/",
+            },
+          ],
+        },
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toMatch(/private|loopback|metadata|not allowed/i);
   });
 });

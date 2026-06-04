@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { randomUUID } from "node:crypto";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
+import { validateWorkflowCallApiUrl } from "../../services/workflow-security.js";
 import { getWorkflowStore, type WorkflowConfig, type Workflow } from "../../services/workflows.js";
 import { getErrorMessage } from "../../utils/errors.js";
 import {
@@ -61,7 +62,7 @@ export function createWorkflowsRoutes(deps: WebUIServerDeps) {
         return c.json<APIResponse>({ success: false, error: "config is required" }, 400);
       }
 
-      const validationError = validateConfig(body.config);
+      const validationError = await validateConfig(body.config);
       if (validationError) {
         return c.json<APIResponse>({ success: false, error: validationError }, 400);
       }
@@ -138,7 +139,7 @@ export function createWorkflowsRoutes(deps: WebUIServerDeps) {
         if (typeof body.config !== "object") {
           return c.json<APIResponse>({ success: false, error: "config must be an object" }, 400);
         }
-        const validationError = validateConfig(body.config);
+        const validationError = await validateConfig(body.config);
         if (validationError) {
           return c.json<APIResponse>({ success: false, error: validationError }, 400);
         }
@@ -225,7 +226,7 @@ export function createWorkflowsRoutes(deps: WebUIServerDeps) {
 
 // ── Config validation ───────────────────────────────────────────────────────
 
-function validateConfig(config: WorkflowConfig): string | null {
+async function validateConfig(config: WorkflowConfig): Promise<string | null> {
   if (!config.trigger || typeof config.trigger !== "object") {
     return "config.trigger is required";
   }
@@ -281,8 +282,13 @@ function validateConfig(config: WorkflowConfig): string | null {
       if (!validMethods.includes(action.method)) {
         return `actions[${i}] call_api method must be one of: ${validMethods.join(", ")}`;
       }
-      if (typeof action.url !== "string" || !action.url.startsWith("http")) {
+      if (typeof action.url !== "string") {
         return `actions[${i}] call_api requires a valid HTTP URL`;
+      }
+      try {
+        await validateWorkflowCallApiUrl(action.url);
+      } catch (err) {
+        return `actions[${i}] call_api URL is not allowed: ${getErrorMessage(err)}`;
       }
       if (
         action.timeoutMs !== undefined &&

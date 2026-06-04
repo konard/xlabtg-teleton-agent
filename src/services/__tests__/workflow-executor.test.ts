@@ -5,6 +5,12 @@ import { WorkflowExecutor } from "../workflow-executor.js";
 import type { Workflow } from "../workflows.js";
 import { DEFAULT_WORKFLOW_HTTP_TIMEOUT_MS } from "../../constants/timeouts.js";
 
+const dnsMocks = vi.hoisted(() => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("node:dns/promises", () => dnsMocks);
+
 vi.mock("../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
@@ -59,6 +65,8 @@ describe("WorkflowExecutor", () => {
   beforeEach(() => {
     db = createTestDb();
     store = new WorkflowStore(db);
+    dnsMocks.lookup.mockReset();
+    dnsMocks.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
   });
 
   afterEach(() => {
@@ -184,6 +192,63 @@ describe("WorkflowExecutor", () => {
     const updated = store.get(wf.id)!;
     expect(updated.runCount).toBe(1);
     expect(updated.lastError).toBeNull();
+  });
+
+  it("blocks call_api action to metadata IP before fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wf = store.create({
+      name: "API SSRF",
+      config: {
+        trigger: { type: "webhook", secret: "secret" },
+        actions: [
+          {
+            type: "call_api",
+            method: "GET",
+            url: "http://169.254.169.254/latest/meta-data/",
+          },
+        ],
+      },
+    });
+
+    const executor = new WorkflowExecutor({ store });
+    await executor.execute(wf);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastError).toContain("call_api");
+    expect(updated.lastError).toMatch(/private|loopback|metadata|not allowed/i);
+  });
+
+  it("blocks call_api action when hostname resolves to metadata IP", async () => {
+    dnsMocks.lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }]);
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const wf = store.create({
+      name: "API DNS SSRF",
+      config: {
+        trigger: { type: "webhook", secret: "secret" },
+        actions: [
+          {
+            type: "call_api",
+            method: "GET",
+            url: "https://rebind.example.com/latest/meta-data/",
+          },
+        ],
+      },
+    });
+
+    const executor = new WorkflowExecutor({ store });
+    await executor.execute(wf);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const updated = store.get(wf.id)!;
+    expect(updated.runCount).toBe(1);
+    expect(updated.lastError).toContain("call_api");
+    expect(updated.lastError).toMatch(/private|loopback|metadata|not allowed/i);
   });
 
   it("records an error when a call_api action returns an HTTP error", async () => {
