@@ -507,15 +507,4 @@ export class DealBot {
   }
 }
 
-export {
-  getDeal,
-  getDealsAwaitingVerification,
-  getDealsAwaitingExecution,
-} from "./services/deal-service.js";
-export {
-  buildCompletedMessage,
-  buildMessageForState,
-  buildSendingMessage,
-  buildFailedMessage,
-} from "./services/message-builder.js";
 export { VerificationPoller } from "./services/verification-poller.js";

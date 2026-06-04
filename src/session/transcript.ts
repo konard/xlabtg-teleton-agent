@@ -168,33 +168,6 @@ export function transcriptExists(sessionId: string): boolean {
   return existsSync(getTranscriptPath(sessionId));
 }
 
-export function getTranscriptSize(sessionId: string): number {
-  try {
-    const messages = readTranscript(sessionId);
-    return messages.length;
-  } catch {
-    return 0;
-  }
-}
-
-export function deleteTranscript(sessionId: string): boolean {
-  const transcriptPath = getTranscriptPath(sessionId);
-
-  if (!existsSync(transcriptPath)) {
-    return false;
-  }
-
-  try {
-    unlinkSync(transcriptPath);
-    transcriptCache.delete(sessionId);
-    log.info(`Deleted transcript: ${sessionId}`);
-    return true;
-  } catch (error) {
-    log.error({ err: error }, `Failed to delete transcript ${sessionId}`);
-    return false;
-  }
-}
-
 /**
  * Archive a transcript (rename with timestamped .archived suffix).
  */

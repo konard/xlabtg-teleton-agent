@@ -16,8 +16,3 @@ export function accumulateTokenUsage(usage: {
   globalTokenUsage.totalTokens += usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
   globalTokenUsage.totalCost += usage.totalCost;
 }
-
-export function resetTokenUsage() {
-  globalTokenUsage.totalTokens = 0;
-  globalTokenUsage.totalCost = 0;
-}

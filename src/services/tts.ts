@@ -396,36 +396,3 @@ async function generateElevenLabsTTS(text: string, voiceId: string): Promise<TTS
     voice: voiceId,
   };
 }
-
-/**
- * List available Edge TTS voices (runs edge-tts --list-voices)
- */
-export async function listEdgeVoices(): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const proc = spawn("edge-tts", ["--list-voices"], {
-      stdio: ["pipe", "pipe", "pipe"],
-    });
-
-    let stdout = "";
-    proc.stdout?.on("data", (data) => {
-      stdout += data.toString();
-    });
-
-    proc.on("close", (code) => {
-      if (code === 0) {
-        // Parse voice names from output
-        const voices = stdout
-          .split("\n")
-          .filter((line) => line.startsWith("Name:"))
-          .map((line) => line.replace("Name: ", "").trim());
-        resolve(voices);
-      } else {
-        reject(new Error("Failed to list voices"));
-      }
-    });
-
-    proc.on("error", (err) => {
-      reject(err);
-    });
-  });
-}

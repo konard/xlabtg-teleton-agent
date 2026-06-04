@@ -140,17 +140,3 @@ export function formatMessageEnvelope(params: EnvelopeParams): string {
   }
   return `${header} ${body}`;
 }
-
-export function formatMessageEnvelopeSimple(params: {
-  senderId?: string;
-  senderName?: string;
-  body: string;
-  isGroup: boolean;
-}): string {
-  if (!params.isGroup) {
-    return params.body;
-  }
-
-  const sender = params.senderName || (params.senderId ? `user:${params.senderId}` : "unknown");
-  return `${sender}: ${params.body}`;
-}

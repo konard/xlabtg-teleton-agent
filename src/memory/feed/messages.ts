@@ -90,12 +90,6 @@ export class MessageStore {
     })();
   }
 
-  pruneOldMessages(maxAgeDays = 90): number {
-    const cutoffSec = Math.floor(Date.now() / 1000) - maxAgeDays * 86_400;
-    const result = this.db.prepare("DELETE FROM tg_messages WHERE timestamp < ?").run(cutoffSec);
-    return result.changes;
-  }
-
   getRecentMessages(chatId: string, limit: number = 20): TelegramMessage[] {
     const rows = this.db
       .prepare(

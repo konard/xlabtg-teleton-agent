@@ -94,10 +94,3 @@ export function writeOffset(messageId: number, chatId?: string): void {
     saveState(state);
   }
 }
-
-/**
- * Get all chat offsets (for debugging)
- */
-export function getAllOffsets(): Record<string, number> {
-  return loadState().perChat;
-}

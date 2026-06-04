@@ -4,7 +4,13 @@ import { existsSync, mkdirSync } from "fs";
 import { createLogger } from "../utils/logger.js";
 import { fetchWithTimeout } from "../utils/fetch.js";
 import { ensureGocoonBinaries } from "./installer.js";
-import { clientConfigPath, gocoonDataDir, runnerBaseUrl, walletPath } from "./paths.js";
+import {
+  clientConfigPath,
+  gocoonDataDir,
+  runnerBaseUrl,
+  tonConfigPath,
+  walletPath,
+} from "./paths.js";
 
 const log = createLogger("gocoon");
 const execFileAsync = promisify(execFile);
@@ -118,6 +124,41 @@ export async function walletInfo(): Promise<WalletInfo> {
     funded: Boolean(j.funded),
     recommendedFundingTon: String(j.recommended_funding_ton ?? "20"),
   };
+}
+
+export interface ChannelInfo {
+  stateName: string;
+  stakeNano: bigint;
+  balanceNano: bigint;
+}
+
+// Read a channel's on-chain state directly (no runner needed). The contract
+// account stays "active" after a cooperative close (it keeps a little storage
+// TON), so callers must check stateName, not the account status, to tell a
+// closed channel from a live one. Returns null if it can't be read.
+export async function channelInfoOnChain(clientSC: string): Promise<ChannelInfo | null> {
+  try {
+    const j = parseJson(
+      await runGocoon([
+        "channel",
+        "info",
+        "--client-sc",
+        clientSC,
+        "--config",
+        clientConfigPath(),
+        "--ton-config",
+        tonConfigPath(),
+        "--json",
+      ])
+    );
+    return {
+      stateName: String(j.state_name ?? ""),
+      stakeNano: BigInt(String(j.stake_nano ?? "0")),
+      balanceNano: BigInt(String(j.balance_nano ?? "0")),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export async function waitFunded(onLine?: (line: string) => void): Promise<void> {

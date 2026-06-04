@@ -1413,23 +1413,6 @@ export class AgentRuntime {
     return rows.map((r) => r.chat_id);
   }
 
-  setSoul(soul: string): void {
-    this.soul = soul;
-  }
-
-  configureCompaction(config: {
-    enabled?: boolean;
-    maxMessages?: number;
-    maxTokens?: number;
-  }): void {
-    this.compactionManager.updateConfig(config);
-    log.info({ config: this.compactionManager.getConfig() }, `Compaction config updated`);
-  }
-
-  getCompactionConfig() {
-    return this.compactionManager.getConfig();
-  }
-
   private _memoryStatsCache: {
     data: { totalMessages: number; totalChats: number; knowledgeChunks: number };
     expiry: number;

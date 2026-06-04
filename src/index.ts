@@ -7,7 +7,6 @@ import type { TelegramMessage } from "./telegram/bridge.js";
 import type { ITelegramBridge } from "./telegram/bridge-interface.js";
 import { isBotBridge, isUserBridge } from "./telegram/bridge-guards.js";
 import { createBridge } from "./telegram/factory.js";
-import { eventBus } from "./events/bus.js";
 import { MessageHandler } from "./telegram/handlers.js";
 import { AdminHandler } from "./telegram/admin.js";
 import { MessageDebouncer } from "./telegram/debounce.js";
@@ -138,7 +137,38 @@ export class TeletonApp {
         rewireHooks: () => this.wirePluginEventHooks(),
       },
       userHookEvaluator: this.userHookEvaluator,
+      gocoonControl: {
+        stopRunner: () => this.stopGocoonRunner(),
+      },
     };
+  }
+
+  /**
+   * Stop the supervised gocoon runner + SSE proxy. A withdraw refuses to run
+   * while the runner is active, so the Gocoon page calls this first. The agent
+   * stays up; gocoon inference is unavailable until the next restart.
+   */
+  stopGocoonRunner(): boolean {
+    let stopped = false;
+    if (this.gocoonProxy) {
+      try {
+        this.gocoonProxy.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon sse-proxy stop failed");
+      }
+      this.gocoonProxy = null;
+      stopped = true;
+    }
+    if (this.gocoonSupervisor) {
+      try {
+        this.gocoonSupervisor.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon supervisor stop failed");
+      }
+      this.gocoonSupervisor = null;
+      stopped = true;
+    }
+    return stopped;
   }
 
   constructor(configPath?: string) {
@@ -441,7 +471,6 @@ ${blue}  ┌──────────────────────�
     if (!this.bridge.isAvailable()) {
       throw new Error("Failed to connect to Telegram");
     }
-    eventBus.emit("bridge:connected", { mode: this.config.telegram.mode });
     await this.resolveOwnerInfo();
     const ownUserId = this.bridge.getOwnUserId();
     if (ownUserId) {

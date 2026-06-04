@@ -144,8 +144,3 @@ export async function refreshCodexApiKey(): Promise<string | null> {
 export function isCodexTokenValid(): boolean {
   return tokenCache.isValid();
 }
-
-/** Reset internal cache — exposed for testing only */
-export function _resetCache(): void {
-  tokenCache.reset();
-}

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "child_process";
+import { rmSync } from "fs";
 import { Address, fromNano, internal, SendMode } from "@ton/core";
 import { createLogger } from "../utils/logger.js";
 import { getErrorMessage } from "../utils/errors.js";
@@ -8,6 +9,7 @@ import { openWallet } from "../ton/wallet-open.js";
 import { sendWalletTx } from "../ton/confirm.js";
 import { ensureGocoonBinaries } from "./installer.js";
 import {
+  channelInfoOnChain,
   fetchClientSC,
   gocoonInit,
   streamGocoon,
@@ -21,6 +23,7 @@ import { killProcessGroup, waitReady } from "./supervisor.js";
 import {
   GOCOON_DEFAULT_PORT,
   clientConfigPath,
+  gocoonDataDir,
   runnerBaseUrl,
   runnerBin,
   walletPath,
@@ -56,6 +59,9 @@ const REFUND_TIMEOUT_MS = 180_000;
 const REFUND_MIN_DELTA_NANO = 5_000_000_000n;
 const MIN_COCOON_WITHDRAW_NANO = 50_000_000n;
 const AGENT_FEE_BUFFER_NANO = 10_000_000n;
+// Above this leftover balance, reset refuses: we never delete the mnemonic of a
+// wallet that still controls funds.
+const RESET_MAX_DUST_NANO = 100_000_000n;
 const COCOON_CLIENT_OPS = new Set([
   "CocoonOwnerClientRegister",
   "CocoonExtClientTopUp",
@@ -94,14 +100,18 @@ export async function withdrawAll(
   }
 
   const cocoon = await walletInfo();
+  // The COCOON register/topup ops are sent from the fund wallet (the node
+  // wallet you fund), not the owner wallet. Scanning ownerAddress finds no
+  // channel, silently skips the close, and only the liquid balance is
+  // withdrawn while the stake stays locked. Match myduckai: scan fund_address.
   emit(
     "find_channel",
     "started",
-    `Looking for an active channel via ${shortAddr(cocoon.ownerAddress)}`
+    `Looking for an active channel via ${shortAddr(cocoon.fundAddress)}`
   );
   let clientSC: string | null = null;
   try {
-    clientSC = await findClientSC(cocoon.ownerAddress);
+    clientSC = await findClientSC(cocoon.fundAddress);
     emit("find_channel", "ok", "Channel located");
   } catch (err) {
     emit(
@@ -159,6 +169,53 @@ export async function withdrawAll(
   await withdrawAgentWallet(dest.address, emit);
 
   emit("complete", "ok", `All funds sent to ${dest.label}`);
+}
+
+// Delete the local COCOON wallet + config so the next init generates a fresh
+// owner/node wallet (gocoonInit reuses wallet.json when present). Binaries live
+// in binDir() and are kept. Run after a full withdraw. Guard: refuses while the
+// runner is up, or (without force) while the wallet still holds funds or an
+// active channel exists, so we never destroy keys that still control value.
+export async function resetWallet(
+  opts: { force?: boolean } = {},
+  port: number = GOCOON_DEFAULT_PORT
+): Promise<void> {
+  if (await isRunnerUp(port)) {
+    throw new Error("the gocoon runner is active; stop it first, then retry the reset");
+  }
+  if (!opts.force) {
+    let info: WalletInfo | null = null;
+    try {
+      info = await walletInfo();
+    } catch {
+      info = null; // no wallet on disk; nothing to guard
+    }
+    if (info) {
+      if (info.balanceNano > RESET_MAX_DUST_NANO) {
+        throw new Error(
+          `fund wallet still holds ${info.balanceTon} TON; withdraw first (or reset with force)`
+        );
+      }
+      if (info.fundAddress) {
+        let liveChannel = false;
+        try {
+          const clientSC = await findClientSC(info.fundAddress);
+          const ch = await channelInfoOnChain(clientSC);
+          // findClientSC also returns a closed channel's contract (its account
+          // stays active to hold storage TON), so check the channel state, not
+          // the account status: only a not-closed channel that still holds
+          // stake controls recoverable value and must block the reset.
+          liveChannel = !!ch && ch.stateName !== "closed" && ch.stakeNano > 0n;
+        } catch {
+          liveChannel = false; // no client_sc found (never staked)
+        }
+        if (liveChannel) {
+          throw new Error("a funded channel still exists; withdraw first (or reset with force)");
+        }
+      }
+    }
+  }
+  rmSync(gocoonDataDir(), { recursive: true, force: true });
 }
 
 interface ResolvedDest {

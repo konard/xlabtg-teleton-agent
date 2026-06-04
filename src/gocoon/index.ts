@@ -11,6 +11,7 @@ export {
   walletInfo,
   topup,
   withdrawAll,
+  resetWallet,
   tonToNano,
   type InitSummary,
   type WalletInfo,

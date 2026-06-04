@@ -402,9 +402,6 @@ export const api = {
   async gocoonInit() {
     return fetchAPI<APIResponse<{ fundAddress: string; recommendedFundingTon: string }>>('/gocoon/init', { method: 'POST' });
   },
-  async gocoonBalance() {
-    return fetchAPI<APIResponse<{ balanceTon: string; balanceNano: string; funded: boolean }>>('/gocoon/balance');
-  },
   async gocoonTopup(amount: string) {
     return fetchAPI<APIResponse<{ amount: string }>>('/gocoon/topup', { method: 'POST', body: JSON.stringify({ amount }) });
   },
@@ -413,6 +410,12 @@ export const api = {
   },
   async gocoonWithdrawStatus() {
     return fetchAPI<APIResponse<{ running: boolean; done: boolean; events: { stage: string; status: string; message: string; at: number }[]; error?: string }>>('/gocoon/withdraw');
+  },
+  async gocoonRunnerStop() {
+    return fetchAPI<APIResponse<{ stopped: boolean }>>('/gocoon/runner/stop', { method: 'POST' });
+  },
+  async gocoonReset() {
+    return fetchAPI<APIResponse<{ reset: boolean }>>('/gocoon/reset', { method: 'POST' });
   },
 
   async getTools() {
@@ -466,20 +469,10 @@ export const api = {
     return fetchAPI<APIResponse<PluginManifest[]>>('/plugins');
   },
 
-  async getPluginPriorities() {
-    return fetchAPI<APIResponse<Record<string, number>>>('/plugins/priorities');
-  },
-
   async setPluginPriority(pluginName: string, priority: number) {
     return fetchAPI<APIResponse<{ pluginName: string; priority: number }>>('/plugins/priorities', {
       method: 'POST',
       body: JSON.stringify({ pluginName, priority }),
-    });
-  },
-
-  async resetPluginPriority(pluginName: string) {
-    return fetchAPI<APIResponse<null>>(`/plugins/priorities/${encodeURIComponent(pluginName)}`, {
-      method: 'DELETE',
     });
   },
 
@@ -574,10 +567,6 @@ export const api = {
     return fetchAPI<APIResponse<TaskData[]>>(`/tasks${qs}`);
   },
 
-  async tasksGet(id: string) {
-    return fetchAPI<APIResponse<TaskData>>(`/tasks/${id}`);
-  },
-
   async tasksDelete(_id: string) {
     return fetchAPI<APIResponse<{ message: string }>>(`/tasks/${_id}`, { method: 'DELETE' });
   },
@@ -593,10 +582,6 @@ export const api = {
     });
   },
 
-  async tasksCleanDone() {
-    return fetchAPI<APIResponse<{ deleted: number }>>('/tasks/clean-done', { method: 'POST' });
-  },
-
   async getConfigKeys() {
     return fetchAPI<APIResponse<ConfigKeyData[]>>('/config');
   },
@@ -605,12 +590,6 @@ export const api = {
     return fetchAPI<APIResponse<ConfigKeyData>>(`/config/${key}`, {
       method: 'PUT',
       body: JSON.stringify({ value }),
-    });
-  },
-
-  async unsetConfigKey(key: string) {
-    return fetchAPI<APIResponse<ConfigKeyData>>(`/config/${key}`, {
-      method: 'DELETE',
     });
   },
 

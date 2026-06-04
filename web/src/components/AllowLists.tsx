@@ -41,8 +41,6 @@ export function AllowLists({ getLocal, onSave }: AllowListsProps) {
 
   return (
     <div className="allowlists">
-      <div className="card-header"><div className="section-title">Allow Lists</div></div>
-
       <Segmented<ListKey>
         value={tab}
         onChange={setTab}

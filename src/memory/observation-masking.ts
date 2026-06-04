@@ -148,31 +148,3 @@ export function maskOldToolResults(messages: Message[], options?: MaskingOptions
 
   return result;
 }
-
-export function calculateMaskingSavings(
-  originalMessages: Message[],
-  maskedMessages: Message[]
-): { originalChars: number; maskedChars: number; savings: number } {
-  const countChars = (messages: Message[]): number => {
-    let total = 0;
-    for (const msg of messages) {
-      if (msg.role === "toolResult") {
-        for (const block of msg.content) {
-          if (typeof block !== "string" && block.type === "text") {
-            total += block.text.length;
-          }
-        }
-      }
-    }
-    return total;
-  };
-
-  const originalChars = countChars(originalMessages);
-  const maskedChars = countChars(maskedMessages);
-
-  return {
-    originalChars,
-    maskedChars,
-    savings: originalChars - maskedChars,
-  };
-}

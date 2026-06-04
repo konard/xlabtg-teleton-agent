@@ -677,21 +677,6 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
   },
 };
 
-// ── Category order for frontend grouping ───────────────────────────────
-
-export const CATEGORY_ORDER: ConfigCategory[] = [
-  "API Keys",
-  "Agent",
-  "Session",
-  "Telegram",
-  "Embedding",
-  "WebUI",
-  "Deals",
-  "TON Proxy",
-  "Coding Agent",
-  "Developer",
-];
-
 // ── Dot-notation helpers ───────────────────────────────────────────────
 
 const FORBIDDEN_SEGMENTS = new Set(["__proto__", "constructor", "prototype"]);

@@ -9,6 +9,7 @@ import {
   waitFunded,
   walletInfo,
   withdrawAll,
+  resetWallet,
   GOCOON_DEFAULT_PORT,
   GOCOON_VERSION,
   type GocoonProgress,
@@ -85,6 +86,24 @@ async function runWithdraw(destination: string, skipConfirm: boolean): Promise<v
   await withdrawAll(destination, renderProgress);
 }
 
+async function runReset(skipConfirm: boolean, force: boolean): Promise<void> {
+  if (!skipConfirm) {
+    const ok = await confirm({
+      message:
+        "Reset the COCOON wallet? Deletes the local wallet + config so a fresh wallet is created next setup. Withdraw everything first. Irreversible.",
+      default: false,
+    });
+    if (!ok) {
+      console.log(YELLOW("\n  Reset cancelled.\n"));
+      return;
+    }
+  }
+  await resetWallet({ force });
+  console.log(
+    `  ${GREEN("ok")} COCOON wallet reset. Run ${DIM("teleton gocoon init")} to create a fresh wallet.`
+  );
+}
+
 async function runStatus(): Promise<void> {
   console.log(BOLD("\n  Gocoon status\n"));
   const installed = isInstalled();
@@ -146,6 +165,17 @@ export function registerGocoonCommand(program: Command): void {
     .option("--yes", "Skip the confirmation prompt")
     .action((destination: string, opts: { yes?: boolean }) =>
       guard(() => runWithdraw(destination, Boolean(opts.yes)))
+    );
+
+  gocoon
+    .command("reset")
+    .description(
+      "Delete the local COCOON wallet + config so a fresh wallet is created next setup (withdraw first)"
+    )
+    .option("--yes", "Skip the confirmation prompt")
+    .option("--force", "Reset even if the wallet still has funds or an active channel")
+    .action((opts: { yes?: boolean; force?: boolean }) =>
+      guard(() => runReset(Boolean(opts.yes), Boolean(opts.force)))
     );
 
   gocoon

@@ -16,14 +16,6 @@ export function addLogListener(fn: LogListener): () => void {
   return () => listeners.delete(fn);
 }
 
-export function removeLogListener(fn: LogListener): void {
-  listeners.delete(fn);
-}
-
-export function clearLogListeners(): void {
-  listeners.clear();
-}
-
 // ── Pino level → WebUI LogEntry level mapping ─────────────────────────
 const LEVEL_MAP: Record<number, "log" | "warn" | "error"> = {
   10: "log", // trace  → log
@@ -163,9 +155,6 @@ export function createLogger(module: string): pino.Logger {
   return rootLogger.child({ module });
 }
 
-/** The root pino logger (no module prefix). */
-export const logger = rootLogger;
-
 /**
  * Apply logging config from YAML (called after config load in TonnetApp).
  * Wires config.logging.level to the live logger.
@@ -201,21 +190,9 @@ export function setLogLevel(level: LogLevel): void {
   _verbose = level === "debug" || level === "trace";
 }
 
-/**
- * Get current log level.
- */
-export function getLogLevel(): string {
-  return rootLogger.level;
-}
-
 // ── Backward compatibility ────────────────────────────────────────────
 
 let _verbose = rootLogger.isLevelEnabled("debug");
-
-/** @deprecated Use createLogger(module).debug() instead */
-export function verbose(...args: unknown[]): void {
-  if (_verbose) rootLogger.debug(args.map(String).join(" "));
-}
 
 /** @deprecated Use setLogLevel("debug") / setLogLevel("info") instead */
 export function setVerbose(v: boolean): void {

@@ -16,13 +16,6 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Memory");
 
-export interface SummarizationConfig {
-  apiKey: string;
-  contextWindow: number;
-  maxSummaryTokens: number;
-  maxChunkTokens: number;
-}
-
 export interface SummarizationResult {
   summary: string;
   tokensUsed: number;

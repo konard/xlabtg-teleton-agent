@@ -5,6 +5,7 @@ import {
   ensureGocoonBinaries,
   init,
   isInstalled,
+  resetWallet,
   runnerBaseUrl,
   topup,
   walletInfo,
@@ -138,6 +139,37 @@ export function createGocoonRoutes(deps: WebUIServerDeps) {
       data: withdraw ?? { running: false, done: false, events: [] },
     } as APIResponse)
   );
+
+  // Stop teleton's supervised runner so a withdraw can proceed (withdrawAll
+  // refuses while the runner is active). Waits for the port to go quiet so the
+  // caller knows it's safe to start the withdraw.
+  app.post("/runner/stop", async (c) => {
+    const wasRunning = deps.gocoonControl?.stopRunner() ?? false;
+    const deadline = Date.now() + 8000;
+    while (Date.now() < deadline) {
+      const up = await fetch(`${runnerBaseUrl(port())}/jsonstats`, {
+        signal: AbortSignal.timeout(800),
+      })
+        .then(() => true)
+        .catch(() => false);
+      if (!up) break;
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    return c.json({ success: true, data: { stopped: wasRunning } } as APIResponse);
+  });
+
+  // Wipe the local COCOON wallet + config so the next setup creates a fresh
+  // wallet. Guarded in resetWallet: refuses while the runner is up, or while
+  // funds / an active channel remain (unless force).
+  app.post("/reset", async (c) => {
+    try {
+      const body = (await c.req.json().catch(() => ({}))) as { force?: boolean };
+      await resetWallet({ force: Boolean(body.force) }, port());
+      return c.json({ success: true, data: { reset: true } } as APIResponse);
+    } catch (err) {
+      return c.json({ success: false, error: getErrorMessage(err) } as APIResponse, 400);
+    }
+  });
 
   return app;
 }

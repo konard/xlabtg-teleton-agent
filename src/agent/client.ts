@@ -38,11 +38,6 @@ const RETRY_401_PROVIDERS: { provider: string; refresh: () => Promise<string | n
   { provider: "codex", refresh: refreshCodexApiKey },
 ];
 
-export function isOAuthToken(apiKey: string, provider?: string): boolean {
-  if (provider && provider !== "anthropic") return false;
-  return apiKey.startsWith("sk-ant-oat01-");
-}
-
 /** Resolve the effective API key for a provider (local/gocoon need no real key) */
 export function getEffectiveApiKey(provider: string, rawKey: string): string {
   if (provider === "local") return "local";

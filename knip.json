@@ -7,7 +7,6 @@
         "src/webui/**/*.ts",
         "src/agent/index.ts",
         "src/telegram/index.ts",
-        "src/telegram/callbacks/index.ts",
         "src/sdk/hooks/index.ts",
         "src/constants/index.ts",
         "src/api/**/*.ts"
