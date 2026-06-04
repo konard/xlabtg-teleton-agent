@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.29](https://github.com/xlabtg/teleton-agent/compare/v0.8.28...v0.8.29) (2026-06-04)
+
+
+### Bug Fixes
+
+* **exec:** соблюдать allowlist пользователей для exec scope ([e70b5a7](https://github.com/xlabtg/teleton-agent/commit/e70b5a75b1a0abd97bc827f89d66b4abc49e2b33))
+* **exec:** соблюдать allowlist пользователей для exec scope ([5b56cf4](https://github.com/xlabtg/teleton-agent/commit/5b56cf45b942cbb2a2afd1f3a0721d6165a140c6))
+
+
+### Documentation
+
+* синхронизировать версию README ([0e455da](https://github.com/xlabtg/teleton-agent/commit/0e455da974cde4e6faabc28a4859645d1035d6ab))
+
 ## [0.8.28](https://github.com/xlabtg/teleton-agent/compare/v0.8.27...v0.8.28) (2026-06-03)
 
 
