@@ -1,7 +1,8 @@
 import type Database from "better-sqlite3";
+import { timingSafeEqual } from "node:crypto";
 import type { TelegramBridge } from "../telegram/bridge.js";
 import { WorkflowStore } from "./workflows.js";
-import type { CronTrigger, EventTrigger } from "./workflows.js";
+import type { CronTrigger, EventTrigger, WebhookTrigger } from "./workflows.js";
 import { WorkflowExecutor } from "./workflow-executor.js";
 import { createLogger } from "../utils/logger.js";
 import { getEventBus } from "./event-bus.js";
@@ -11,6 +12,14 @@ const log = createLogger("WorkflowScheduler");
 const TICK_INTERVAL_MS = 60_000;
 
 export type WorkflowEventName = "agent.start" | "agent.stop" | "agent.error" | "tool.complete";
+
+export function matchWebhookSecret(expected: string | undefined, provided: string): boolean {
+  if (!expected || !provided) return false;
+  const expectedBuffer = Buffer.from(expected);
+  const providedBuffer = Buffer.from(provided);
+  if (expectedBuffer.length !== providedBuffer.length) return false;
+  return timingSafeEqual(expectedBuffer, providedBuffer);
+}
 
 export class WorkflowScheduler {
   private timer: ReturnType<typeof setInterval> | null = null;
@@ -65,7 +74,7 @@ export class WorkflowScheduler {
       (w) =>
         w.enabled &&
         w.config.trigger.type === "webhook" &&
-        (w.config.trigger as { type: "webhook"; secret?: string }).secret === secret
+        matchWebhookSecret((w.config.trigger as WebhookTrigger).secret, secret)
     );
     if (matching.length === 0) return false;
     for (const wf of matching) {
