@@ -151,6 +151,19 @@ market:
   deprecated_field: "should be ignored"
 `;
 
+// Config with the removed 'cocoon' provider (replaced by gocoon in 0.9.0)
+const LEGACY_COCOON = `
+agent:
+  api_key: sk-ant-test
+  provider: cocoon
+telegram:
+  api_id: 12345
+  api_hash: abcdef
+  phone: "+1234567890"
+cocoon:
+  port: 9999
+`;
+
 // Config for non-anthropic provider (should auto-set model)
 const OPENAI_CONFIG = `
 agent:
@@ -561,6 +574,15 @@ storage:
 
       // log.warn is pino — we verify the field is removed
       expect((config as any).market).toBeUndefined();
+    });
+
+    it("should migrate the removed 'cocoon' provider to 'gocoon' and carry its port", () => {
+      writeTestConfig(LEGACY_COCOON);
+
+      const config = loadConfig(TEST_CONFIG_PATH);
+
+      expect(config.agent.provider).toBe("gocoon");
+      expect(config.gocoon?.port).toBe(9999);
     });
 
     it("should accept config with extra unknown fields", () => {
