@@ -71,6 +71,18 @@ export class GocoonSseProxy {
     // Frame a single JSON completion as SSE only when the client wanted streaming.
     if (wantsStream && ctype.includes("application/json")) {
       const text = await upstream.text();
+      // A runner error (non-2xx) must surface as a real error, not be reframed
+      // into an empty 200 SSE stream — which the OpenAI SDK parses as a
+      // successful zero-token reply, hiding "no workers / channel out of balance
+      // / model not served" and letting the agent retry silently.
+      if (!upstream.ok) {
+        res.writeHead(upstream.status, { "content-type": "application/json" });
+        res.end(
+          text ||
+            JSON.stringify({ error: { message: `gocoon runner returned HTTP ${upstream.status}` } })
+        );
+        return;
+      }
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache" });
       for (const ev of completionToSse(text)) res.write(ev);
       res.write("data: [DONE]\n\n");
@@ -100,7 +112,16 @@ export function completionToSse(completion: string): string[] {
   try {
     doc = JSON.parse(completion) as Record<string, unknown>;
   } catch {
-    return [`data: ${completion}\n\n`];
+    // Non-JSON upstream body labelled application/json: emit a structured error
+    // so the SDK throws a clean APIError instead of an opaque SyntaxError.
+    const snippet = completion.slice(0, 200).replace(/\s+/g, " ").trim();
+    return [
+      `data: ${JSON.stringify({ error: { message: `gocoon sse-proxy: non-JSON upstream body: ${snippet}` } })}\n\n`,
+    ];
+  }
+  // A 200 error envelope must surface as a thrown error, not an empty stream.
+  if (doc.error) {
+    return [`data: ${JSON.stringify({ error: doc.error })}\n\n`];
   }
   const choices = Array.isArray(doc.choices) ? (doc.choices as Record<string, unknown>[]) : [];
   const base = () => ({
