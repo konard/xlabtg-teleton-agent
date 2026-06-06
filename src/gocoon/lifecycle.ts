@@ -69,6 +69,12 @@ const COCOON_CLIENT_OPS = new Set([
   "CocoonOwnerWithdraw",
 ]);
 
+// Thrown by findClientSC ONLY when the wallet has no cocoon_client interaction
+// on chain (no channel was ever staked). Transient/HTTP failures throw plain
+// Errors instead, so callers can abort rather than mistake a lookup failure for
+// "no channel" and drain the liquid wallet while leaving the stake locked.
+class ChannelNotFoundError extends Error {}
+
 // Add TON to the open channel. The runner must be active (reads client_sc from /jsonstats).
 export async function topup(
   amountTon: string,
@@ -100,50 +106,90 @@ export async function withdrawAll(
   }
 
   const cocoon = await walletInfo();
-  // The COCOON register/topup ops are sent from the fund wallet (the node
-  // wallet you fund), not the owner wallet. Scanning ownerAddress finds no
-  // channel, silently skips the close, and only the liquid balance is
-  // withdrawn while the stake stays locked. Match myduckai: scan fund_address.
-  emit(
-    "find_channel",
-    "started",
-    `Looking for an active channel via ${shortAddr(cocoon.fundAddress)}`
-  );
+  // COCOON channel ops are executed by the fund (node) wallet, not the owner
+  // wallet — scan fund_address (the prior owner-address scan silently skipped
+  // the close and left the stake locked).
+  emit("find_channel", "started", `Looking for a channel via ${shortAddr(cocoon.fundAddress)}`);
   let clientSC: string | null = null;
   try {
     clientSC = await findClientSC(cocoon.fundAddress);
-    emit("find_channel", "ok", "Channel located");
   } catch (err) {
-    emit(
-      "find_channel",
-      "skipped",
-      `No active channel, will only withdraw wallets (${getErrorMessage(err)})`
-    );
+    if (err instanceof ChannelNotFoundError) {
+      emit(
+        "find_channel",
+        "skipped",
+        "No channel was ever staked; withdrawing wallet balance only"
+      );
+    } else {
+      // A transient lookup failure (tonapi rate-limit/5xx, network) must NOT be
+      // treated as "no channel" — that would drain the liquid wallet and leave
+      // the staked TON locked while reporting success. Abort so the user retries.
+      emit("find_channel", "error", `Channel lookup failed: ${getErrorMessage(err)}`);
+      throw new Error(
+        `could not check for an open channel (${getErrorMessage(err)}); aborting so the staked TON is not left locked. Retry the withdraw.`
+      );
+    }
   }
 
   if (clientSC) {
-    emit("spawn_runner", "started", "Starting gocoon-runner (transient)");
-    const runner = await spawnTransientRunner();
-    try {
-      await waitReady(`${runnerBaseUrl(port)}/jsonstats`, 30_000);
-      emit("spawn_runner", "ok", "Runner ready");
+    // Decide liveness from the channel STATE, not the account status: a
+    // cooperatively-closed cocoon_client account stays "active" (it holds
+    // storage TON). Re-closing a closed channel would hang the refund wait.
+    const ch = await channelInfoOnChain(clientSC);
+    if (!ch) {
+      emit("find_channel", "error", "Could not read the channel state");
+      throw new Error(
+        "located a channel but could not read its state; aborting so the staked TON is not left locked. Retry the withdraw."
+      );
+    }
+    const live = ch.stateName !== "closed" && ch.stakeNano > 0n;
+    if (live) {
+      emit("find_channel", "ok", "Channel located (open) — closing");
+      emit("spawn_runner", "started", "Starting gocoon-runner (transient)");
+      const runner = await spawnTransientRunner();
+      try {
+        await waitReady(`${runnerBaseUrl(port)}/jsonstats`, 30_000);
+        emit("spawn_runner", "ok", "Runner ready");
 
-      emit("close_channel", "started", "Closing channel");
-      await streamGocoon([
-        "channel",
-        "close",
-        "--client-sc",
-        clientSC,
-        "--url",
-        runnerBaseUrl(port),
-      ]);
-      emit("close_channel", "ok", "Channel close transaction sent");
+        emit("close_channel", "started", "Closing channel");
+        await streamGocoon([
+          "channel",
+          "close",
+          "--client-sc",
+          clientSC,
+          "--url",
+          runnerBaseUrl(port),
+        ]);
+        emit("close_channel", "ok", "Channel close transaction sent");
 
-      emit("wait_refund", "started", "Waiting for the staked TON to return (up to 3 min)");
-      await waitForRefund(REFUND_TIMEOUT_MS);
-      emit("wait_refund", "ok", "Refund landed on chain");
-    } finally {
-      if (runner.pid != null) killProcessGroup(runner.pid);
+        emit(
+          "wait_refund",
+          "started",
+          "Waiting for the staked TON to return (cooperative close, up to 3 min)"
+        );
+        const landed = await waitForRefund(REFUND_TIMEOUT_MS);
+        if (!landed) {
+          // The close IS on chain; the stake returns once the node co-signs or
+          // via the ~12h unilateral delay. Leave the wallets untouched so a
+          // later re-run sweeps everything cleanly (the re-run is idempotent).
+          emit(
+            "wait_refund",
+            "warn",
+            "Refund not received within 3 min. The channel close is on chain; the stake returns once the node co-signs or via the ~12h fallback. Re-run the withdraw later to finish."
+          );
+          emit(
+            "complete",
+            "warn",
+            "Channel closed; refund pending. Re-run the withdraw later to sweep the funds (your TON is safe)."
+          );
+          return;
+        }
+        emit("wait_refund", "ok", "Refund landed on chain");
+      } finally {
+        if (runner.pid != null) killProcessGroup(runner.pid);
+      }
+    } else {
+      emit("find_channel", "ok", "Channel already closed — withdrawing the remaining balance");
     }
   }
 
@@ -159,6 +205,8 @@ export async function withdrawAll(
       clientConfigPath(),
       "--to",
       dest.address.toString({ bounceable: false }),
+      "--timeout",
+      "10m",
     ]);
     emit("withdraw_cocoon", "ok", "COCOON wallet withdrawn");
   } else {
@@ -206,8 +254,15 @@ export async function resetWallet(
           // the account status: only a not-closed channel that still holds
           // stake controls recoverable value and must block the reset.
           liveChannel = !!ch && ch.stateName !== "closed" && ch.stakeNano > 0n;
-        } catch {
-          liveChannel = false; // no client_sc found (never staked)
+        } catch (err) {
+          if (!(err instanceof ChannelNotFoundError)) {
+            // Could not verify there is no live channel (transient lookup
+            // failure). Refuse rather than risk deleting keys to a live stake.
+            throw new Error(
+              `could not verify the channel state (${getErrorMessage(err)}); refusing to reset. Retry, or reset with force if you are sure.`
+            );
+          }
+          liveChannel = false; // ChannelNotFoundError: no channel was ever staked
         }
         if (liveChannel) {
           throw new Error("a funded channel still exists; withdraw first (or reset with force)");
@@ -251,7 +306,11 @@ async function isRunnerUp(port: number): Promise<boolean> {
   }
 }
 
-// Find the client_sc this wallet interacted with on chain, and verify it is active.
+// Find the client_sc this fund wallet interacted with on chain. Returns the
+// client_sc address; throws ChannelNotFoundError if the wallet never opened a
+// channel, and a plain Error for transient/HTTP failures so callers can abort
+// rather than mistake a lookup failure for "no channel". Open-vs-closed liveness
+// is decided by the caller via channelInfoOnChain.
 async function findClientSC(walletAddr: string): Promise<string> {
   const res = await tonapiFetch(`/accounts/${encodeURIComponent(walletAddr)}/events?limit=50`);
   if (!res.ok) throw new Error(`tonapi events returned HTTP ${res.status}`);
@@ -282,31 +341,30 @@ async function findClientSC(walletAddr: string): Promise<string> {
     if (candidate) break;
   }
   if (!candidate) {
-    throw new Error("no cocoon_client interaction found; channel may never have been staked");
+    throw new ChannelNotFoundError(
+      "no cocoon_client interaction found; channel may never have been staked"
+    );
   }
-
-  const stat = await tonapiFetch(`/accounts/${encodeURIComponent(candidate)}`);
-  if (!stat.ok) throw new Error(`tonapi account returned HTTP ${stat.status}`);
-  const status = ((await stat.json()) as { status?: string }).status ?? "unknown";
-  if (status !== "active") throw new Error(`client_sc is ${status} (already closed?)`);
 
   return Address.parse(candidate).toString({ bounceable: false });
 }
 
 // Poll the COCOON wallet balance until it grows by at least 5 TON (the refund).
-async function waitForRefund(timeoutMs: number): Promise<void> {
+// Returns true once the refund lands, false if it has not within timeoutMs (the
+// caller handles the slow/unilateral path without hard-failing the withdraw).
+async function waitForRefund(timeoutMs: number): Promise<boolean> {
   const baseline = (await walletInfo()).balanceNano;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     await sleep(5_000);
     try {
       const now = (await walletInfo()).balanceNano;
-      if (now > baseline && now - baseline >= REFUND_MIN_DELTA_NANO) return;
+      if (now > baseline && now - baseline >= REFUND_MIN_DELTA_NANO) return true;
     } catch {
       /* transient RPC error */
     }
   }
-  throw new Error(`refund did not land within ${Math.round(timeoutMs / 1000)}s`);
+  return false;
 }
 
 // Send (balance - 0.01 TON) from teleton's agent wallet to dest. Skips if empty.
