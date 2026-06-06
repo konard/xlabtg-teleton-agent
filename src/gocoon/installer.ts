@@ -44,20 +44,54 @@ export interface GocoonBinaries {
   runner: string;
 }
 
+function sha256File(p: string): string {
+  return createHash("sha256").update(readFileSync(p)).digest("hex");
+}
+
+// The sentinel is JSON { version, gocoon, runner } recording each binary's
+// sha256 at install time. Legacy installs wrote a plain version string; those
+// parse to null so they get re-verified (and re-downloaded) once.
+function readSentinel(): { version: string; gocoon: string; runner: string } | null {
+  try {
+    const j = JSON.parse(readFileSync(versionSentinel(), "utf-8")) as Record<string, unknown>;
+    if (
+      typeof j.version === "string" &&
+      typeof j.gocoon === "string" &&
+      typeof j.runner === "string"
+    ) {
+      return { version: j.version, gocoon: j.gocoon, runner: j.runner };
+    }
+  } catch {
+    /* missing or legacy plain-string sentinel */
+  }
+  return null;
+}
+
+// Cheap presence check for status display: pinned version + both files exist.
 export function isInstalled(): boolean {
-  return (
-    existsSync(versionSentinel()) &&
-    readFileSync(versionSentinel(), "utf-8").trim() === GOCOON_VERSION &&
-    existsSync(gocoonBin()) &&
-    existsSync(runnerBin())
-  );
+  const s = readSentinel();
+  return !!s && s.version === GOCOON_VERSION && existsSync(gocoonBin()) && existsSync(runnerBin());
+}
+
+// Full integrity check: the on-disk binaries still match the sha256 recorded at
+// install. Catches an out-of-band swap/corruption that the version string alone
+// would miss, so we never launch an unverified runner against a live channel.
+function binariesVerified(): boolean {
+  const s = readSentinel();
+  if (!s || s.version !== GOCOON_VERSION) return false;
+  if (!existsSync(gocoonBin()) || !existsSync(runnerBin())) return false;
+  try {
+    return sha256File(gocoonBin()) === s.gocoon && sha256File(runnerBin()) === s.runner;
+  } catch {
+    return false;
+  }
 }
 
 // Download the pinned release, verify its SHA-256, extract both binaries into
 // ~/.teleton/bin. Idempotent via the version sentinel.
 export async function ensureGocoonBinaries(): Promise<GocoonBinaries> {
   const out: GocoonBinaries = { gocoon: gocoonBin(), runner: runnerBin() };
-  if (isInstalled()) return out;
+  if (binariesVerified()) return out;
 
   const { os, arch } = detectPlatform();
   const archive = `gocoon-${GOCOON_VERSION}-${os}-${arch}.tar.gz`;
@@ -100,7 +134,14 @@ export async function ensureGocoonBinaries(): Promise<GocoonBinaries> {
     rmSync(tmp, { recursive: true, force: true });
   }
 
-  writeFileSync(versionSentinel(), GOCOON_VERSION);
+  writeFileSync(
+    versionSentinel(),
+    JSON.stringify({
+      version: GOCOON_VERSION,
+      gocoon: sha256File(out.gocoon),
+      runner: sha256File(out.runner),
+    })
+  );
   log.info(`gocoon ${GOCOON_VERSION} installed`);
   return out;
 }
