@@ -112,10 +112,10 @@ async function runStatus(): Promise<void> {
   if (installed) {
     try {
       const info = await walletInfo();
-      console.log(`  COCOON wallet: ${info.ownerAddress}`);
+      console.log(`  Fund address:  ${info.fundAddress}`);
       console.log(`  Balance:       ${info.balanceTon} TON`);
     } catch {
-      console.log(`  COCOON wallet: ${DIM("not set up, run `teleton gocoon init`")}`);
+      console.log(`  Fund address:  ${DIM("not set up, run `teleton gocoon init`")}`);
     }
   }
 

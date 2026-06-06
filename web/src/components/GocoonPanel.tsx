@@ -326,13 +326,22 @@ export function GocoonPanel() {
                     type="number"
                     placeholder="TON (e.g. 5)"
                     value={topupAmount}
+                    disabled={!running}
                     onChange={(e) => setTopupAmount(e.target.value)}
                   />
-                  <button className="btn-sm" disabled={!!busy || !topupAmount.trim()} onClick={onTopup}>
+                  <button
+                    className="btn-sm"
+                    disabled={!!busy || !running || !topupAmount.trim()}
+                    onClick={onTopup}
+                  >
                     {busy === 'topup' ? 'Topping up...' : 'Top up'}
                   </button>
                 </div>
-                <div className="helper-text">Adds stake to the channel (the runner must be active).</div>
+                <div className="helper-text">
+                  {running
+                    ? 'Adds stake to the channel.'
+                    : 'Start the agent first — top up needs the runner active.'}
+                </div>
               </div>
             )}
 
