@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getProviderMetadata, validateApiKeyFormat } from "../../config/providers.js";
 import { AgentConfigSchema } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
-import { getProviderModel } from "../../agent/client.js";
+import { getProviderModel, supportsNativeToolCalling } from "../../agent/client.js";
 
 describe("NVIDIA provider registration", () => {
   it("is registered in the provider registry", () => {
@@ -42,6 +42,13 @@ describe("NVIDIA model routing", () => {
     expect("compat" in model && model.compat?.maxTokensField).toBe("max_tokens");
     expect("compat" in model && model.compat?.supportsStrictMode).toBe(false);
   });
+
+  it("marks GLM-5.1 as a text-only NVIDIA endpoint", () => {
+    const model = getProviderModel("nvidia", "z-ai/glm-5.1");
+
+    expect(supportsNativeToolCalling("nvidia", "z-ai/glm-5.1")).toBe(false);
+    expect("compat" in model && model.compat?.supportsUsageInStreaming).toBe(false);
+  });
 });
 
 describe("NVIDIA curated model catalog", () => {
@@ -50,10 +57,11 @@ describe("NVIDIA curated model catalog", () => {
     const values = models.map((m) => m.value);
 
     expect(models.length).toBeGreaterThan(0);
+    expect(values).toContain("z-ai/glm-5.1");
     expect(values).toContain("qwen/qwen3-coder-480b-a35b-instruct");
-    expect(values).toContain("mistralai/devstral-2-123b-instruct-2512");
+    expect(values).toContain("mistralai/mistral-small-4-119b-2603");
     expect(values).toContain("deepseek-ai/deepseek-v3.1-terminus");
-    expect(values).toContain("moonshotai/kimi-k2-instruct-0905");
+    expect(values).toContain("moonshotai/kimi-k2.6");
     expect(values).toContain("stepfun-ai/step-3.5-flash");
   });
 

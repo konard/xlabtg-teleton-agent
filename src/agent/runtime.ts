@@ -85,6 +85,7 @@ import {
   parseRetryAfterMs,
   isNetworkError,
   isNetworkErrorMessage,
+  getEmptyResponseDiagnostic,
   trimRagContext,
   LoopStallDetector,
 } from "./runtime-utils.js";
@@ -1079,15 +1080,29 @@ export class AgentRuntime {
           // Detect empty response with zero tokens — retry the whole loop rather than giving up
           const hasTokens = !!(response.message.usage?.input || response.message.usage?.output);
           const hasText = !!response.text;
-          if (!hasText && !hasTokens && emptyResponseRetries < EMPTY_RESPONSE_MAX_RETRIES) {
-            emptyResponseRetries++;
-            const delay = 2000 * emptyResponseRetries;
-            log.warn(
-              `⚠️ Empty response with zero tokens - retrying in ${delay}ms (attempt ${emptyResponseRetries}/${EMPTY_RESPONSE_MAX_RETRIES})...`
-            );
-            await new Promise((r) => setTimeout(r, delay));
-            iteration--;
-            continue;
+          if (!hasText && !hasTokens) {
+            if (emptyResponseRetries < EMPTY_RESPONSE_MAX_RETRIES) {
+              emptyResponseRetries++;
+              const delay = 2000 * emptyResponseRetries;
+              log.warn(
+                `⚠️ Empty response with zero tokens - retrying in ${delay}ms (attempt ${emptyResponseRetries}/${EMPTY_RESPONSE_MAX_RETRIES})...`
+              );
+              await new Promise((r) => setTimeout(r, delay));
+              iteration--;
+              continue;
+            }
+
+            const diagnostic = getEmptyResponseDiagnostic({
+              provider,
+              model: this.config.agent.model,
+              hasText,
+              inputTokens: response.message.usage?.input,
+              outputTokens: response.message.usage?.output,
+            });
+            if (diagnostic) {
+              log.error(`🚨 ${diagnostic}`);
+              throw new Error(diagnostic);
+            }
           }
           log.info(`🔄 ${iteration}/${maxIterations} → done`);
           finalResponse = response;

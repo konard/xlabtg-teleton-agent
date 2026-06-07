@@ -60,6 +60,31 @@ export function isNetworkErrorMessage(message: string): boolean {
   );
 }
 
+export interface EmptyResponseDiagnosticInput {
+  provider: string;
+  model: string;
+  hasText: boolean;
+  inputTokens?: number;
+  outputTokens?: number;
+}
+
+export function getEmptyResponseDiagnostic(input: EmptyResponseDiagnosticInput): string | null {
+  const hasTokens = (input.inputTokens ?? 0) > 0 || (input.outputTokens ?? 0) > 0;
+  if (input.hasText || hasTokens) return null;
+
+  if (input.provider.toLowerCase() === "nvidia" && input.model.toLowerCase() === "z-ai/glm-5.1") {
+    return (
+      "NVIDIA NIM z-ai/glm-5.1 returned an empty streaming response with zero token usage. " +
+      "Teleton sends this model as text-only because NVIDIA does not list tool-calling " +
+      "parameters for it. If the same model works in the NVIDIA web UI but not through the API, " +
+      "verify that the nvapi key's organization has Public API Endpoints access, or switch to a " +
+      "tool-capable NVIDIA model such as meta/llama-3.1-8b-instruct or deepseek-ai/deepseek-v3.1."
+    );
+  }
+
+  return null;
+}
+
 export function isTrivialMessage(text: string): boolean {
   const stripped = text.trim();
   if (!stripped) return true;

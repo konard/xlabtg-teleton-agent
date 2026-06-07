@@ -5,6 +5,7 @@ import {
   parseRetryAfterMs,
   isNetworkError,
   isNetworkErrorMessage,
+  getEmptyResponseDiagnostic,
   trimRagContext,
   LoopStallDetector,
 } from "../../agent/runtime-utils.js";
@@ -336,6 +337,60 @@ describe("isNetworkErrorMessage", () => {
   it("T14m: detects 'Request timed out' (ZAI provider stopReason:error path)", () => {
     expect(isNetworkErrorMessage("Request timed out.")).toBe(true);
     expect(isNetworkErrorMessage("request timed out")).toBe(true);
+  });
+});
+
+// ─── T14b: getEmptyResponseDiagnostic ──────────────────────────────────
+
+describe("getEmptyResponseDiagnostic", () => {
+  it("returns NVIDIA GLM-5.1 guidance for empty zero-token responses", () => {
+    const result = getEmptyResponseDiagnostic({
+      provider: "nvidia",
+      model: "z-ai/glm-5.1",
+      hasText: false,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+
+    expect(result).toContain("NVIDIA NIM z-ai/glm-5.1");
+    expect(result).toContain("text-only");
+    expect(result).toContain("Public API Endpoints");
+  });
+
+  it("does not report a diagnostic when the response has text", () => {
+    expect(
+      getEmptyResponseDiagnostic({
+        provider: "nvidia",
+        model: "z-ai/glm-5.1",
+        hasText: true,
+        inputTokens: 0,
+        outputTokens: 0,
+      })
+    ).toBeNull();
+  });
+
+  it("does not report a diagnostic when token usage is present", () => {
+    expect(
+      getEmptyResponseDiagnostic({
+        provider: "nvidia",
+        model: "z-ai/glm-5.1",
+        hasText: false,
+        inputTokens: 12,
+        outputTokens: 0,
+      })
+    ).toBeNull();
+  });
+
+  it("does not report NVIDIA GLM-5.1 guidance for unrelated models", () => {
+    expect(
+      getEmptyResponseDiagnostic({
+        provider: "nvidia",
+        model: "deepseek-ai/deepseek-v3.1",
+        hasText: false,
+        inputTokens: 0,
+        outputTokens: 0,
+      })
+    ).toBeNull();
   });
 });
 

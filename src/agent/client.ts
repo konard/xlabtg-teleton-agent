@@ -80,9 +80,18 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
 }
 
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+const NVIDIA_TEXT_ONLY_MODELS = new Set(["z-ai/glm-5.1"]);
+
+export function supportsNativeToolCalling(provider: SupportedProvider, modelId: string): boolean {
+  if (provider === "nvidia" && NVIDIA_TEXT_ONLY_MODELS.has(modelId.toLowerCase())) {
+    return false;
+  }
+  return true;
+}
 
 /** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
 function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
+  const isTextOnlyModel = NVIDIA_TEXT_ONLY_MODELS.has(modelId.toLowerCase());
   return {
     id: modelId,
     name: modelId,
@@ -100,6 +109,7 @@ function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
       supportsReasoningEffort: false,
       supportsStrictMode: false,
       maxTokensField: "max_tokens",
+      ...(isTextOnlyModel ? { supportsUsageInStreaming: false } : {}),
     },
   };
 }
@@ -267,6 +277,12 @@ export async function chatWithContext(
 
   let tools =
     provider === "google" && options.tools ? sanitizeToolsForGemini(options.tools) : options.tools;
+  if (tools?.length && !supportsNativeToolCalling(provider, config.model)) {
+    log.warn(
+      `Native tool calling disabled for ${provider}/${config.model}; sending text-only chat request`
+    );
+    tools = undefined;
+  }
 
   // Cocoon: disable thinking mode + inject tools into system prompt
   let systemPrompt = options.systemPrompt || options.context.systemPrompt || "";

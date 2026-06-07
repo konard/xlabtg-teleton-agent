@@ -442,7 +442,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       value: "z-ai/glm-5.1",
       name: "GLM-5.1",
-      description: "GLM (General Language Model) with DSA (Dense-Sparse-Alternating)",
+      description: "Text-only NVIDIA hosted chat model; native tool calling is disabled",
     },
     {
       value: "minimaxai/minimax-m2.7",
@@ -452,12 +452,14 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       value: "openai/gpt-oss-20b",
       name: "GPT OSS 20B Overview",
-      description: "OpenAI releases the gpt-oss family of open-weight models designed for powerful reasoning, agentic tasks, and versatile developer use cases",
+      description:
+        "OpenAI releases the gpt-oss family of open-weight models designed for powerful reasoning, agentic tasks, and versatile developer use cases",
     },
     {
       value: "openai/gpt-oss-120b",
       name: "GPT OSS 120B Overview",
-      description: "OpenAI releases the gpt-oss family of open-weight models designed for powerful reasoning, agentic tasks, and versatile developer use cases",
+      description:
+        "OpenAI releases the gpt-oss family of open-weight models designed for powerful reasoning, agentic tasks, and versatile developer use cases",
     },
     {
       value: "meta/llama-3.1-8b-instruct",
@@ -502,7 +504,8 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       value: "mistralai/mistral-small-4-119b-2603",
       name: "Mistral Small 4 119B A6B",
-      description: "Mistral Small 4 is a powerful hybrid model capable of acting as both a general instruction model and a reasoning model. It unifies the capabilities of three different model families—Instruct, Reasoning (previously called Magistral), and Devstral—into a single, unified model",
+      description:
+        "Mistral Small 4 is a powerful hybrid model capable of acting as both a general instruction model and a reasoning model. It unifies the capabilities of three different model families—Instruct, Reasoning (previously called Magistral), and Devstral—into a single, unified model",
     },
     {
       value: "deepseek-ai/deepseek-v3.1-terminus",
