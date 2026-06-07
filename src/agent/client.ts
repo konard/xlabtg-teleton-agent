@@ -89,6 +89,124 @@ export function supportsNativeToolCalling(provider: SupportedProvider, modelId: 
   return true;
 }
 
+interface TextOnlyMessageSegment {
+  role: "user" | "assistant";
+  text: string;
+  timestamp: number;
+}
+
+function stringifyToolArguments(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return "{}";
+  }
+}
+
+function userMessageToText(message: Extract<Message, { role: "user" }>): string {
+  if (typeof message.content === "string") return message.content;
+
+  return message.content
+    .map((block) => (block.type === "text" ? block.text : "[Image omitted]"))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function assistantMessageToText(message: AssistantMessage): string {
+  const parts: string[] = [];
+  for (const block of message.content) {
+    if (block.type === "text" && block.text.trim()) {
+      parts.push(block.text);
+    } else if (block.type === "toolCall") {
+      parts.push(
+        `[Assistant requested tool: ${block.name} ${stringifyToolArguments(block.arguments)}]`
+      );
+    }
+  }
+  return parts.join("\n\n");
+}
+
+function toolResultMessageToText(message: Extract<Message, { role: "toolResult" }>): string {
+  const body = message.content
+    .map((block) => (block.type === "text" ? block.text : "[Image omitted]"))
+    .filter(Boolean)
+    .join("\n");
+  const status = message.isError ? "ERROR" : "OK";
+  return `[Tool result: ${message.toolName} - ${status}]\n${body}`;
+}
+
+function pushTextOnlySegment(
+  segments: TextOnlyMessageSegment[],
+  role: TextOnlyMessageSegment["role"],
+  text: string,
+  timestamp: number
+): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  const previous = segments[segments.length - 1];
+  if (previous?.role === role) {
+    previous.text += `\n\n${trimmed}`;
+    previous.timestamp = timestamp;
+    return;
+  }
+
+  segments.push({ role, text: trimmed, timestamp });
+}
+
+function textOnlyAssistantMessage(
+  segment: TextOnlyMessageSegment,
+  model: Model<Api>
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text: segment.text }],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: segment.timestamp,
+  };
+}
+
+function normalizeTextOnlyContext(context: Context, model: Model<Api>): Context {
+  const segments: TextOnlyMessageSegment[] = [];
+
+  // NVIDIA GLM-5.1 rejects native tool payloads, including old tool history.
+  for (const message of context.messages) {
+    if (message.role === "user") {
+      pushTextOnlySegment(segments, "user", userMessageToText(message), message.timestamp);
+    } else if (message.role === "assistant") {
+      pushTextOnlySegment(
+        segments,
+        "assistant",
+        assistantMessageToText(message),
+        message.timestamp
+      );
+    } else if (message.role === "toolResult") {
+      pushTextOnlySegment(segments, "user", toolResultMessageToText(message), message.timestamp);
+    }
+  }
+
+  return {
+    ...context,
+    tools: undefined,
+    messages: segments.map((segment) =>
+      segment.role === "user"
+        ? { role: "user", content: segment.text, timestamp: segment.timestamp }
+        : textOnlyAssistantMessage(segment, model)
+    ),
+  };
+}
+
 /** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
 function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
   const isTextOnlyModel = NVIDIA_TEXT_ONLY_MODELS.has(modelId.toLowerCase());
@@ -302,6 +420,9 @@ export async function chatWithContext(
     systemPrompt,
     tools,
   };
+  const requestContext = supportsNativeToolCalling(provider, config.model)
+    ? context
+    : normalizeTextOnlyContext(context, model);
 
   const temperature = options.temperature ?? config.temperature;
 
@@ -318,7 +439,7 @@ export async function chatWithContext(
     completeOptions.onPayload = stripCocoonPayload;
   }
 
-  let response = await complete(model, context, completeOptions as ProviderStreamOptions);
+  let response = await complete(model, requestContext, completeOptions as ProviderStreamOptions);
 
   // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials
   // Use precise patterns to avoid false positives from upstream bodies that happen to contain "401"
@@ -332,7 +453,7 @@ export async function chatWithContext(
     const refreshedKey = await refreshClaudeCodeApiKey();
     if (refreshedKey) {
       completeOptions.apiKey = refreshedKey;
-      response = await complete(model, context, completeOptions as ProviderStreamOptions);
+      response = await complete(model, requestContext, completeOptions as ProviderStreamOptions);
     }
   }
 
