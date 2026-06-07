@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.33](https://github.com/xlabtg/teleton-agent/compare/v0.8.32...v0.8.33) (2026-06-07)
+
+
+### Bug Fixes
+
+* **webhooks:** блокировать DNS rebinding в outbound fetch ([9eddda1](https://github.com/xlabtg/teleton-agent/commit/9eddda185fbd61af7806973c5ded641230bbc82c))
+* защитить outbound webhook от DNS rebinding ([b80f782](https://github.com/xlabtg/teleton-agent/commit/b80f782e547c6a92b99c6664e96e1bdf00b9af6a))
+
 ## [0.8.32](https://github.com/xlabtg/teleton-agent/compare/v0.8.31...v0.8.32) (2026-06-04)
 
 
