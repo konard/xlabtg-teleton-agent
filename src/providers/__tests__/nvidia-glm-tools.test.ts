@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { Tool } from "@mariozechner/pi-ai";
+import type { AssistantMessage, Message, Tool, ToolResultMessage } from "@mariozechner/pi-ai";
 import type { AgentConfig } from "../../config/schema.js";
 
 const mockComplete = vi.fn();
@@ -61,6 +61,44 @@ function makeAssistantMessage(text: string) {
   };
 }
 
+function makeAssistantToolCallMessage(): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [
+      {
+        type: "toolCall",
+        id: "call_lookup",
+        name: "test_lookup",
+        arguments: { query: "status" },
+      },
+    ],
+    api: "openai-completions",
+    provider: "nvidia",
+    model: "meta/llama-3.1-8b-instruct",
+    usage: {
+      input: 10,
+      output: 3,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 13,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "toolUse",
+    timestamp: Date.now(),
+  };
+}
+
+function makeToolResultMessage(): ToolResultMessage {
+  return {
+    role: "toolResult",
+    toolCallId: "call_lookup",
+    toolName: "test_lookup",
+    content: [{ type: "text", text: JSON.stringify({ success: true, data: { answer: "ok" } }) }],
+    isError: false,
+    timestamp: Date.now(),
+  };
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockComplete.mockResolvedValue(makeAssistantMessage("ok"));
@@ -78,6 +116,37 @@ describe("NVIDIA GLM-5.1 tool compatibility", () => {
     expect(mockComplete).toHaveBeenCalledTimes(1);
     const [, context] = mockComplete.mock.calls[0] as [unknown, { tools?: Tool[] }];
     expect(context.tools).toBeUndefined();
+  });
+
+  it("converts old native tool history into alternating text-only GLM-5.1 messages", async () => {
+    const { chatWithContext } = await import("../../agent/client.js");
+    const history: Message[] = [
+      { role: "user", content: "Check status", timestamp: Date.now() },
+      makeAssistantToolCallMessage(),
+      makeToolResultMessage(),
+      { role: "user", content: "Explain the result", timestamp: Date.now() },
+    ];
+
+    await chatWithContext(agentConfig("z-ai/glm-5.1"), {
+      context: { messages: history, systemPrompt: "test" },
+      tools: [sampleTool],
+    });
+
+    const [, context] = mockComplete.mock.calls[0] as [
+      unknown,
+      { messages: Message[]; tools?: Tool[] },
+    ];
+    expect(context.tools).toBeUndefined();
+    expect(context.messages.every((message) => message.role !== "toolResult")).toBe(true);
+    expect(
+      context.messages.every(
+        (message) =>
+          message.role !== "assistant" ||
+          message.content.every((block) => block.type !== "toolCall")
+      )
+    ).toBe(true);
+    expect(context.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
+    expect(JSON.stringify(context.messages)).toContain("[Tool result: test_lookup - OK]");
   });
 
   it("keeps native tools for NVIDIA models with tool-calling parameters", async () => {
