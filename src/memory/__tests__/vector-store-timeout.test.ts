@@ -92,6 +92,28 @@ describe("UpstashSemanticVectorStore timeouts", () => {
     expect(mocks.query).not.toHaveBeenCalled();
   });
 
+  it("escapes backslashes and quotes when building the message search filter", async () => {
+    mocks.query.mockResolvedValue([]);
+    const store = new UpstashSemanticVectorStore({
+      url: "https://example.upstash.io",
+      token: "token",
+      namespace: "ns",
+      requestTimeoutMs: 5_000,
+    });
+
+    await store.searchMessages([0.1, 0.2], 3, {
+      chatId: "chat\\'; DROP",
+      afterTimestamp: 1700000000,
+    });
+
+    expect(mocks.query).toHaveBeenCalledTimes(1);
+    const [payload, opts] = mocks.query.mock.calls[0];
+    // Backslash is escaped first, then the quote, so neither can break out of
+    // the quoted filter literal.
+    expect(payload.filter).toBe("chatId = 'chat\\\\\\'; DROP' AND timestamp >= 1700000000");
+    expect(opts).toEqual({ namespace: "ns-messages" });
+  });
+
   it("circuit breaker resets after the cooldown period", async () => {
     vi.useFakeTimers();
     mocks.query.mockRejectedValue(new Error("backend unavailable"));

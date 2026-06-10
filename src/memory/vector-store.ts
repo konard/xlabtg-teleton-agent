@@ -86,7 +86,9 @@ const CIRCUIT_BREAKER_COOLDOWN_MS = 60_000;
 const MESSAGE_NAMESPACE_SUFFIX = "-messages";
 
 function escapeFilterValue(value: string): string {
-  return value.replace(/'/g, "\\'");
+  // Escape backslashes first so an existing "\" cannot combine with the quote
+  // we add and break out of the quoted filter literal, then escape quotes.
+  return value.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
 function buildMessageFilter(options: SemanticMessageSearchOptions): string | undefined {
