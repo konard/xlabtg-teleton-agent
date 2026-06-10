@@ -52,8 +52,17 @@ export function initializeMemory(config: {
   autonomous?: AutonomousConfig;
   workspaceDir: string;
 }): MemorySystem {
-  const db = getDatabase(config.database);
   const rawEmbedder = createEmbeddingProvider(config.embeddings);
+  // Derive the vec0 table dimension from the active embedder so the vector
+  // tables always match the provider's output. A hardcoded dimension only
+  // matches one provider (e.g. 384 for `local`) and silently breaks inserts
+  // for every other provider (Voyage 512/1024). The embedder is the single
+  // source of truth; only override when it reports a real dimension.
+  const databaseConfig: DatabaseConfig =
+    rawEmbedder.dimensions > 0
+      ? { ...config.database, vectorDimensions: rawEmbedder.dimensions }
+      : config.database;
+  const db = getDatabase(databaseConfig);
   const vectorEnabled = db.isVectorSearchReady();
   const database: Database.Database = db.getDb();
   const vectorStore = createSemanticVectorStoreFromConfig(config.vectorMemory);

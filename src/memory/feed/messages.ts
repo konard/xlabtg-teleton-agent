@@ -56,12 +56,24 @@ export class MessageStore {
 
     // Compute an embedding when the local vector index OR the remote semantic
     // store needs one, so message search stays consistent with knowledge search
-    // (which always dual-writes to the semantic store when configured).
+    // (which always dual-writes to the semantic store when configured). The
+    // embedding is computed outside the DB transaction: a failure (network
+    // error, provider outage) must degrade to "stored without vector" rather
+    // than dropping the message row entirely.
     const needsEmbedding =
       Boolean(message.text) &&
       (this.vectorEnabled || this.semanticVectorStore?.isConfigured === true);
-    const embedding =
-      needsEmbedding && message.text ? await this.embedder.embedQuery(message.text) : [];
+    let embedding: number[] = [];
+    if (needsEmbedding && message.text) {
+      try {
+        embedding = await this.embedder.embedQuery(message.text);
+      } catch (error) {
+        log.warn(
+          { err: error, messageId: message.id },
+          "Embedding failed; storing message without vector"
+        );
+      }
+    }
     const embeddingBuffer = serializeEmbedding(embedding);
 
     this.db.transaction(() => {
@@ -87,17 +99,29 @@ export class MessageStore {
           message.timestamp
         );
 
-      if (this.vectorEnabled && embedding.length > 0 && message.text) {
-        this.db.prepare(`DELETE FROM tg_messages_vec WHERE id = ?`).run(message.id);
-        this.db
-          .prepare(`INSERT INTO tg_messages_vec (id, embedding) VALUES (?, ?)`)
-          .run(message.id, embeddingBuffer);
-      }
-
       this.db
         .prepare(`UPDATE tg_chats SET last_message_at = ?, last_message_id = ? WHERE id = ?`)
         .run(message.timestamp, message.id, message.chatId);
     })();
+
+    // Insert the vector in its own transaction so a vec0 failure (e.g. a
+    // dimension mismatch when the active embedder differs from the table's
+    // configured dimension) cannot roll back the already-stored message row.
+    if (this.vectorEnabled && embedding.length > 0 && message.text) {
+      try {
+        this.db.transaction(() => {
+          this.db.prepare(`DELETE FROM tg_messages_vec WHERE id = ?`).run(message.id);
+          this.db
+            .prepare(`INSERT INTO tg_messages_vec (id, embedding) VALUES (?, ?)`)
+            .run(message.id, embeddingBuffer);
+        })();
+      } catch (error) {
+        log.warn(
+          { err: error, messageId: message.id },
+          "Vector insert failed; message stored without vector"
+        );
+      }
+    }
 
     upsertTemporalMetadata(this.db, "message", message.id, message.timestamp, {
       timezone: this.temporalConfig?.timezone,

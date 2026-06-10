@@ -125,7 +125,19 @@ export class KnowledgeIndexer {
 
     const chunks = this.chunkMarkdown(content, relPath);
     const texts = chunks.map((c) => c.text);
-    const embeddings = await this.embedder.embedBatch(texts);
+
+    // Compute embeddings outside the DB transaction. An embedding failure
+    // (network error, provider outage) must degrade to "chunks stored without
+    // vectors" rather than dropping the knowledge rows entirely.
+    let embeddings: number[][] = [];
+    try {
+      embeddings = await this.embedder.embedBatch(texts);
+    } catch (error) {
+      log.warn(
+        { err: error, path: relPath },
+        "Embedding failed; storing knowledge chunks without vectors"
+      );
+    }
     const indexedAt = Math.floor(Date.now() / 1000);
 
     this.db.transaction(() => {
@@ -147,10 +159,6 @@ export class KnowledgeIndexer {
         VALUES (?, 'memory', ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
-      const insertVec = this.vectorEnabled
-        ? this.db.prepare(`INSERT INTO knowledge_vec (id, embedding) VALUES (?, ?)`)
-        : null;
-
       for (let i = 0; i < chunks.length; i++) {
         const chunk = chunks[i];
         const embedding = embeddings[i] ?? [];
@@ -166,12 +174,32 @@ export class KnowledgeIndexer {
           indexedAt,
           indexedAt
         );
-
-        if (insertVec && embedding.length > 0) {
-          insertVec.run(chunk.id, serializeEmbedding(embedding));
-        }
       }
     })();
+
+    // Insert vectors in a separate transaction so a vec0 failure (e.g. a
+    // dimension mismatch when the active embedder differs from the table's
+    // configured dimension) cannot roll back the already-stored knowledge rows.
+    if (this.vectorEnabled) {
+      try {
+        this.db.transaction(() => {
+          const insertVec = this.db.prepare(
+            `INSERT INTO knowledge_vec (id, embedding) VALUES (?, ?)`
+          );
+          for (let i = 0; i < chunks.length; i++) {
+            const embedding = embeddings[i] ?? [];
+            if (embedding.length > 0) {
+              insertVec.run(chunks[i].id, serializeEmbedding(embedding));
+            }
+          }
+        })();
+      } catch (error) {
+        log.warn(
+          { err: error, path: relPath },
+          "Vector insert failed; knowledge chunks stored without vectors"
+        );
+      }
+    }
 
     for (const chunk of chunks) {
       try {

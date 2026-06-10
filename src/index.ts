@@ -214,7 +214,8 @@ export class TeletonApp {
       database: {
         path: join(TELETON_ROOT, "memory.db"),
         enableVectorSearch: embeddingProvider !== "none",
-        vectorDimensions: 384,
+        // vectorDimensions is derived from the active embedder in
+        // initializeMemory so vec tables always match the provider's output.
         onBeforeMigrate: (from, to) => createPreUpgradeBackup(from, to),
       },
       embeddings: {

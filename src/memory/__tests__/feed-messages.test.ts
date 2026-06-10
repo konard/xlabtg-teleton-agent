@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
-import { ensureSchema } from "../schema.js";
+import * as sqliteVec from "sqlite-vec";
+import { ensureSchema, ensureVectorTables } from "../schema.js";
 import { MessageStore, type TelegramMessage } from "../feed/messages.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 
@@ -21,6 +22,29 @@ function makeEmbedder(embedding: number[] = []): EmbeddingProvider {
     embedQuery: vi.fn().mockResolvedValue(embedding),
     embedBatch: vi.fn().mockResolvedValue([embedding]),
   };
+}
+
+/** Vector of the given dimension filled with a constant, for vec0 inserts. */
+function vectorOfDim(dim: number, fill = 0.1): number[] {
+  return new Array(dim).fill(fill);
+}
+
+/**
+ * Create an in-memory DB with the sqlite-vec extension loaded and vec0 tables
+ * created at the given dimension. Returns null if sqlite-vec is unavailable.
+ */
+function createVectorDb(dimensions: number): InstanceType<typeof Database> | null {
+  const db = new Database(":memory:");
+  db.pragma("foreign_keys = ON");
+  ensureSchema(db);
+  try {
+    sqliteVec.load(db);
+    ensureVectorTables(db, dimensions);
+  } catch {
+    db.close();
+    return null;
+  }
+  return db;
 }
 
 function makeMessage(overrides: Partial<TelegramMessage> = {}): TelegramMessage {
@@ -319,6 +343,80 @@ describe("MessageStore", () => {
       const msgs = store.getRecentMessages("chat-r");
       const child = msgs.find((m) => m.id === "child");
       expect(child!.replyToId).toBe("parent");
+    });
+  });
+
+  // ============================================
+  // Vector insert isolation (issue #537)
+  // ============================================
+
+  describe("vector insert isolation", () => {
+    it("stores message and vector for a non-384-dim provider (Voyage 1024)", async () => {
+      const vdb = createVectorDb(1024);
+      if (!vdb) return; // sqlite-vec unavailable in this environment
+      try {
+        const vecStore = new MessageStore(vdb, makeEmbedder(vectorOfDim(1024)), true);
+        await vecStore.storeMessage(makeMessage({ id: "m1", text: "hello" }));
+
+        const rowCount = (
+          vdb.prepare("SELECT COUNT(*) AS c FROM tg_messages WHERE id='m1'").get() as { c: number }
+        ).c;
+        const vecCount = (
+          vdb.prepare("SELECT COUNT(*) AS c FROM tg_messages_vec WHERE id='m1'").get() as {
+            c: number;
+          }
+        ).c;
+        expect(rowCount).toBe(1);
+        expect(vecCount).toBe(1);
+      } finally {
+        vdb.close();
+      }
+    });
+
+    it("does not drop the message row when the vector insert fails (dimension mismatch)", async () => {
+      // vec0 table expects 1024 dims, embedder emits 384 → vec insert fails the
+      // dimension check. The message row must still be stored.
+      const vdb = createVectorDb(1024);
+      if (!vdb) return;
+      try {
+        const vecStore = new MessageStore(vdb, makeEmbedder(vectorOfDim(384)), true);
+        await expect(
+          vecStore.storeMessage(makeMessage({ id: "m1", text: "hello" }))
+        ).resolves.not.toThrow();
+
+        const rowCount = (
+          vdb.prepare("SELECT COUNT(*) AS c FROM tg_messages WHERE id='m1'").get() as { c: number }
+        ).c;
+        const vecCount = (
+          vdb.prepare("SELECT COUNT(*) AS c FROM tg_messages_vec WHERE id='m1'").get() as {
+            c: number;
+          }
+        ).c;
+        expect(rowCount).toBe(1); // row preserved despite the vec failure
+        expect(vecCount).toBe(0); // vector degraded, not inserted
+      } finally {
+        vdb.close();
+      }
+    });
+
+    it("does not drop the message row when the embedder throws", async () => {
+      const throwingEmbedder: EmbeddingProvider = {
+        id: "mock",
+        model: "mock-model",
+        dimensions: 1024,
+        embedQuery: vi.fn().mockRejectedValue(new Error("provider down")),
+        embedBatch: vi.fn().mockResolvedValue([]),
+      };
+      const vecStore = new MessageStore(db, throwingEmbedder, true);
+
+      await expect(
+        vecStore.storeMessage(makeMessage({ id: "m1", text: "hello" }))
+      ).resolves.not.toThrow();
+
+      const rowCount = (
+        db.prepare("SELECT COUNT(*) AS c FROM tg_messages WHERE id='m1'").get() as { c: number }
+      ).c;
+      expect(rowCount).toBe(1);
     });
   });
 });
