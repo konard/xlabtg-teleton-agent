@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.37](https://github.com/xlabtg/teleton-agent/compare/v0.8.36...v0.8.37) (2026-06-10)
+
+
+### Bug Fixes
+
+* **pipeline:** останавливать primary-агента при таймауте/отмене шага ([ae93b01](https://github.com/xlabtg/teleton-agent/commit/ae93b01f16140c357aaa9bdee37d486ab27d2419))
+
 ## [0.8.36](https://github.com/xlabtg/teleton-agent/compare/v0.8.35...v0.8.36) (2026-06-10)
 
 
