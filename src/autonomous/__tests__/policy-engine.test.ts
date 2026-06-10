@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { PolicyEngine, DEFAULT_POLICY_CONFIG } from "../policy-engine.js";
+import { PolicyEngine, DEFAULT_POLICY_CONFIG, DEFAULT_MAX_ITERATIONS } from "../policy-engine.js";
+import { MAX_GLOBAL_ITERATIONS } from "../loop.js";
 import type { AutonomousTask } from "../../memory/agent/autonomous-tasks.js";
 
 function makeTask(overrides: Partial<AutonomousTask> = {}): AutonomousTask {
@@ -55,6 +56,46 @@ describe("PolicyEngine", () => {
     const task = makeTask({
       constraints: { maxIterations: 10 },
       currentStep: 5,
+    });
+    const result = engine.checkAction(task, { toolName: "web_fetch" });
+
+    expect(result.allowed).toBe(true);
+  });
+
+  // ─── Default iteration cap (issue #534 / WORK4-012) ──────────────────────────
+
+  it("applies a default iteration cap when constraints omit maxIterations", () => {
+    expect(DEFAULT_MAX_ITERATIONS).toBeGreaterThan(0);
+    expect(DEFAULT_MAX_ITERATIONS).toBeLessThan(MAX_GLOBAL_ITERATIONS);
+  });
+
+  it("blocks an unconstrained task once it reaches the default iteration cap", () => {
+    const task = makeTask({
+      constraints: {},
+      currentStep: DEFAULT_MAX_ITERATIONS,
+    });
+    const result = engine.checkAction(task, { toolName: "web_fetch" });
+
+    expect(result.allowed).toBe(false);
+    expect(result.violations.some((v) => v.type === "max_iterations")).toBe(true);
+  });
+
+  it("allows an unconstrained task while it is below the default iteration cap", () => {
+    const task = makeTask({
+      constraints: {},
+      currentStep: DEFAULT_MAX_ITERATIONS - 1,
+    });
+    const result = engine.checkAction(task, { toolName: "web_fetch" });
+
+    expect(result.allowed).toBe(true);
+  });
+
+  it("lets an explicit maxIterations override the default cap", () => {
+    // A task that explicitly raises the bound above the default keeps running
+    // past DEFAULT_MAX_ITERATIONS — the fallback only applies when omitted.
+    const task = makeTask({
+      constraints: { maxIterations: DEFAULT_MAX_ITERATIONS + 10 },
+      currentStep: DEFAULT_MAX_ITERATIONS + 5,
     });
     const result = engine.checkAction(task, { toolName: "web_fetch" });
 

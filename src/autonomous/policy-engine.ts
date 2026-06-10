@@ -3,6 +3,16 @@ import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("PolicyEngine");
 
+/**
+ * Deterministic fallback iteration cap for tasks whose constraints omit an
+ * explicit `maxIterations`. Without this, an unconstrained task whose
+ * self-reflection never reports `goalAchieved: true` would run all the way to
+ * the global safety cap (`MAX_GLOBAL_ITERATIONS = 500` in loop.ts), burning
+ * ~1000 LLM calls before stopping. 50 keeps the cost ceiling well below that
+ * while leaving genuine multi-step tasks room to finish (issue #534 / WORK4-012).
+ */
+export const DEFAULT_MAX_ITERATIONS = 50;
+
 export interface PolicyConfig {
   tonSpending: {
     perTask: number;
@@ -138,11 +148,14 @@ export class PolicyEngine {
 
     const constraints = task.constraints as TaskConstraints;
 
-    // Check max iterations
-    if (constraints.maxIterations !== undefined && task.currentStep >= constraints.maxIterations) {
+    // Check max iterations. Fall back to DEFAULT_MAX_ITERATIONS when the task
+    // omits an explicit bound so unconstrained tasks still have a deterministic
+    // ceiling well below the global safety cap (issue #534 / WORK4-012).
+    const effectiveMaxIterations = constraints.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+    if (task.currentStep >= effectiveMaxIterations) {
       violations.push({
         type: "max_iterations",
-        message: `Task has reached maximum iterations (${constraints.maxIterations})`,
+        message: `Task has reached maximum iterations (${effectiveMaxIterations})`,
       });
       blockingViolationCount++;
     }
