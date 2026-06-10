@@ -12,6 +12,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.40](https://github.com/xlabtg/teleton-agent/compare/v0.8.39...v0.8.40) (2026-06-10)
+
+
+### Features
+
+* **services:** добавить TaskScheduler для фоновой диспетчеризации задач ([4745fb6](https://github.com/xlabtg/teleton-agent/commit/4745fb66c763a9e40f7a68b3cd88fdd2b5f22324))
+* **services:** добавить TaskScheduler для фоновой диспетчеризации задач ([b38871b](https://github.com/xlabtg/teleton-agent/commit/b38871b8cb9de57226a34673e2efe1e368472f95))
+
+
+### Bug Fixes
+
+* **groq:** санитизация тел ошибок upstream в STT/TTS провайдерах ([2561bcc](https://github.com/xlabtg/teleton-agent/commit/2561bccb84811593013927e91f82ff3061d076ca))
+* **groq:** санитизировать тела ошибок upstream в STT/TTS провайдерах ([c1032db](https://github.com/xlabtg/teleton-agent/commit/c1032dba8dd177409abb6ccf97d82639e752142b)), closes [#540](https://github.com/xlabtg/teleton-agent/issues/540)
+* **memory:** hybrid поиск сообщений запрашивает семантическое векторное хранилище (Upstash) ([b81653d](https://github.com/xlabtg/teleton-agent/commit/b81653d3efb82b24d79957f1cd6dad5ccf382d68))
+* **memory:** запрашивать семантическое векторное хранилище при поиске сообщений ([0bc0081](https://github.com/xlabtg/teleton-agent/commit/0bc0081834337b4d6d297d4e09740e7a838b55b6)), closes [#538](https://github.com/xlabtg/teleton-agent/issues/538)
+* **memory:** экранировать обратный слэш в фильтре семантического поиска сообщений ([c9380f8](https://github.com/xlabtg/teleton-agent/commit/c9380f884b4f7b3cb98bde5c37b1d57d5132e5ed))
+* **sdk:** добавить нижнюю временную границу в ton.verifyPayment (replay) ([a4032a0](https://github.com/xlabtg/teleton-agent/commit/a4032a07f4fa910d12a191113a46607c46224f61))
+
+
+### Performance Improvements
+
+* **memory:** не пересчитывать все оценки при getStats ([69c0b09](https://github.com/xlabtg/teleton-agent/commit/69c0b096c04843fb6c7db863bdabce846f973756))
+* **memory:** не пересчитывать все оценки при getStats ([8560cd0](https://github.com/xlabtg/teleton-agent/commit/8560cd0c1242396674db912f6666c40d6041f80c)), closes [#539](https://github.com/xlabtg/teleton-agent/issues/539)
+
+
+### Documentation
+
+* sync README fork version to 0.8.37 ([8cf84c3](https://github.com/xlabtg/teleton-agent/commit/8cf84c3fb3e779caa85105540e4418ee329c0896))
+* обновить версию форка в README до 0.8.38 ([8a752b3](https://github.com/xlabtg/teleton-agent/commit/8a752b3ee51036951b413b96be5512e2d0e3ad44))
+
 ## [0.8.39](https://github.com/xlabtg/teleton-agent/compare/v0.8.38...v0.8.39) (2026-06-10)
 
 
