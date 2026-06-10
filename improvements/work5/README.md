@@ -36,14 +36,14 @@ and are not re-filed.
 
 | ID        | Severity | Category       | Task File                                                                 | GitHub Issue | Status   |
 | --------- | -------- | -------------- | ------------------------------------------------------------------------- | ------------ | -------- |
-| WORK5-001 | High     | security       | [WORK5-001](issues/WORK5-001-backup-restore-path-traversal.md)            | _to be filed_ | Drafted |
-| WORK5-002 | High     | security       | [WORK5-002](issues/WORK5-002-integration-credentials-hardcoded-fallback-key.md) | _to be filed_ | Drafted |
-| WORK5-003 | High     | security       | [WORK5-003](issues/WORK5-003-policy-engine-untrusted-regex.md)            | _to be filed_ | Drafted |
-| WORK5-004 | High     | security       | [WORK5-004](issues/WORK5-004-mcp-server-url-ssrf-skips-dns.md)            | _to be filed_ | Drafted |
-| WORK5-005 | Medium   | security       | [WORK5-005](issues/WORK5-005-autonomous-ton-budget-bypass.md)            | _to be filed_ | Drafted |
-| WORK5-006 | Medium   | data-integrity | [WORK5-006](issues/WORK5-006-retention-phantom-remote-vectors.md)        | _to be filed_ | Drafted |
-| WORK5-007 | Medium   | reliability    | [WORK5-007](issues/WORK5-007-runtime-retry-backoff-not-abortable.md)     | _to be filed_ | Drafted |
-| WORK5-008 | Medium   | reliability    | [WORK5-008](issues/WORK5-008-plugin-inline-rate-limit-not-per-user.md)   | _to be filed_ | Drafted |
+| WORK5-001 | High     | security       | [WORK5-001](issues/WORK5-001-backup-restore-path-traversal.md)            | [#585](https://github.com/xlabtg/teleton-agent/issues/585) | Created |
+| WORK5-002 | High     | security       | [WORK5-002](issues/WORK5-002-integration-credentials-hardcoded-fallback-key.md) | [#586](https://github.com/xlabtg/teleton-agent/issues/586) | Created |
+| WORK5-003 | High     | security       | [WORK5-003](issues/WORK5-003-policy-engine-untrusted-regex.md)            | [#587](https://github.com/xlabtg/teleton-agent/issues/587) | Created |
+| WORK5-004 | High     | security       | [WORK5-004](issues/WORK5-004-mcp-server-url-ssrf-skips-dns.md)            | [#588](https://github.com/xlabtg/teleton-agent/issues/588) | Created |
+| WORK5-005 | Medium   | security       | [WORK5-005](issues/WORK5-005-autonomous-ton-budget-bypass.md)            | [#589](https://github.com/xlabtg/teleton-agent/issues/589) | Created |
+| WORK5-006 | Medium   | data-integrity | [WORK5-006](issues/WORK5-006-retention-phantom-remote-vectors.md)        | [#590](https://github.com/xlabtg/teleton-agent/issues/590) | Created |
+| WORK5-007 | Medium   | reliability    | [WORK5-007](issues/WORK5-007-runtime-retry-backoff-not-abortable.md)     | [#591](https://github.com/xlabtg/teleton-agent/issues/591) | Created |
+| WORK5-008 | Medium   | reliability    | [WORK5-008](issues/WORK5-008-plugin-inline-rate-limit-not-per-user.md)   | [#592](https://github.com/xlabtg/teleton-agent/issues/592) | Created |
 
 Two additional `low`-severity findings (cache FIFO eviction; spoolable client
 IP fallback) are documented in the report only — see

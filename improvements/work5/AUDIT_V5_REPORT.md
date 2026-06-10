@@ -23,9 +23,10 @@ exact source before filing. It builds on the prior audit waves in
 re-filing findings already captured there (notably `#252`–`#296`, `#306`–`#329`,
 `#400`–`#404`, `#447`–`#451`, and `#523`–`#540`).
 
-**8 findings** are confirmed against the current source and each has its own
-professional issue template in [`issues/`](issues/) ready to be filed. **2**
-additional `low` findings are documented in this report only (§5).
+**8 findings** are confirmed against the current source, each has its own
+professional issue template in [`issues/`](issues/), and each has been filed
+upstream as a separate issue ([#585](https://github.com/xlabtg/teleton-agent/issues/585)–[#592](https://github.com/xlabtg/teleton-agent/issues/592)).
+**2** additional `low` findings are documented in this report only (§5).
 
 The single most important finding is **WORK5-001**: `restoreBackup` writes every
 archive entry to `join(root, file.path)` with no containment check, so a crafted
@@ -76,14 +77,14 @@ integration credentials.
 
 | ID        | Severity | Category       | Summary                                                                 | Task file | GitHub |
 | --------- | -------- | -------------- | ----------------------------------------------------------------------- | --------- | ------ |
-| WORK5-001 | High     | security       | Backup restore writes entries outside root (zip-slip / path traversal)  | [file](issues/WORK5-001-backup-restore-path-traversal.md) | _to be filed_ |
-| WORK5-002 | High     | security       | Integration credentials fall back to a hardcoded public encryption key  | [file](issues/WORK5-002-integration-credentials-hardcoded-fallback-key.md) | _to be filed_ |
-| WORK5-003 | High     | security       | Policy engine compiles untrusted regex (ReDoS / crash on evaluation)    | [file](issues/WORK5-003-policy-engine-untrusted-regex.md) | _to be filed_ |
-| WORK5-004 | High     | security       | MCP server URL validation never resolves DNS (SSRF via hostname)        | [file](issues/WORK5-004-mcp-server-url-ssrf-skips-dns.md) | _to be filed_ |
-| WORK5-005 | Medium   | security       | Autonomous TON budget/confirmation rely on self-reported `tonAmount`    | [file](issues/WORK5-005-autonomous-ton-budget-bypass.md) | _to be filed_ |
-| WORK5-006 | Medium   | data-integrity | Memory retention leaves phantom remote vectors on partial delete        | [file](issues/WORK5-006-retention-phantom-remote-vectors.md) | _to be filed_ |
-| WORK5-007 | Medium   | reliability    | Runtime retry backoff not abort-interruptible; uneven iteration accounting | [file](issues/WORK5-007-runtime-retry-backoff-not-abortable.md) | _to be filed_ |
-| WORK5-008 | Medium   | reliability    | Plugin inline/callback rate limit keyed per-plugin, not per-user        | [file](issues/WORK5-008-plugin-inline-rate-limit-not-per-user.md) | _to be filed_ |
+| WORK5-001 | High     | security       | Backup restore writes entries outside root (zip-slip / path traversal)  | [file](issues/WORK5-001-backup-restore-path-traversal.md) | [#585](https://github.com/xlabtg/teleton-agent/issues/585) |
+| WORK5-002 | High     | security       | Integration credentials fall back to a hardcoded public encryption key  | [file](issues/WORK5-002-integration-credentials-hardcoded-fallback-key.md) | [#586](https://github.com/xlabtg/teleton-agent/issues/586) |
+| WORK5-003 | High     | security       | Policy engine compiles untrusted regex (ReDoS / crash on evaluation)    | [file](issues/WORK5-003-policy-engine-untrusted-regex.md) | [#587](https://github.com/xlabtg/teleton-agent/issues/587) |
+| WORK5-004 | High     | security       | MCP server URL validation never resolves DNS (SSRF via hostname)        | [file](issues/WORK5-004-mcp-server-url-ssrf-skips-dns.md) | [#588](https://github.com/xlabtg/teleton-agent/issues/588) |
+| WORK5-005 | Medium   | security       | Autonomous TON budget/confirmation rely on self-reported `tonAmount`    | [file](issues/WORK5-005-autonomous-ton-budget-bypass.md) | [#589](https://github.com/xlabtg/teleton-agent/issues/589) |
+| WORK5-006 | Medium   | data-integrity | Memory retention leaves phantom remote vectors on partial delete        | [file](issues/WORK5-006-retention-phantom-remote-vectors.md) | [#590](https://github.com/xlabtg/teleton-agent/issues/590) |
+| WORK5-007 | Medium   | reliability    | Runtime retry backoff not abort-interruptible; uneven iteration accounting | [file](issues/WORK5-007-runtime-retry-backoff-not-abortable.md) | [#591](https://github.com/xlabtg/teleton-agent/issues/591) |
+| WORK5-008 | Medium   | reliability    | Plugin inline/callback rate limit keyed per-plugin, not per-user        | [file](issues/WORK5-008-plugin-inline-rate-limit-not-per-user.md) | [#592](https://github.com/xlabtg/teleton-agent/issues/592) |
 
 ## 4. Findings detail
 
