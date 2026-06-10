@@ -163,10 +163,26 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
       })
     );
 
+    // Build a lookup of users included in the response so we can resolve the
+    // sender (fromId) into a usable id/username for buyer-matching downstream.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const usersById = new Map<string, any>();
+    for (const u of result.users || []) {
+      const uid = u.id?.toString();
+      if (uid) usersById.set(uid, u);
+    }
+
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
     const gifts = (result.gifts || []).map((savedGift: any) => {
       const gift = savedGift.gift;
       const isCollectible = gift?.className === "StarGiftUnique";
+
+      // Resolve the gift sender. savedGift.fromId is a Peer (PeerUser for a
+      // user-sent gift); normalize it to a plain string id used for matching.
+      const fromUserId =
+        savedGift.fromId?.userId?.toString() ?? savedGift.fromId?.channelId?.toString() ?? null;
+      const fromUser = fromUserId ? usersById.get(fromUserId) : undefined;
+      const fromUsername = fromUser?.username ?? null;
 
       const lookupId = isCollectible ? gift.giftId?.toString() : gift.id?.toString();
       const catalogInfo = catalogMap.get(lookupId);
@@ -186,7 +202,10 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
       const compactGift: Record<string, any> = {
-        date: savedGift.date,
+        date: savedGift.date, // Telegram epoch seconds
+        fromId: fromUserId,
+        fromUsername,
+        sender: fromUserId ? { id: fromUserId, username: fromUsername } : null,
         isLimited,
         isCollectible,
         stars: gift?.stars?.toString(),

@@ -216,7 +216,9 @@ export class VerificationPoller {
       const verifyData = result.data as { gifts?: VerifyGiftEntry[] };
       const gifts = verifyData.gifts || [];
 
-      // Find matching gift from user after deal creation
+      // Find matching gift from user after deal creation.
+      // compactGift.fromId is the sender id; both g.date and deal.createdAt are
+      // Telegram epoch seconds, so they compare directly.
       const matchingGift = gifts.find(
         (g) =>
           g.slug === deal.userGivesGiftSlug &&

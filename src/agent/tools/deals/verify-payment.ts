@@ -3,6 +3,7 @@ import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import type { Deal } from "../../../deals/types.js";
 import { verifyPayment } from "../../../ton/payment-verifier.js";
 import { GiftDetector } from "../../../deals/gift-detector.js";
+import { verifyGiftPayment } from "../../../deals/gift-matcher.js";
 import { getWalletAddress } from "../../../ton/wallet-service.js";
 import { autoExecuteAfterVerification } from "../../../deals/executor.js";
 import { getErrorMessage } from "../../../utils/errors.js";
@@ -180,13 +181,9 @@ export const dealVerifyPaymentExecutor: ToolExecutor<DealVerifyPaymentParams> = 
       const giftDetector = new GiftDetector();
       const newGifts = await giftDetector.detectNewGifts(botUserId, context);
 
-      // Find gift matching the expected slug from the deal's user
-      const matchingGift = newGifts.find(
-        (g) =>
-          g.slug === deal.user_gives_gift_slug &&
-          g.fromUserId === deal.user_telegram_id &&
-          g.receivedAt >= deal.created_at * 1000 // Gift must be received after deal creation
-      );
+      // Find gift matching the expected slug from the deal's user.
+      // Timestamps are compared in milliseconds (see verifyGiftPayment).
+      const { gift: matchingGift } = verifyGiftPayment(deal, newGifts);
 
       if (!matchingGift) {
         return {

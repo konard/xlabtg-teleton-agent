@@ -61,7 +61,9 @@ export class GiftDetector {
             name: gift.title || gift.slug,
             fromUserId: gift.fromId ? Number(gift.fromId) : undefined,
             fromUsername: gift.fromUsername,
-            receivedAt: gift.date || Date.now(),
+            // gift.date is Telegram epoch seconds; normalize to ms at this
+            // boundary so all downstream comparisons use milliseconds.
+            receivedAt: gift.date ? gift.date * 1000 : Date.now(),
           });
         }
       }
