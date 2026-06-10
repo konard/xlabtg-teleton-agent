@@ -67,6 +67,7 @@ import { getEventBus } from "./services/event-bus.js";
 import { getWebhookDispatcher } from "./services/webhook-dispatcher.js";
 import { flushOffsets } from "./telegram/offset-store.js";
 import { WorkflowScheduler } from "./services/workflow-scheduler.js";
+import { TaskScheduler } from "./services/task-scheduler.js";
 import { ManagedAgentService } from "./agents/service.js";
 import type { ManagedAgentMode } from "./agents/types.js";
 
@@ -144,6 +145,7 @@ export class TeletonApp {
   private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private heartbeatRunning = false;
   private workflowScheduler: WorkflowScheduler | null = null;
+  private taskScheduler: TaskScheduler | null = null;
   private autonomousManager: AutonomousTaskManager | null = null;
   private agentManager: ManagedAgentService;
   private readonly agentMode: ManagedAgentMode;
@@ -949,6 +951,14 @@ ${blue}  ┌──────────────────────�
       log.warn({ err }, "Workflow agent.start event failed");
     });
 
+    // Start DB-backed task scheduler — picks up tasks whose scheduled_for has
+    // elapsed and executes them, independent of any Telegram delivery.
+    this.taskScheduler = new TaskScheduler({
+      db: getDatabase().getDb(),
+      executeTask: (task) => this.executeScheduledTaskFromScheduler(task),
+    });
+    this.taskScheduler.start();
+
     // Start heartbeat timer if enabled
     if (this.config.heartbeat.enabled) {
       const hbInterval = this.config.heartbeat.interval_ms;
@@ -1260,7 +1270,6 @@ ${blue}  ┌──────────────────────�
   private async handleScheduledTask(message: TelegramMessage): Promise<void> {
     // Hoist all dynamic imports to top of function
     const { getTaskStore } = await import("./memory/agent/tasks.js");
-    const { executeScheduledTask } = await import("./telegram/task-executor.js");
     const { TaskDependencyResolver } = await import("./telegram/task-dependency-resolver.js");
     const { getDatabase } = await import("./memory/index.js");
 
@@ -1315,73 +1324,16 @@ ${blue}  ┌──────────────────────�
         return;
       }
 
-      // Mark task as in_progress
-      taskStore.startTask(taskId);
-
-      // Get parent task results for context
-      const parentResults = taskStore.getParentResults(taskId);
-
-      // Build tool context
-      const toolContext = {
-        bridge: this.bridge,
-        db,
+      // Execute via the shared core (claims the task, runs the agent,
+      // persists the result, fires dependents, reschedules recurrence).
+      await this.executeTaskRecord(task, {
         chatId: message.chatId,
         isGroup: message.isGroup,
         senderId: message.senderId,
-        config: this.config,
-      };
-
-      // Get tool registry from agent runtime
-      const toolRegistry = this.agent.getToolRegistry();
-
-      // Execute task and get prompt for agent (with parent context)
-      const agentPrompt = await executeScheduledTask(
-        task,
-        this.agent,
-        toolContext,
-        toolRegistry,
-        parentResults
-      );
-
-      // Feed prompt to agent (agent loop with full context)
-      const response = await this.agent.processMessage({
-        chatId: message.chatId,
-        userMessage: agentPrompt,
-        userName: "self-scheduled-task",
-        timestamp: message.timestamp.getTime(),
-        isGroup: false,
-        toolContext,
         messageId: message.id,
-        taskId,
+        timestamp: message.timestamp.getTime(),
       });
-
-      // Send agent response
-      if (response.content && response.content.trim().length > 0) {
-        await this.bridge.sendMessage({
-          chatId: message.chatId,
-          text: response.content,
-          replyToId: message.id,
-        });
-      }
-
-      // Mark task as done if agent responded successfully
-      taskStore.completeTask(taskId, response.content);
       shouldDeleteTriggerMessage = true;
-
-      log.info(`✅ Executed scheduled task ${taskId}: ${task.description}`);
-
-      // Initialize dependency resolver if needed
-      if (!this.dependencyResolver) {
-        this.dependencyResolver = new TaskDependencyResolver(taskStore, this.bridge);
-      }
-
-      // Trigger any dependent tasks
-      await this.dependencyResolver.onTaskComplete(taskId);
-
-      // Reschedule recurring tasks
-      if (task.recurrenceInterval && task.recurrenceInterval > 0) {
-        await this.rescheduleRecurringTask(task, taskStore);
-      }
     } catch (error) {
       log.error({ err: error }, "Error handling scheduled task");
       shouldDeleteTriggerMessage = true;
@@ -1403,6 +1355,148 @@ ${blue}  ┌──────────────────────�
     } finally {
       if (shouldDeleteTriggerMessage) {
         await this.deleteScheduledTaskTriggerMessage(message);
+      }
+    }
+  }
+
+  /**
+   * Shared execution core for a single scheduled task record.
+   *
+   * Atomically claims the task (preventing double execution when both the Saved
+   * Messages `[TASK:]` trigger and the DB-backed {@link TaskScheduler} fire),
+   * runs it through the agent loop, persists the result, fires dependent tasks,
+   * and reschedules recurring tasks.
+   *
+   * @returns true if this caller claimed and executed the task; false if it was
+   *          already claimed/terminal and skipped.
+   * @throws on execution error so the caller can mark the task failed.
+   */
+  private async executeTaskRecord(
+    task: Task,
+    ctx: {
+      chatId: string;
+      isGroup?: boolean;
+      senderId?: number;
+      messageId?: number;
+      timestamp?: number;
+    }
+  ): Promise<boolean> {
+    const { getTaskStore } = await import("./memory/agent/tasks.js");
+    const { executeScheduledTask } = await import("./telegram/task-executor.js");
+    const { TaskDependencyResolver } = await import("./telegram/task-dependency-resolver.js");
+    const { getDatabase } = await import("./memory/index.js");
+
+    const db = getDatabase().getDb();
+    const taskStore = getTaskStore(db);
+
+    // Atomic claim — only one caller can flip pending → in_progress.
+    if (!taskStore.claimTask(task.id)) {
+      log.info(`⏭️ Task ${task.id} already claimed or not pending, skipping`);
+      return false;
+    }
+
+    // Get parent task results for context
+    const parentResults = taskStore.getParentResults(task.id);
+
+    // Build tool context
+    const toolContext = {
+      bridge: this.bridge,
+      db,
+      chatId: ctx.chatId,
+      isGroup: ctx.isGroup ?? false,
+      senderId: ctx.senderId ?? 0,
+      config: this.config,
+    };
+
+    // Get tool registry from agent runtime
+    const toolRegistry = this.agent.getToolRegistry();
+
+    // Execute task and get prompt for agent (with parent context)
+    const agentPrompt = await executeScheduledTask(
+      task,
+      this.agent,
+      toolContext,
+      toolRegistry,
+      parentResults
+    );
+
+    // Feed prompt to agent (agent loop with full context)
+    const response = await this.agent.processMessage({
+      chatId: ctx.chatId,
+      userMessage: agentPrompt,
+      userName: "self-scheduled-task",
+      timestamp: ctx.timestamp ?? Date.now(),
+      isGroup: false,
+      toolContext,
+      messageId: ctx.messageId,
+      taskId: task.id,
+    });
+
+    // Send agent response
+    if (response.content && response.content.trim().length > 0) {
+      await this.bridge.sendMessage({
+        chatId: ctx.chatId,
+        text: response.content,
+        replyToId: ctx.messageId,
+      });
+    }
+
+    // Mark task as done if agent responded successfully
+    taskStore.completeTask(task.id, response.content);
+
+    log.info(`✅ Executed scheduled task ${task.id}: ${task.description}`);
+
+    // Initialize dependency resolver if needed
+    if (!this.dependencyResolver) {
+      this.dependencyResolver = new TaskDependencyResolver(taskStore, this.bridge);
+    }
+
+    // Trigger any dependent tasks
+    await this.dependencyResolver.onTaskComplete(task.id);
+
+    // Reschedule recurring tasks
+    if (task.recurrenceInterval && task.recurrenceInterval > 0) {
+      await this.rescheduleRecurringTask(task, taskStore);
+    }
+
+    return true;
+  }
+
+  /**
+   * Execute a task picked up by the DB-backed {@link TaskScheduler}.
+   *
+   * Unlike the Saved Messages trigger there is no incoming message — results go
+   * to the owner's Saved Messages chat. On failure the task is marked failed and
+   * the failure cascades to dependents.
+   */
+  private async executeScheduledTaskFromScheduler(task: Task): Promise<void> {
+    const { getTaskStore } = await import("./memory/agent/tasks.js");
+    const { TaskDependencyResolver } = await import("./telegram/task-dependency-resolver.js");
+    const { getDatabase } = await import("./memory/index.js");
+
+    const ownId = this.bridge.getOwnUserId();
+    const chatId = ownId !== undefined ? String(ownId) : "";
+    const senderId = ownId !== undefined ? Number(ownId) : 0;
+
+    try {
+      await this.executeTaskRecord(task, {
+        chatId,
+        isGroup: false,
+        senderId,
+        timestamp: Date.now(),
+      });
+    } catch (error) {
+      log.error({ err: error, taskId: task.id }, "Scheduler failed to execute task");
+      try {
+        const db = getDatabase().getDb();
+        const taskStore = getTaskStore(db);
+        taskStore.failTask(task.id, getErrorMessage(error));
+        if (!this.dependencyResolver) {
+          this.dependencyResolver = new TaskDependencyResolver(taskStore, this.bridge);
+        }
+        await this.dependencyResolver.onTaskFail(task.id);
+      } catch {
+        // Ignore if we can't update task
       }
     }
   }
@@ -1781,6 +1875,12 @@ ${blue}  ┌──────────────────────�
       this.workflowScheduler.stop();
       this.workflowScheduler = null;
       this.agent.setOnToolCompleteCallback(undefined);
+    }
+
+    // Stop DB-backed task scheduler
+    if (this.taskScheduler) {
+      this.taskScheduler.stop();
+      this.taskScheduler = null;
     }
 
     // Stop heartbeat timer

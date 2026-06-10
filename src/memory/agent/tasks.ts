@@ -243,6 +243,49 @@ export class TaskStore {
     return this.updateTask(taskId, { status: "in_progress" });
   }
 
+  /**
+   * Atomically claim a pending task for execution.
+   *
+   * Flips `status` from `pending` to `in_progress` in a single UPDATE so that
+   * only one caller can ever win — this prevents double execution when both the
+   * Saved Messages `[TASK:]` trigger and the DB-backed {@link TaskScheduler}
+   * fire for the same task, or when two scheduler ticks overlap.
+   *
+   * @returns true if this caller claimed the task; false if it was already
+   *          claimed, terminal, or does not exist.
+   */
+  claimTask(taskId: string): boolean {
+    const now = Math.floor(Date.now() / 1000);
+    const result = this.db
+      .prepare(
+        `UPDATE tasks
+         SET status = 'in_progress', started_at = COALESCE(started_at, ?)
+         WHERE id = ? AND status = 'pending'`
+      )
+      .run(now, taskId);
+    return result.changes > 0;
+  }
+
+  /**
+   * Return all pending tasks whose `scheduled_for` is at or before `nowSeconds`.
+   * Used by the {@link TaskScheduler} tick loop to find tasks due for execution.
+   * Tasks without a `scheduled_for` (e.g. dependency-triggered tasks) are
+   * excluded — they are dispatched by the dependency resolver instead.
+   */
+  getDueTasks(nowSeconds: number = Math.floor(Date.now() / 1000)): Task[] {
+    const rows = this.db
+      .prepare(
+        `SELECT * FROM tasks
+         WHERE status = 'pending'
+           AND scheduled_for IS NOT NULL
+           AND scheduled_for <= ?
+         ORDER BY priority DESC, scheduled_for ASC`
+      )
+      .all(nowSeconds) as TaskRow[];
+
+    return rows.map(rowToTask);
+  }
+
   cancelTask(taskId: string): Task | undefined {
     const task = this.getTask(taskId);
     if (!task) return undefined;
