@@ -8,6 +8,7 @@
 
 import { createLogger } from "../../utils/logger.js";
 import { withGroqRateLimit, parseGroqErrorType } from "./rateLimiter.js";
+import { sanitizeErrorBody } from "./errorSanitizer.js";
 
 const log = createLogger("GroqSTT");
 
@@ -88,7 +89,7 @@ export async function groqTranscribe(
     if (!response.ok) {
       const errorType = parseGroqErrorType(response.status);
       const errorBody = await response.text().catch(() => "");
-      const msg = `Groq STT error (${response.status} ${errorType}): ${errorBody}`;
+      const msg = `Groq STT error (${response.status} ${errorType}): ${sanitizeErrorBody(errorBody)}`;
       log.error(msg);
       throw new Error(msg);
     }

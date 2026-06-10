@@ -7,6 +7,7 @@
 
 import { createLogger } from "../../utils/logger.js";
 import { withGroqRateLimit, parseGroqErrorType } from "./rateLimiter.js";
+import { sanitizeErrorBody } from "./errorSanitizer.js";
 import { GROQ_API_BASE } from "./GroqSTTProvider.js";
 
 const log = createLogger("GroqTTS");
@@ -87,7 +88,7 @@ export async function groqSpeak(text: string, options: GroqSpeechOptions): Promi
     if (!response.ok) {
       const errorType = parseGroqErrorType(response.status);
       const errorBody = await response.text().catch(() => "");
-      const msg = `Groq TTS error (${response.status} ${errorType}): ${errorBody}`;
+      const msg = `Groq TTS error (${response.status} ${errorType}): ${sanitizeErrorBody(errorBody)}`;
       log.error(msg);
       throw new Error(msg);
     }

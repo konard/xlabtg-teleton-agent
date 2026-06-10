@@ -12,18 +12,10 @@
 
 import { createLogger } from "../../utils/logger.js";
 import { withGroqRateLimit, parseGroqErrorType } from "./rateLimiter.js";
+import { sanitizeErrorBody } from "./errorSanitizer.js";
 import { GROQ_API_BASE } from "./GroqSTTProvider.js";
 
 const log = createLogger("GroqText");
-
-const SECRET_PATTERN = /(sk-|gsk_|Bearer )\S+/g;
-const MAX_ERROR_BODY_LENGTH = 200;
-
-function sanitizeErrorBody(body: string): string {
-  const truncated =
-    body.length > MAX_ERROR_BODY_LENGTH ? body.slice(0, MAX_ERROR_BODY_LENGTH) + "…" : body;
-  return truncated.replace(SECRET_PATTERN, "[REDACTED]");
-}
 
 export interface GroqMessage {
   role: "system" | "user" | "assistant";
