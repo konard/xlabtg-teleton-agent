@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.39](https://github.com/xlabtg/teleton-agent/compare/v0.8.38...v0.8.39) (2026-06-10)
+
+
+### Bug Fixes
+
+* **memory:** выводить размерность вектора из активного эмбеддера и не терять строки при сбое вставки ([2b672aa](https://github.com/xlabtg/teleton-agent/commit/2b672aa0a132c9d92602c53aea248ecd973bf06c))
+* **memory:** выводить размерность вектора из активного эмбеддера и не терять строки при сбое вставки ([6831ac1](https://github.com/xlabtg/teleton-agent/commit/6831ac157db1d9453a64ff810a8738613bac99d1)), closes [#537](https://github.com/xlabtg/teleton-agent/issues/537)
+
 ## [0.8.38](https://github.com/xlabtg/teleton-agent/compare/v0.8.37...v0.8.38) (2026-06-10)
 
 
