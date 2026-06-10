@@ -7,6 +7,7 @@ import type { ToolContext } from "../../agent/tools/types.js";
 import { memorySearchExecutor } from "../../agent/tools/telegram/memory/memory-search.js";
 import { KnowledgeIndexer } from "../agent/knowledge.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
+import { MessageStore } from "../feed/messages.js";
 import { ensureSchema } from "../schema.js";
 import { HybridSearch } from "../search/hybrid.js";
 import { UpstashSemanticVectorStore, type SemanticVectorStore } from "../vector-store.js";
@@ -31,6 +32,24 @@ function insertKnowledge(db: InstanceType<typeof Database>, id: string, text: st
   db.prepare(
     `INSERT OR REPLACE INTO knowledge (id, source, path, text, hash) VALUES (?, 'memory', NULL, ?, ?)`
   ).run(id, text, `hash-${id}`);
+}
+
+function insertMessageRow(
+  db: InstanceType<typeof Database>,
+  id: string,
+  chatId: string,
+  text: string
+): void {
+  const existing = db.prepare("SELECT id FROM tg_chats WHERE id = ?").get(chatId);
+  if (!existing) {
+    db.prepare(`INSERT INTO tg_chats (id, type, is_monitored) VALUES (?, 'dm', 1)`).run(chatId);
+  }
+  db.prepare(`INSERT INTO tg_messages (id, chat_id, text, timestamp) VALUES (?, ?, ?, ?)`).run(
+    id,
+    chatId,
+    text,
+    Math.floor(Date.now() / 1000)
+  );
 }
 
 function makeEmbedder(embedding: number[] = [0.1, 0.2, 0.3]): EmbeddingProvider {
@@ -59,7 +78,10 @@ function makeSemanticStore(overrides: Partial<SemanticVectorStore> = {}): Semant
         vectorScore: 0.94,
       },
     ]),
+    searchMessages: vi.fn().mockResolvedValue([]),
     upsertKnowledge: vi.fn().mockResolvedValue(undefined),
+    upsertMessages: vi.fn().mockResolvedValue(undefined),
+    deleteMessages: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }
@@ -99,6 +121,112 @@ describe("Semantic vector memory", () => {
     });
 
     expect(results.map((r) => r.id)).toContain("local-risk");
+  });
+
+  it("returns message matches served only from the semantic store", async () => {
+    const vectorStore = makeSemanticStore({
+      searchMessages: vi.fn().mockResolvedValue([
+        {
+          id: "m1",
+          text: "remote-only content",
+          source: "chat-remote",
+          score: 0.91,
+          vectorScore: 0.91,
+        },
+      ]),
+    });
+    const search = new HybridSearch(db, false, vectorStore);
+
+    const results = await search.searchMessages("remote-only content", [0.1, 0.2, 0.3], {
+      limit: 5,
+    });
+
+    expect(results.map((r) => r.id)).toContain("m1");
+    expect(vectorStore.searchMessages).toHaveBeenCalledWith([0.1, 0.2, 0.3], 15, {
+      chatId: undefined,
+      afterTimestamp: undefined,
+    });
+  });
+
+  it("forwards chatId and afterTimestamp filters to the semantic message search", async () => {
+    const vectorStore = makeSemanticStore({
+      searchMessages: vi.fn().mockResolvedValue([]),
+    });
+    const search = new HybridSearch(db, false, vectorStore);
+
+    await search.searchMessages("anything", [0.1, 0.2, 0.3], {
+      chatId: "chat-7",
+      afterTimestamp: 1700000000,
+      limit: 4,
+    });
+
+    expect(vectorStore.searchMessages).toHaveBeenCalledWith([0.1, 0.2, 0.3], 12, {
+      chatId: "chat-7",
+      afterTimestamp: 1700000000,
+    });
+  });
+
+  it("falls back to local keyword message search when semantic vector search fails", async () => {
+    insertMessageRow(db, "local-msg", "chat-local", "risk fallback keyword local message");
+    const vectorStore = makeSemanticStore({
+      searchMessages: vi.fn().mockRejectedValue(new Error("upstash offline")),
+    });
+    const search = new HybridSearch(db, false, vectorStore);
+
+    const results = await search.searchMessages("risk fallback keyword", [0.1, 0.2, 0.3], {
+      limit: 5,
+    });
+
+    expect(results.map((r) => r.id)).toContain("local-msg");
+  });
+
+  it("dual-writes stored messages to the semantic vector store", async () => {
+    const embedder = makeEmbedder([0.3, 0.6, 0.9]);
+    const vectorStore = makeSemanticStore();
+    const store = new MessageStore(db, embedder, false, undefined, vectorStore);
+
+    await store.storeMessage({
+      id: "msg-sync-1",
+      chatId: "chat-sync",
+      senderId: "user-1",
+      text: "dual write me to upstash",
+      isFromAgent: false,
+      hasMedia: false,
+      timestamp: 1700000123,
+    });
+
+    expect(embedder.embedQuery).toHaveBeenCalledWith("dual write me to upstash");
+    expect(vectorStore.upsertMessages).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "msg-sync-1",
+          text: "dual write me to upstash",
+          vector: [0.3, 0.6, 0.9],
+          metadata: expect.objectContaining({
+            chatId: "chat-sync",
+            timestamp: 1700000123,
+          }),
+        }),
+      ])
+    );
+  });
+
+  it("does not call the semantic store when message sync has no embedding", async () => {
+    const embedder = makeEmbedder([]);
+    const vectorStore = makeSemanticStore();
+    const store = new MessageStore(db, embedder, false, undefined, vectorStore);
+
+    await store.storeMessage({
+      id: "msg-sync-2",
+      chatId: "chat-sync",
+      senderId: "user-1",
+      text: "no embedding available",
+      isFromAgent: false,
+      hasMedia: false,
+      timestamp: 1700000200,
+    });
+
+    expect(vectorStore.upsertMessages).not.toHaveBeenCalled();
   });
 
   it("memory_search uses the shared embedder and semantic vector store when available", async () => {

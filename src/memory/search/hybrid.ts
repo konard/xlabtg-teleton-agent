@@ -139,14 +139,22 @@ export class HybridSearch {
     const vectorWeight = options.vectorWeight ?? 0.5;
     const keywordWeight = options.keywordWeight ?? 0.5;
 
-    const vectorResults = this.vectorEnabled
-      ? this.vectorSearchMessages(
-          queryEmbedding,
-          Math.ceil(limit * 3),
-          options.chatId,
-          options.afterTimestamp
-        )
-      : [];
+    const semanticVectorResults = await this.semanticVectorSearchMessages(
+      queryEmbedding,
+      Math.ceil(limit * 3),
+      { chatId: options.chatId, afterTimestamp: options.afterTimestamp }
+    );
+    const vectorResults =
+      semanticVectorResults.length > 0
+        ? semanticVectorResults
+        : this.vectorEnabled
+          ? this.vectorSearchMessages(
+              queryEmbedding,
+              Math.ceil(limit * 3),
+              options.chatId,
+              options.afterTimestamp
+            )
+          : [];
 
     const keywordResults = this.keywordSearchMessages(
       query,
@@ -208,6 +216,24 @@ export class HybridSearch {
       return await this.semanticVectorStore.searchKnowledge(embedding, limit);
     } catch (error) {
       log.warn({ err: error }, "Semantic Memory: Fallback Mode (Upstash Vector search failed)");
+      return [];
+    }
+  }
+
+  private async semanticVectorSearchMessages(
+    embedding: number[],
+    limit: number,
+    options: { chatId?: string; afterTimestamp?: number }
+  ): Promise<HybridSearchResult[]> {
+    if (!this.semanticVectorStore?.isConfigured || embedding.length === 0) return [];
+
+    try {
+      return await this.semanticVectorStore.searchMessages(embedding, limit, options);
+    } catch (error) {
+      log.warn(
+        { err: error },
+        "Semantic Memory: Fallback Mode (Upstash Vector message search failed)"
+      );
       return [];
     }
   }

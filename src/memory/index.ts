@@ -98,7 +98,13 @@ export function initializeMemory(config: {
       vectorStore,
       config.temporalContext
     ),
-    messages: new MessageStore(database, embedder, vectorEnabled, config.temporalContext),
+    messages: new MessageStore(
+      database,
+      embedder,
+      vectorEnabled,
+      config.temporalContext,
+      vectorStore
+    ),
     context: new ContextBuilder(database, embedder, vectorEnabled, vectorStore, {
       ...temporalWeighting,
       enabled:

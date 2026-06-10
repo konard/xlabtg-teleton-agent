@@ -1,10 +1,14 @@
 import type Database from "better-sqlite3";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 import { serializeEmbedding } from "../embeddings/index.js";
+import type { SemanticVectorStore } from "../vector-store.js";
+import { createLogger } from "../../utils/logger.js";
 import {
   upsertTemporalMetadata,
   type TemporalContextConfig,
 } from "../../services/temporal-context.js";
+
+const log = createLogger("Memory");
 
 export interface TelegramMessage {
   id: string;
@@ -23,7 +27,8 @@ export class MessageStore {
     private db: Database.Database,
     private embedder: EmbeddingProvider,
     private vectorEnabled: boolean,
-    private temporalConfig?: TemporalContextConfig
+    private temporalConfig?: TemporalContextConfig,
+    private semanticVectorStore?: SemanticVectorStore
   ) {}
 
   private ensureChat(chatId: string, isGroup: boolean = false): void {
@@ -49,8 +54,14 @@ export class MessageStore {
       this.ensureUser(message.senderId);
     }
 
+    // Compute an embedding when the local vector index OR the remote semantic
+    // store needs one, so message search stays consistent with knowledge search
+    // (which always dual-writes to the semantic store when configured).
+    const needsEmbedding =
+      Boolean(message.text) &&
+      (this.vectorEnabled || this.semanticVectorStore?.isConfigured === true);
     const embedding =
-      this.vectorEnabled && message.text ? await this.embedder.embedQuery(message.text) : [];
+      needsEmbedding && message.text ? await this.embedder.embedQuery(message.text) : [];
     const embeddingBuffer = serializeEmbedding(embedding);
 
     this.db.transaction(() => {
@@ -98,6 +109,45 @@ export class MessageStore {
         mediaType: message.mediaType,
       },
     });
+
+    await this.syncSemanticVectorStore(message, embedding);
+  }
+
+  /**
+   * Dual-write the message vector to the remote semantic store (Upstash) so
+   * semantic message search can serve matches the local index would miss.
+   * Best-effort: failures fall back to the local index without blocking
+   * message ingestion.
+   */
+  private async syncSemanticVectorStore(
+    message: TelegramMessage,
+    embedding: number[]
+  ): Promise<void> {
+    const store = this.semanticVectorStore;
+    if (!store?.isConfigured || embedding.length === 0 || !message.text) return;
+
+    try {
+      await store.upsertMessages([
+        {
+          id: message.id,
+          text: message.text,
+          vector: embedding,
+          metadata: {
+            source: message.chatId,
+            chatId: message.chatId,
+            senderId: message.senderId,
+            timestamp: message.timestamp,
+            createdAt: message.timestamp,
+            isFromAgent: message.isFromAgent,
+          },
+        },
+      ]);
+    } catch (error) {
+      log.warn(
+        { err: error, messageId: message.id },
+        "Semantic memory message sync failed; local fallback ready"
+      );
+    }
   }
 
   getRecentMessages(chatId: string, limit: number = 20): TelegramMessage[] {

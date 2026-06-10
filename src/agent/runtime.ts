@@ -265,6 +265,7 @@ export class AgentRuntime {
   private contextBuilder: ContextBuilder | null = null;
   private toolRegistry: ToolRegistry | null = null;
   private embedder: EmbeddingProvider | null = null;
+  private semanticVectorStore?: SemanticVectorStore;
   private entityExtractor = new EntityExtractor();
   private hookRunner?: ReturnType<typeof createHookRunner>;
   private userHookEvaluator?: UserHookEvaluator;
@@ -346,6 +347,7 @@ export class AgentRuntime {
     semanticVectorStore?: SemanticVectorStore
   ): void {
     this.embedder = embedder;
+    this.semanticVectorStore = semanticVectorStore;
     const db = getDatabase().getDb();
     this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled, semanticVectorStore, {
       ...this.config.temporal_context.weighting,
@@ -2335,6 +2337,12 @@ export class AgentRuntime {
   clearHistory(chatId: string): void {
     const db = getDatabase().getDb();
 
+    const messageIds = (
+      db.prepare(`SELECT id FROM tg_messages WHERE chat_id = ?`).all(chatId) as Array<{
+        id: string;
+      }>
+    ).map((row) => row.id);
+
     db.prepare(
       `DELETE FROM tg_messages_vec WHERE id IN (
         SELECT id FROM tg_messages WHERE chat_id = ?
@@ -2342,6 +2350,16 @@ export class AgentRuntime {
     ).run(chatId);
 
     db.prepare(`DELETE FROM tg_messages WHERE chat_id = ?`).run(chatId);
+
+    // Drop the matching vectors from the remote semantic store so cleared
+    // chats stop surfacing in semantic message search. Best-effort: a remote
+    // failure must not break local history clearing.
+    const store = this.semanticVectorStore;
+    if (store?.isConfigured && messageIds.length > 0) {
+      void store.deleteMessages(messageIds).catch((error) => {
+        log.warn({ err: error, chatId }, "Semantic memory message cleanup failed; continuing");
+      });
+    }
 
     resetSession(chatId);
 

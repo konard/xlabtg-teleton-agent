@@ -24,7 +24,18 @@ export type SemanticMemoryMetadata = Record<string, unknown> & {
   chunkHash?: string;
   createdAt?: number;
   updatedAt?: number;
+  /** Message-specific metadata (mirrors the local tg_messages columns). */
+  chatId?: string;
+  senderId?: string | null;
+  timestamp?: number;
+  isFromAgent?: boolean;
 };
+
+/** Optional metadata filters applied to a semantic message search. */
+export interface SemanticMessageSearchOptions {
+  chatId?: string;
+  afterTimestamp?: number;
+}
 
 export interface SemanticMemoryVector {
   id: string;
@@ -49,8 +60,15 @@ export interface SemanticVectorStore {
   healthCheck(): Promise<SemanticMemoryStatus>;
   logStatus(): Promise<SemanticMemoryStatus>;
   searchKnowledge(embedding: number[], limit: number): Promise<SemanticMemorySearchResult[]>;
+  searchMessages(
+    embedding: number[],
+    limit: number,
+    options?: SemanticMessageSearchOptions
+  ): Promise<SemanticMemorySearchResult[]>;
   upsertKnowledge(vectors: SemanticMemoryVector[]): Promise<void>;
+  upsertMessages(vectors: SemanticMemoryVector[]): Promise<void>;
   delete(ids: string[]): Promise<void>;
+  deleteMessages(ids: string[]): Promise<void>;
 }
 
 export interface UpstashVectorStoreConfig {
@@ -63,6 +81,24 @@ export interface UpstashVectorStoreConfig {
 const DEFAULT_NAMESPACE = "teleton-memory";
 const DEFAULT_REQUEST_TIMEOUT_MS = 5_000;
 const CIRCUIT_BREAKER_COOLDOWN_MS = 60_000;
+// Messages live in a sibling namespace so knowledge search and message search
+// never cross-contaminate, even though they share a single Upstash index.
+const MESSAGE_NAMESPACE_SUFFIX = "-messages";
+
+function escapeFilterValue(value: string): string {
+  return value.replace(/'/g, "\\'");
+}
+
+function buildMessageFilter(options: SemanticMessageSearchOptions): string | undefined {
+  const clauses: string[] = [];
+  if (options.chatId) {
+    clauses.push(`chatId = '${escapeFilterValue(options.chatId)}'`);
+  }
+  if (typeof options.afterTimestamp === "number" && Number.isFinite(options.afterTimestamp)) {
+    clauses.push(`timestamp >= ${Math.floor(options.afterTimestamp)}`);
+  }
+  return clauses.length > 0 ? clauses.join(" AND ") : undefined;
+}
 
 function numberFromMetadata(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
@@ -104,6 +140,10 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
 
   get namespace(): string {
     return this.currentNamespace;
+  }
+
+  private get messageNamespace(): string {
+    return `${this.currentNamespace}${MESSAGE_NAMESPACE_SUFFIX}`;
   }
 
   configure(config: UpstashVectorStoreConfig = {}): void {
@@ -180,7 +220,17 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
     return status;
   }
 
-  async searchKnowledge(embedding: number[], limit: number): Promise<SemanticMemorySearchResult[]> {
+  /**
+   * Run a vector query against a namespace, tripping the circuit breaker on
+   * failure. The caller maps the raw Upstash results into search results.
+   */
+  private async queryNamespace(
+    namespace: string,
+    embedding: number[],
+    limit: number,
+    operation: string,
+    filter?: string
+  ): Promise<QueryResult<SemanticMemoryMetadata>[]> {
     if (!this.index || embedding.length === 0 || limit <= 0) return [];
     if (this.isCircuitOpen) return [];
 
@@ -192,44 +242,105 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
             topK: limit,
             includeMetadata: true,
             includeData: true,
+            ...(filter ? { filter } : {}),
           },
-          { namespace: this.namespace }
+          { namespace }
         ),
-        "Upstash Vector query",
+        operation,
         this.requestTimeoutMs
       );
 
       this.circuitOpenUntil = 0;
-
-      return results
-        .map((result) => {
-          const text = resultText(result);
-          const source =
-            typeof result.metadata?.path === "string"
-              ? result.metadata.path
-              : typeof result.metadata?.source === "string"
-                ? result.metadata.source
-                : "memory";
-          const createdAt =
-            numberFromMetadata(result.metadata?.createdAt) ??
-            numberFromMetadata(result.metadata?.created_at);
-          return {
-            id: String(result.id),
-            text,
-            source,
-            score: result.score,
-            vectorScore: result.score,
-            createdAt,
-          };
-        })
-        .filter((result) => result.text.length > 0);
+      return results;
     } catch (error) {
       this.circuitOpenUntil = Date.now() + CIRCUIT_BREAKER_COOLDOWN_MS;
       throw error;
     }
   }
 
+  async searchKnowledge(embedding: number[], limit: number): Promise<SemanticMemorySearchResult[]> {
+    const results = await this.queryNamespace(
+      this.namespace,
+      embedding,
+      limit,
+      "Upstash Vector query"
+    );
+
+    return results
+      .map((result) => {
+        const text = resultText(result);
+        const source =
+          typeof result.metadata?.path === "string"
+            ? result.metadata.path
+            : typeof result.metadata?.source === "string"
+              ? result.metadata.source
+              : "memory";
+        const createdAt =
+          numberFromMetadata(result.metadata?.createdAt) ??
+          numberFromMetadata(result.metadata?.created_at);
+        return {
+          id: String(result.id),
+          text,
+          source,
+          score: result.score,
+          vectorScore: result.score,
+          createdAt,
+        };
+      })
+      .filter((result) => result.text.length > 0);
+  }
+
+  async searchMessages(
+    embedding: number[],
+    limit: number,
+    options: SemanticMessageSearchOptions = {}
+  ): Promise<SemanticMemorySearchResult[]> {
+    const results = await this.queryNamespace(
+      this.messageNamespace,
+      embedding,
+      limit,
+      "Upstash Vector message query",
+      buildMessageFilter(options)
+    );
+
+    return results
+      .map((result) => {
+        const text = resultText(result);
+        const source =
+          typeof result.metadata?.chatId === "string"
+            ? result.metadata.chatId
+            : typeof result.metadata?.source === "string"
+              ? result.metadata.source
+              : "message";
+        const createdAt =
+          numberFromMetadata(result.metadata?.timestamp) ??
+          numberFromMetadata(result.metadata?.createdAt) ??
+          numberFromMetadata(result.metadata?.created_at);
+        return {
+          id: String(result.id),
+          text,
+          source,
+          score: result.score,
+          vectorScore: result.score,
+          createdAt,
+        };
+      })
+      .filter((result) => result.text.length > 0);
+  }
+
   async upsertKnowledge(vectors: SemanticMemoryVector[]): Promise<void> {
+    await this.upsertToNamespace(this.namespace, vectors, "Upstash Vector upsert");
+  }
+
+  async upsertMessages(vectors: SemanticMemoryVector[]): Promise<void> {
+    await this.upsertToNamespace(this.messageNamespace, vectors, "Upstash Vector message upsert");
+  }
+
+  private async upsertToNamespace(
+    namespace: string,
+    vectors: SemanticMemoryVector[],
+    operation: string
+  ): Promise<void> {
     if (!this.index) return;
 
     const payload = vectors
@@ -245,17 +356,29 @@ export class UpstashSemanticVectorStore implements SemanticVectorStore {
 
     if (payload.length === 0) return;
     await withRequestTimeout(
-      this.index.upsert(payload, { namespace: this.namespace }),
-      "Upstash Vector upsert",
+      this.index.upsert(payload, { namespace }),
+      operation,
       this.requestTimeoutMs
     );
   }
 
   async delete(ids: string[]): Promise<void> {
+    await this.deleteFromNamespace(this.namespace, ids, "Upstash Vector delete");
+  }
+
+  async deleteMessages(ids: string[]): Promise<void> {
+    await this.deleteFromNamespace(this.messageNamespace, ids, "Upstash Vector message delete");
+  }
+
+  private async deleteFromNamespace(
+    namespace: string,
+    ids: string[],
+    operation: string
+  ): Promise<void> {
     if (!this.index || ids.length === 0) return;
     await withRequestTimeout(
-      this.index.delete(ids, { namespace: this.namespace }),
-      "Upstash Vector delete",
+      this.index.delete(ids, { namespace }),
+      operation,
       this.requestTimeoutMs
     );
   }
