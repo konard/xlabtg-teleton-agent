@@ -1,8 +1,9 @@
-import { describe, it, expect } from "vitest";
+import { afterEach, describe, it, expect, vi } from "vitest";
 import {
   isContextOverflowError,
   isTrivialMessage,
   parseRetryAfterMs,
+  sleepWithAbort,
   isNetworkError,
   isNetworkErrorMessage,
   getEmptyResponseDiagnostic,
@@ -10,6 +11,10 @@ import {
   LoopStallDetector,
 } from "../../agent/runtime-utils.js";
 import { AgentConfigSchema } from "../../config/schema.js";
+
+afterEach(() => {
+  vi.useRealTimers();
+});
 
 // ─── T10: isContextOverflowError ────────────────────────────────
 
@@ -214,6 +219,39 @@ describe("parseRetryAfterMs", () => {
 
   it("T12f: returns null for unrelated error messages", () => {
     expect(parseRetryAfterMs("Internal server error 500")).toBeNull();
+  });
+});
+
+describe("sleepWithAbort", () => {
+  it("rejects immediately when the signal is already aborted", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("cancelled"));
+
+    await expect(sleepWithAbort(60_000, controller.signal)).rejects.toThrow("cancelled");
+  });
+
+  it("rejects and clears the timer when aborted during the wait", async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const promise = sleepWithAbort(60_000, controller.signal);
+
+    expect(vi.getTimerCount()).toBe(1);
+
+    controller.abort(new Error("cancelled"));
+
+    await expect(promise).rejects.toThrow("cancelled");
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("resolves after the requested delay when not aborted", async () => {
+    vi.useFakeTimers();
+    const promise = sleepWithAbort(250);
+
+    await vi.advanceTimersByTimeAsync(249);
+    expect(vi.getTimerCount()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(1);
+    await expect(promise).resolves.toBeUndefined();
   });
 });
 

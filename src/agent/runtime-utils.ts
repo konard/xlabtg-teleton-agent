@@ -24,6 +24,43 @@ export function parseRetryAfterMs(errorMessage: string): number | null {
   return match ? Number(match[1]) * 1000 : null;
 }
 
+function getAbortError(signal: AbortSignal): Error {
+  if (signal.reason instanceof Error) return signal.reason;
+  return new Error(signal.reason ? String(signal.reason) : "Operation aborted");
+}
+
+export function sleepWithAbort(ms: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) {
+    return Promise.reject(getAbortError(signal));
+  }
+  if (ms <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise((resolve, reject) => {
+    let onAbort: (() => void) | undefined;
+    const cleanup = () => {
+      if (signal && onAbort) {
+        signal.removeEventListener("abort", onAbort);
+      }
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
+    timer.unref?.();
+
+    if (signal) {
+      onAbort = () => {
+        clearTimeout(timer);
+        cleanup();
+        reject(getAbortError(signal));
+      };
+      signal.addEventListener("abort", onAbort, { once: true });
+    }
+  });
+}
+
 /**
  * Returns true for errors thrown by the provider library that indicate a
  * transient network-level failure (e.g. "Unhandled stop reason: network_error").

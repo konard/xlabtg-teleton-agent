@@ -88,6 +88,7 @@ import {
   getEmptyResponseDiagnostic,
   trimRagContext,
   LoopStallDetector,
+  sleepWithAbort,
 } from "./runtime-utils.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
@@ -171,6 +172,16 @@ function addUsage(accumulator: UsageAccumulator, usage?: SelfCorrectionUsage): v
   accumulator.cacheRead += usage.cacheRead ?? 0;
   accumulator.cacheWrite += usage.cacheWrite ?? 0;
   accumulator.totalCost += usage.cost?.total ?? 0;
+}
+
+async function waitForRetryBackoff(delay: number, signal?: AbortSignal): Promise<boolean> {
+  try {
+    await sleepWithAbort(delay, signal);
+    return true;
+  } catch (error) {
+    if (signal?.aborted) return false;
+    throw error;
+  }
 }
 
 export interface ProcessMessageOptions {
@@ -915,7 +926,7 @@ export class AgentRuntime {
               log.warn(
                 `🌐 Network error, retrying in ${delay}ms (attempt ${networkErrorRetries}/${NETWORK_ERROR_MAX_RETRIES})...`
               );
-              await new Promise((r) => setTimeout(r, delay));
+              if (!(await waitForRetryBackoff(delay, signal))) break;
               iteration--;
               continue;
             }
@@ -1032,7 +1043,8 @@ export class AgentRuntime {
               log.warn(
                 `🚫 Rate limited, retrying in ${delay}ms (attempt ${rateLimitRetries}/${RATE_LIMIT_MAX_RETRIES})...`
               );
-              await new Promise((r) => setTimeout(r, delay));
+              if (!(await waitForRetryBackoff(delay, signal))) break;
+              iteration--;
               continue;
             }
             log.error(`🚫 Rate limited after ${RATE_LIMIT_MAX_RETRIES} retries: ${errorMsg}`);
@@ -1054,7 +1066,7 @@ export class AgentRuntime {
               log.warn(
                 `🔄 Server error, retrying in ${delay}ms (attempt ${serverErrorRetries}/${SERVER_ERROR_MAX_RETRIES})...`
               );
-              await new Promise((r) => setTimeout(r, delay));
+              if (!(await waitForRetryBackoff(delay, signal))) break;
               iteration--;
               continue;
             }
@@ -1069,7 +1081,7 @@ export class AgentRuntime {
               log.warn(
                 `🌐 Network error, retrying in ${delay}ms (attempt ${networkErrorRetries}/${NETWORK_ERROR_MAX_RETRIES})...`
               );
-              await new Promise((r) => setTimeout(r, delay));
+              if (!(await waitForRetryBackoff(delay, signal))) break;
               iteration--;
               continue;
             }
@@ -1104,7 +1116,7 @@ export class AgentRuntime {
               log.warn(
                 `⚠️ Empty response with zero tokens - retrying in ${delay}ms (attempt ${emptyResponseRetries}/${EMPTY_RESPONSE_MAX_RETRIES})...`
               );
-              await new Promise((r) => setTimeout(r, delay));
+              if (!(await waitForRetryBackoff(delay, signal))) break;
               iteration--;
               continue;
             }
