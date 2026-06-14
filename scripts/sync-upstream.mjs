@@ -1,0 +1,351 @@
+#!/usr/bin/env node
+// Fork synchronization reporter for Teleton Agent.
+//
+// `xlabtg/teleton-agent` is a fork of the true upstream `TONresistor/teleton-agent`.
+// The two histories have diverged: the fork carries a large set of custom
+// features (WebUI, analytics, Groq provider, command controls, …) while upstream
+// keeps shipping core fixes. A blind `git merge upstream/main` would touch
+// hundreds of files at once and is impossible to review safely, so syncing is
+// done deliberately, one conflict bucket at a time.
+//
+// This tool turns the "Conflict Resolution Rules" from docs/sync-strategy.md into
+// executable, testable logic. It:
+//   - measures the current divergence (ahead / behind / merge-base),
+//   - lists the files changed on BOTH sides since the merge-base (the real
+//     conflict surface), and
+//   - classifies every such file into one of three ownership buckets so a human
+//     knows where to start:
+//       * fork      — prefer the fork version (custom features)
+//       * upstream  — prefer the upstream version (core fixes, security)
+//       * hybrid    — must be merged by hand, both sides carry needed changes
+//
+// The default bucket for anything unrecognised is `hybrid`: when in doubt, ask a
+// human rather than silently dropping one side's work.
+//
+// Zero runtime dependencies on purpose — the CI step runs with nothing but Node,
+// no `npm ci`. The pure functions are exported for the unit tests in
+// scripts/__tests__/sync-upstream.test.mjs; only `runCli()` touches git.
+
+import { execFileSync } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+// The canonical upstream the fork tracks. Overridable so the tool also works
+// from a contributor's own fork (which may name remotes differently).
+export const UPSTREAM_URL =
+  process.env.TELETON_UPSTREAM_URL || 'https://github.com/TONresistor/teleton-agent.git'
+export const UPSTREAM_REMOTE = process.env.TELETON_UPSTREAM_REMOTE || 'tonresistor'
+export const UPSTREAM_BRANCH = process.env.TELETON_UPSTREAM_BRANCH || 'main'
+
+export const UPSTREAM_REPO = 'TONresistor/teleton-agent'
+export const FORK_REPO = 'xlabtg/teleton-agent'
+
+// --- Ownership rules ------------------------------------------------------
+//
+// Ordered, first-match-wins. Each rule decides which side of a conflict to
+// start from. These mirror the decisions recorded in past real syncs
+// (see the git history of docs/sync-conflicts.md), not guesses.
+
+const startsWithAny = (prefixes) => (path) => prefixes.some((p) => path === p || path.startsWith(p))
+const isExactly = (names) => (path) => names.includes(path)
+
+export const OWNERSHIP_RULES = [
+  // --- HYBRID: both sides add code that must coexist; never auto-resolve ----
+  {
+    id: 'manifests',
+    owner: 'hybrid',
+    reason: 'Dependency manifests: keep upstream bumps AND fork-only deps',
+    match: isExactly([
+      'package.json',
+      'package-lock.json',
+      'web/package.json',
+      'web/package-lock.json',
+    ]),
+  },
+  {
+    id: 'config-schema',
+    owner: 'hybrid',
+    reason: 'Both sides extend the config schema/keys (e.g. Groq vs Heartbeat)',
+    match: isExactly(['src/config/schema.ts', 'src/config/configurable-keys.ts']),
+  },
+  {
+    id: 'webui-server',
+    owner: 'hybrid',
+    reason: 'Both sides register WebUI routes; keep both route mounts',
+    match: isExactly(['src/webui/server.ts']),
+  },
+  {
+    id: 'agent-core-hybrid',
+    owner: 'hybrid',
+    reason: 'Adopt upstream concurrency/robustness but keep fork metrics/analytics hooks',
+    match: isExactly([
+      'src/agent/runtime.ts',
+      'src/agent/token-usage.ts',
+      'src/agent/hooks/user-hook-evaluator.ts',
+    ]),
+  },
+  {
+    id: 'web-shared',
+    owner: 'hybrid',
+    reason: 'Both sides add API methods / config tabs; keep both',
+    match: isExactly(['web/src/lib/api.ts', 'web/src/pages/Config.tsx']),
+  },
+  {
+    id: 'build-tooling',
+    owner: 'hybrid',
+    reason: 'Shared build/test tooling; reconcile fork settings with upstream',
+    match: (path) =>
+      isExactly([
+        'vitest.config.ts',
+        'tsup.config.ts',
+        'tsconfig.json',
+        'tsconfig.test.json',
+        'eslint.config.js',
+        'config.example.yaml',
+        'Dockerfile',
+        'README.md',
+      ])(path) || /^\.github\/workflows\//.test(path),
+  },
+
+  // --- FORK: prefer the fork version (custom features upstream lacks) -------
+  {
+    id: 'fork-sync-tooling',
+    owner: 'fork',
+    reason: 'Fork-owned sync tooling and its docs',
+    match: isExactly([
+      'docs/sync-strategy.md',
+      'docs/sync-conflicts.md',
+      'scripts/sync-upstream.mjs',
+      'scripts/__tests__/sync-upstream.test.mjs',
+      '.github/workflows/sync-upstream.yml',
+    ]),
+  },
+  {
+    id: 'fork-changelog',
+    owner: 'fork',
+    reason: 'CHANGELOG.md is regenerated by release-please from fork history',
+    match: isExactly(['CHANGELOG.md']),
+  },
+  {
+    id: 'fork-features',
+    owner: 'fork',
+    reason: 'Fork-owned feature code (WebUI, services, Groq provider)',
+    match: startsWithAny([
+      'web/',
+      'improvements/',
+      'src/services/',
+      'src/providers/groq/',
+      'src/webui/routes/groq.ts',
+    ]),
+  },
+
+  // --- UPSTREAM: prefer the upstream version (core, security, infra) --------
+  {
+    id: 'upstream-core',
+    owner: 'upstream',
+    reason: 'Core runtime / platform tracked closely against upstream',
+    match: startsWithAny([
+      'src/agent/',
+      'src/memory/',
+      'src/session/',
+      'src/api/',
+      'src/ton-proxy/',
+      'src/cli/',
+      'src/workspace/',
+      'packages/sdk/',
+    ]),
+  },
+]
+
+// Decide which side of a conflict a path belongs to. Returns the matched rule
+// plus the owner; unrecognised paths fall back to `hybrid` (manual review) so
+// nothing is ever silently dropped.
+export function classifyPath(path) {
+  for (const rule of OWNERSHIP_RULES) {
+    if (rule.match(path)) {
+      return { owner: rule.owner, rule: rule.id, reason: rule.reason }
+    }
+  }
+  return {
+    owner: 'hybrid',
+    rule: 'default',
+    reason: 'Unrecognised path — review manually before resolving',
+  }
+}
+
+// Group a list of conflicting paths into the three ownership buckets, sorted.
+export function classifyConflicts(paths) {
+  const buckets = { fork: [], upstream: [], hybrid: [] }
+  for (const path of [...paths].sort()) {
+    const { owner, rule, reason } = classifyPath(path)
+    buckets[owner].push({ path, rule, reason })
+  }
+  return buckets
+}
+
+// The files that changed on BOTH sides since the merge-base are the real
+// conflict surface. Everything else fast-forwards cleanly.
+export function intersectConflicts(upstreamChanged, forkChanged) {
+  const forkSet = new Set(forkChanged)
+  return [...new Set(upstreamChanged)].filter((p) => forkSet.has(p)).sort()
+}
+
+const OWNER_LABEL = {
+  fork: 'Prefer FORK',
+  upstream: 'Prefer UPSTREAM',
+  hybrid: 'Manual merge (HYBRID)',
+}
+
+// Render a Markdown sync report from already-collected data (no git here, so it
+// is trivially testable).
+export function formatReport({
+  upstreamRepo = UPSTREAM_REPO,
+  forkRepo = FORK_REPO,
+  upstreamBranch = UPSTREAM_BRANCH,
+  mergeBase,
+  ahead,
+  behind,
+  generatedAt,
+  conflicts,
+}) {
+  const buckets = classifyConflicts(conflicts)
+  const lines = []
+  lines.push('# Upstream Sync Status')
+  lines.push('')
+  lines.push(
+    '> Generated by `scripts/sync-upstream.mjs`. Do not hand-edit — re-run the tool to refresh.'
+  )
+  lines.push('')
+  lines.push(`- **Upstream:** \`${upstreamRepo}\` (branch \`${upstreamBranch}\`)`)
+  lines.push(`- **Fork:** \`${forkRepo}\``)
+  lines.push(`- **Merge-base:** \`${mergeBase}\``)
+  lines.push(`- **Fork is behind upstream by:** ${behind} commit(s)`)
+  lines.push(`- **Fork is ahead of upstream by:** ${ahead} commit(s)`)
+  if (generatedAt) lines.push(`- **Generated:** ${generatedAt}`)
+  lines.push('')
+
+  if (behind === 0) {
+    lines.push('✅ The fork is **up to date** with upstream. Nothing to sync.')
+    lines.push('')
+    return lines.join('\n')
+  }
+
+  lines.push(`## Conflict surface — ${conflicts.length} file(s) changed on both sides`)
+  lines.push('')
+  lines.push(
+    'These files changed in BOTH the fork and upstream since the merge-base and ' +
+      'need attention during a sync. Files changed on only one side fast-forward cleanly.'
+  )
+  lines.push('')
+
+  for (const owner of ['upstream', 'fork', 'hybrid']) {
+    const items = buckets[owner]
+    lines.push(`### ${OWNER_LABEL[owner]} — ${items.length} file(s)`)
+    lines.push('')
+    if (items.length === 0) {
+      lines.push('_None._')
+      lines.push('')
+      continue
+    }
+    lines.push('| File | Rule | Rationale |')
+    lines.push('| --- | --- | --- |')
+    for (const { path, rule, reason } of items) {
+      lines.push(`| \`${path}\` | ${rule} | ${reason} |`)
+    }
+    lines.push('')
+  }
+
+  lines.push('## How to resolve')
+  lines.push('')
+  lines.push('See [docs/sync-strategy.md](./sync-strategy.md) for the full playbook. In short:')
+  lines.push('')
+  lines.push('1. `git checkout -b chore/sync-upstream`')
+  lines.push(`2. \`git merge ${UPSTREAM_REMOTE}/${upstreamBranch}\``)
+  lines.push('3. Resolve **Prefer UPSTREAM** files with `git checkout --theirs <file>`.')
+  lines.push('4. Resolve **Prefer FORK** files with `git checkout --ours <file>`.')
+  lines.push('5. Hand-merge every **HYBRID** file, keeping both sides\' changes.')
+  lines.push('6. `npm install && npm run build && npm test`, then open a PR to `main`.')
+  lines.push('')
+  return lines.join('\n')
+}
+
+// --- git plumbing (only reached via runCli) -------------------------------
+
+function git(args, opts = {}) {
+  return execFileSync('git', args, { encoding: 'utf8', ...opts }).trim()
+}
+
+function ensureUpstreamRemote() {
+  const remotes = git(['remote']).split('\n')
+  if (!remotes.includes(UPSTREAM_REMOTE)) {
+    git(['remote', 'add', UPSTREAM_REMOTE, UPSTREAM_URL])
+  }
+}
+
+function collectGitState(baseRef) {
+  ensureUpstreamRemote()
+  git(['fetch', '--quiet', UPSTREAM_REMOTE])
+  const upstreamRef = `${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}`
+  const mergeBase = git(['merge-base', baseRef, upstreamRef])
+  const behind = Number(git(['rev-list', '--count', `${baseRef}..${upstreamRef}`]))
+  const ahead = Number(git(['rev-list', '--count', `${upstreamRef}..${baseRef}`]))
+  const upstreamChanged = git(['diff', '--name-only', mergeBase, upstreamRef])
+    .split('\n')
+    .filter(Boolean)
+  const forkChanged = git(['diff', '--name-only', mergeBase, baseRef]).split('\n').filter(Boolean)
+  const conflicts = intersectConflicts(upstreamChanged, forkChanged)
+  return { mergeBase, behind, ahead, conflicts }
+}
+
+export function runCli(argv = process.argv.slice(2)) {
+  const here = dirname(fileURLToPath(import.meta.url))
+  const repoRoot = resolve(here, '..')
+  const baseRef = process.env.TELETON_FORK_REF || 'HEAD'
+
+  const writeFlagIndex = argv.indexOf('--write')
+  const shouldWrite = writeFlagIndex !== -1
+  const outFile =
+    shouldWrite && argv[writeFlagIndex + 1] && !argv[writeFlagIndex + 1].startsWith('--')
+      ? argv[writeFlagIndex + 1]
+      : join(repoRoot, 'docs', 'sync-conflicts.md')
+  const asJson = argv.includes('--json')
+
+  let state
+  try {
+    state = collectGitState(baseRef)
+  } catch (err) {
+    console.error('sync-upstream: failed to read git state.')
+    console.error(String(err && err.message ? err.message : err))
+    console.error(
+      `Hint: ensure the '${UPSTREAM_REMOTE}' remote can reach ${UPSTREAM_URL} and that '${UPSTREAM_REMOTE}/${UPSTREAM_BRANCH}' is fetched.`
+    )
+    process.exit(1)
+    return
+  }
+
+  const report = formatReport({
+    mergeBase: state.mergeBase,
+    ahead: state.ahead,
+    behind: state.behind,
+    generatedAt: process.env.TELETON_SYNC_TIMESTAMP || undefined,
+    conflicts: state.conflicts,
+  })
+
+  if (asJson) {
+    console.log(JSON.stringify({ ...state, buckets: classifyConflicts(state.conflicts) }, null, 2))
+  } else {
+    console.log(report)
+  }
+
+  if (shouldWrite) {
+    writeFileSync(outFile, report.endsWith('\n') ? report : report + '\n')
+    console.error(`sync-upstream: wrote report to ${outFile}`)
+  }
+
+  // Being behind is normal, not a failure — exit 0 so this can run informationally.
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === resolve(fileURLToPath(import.meta.url))) {
+  runCli()
+}
