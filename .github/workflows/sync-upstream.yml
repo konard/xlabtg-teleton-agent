@@ -1,0 +1,133 @@
+name: Upstream Sync
+
+# Keeps the fork's divergence from the true upstream (TONresistor/teleton-agent)
+# visible and actionable WITHOUT ever blindly merging into `main`.
+#
+# Two independent jobs:
+#   * validate — on PRs/pushes that touch the sync tooling, run its unit tests.
+#   * report   — weekly (and on demand) measure how far the fork is behind
+#                upstream, regenerate docs/sync-conflicts.md, and open/refresh a
+#                single tracking PR so a maintainer can run the documented,
+#                conflict-isolated sync by hand. It never pushes to `main`.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/sync-upstream.mjs'
+      - 'scripts/__tests__/sync-upstream.test.mjs'
+      - '.github/workflows/sync-upstream.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/sync-upstream.mjs'
+      - 'scripts/__tests__/sync-upstream.test.mjs'
+      - '.github/workflows/sync-upstream.yml'
+  schedule:
+    # Mondays at 08:00 UTC, matching the weekly security audit.
+    - cron: "0 8 * * 1"
+  workflow_dispatch:
+
+concurrency:
+  group: sync-upstream-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate sync tooling
+    # Run for PRs/pushes touching the tooling. The dependency-free unit tests
+    # guard the conflict-classification rules.
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run sync reporter unit tests
+        run: node --test scripts/__tests__/sync-upstream.test.mjs
+
+  report:
+    name: Report upstream divergence
+    # Only the canonical fork should open tracking PRs — never downstream forks.
+    if: >-
+      (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') &&
+      github.repository == 'xlabtg/teleton-agent'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      SYNC_BRANCH: chore/upstream-sync-report
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history so merge-base / ahead / behind can be computed.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Generate divergence report
+        id: report
+        run: |
+          set -euo pipefail
+          # Writes docs/sync-conflicts.md and prints the same Markdown to stdout.
+          node scripts/sync-upstream.mjs --write docs/sync-conflicts.md > /tmp/sync-report.md
+          node scripts/sync-upstream.mjs --json > /tmp/sync-state.json 2>/dev/null
+          BEHIND=$(node -e "console.log(require('/tmp/sync-state.json').behind)")
+          AHEAD=$(node -e "console.log(require('/tmp/sync-state.json').ahead)")
+          echo "behind=$BEHIND" >> "$GITHUB_OUTPUT"
+          echo "ahead=$AHEAD" >> "$GITHUB_OUTPUT"
+
+      - name: Open or refresh tracking PR
+        if: steps.report.outputs.behind != '0'
+        run: |
+          set -euo pipefail
+          BEHIND="${{ steps.report.outputs.behind }}"
+          TITLE="chore(sync): upstream is ${BEHIND} commit(s) ahead — review divergence"
+
+          # Build the PR body: the report plus a freshness note.
+          {
+            cat /tmp/sync-report.md
+            echo ""
+            echo "---"
+            echo "_Opened automatically by the \`Upstream Sync\` workflow on $(date -u '+%Y-%m-%d')."
+            echo "Resolve using the playbook in [docs/sync-strategy.md](docs/sync-strategy.md); do **not** blind-merge._"
+          } > /tmp/pr-body.md
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Reset the bot branch to current main, then stage the fresh report.
+          git checkout -B "$SYNC_BRANCH"
+          git add docs/sync-conflicts.md
+          if git diff --cached --quiet; then
+            echo "Divergence report already current on main — nothing to open."
+            exit 0
+          fi
+
+          git commit -m "chore(sync): refresh upstream divergence report"
+          git push origin "$SYNC_BRANCH" --force
+
+          EXISTING=$(gh pr list --head "$SYNC_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -n "$EXISTING" ]; then
+            gh pr edit "$EXISTING" --title "$TITLE" --body-file /tmp/pr-body.md
+            echo "Updated existing tracking PR #$EXISTING."
+          else
+            gh pr create --base main --head "$SYNC_BRANCH" --title "$TITLE" --body-file /tmp/pr-body.md
+            echo "Opened new tracking PR."
+          fi
+
+      - name: Report up-to-date
+        if: steps.report.outputs.behind == '0'
+        run: echo "Fork is up to date with upstream — no tracking PR needed."
