@@ -442,7 +442,7 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
     {
       value: "z-ai/glm-5.1",
       name: "GLM-5.1",
-      description: "Text-only NVIDIA hosted chat model; native tool calling is disabled",
+      description: "NVIDIA hosted agentic chat model with native tool calling",
     },
     {
       value: "minimaxai/minimax-m2.7",

@@ -391,7 +391,7 @@ describe("getEmptyResponseDiagnostic", () => {
     });
 
     expect(result).toContain("NVIDIA NIM z-ai/glm-5.1");
-    expect(result).toContain("text-only");
+    expect(result).toContain("native tools enabled");
     expect(result).toContain("Public API Endpoints");
   });
 
