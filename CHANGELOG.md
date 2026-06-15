@@ -12,6 +12,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.43](https://github.com/xlabtg/teleton-agent/compare/v0.8.42...v0.8.43) (2026-06-15)
+
+
+### Features
+
+* **sync:** добавить инструмент отчёта о расхождении форка с upstream ([c7ac717](https://github.com/xlabtg/teleton-agent/commit/c7ac7176a900b788df76d756c1de49be9d5b9b0b))
+
+
+### Bug Fixes
+
+* **backup:** поддержка длинных имён файлов (&gt;100 байт UTF-8) через GNU LongLink ([7c95f1a](https://github.com/xlabtg/teleton-agent/commit/7c95f1a6ff4c9eee56d861655060c35f10c67512))
+* **config:** человекочитаемая ошибка валидации конфига при старте ([3af1d61](https://github.com/xlabtg/teleton-agent/commit/3af1d61f458ff42cdc41fb3ac716f609c7c5f9b5))
+* **config:** человекочитаемая ошибка валидации конфига при старте ([#628](https://github.com/xlabtg/teleton-agent/issues/628)) ([d7e4317](https://github.com/xlabtg/teleton-agent/commit/d7e43179e065ecfe03c068f5b7b918f5c73e4456))
+* **memory:** восстановить tool_config.scope_level (issue [#631](https://github.com/xlabtg/teleton-agent/issues/631)) ([28faf20](https://github.com/xlabtg/teleton-agent/commit/28faf202c23fd153abc9b1782ea7620db2232155))
+* **memory:** восстановить tool_config.scope_level и расширить CHECK для scope ([ab1b692](https://github.com/xlabtg/teleton-agent/commit/ab1b692a378167f64385f31085b0aa38a0ad1c63)), closes [#631](https://github.com/xlabtg/teleton-agent/issues/631)
+* **provider:** включить native tools для NVIDIA GLM-5.1 ([316cc5d](https://github.com/xlabtg/teleton-agent/commit/316cc5d2b89e6d019dfca98d6e412021551d5087))
+* **provider:** включить native tools для NVIDIA GLM-5.1 ([5fa8776](https://github.com/xlabtg/teleton-agent/commit/5fa8776b51a0dbb2bfd6eb7cf9a7f06e9280ca39))
+* **sync:** восстановить telegram_send_video и zero-trust policy в registry ([48993b6](https://github.com/xlabtg/teleton-agent/commit/48993b6c1de09cb87ba1b1fb250be1d417dda4b7)), closes [#624](https://github.com/xlabtg/teleton-agent/issues/624)
+* **sync:** сохранить fork-фичи и реконсилировать подсистемы после merge ([ce6aa33](https://github.com/xlabtg/teleton-agent/commit/ce6aa33b8f24a66da555eee7a86de5fdc3b277e7)), closes [#624](https://github.com/xlabtg/teleton-agent/issues/624)
+
+
+### Documentation
+
+* **sync:** задокументировать безопасную синхронизацию форка с upstream ([d91e2b7](https://github.com/xlabtg/teleton-agent/commit/d91e2b7ff07120a3ab229c1884e1f38ee8176f4f))
+* **sync:** зафиксировать завершённую полную синхронизацию с v0.8.6 ([bf76307](https://github.com/xlabtg/teleton-agent/commit/bf7630745023b74bc978185806359b5c2eb26eff)), closes [#624](https://github.com/xlabtg/teleton-agent/issues/624)
+
 ## [0.8.42](https://github.com/xlabtg/teleton-agent/compare/v0.8.41...v0.8.42) (2026-06-13)
 
 
