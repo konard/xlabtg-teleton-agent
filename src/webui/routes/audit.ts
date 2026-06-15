@@ -134,26 +134,45 @@ export function createAuditRoutes(deps: WebUIServerDeps) {
   app.get("/stream", (c) => {
     return streamSSE(c, async (stream) => {
       let aborted = false;
-      stream.onAbort(() => {
-        aborted = true;
-      });
+      let listening = false;
 
       const onEvent = (event: unknown) => {
         if (aborted) return;
-        void stream.writeSSE({
-          event: "audit-event",
-          data: JSON.stringify(event),
-        });
+        void stream
+          .writeSSE({
+            event: "audit-event",
+            data: JSON.stringify(event),
+          })
+          .catch(() => {
+            aborted = true;
+            cleanup();
+          });
       };
 
-      auditTrailBus.on("event", onEvent);
-
-      while (!aborted) {
-        await stream.sleep(30_000);
-        if (!aborted) await stream.writeSSE({ event: "ping", data: "" });
+      function cleanup() {
+        if (!listening) return;
+        listening = false;
+        auditTrailBus.off("event", onEvent);
       }
 
-      auditTrailBus.off("event", onEvent);
+      stream.onAbort(() => {
+        aborted = true;
+        cleanup();
+      });
+
+      try {
+        if (aborted) return;
+
+        auditTrailBus.on("event", onEvent);
+        listening = true;
+
+        while (!aborted) {
+          await stream.sleep(30_000);
+          if (!aborted) await stream.writeSSE({ event: "ping", data: "" });
+        }
+      } finally {
+        cleanup();
+      }
     });
   });
 
