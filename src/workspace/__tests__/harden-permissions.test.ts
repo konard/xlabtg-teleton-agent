@@ -61,6 +61,12 @@ function writePermissiveRootFile(name: string): string {
   return absPath;
 }
 
+function createPermissiveDirectory(absPath: string): string {
+  mkdirSync(absPath, { recursive: true });
+  chmodSync(absPath, 0o755);
+  return absPath;
+}
+
 function fileMode(absPath: string): number {
   return statSync(absPath).mode & 0o777;
 }
@@ -101,6 +107,32 @@ describe("hardenExistingPermissions", () => {
 
     for (const path of paths) {
       expect(fileMode(path)).toBe(0o600);
+    }
+  });
+
+  it("hardens the teleton root, workspace root, and workspace directory tree", () => {
+    const dirs = [
+      tempRoot,
+      tempWorkspace,
+      join(tempWorkspace, "memory"),
+      join(tempWorkspace, "memory", "daily"),
+      join(tempWorkspace, "downloads"),
+      join(tempWorkspace, "downloads", "nested"),
+      join(tempWorkspace, "uploads"),
+      join(tempWorkspace, "temp"),
+      join(tempWorkspace, "memes"),
+      join(tempRoot, "plugins"),
+      join(tempRoot, "plugins", "example-plugin"),
+    ].map(createPermissiveDirectory);
+
+    for (const dir of dirs) {
+      expect(fileMode(dir)).toBe(0o755);
+    }
+
+    hardenExistingPermissions();
+
+    for (const dir of dirs) {
+      expect(fileMode(dir)).toBe(0o700);
     }
   });
 });

@@ -71,6 +71,10 @@ function cleanWorkspace() {
   }
 }
 
+function dirMode(absPath: string): number {
+  return statSync(absPath).mode & 0o777;
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 describe("ensureWorkspace", () => {
@@ -103,6 +107,29 @@ describe("ensureWorkspace", () => {
     expect(existsSync(ws.uploadsDir)).toBe(true);
     expect(existsSync(ws.tempDir)).toBe(true);
     expect(existsSync(ws.memesDir)).toBe(true);
+  });
+
+  it("creates the teleton root, workspace, and workspace subdirectories with 0o700", async () => {
+    rmSync(tempRoot, { recursive: true, force: true });
+    const previousUmask = process.umask(0o022);
+
+    try {
+      const ws = await ensureWorkspace({ silent: true });
+
+      for (const dir of [
+        tempRoot,
+        tempWorkspace,
+        ws.memoryDir,
+        ws.downloadsDir,
+        ws.uploadsDir,
+        ws.tempDir,
+        ws.memesDir,
+      ]) {
+        expect(dirMode(dir)).toBe(0o700);
+      }
+    } finally {
+      process.umask(previousUmask);
+    }
   });
 
   it("returns a Workspace object with the expected root fields", async () => {
