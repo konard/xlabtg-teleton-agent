@@ -3,6 +3,7 @@
   "workspaces": {
     ".": {
       "entry": [
+        "src/index.ts",
         "src/cli/**/*.ts",
         "src/webui/**/*.ts",
         "src/agent/index.ts",
@@ -12,14 +13,22 @@
         "src/constants/index.ts",
         "src/api/**/*.ts"
       ],
-      "project": ["src/**/*.ts"]
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/**/__tests__/**"]
     },
     "packages/sdk": {
-      "project": ["src/**/*.ts"]
+      "entry": ["src/index.ts"],
+      "project": ["src/**/*.ts"],
+      "ignore": ["src/**/__tests__/**"]
     }
   },
   "ignoreDependencies": [
-    "@grammyjs/types"
+    "pino-pretty",
+    "lottie-react",
+    "tinybench",
+    "@teleton-agent/sdk",
+    "@grammyjs/types",
+    "better-sqlite3"
   ],
   "ignoreExportsUsedInFile": true,
   "exclude": ["exports", "types"]

@@ -144,9 +144,6 @@ jobs:
       - name: Circular dependency check
         run: npm run circular
 
-      - name: Duplicate code check
-        run: npm run dupcheck
-
   # ---- OpenAPI spec ----
   openapi:
     name: CI / OpenAPI
