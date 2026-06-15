@@ -99,6 +99,17 @@ function makeToolResultMessage(): ToolResultMessage {
   };
 }
 
+type CapturedCompleteOptions = {
+  cacheRetention?: unknown;
+  sessionId?: unknown;
+  temperature?: unknown;
+};
+
+function getCapturedCompleteOptions(): CapturedCompleteOptions {
+  const [, , options] = mockComplete.mock.calls[0] as [unknown, unknown, CapturedCompleteOptions];
+  return options;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockComplete.mockResolvedValue(makeAssistantMessage("ok"));
@@ -116,6 +127,35 @@ describe("NVIDIA GLM-5.1 tool compatibility", () => {
     expect(mockComplete).toHaveBeenCalledTimes(1);
     const [, context] = mockComplete.mock.calls[0] as [unknown, { tools?: Tool[] }];
     expect(context.tools).toEqual([sampleTool]);
+  });
+
+  it("does not request prompt cache retention for GLM-5.1 chat requests", async () => {
+    const { chatWithContext } = await import("../../agent/client.js");
+
+    await chatWithContext(agentConfig("z-ai/glm-5.1"), {
+      context: { messages: [], systemPrompt: "test" },
+      sessionId: "glm-session",
+      tools: [sampleTool],
+    });
+
+    expect(getCapturedCompleteOptions()).toMatchObject({
+      cacheRetention: "none",
+      sessionId: "glm-session",
+    });
+  });
+
+  it("caps GLM-5.1 temperature at NVIDIA API maximum", async () => {
+    const { chatWithContext } = await import("../../agent/client.js");
+
+    await chatWithContext(
+      { ...agentConfig("z-ai/glm-5.1"), temperature: 1.7 },
+      {
+        context: { messages: [], systemPrompt: "test" },
+        tools: [sampleTool],
+      }
+    );
+
+    expect(getCapturedCompleteOptions().temperature).toBe(1);
   });
 
   it("preserves native tool history for GLM-5.1 follow-up requests", async () => {
