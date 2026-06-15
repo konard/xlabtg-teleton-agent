@@ -12,8 +12,10 @@ import {
 } from "fs";
 import { resolve, normalize, relative, extname, basename, dirname } from "path";
 import { homedir } from "os";
-import { WORKSPACE_ROOT, ALLOWED_EXTENSIONS, MAX_FILE_SIZES } from "./paths.js";
+import { WORKSPACE_ROOT, ALLOWED_EXTENSIONS, MAX_FILE_SIZES, IMMUTABLE_FILES } from "./paths.js";
 import { MAX_FILENAME_LENGTH } from "../constants/limits.js";
+
+export { IMMUTABLE_FILES };
 
 /**
  * Security error for path validation failures
@@ -207,9 +209,6 @@ export function validateReadPath(inputPath: string): ValidatedPath {
  * Validate a path for writing
  * Extension whitelist is now OPTIONAL (fix from audit)
  */
-// Owner configuration files that cannot be overwritten by the agent
-export const IMMUTABLE_FILES: readonly string[] = ["SOUL.md", "STRATEGY.md", "SECURITY.md"];
-
 export function validateWritePath(
   inputPath: string,
   fileType?: keyof typeof ALLOWED_EXTENSIONS

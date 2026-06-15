@@ -134,6 +134,12 @@ export const PROTECTED_WORKSPACE_FILES: readonly string[] = [
 ];
 
 /**
+ * Owner configuration files that cannot be overwritten by agent-controlled
+ * writes or moves.
+ */
+export const IMMUTABLE_FILES: readonly string[] = ["SOUL.md", "STRATEGY.md", "SECURITY.md"];
+
+/**
  * Memory-sensitive files whose content is scanned for injection on write (plus
  * anything under the memory/ directory). NOT the same set as
  * PROTECTED_WORKSPACE_FILES: a scanned file may still be deletable, and vice versa.
