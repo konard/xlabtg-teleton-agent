@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { getProviderMetadata, validateApiKeyFormat } from "../../config/providers.js";
 import { AgentConfigSchema } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
-import { getProviderModel, supportsNativeToolCalling } from "../../agent/client.js";
+import { getProviderModel } from "../../agent/client.js";
 
 describe("NVIDIA provider registration", () => {
   it("is registered in the provider registry", () => {
@@ -43,10 +43,10 @@ describe("NVIDIA model routing", () => {
     expect("compat" in model && model.compat?.supportsStrictMode).toBe(false);
   });
 
-  it("marks GLM-5.1 as a text-only NVIDIA endpoint", () => {
+  it("keeps GLM-5.1 on the OpenAI-compatible NVIDIA endpoint", () => {
     const model = getProviderModel("nvidia", "z-ai/glm-5.1");
 
-    expect(supportsNativeToolCalling("nvidia", "z-ai/glm-5.1")).toBe(false);
+    expect(model.api).toBe("openai-completions");
     expect("compat" in model && model.compat?.supportsUsageInStreaming).toBe(false);
   });
 });

@@ -105,7 +105,7 @@ beforeEach(() => {
 });
 
 describe("NVIDIA GLM-5.1 tool compatibility", () => {
-  it("omits native tools for z-ai/glm-5.1 text-only chat requests", async () => {
+  it("sends native tools for z-ai/glm-5.1 chat requests", async () => {
     const { chatWithContext } = await import("../../agent/client.js");
 
     await chatWithContext(agentConfig("z-ai/glm-5.1"), {
@@ -115,10 +115,10 @@ describe("NVIDIA GLM-5.1 tool compatibility", () => {
 
     expect(mockComplete).toHaveBeenCalledTimes(1);
     const [, context] = mockComplete.mock.calls[0] as [unknown, { tools?: Tool[] }];
-    expect(context.tools).toBeUndefined();
+    expect(context.tools).toEqual([sampleTool]);
   });
 
-  it("converts old native tool history into alternating text-only GLM-5.1 messages", async () => {
+  it("preserves native tool history for GLM-5.1 follow-up requests", async () => {
     const { chatWithContext } = await import("../../agent/client.js");
     const history: Message[] = [
       { role: "user", content: "Check status", timestamp: Date.now() },
@@ -136,17 +136,21 @@ describe("NVIDIA GLM-5.1 tool compatibility", () => {
       unknown,
       { messages: Message[]; tools?: Tool[] },
     ];
-    expect(context.tools).toBeUndefined();
-    expect(context.messages.every((message) => message.role !== "toolResult")).toBe(true);
+    expect(context.tools).toEqual([sampleTool]);
+    expect(context.messages).toEqual(history);
+    expect(context.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "toolResult",
+      "user",
+    ]);
     expect(
-      context.messages.every(
+      context.messages.some(
         (message) =>
-          message.role !== "assistant" ||
-          message.content.every((block) => block.type !== "toolCall")
+          message.role === "assistant" && message.content.some((block) => block.type === "toolCall")
       )
     ).toBe(true);
-    expect(context.messages.map((message) => message.role)).toEqual(["user", "assistant", "user"]);
-    expect(JSON.stringify(context.messages)).toContain("[Tool result: test_lookup - OK]");
+    expect(context.messages.some((message) => message.role === "toolResult")).toBe(true);
   });
 
   it("keeps native tools for NVIDIA models with tool-calling parameters", async () => {

@@ -112,10 +112,10 @@ export function getEmptyResponseDiagnostic(input: EmptyResponseDiagnosticInput):
   if (input.provider.toLowerCase() === "nvidia" && input.model.toLowerCase() === "z-ai/glm-5.1") {
     return (
       "NVIDIA NIM z-ai/glm-5.1 returned an empty streaming response with zero token usage. " +
-      "Teleton sends this model as text-only because NVIDIA does not list tool-calling " +
-      "parameters for it. If the same model works in the NVIDIA web UI but not through the API, " +
-      "verify that the nvapi key's organization has Public API Endpoints access, or switch to a " +
-      "tool-capable NVIDIA model such as meta/llama-3.1-8b-instruct or deepseek-ai/deepseek-v3.1."
+      "Teleton sends this model through NVIDIA's OpenAI-compatible Chat Completions endpoint " +
+      "with native tools enabled. If the same model works in the NVIDIA web UI but not through " +
+      "the API, verify that the nvapi key's organization has Public API Endpoints access and " +
+      "that z-ai/glm-5.1 is available for that key."
     );
   }
 
