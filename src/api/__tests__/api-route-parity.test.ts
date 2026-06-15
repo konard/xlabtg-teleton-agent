@@ -38,6 +38,11 @@ const WEBUI_ONLY_GROUPS = new Map<string, string>([
   ],
   ["groq", "WebUI provider configuration helper, not a stable management API surface."],
   ["mtproto", "WebUI setup/configuration helper, not a stable management API surface."],
+  [
+    "conversations",
+    "WebUI-only conversation browser surface; management clients use /v1 session/history endpoints.",
+  ],
+  ["wallet", "WebUI-only wallet console surface, not a stable management API surface."],
 ]);
 
 function readServerSource(relativePath: string): string {

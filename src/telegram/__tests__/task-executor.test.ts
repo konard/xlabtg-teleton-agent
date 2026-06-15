@@ -113,7 +113,15 @@ describe("executeScheduledTask()", () => {
 
     const prompt = await executeScheduledTask(task, makeAgent(), makeToolContext(), toolRegistry);
 
-    expect(toolRegistry.execute).toHaveBeenCalledWith("ton_get_price", {}, makeToolContext());
+    expect(toolRegistry.execute).toHaveBeenCalledWith(
+      {
+        type: "toolCall",
+        id: "scheduled-task-uuid-123",
+        name: "ton_get_price",
+        arguments: {},
+      },
+      makeToolContext()
+    );
     expect(prompt).toContain("TOOL EXECUTED:");
     expect(prompt).toContain("ton_get_price");
     expect(prompt).toContain("Condition: price > 5");
@@ -348,8 +356,12 @@ describe("executeScheduledTask()", () => {
     const prompt = await executeScheduledTask(task, makeAgent(), makeToolContext(), toolRegistry);
 
     expect(toolRegistry.execute).toHaveBeenCalledWith(
-      "ton_trading_simulate_trade",
-      { amount: 50, fromToken: "TON", toToken: "USDT" },
+      {
+        type: "toolCall",
+        id: "scheduled-task-uuid-123",
+        name: "ton_trading_simulate_trade",
+        arguments: { amount: 50, fromToken: "TON", toToken: "USDT" },
+      },
       makeToolContext()
     );
     expect(prompt).toContain("TOOL EXECUTED:");

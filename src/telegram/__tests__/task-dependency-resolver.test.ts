@@ -52,15 +52,10 @@ function makeTaskStore(tasks: Record<string, Task> = {}): TaskStore {
 }
 
 function makeBridge() {
-  const gramJsClient = {
-    getMe: vi.fn().mockResolvedValue({ id: 123 }),
-    sendMessage: vi.fn().mockResolvedValue({}),
-  };
   return {
-    getClient: vi.fn(() => ({
-      getClient: vi.fn(() => gramJsClient),
-    })),
-    _gramJsClient: gramJsClient,
+    getMode: vi.fn(() => "user"),
+    getOwnUserId: vi.fn(() => 123n),
+    sendMessage: vi.fn().mockResolvedValue({}),
   } as any;
 }
 
@@ -84,7 +79,7 @@ describe("TaskDependencyResolver", () => {
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("task-a");
 
-      expect(bridge._gramJsClient.sendMessage).not.toHaveBeenCalled();
+      expect(bridge.sendMessage).not.toHaveBeenCalled();
     });
 
     it("triggers a dependent task when all its dependencies are done", async () => {
@@ -99,9 +94,8 @@ describe("TaskDependencyResolver", () => {
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("parent-1");
 
-      expect(bridge._gramJsClient.sendMessage).toHaveBeenCalledWith(
-        expect.anything(),
-        expect.objectContaining({ message: expect.stringContaining("[TASK:child-1]") })
+      expect(bridge.sendMessage).toHaveBeenCalledWith(
+        expect.objectContaining({ text: expect.stringContaining("[TASK:child-1]") })
       );
     });
 
@@ -116,7 +110,7 @@ describe("TaskDependencyResolver", () => {
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("parent-1");
 
-      expect(bridge._gramJsClient.sendMessage).not.toHaveBeenCalled();
+      expect(bridge.sendMessage).not.toHaveBeenCalled();
     });
 
     it("does not trigger dependent when its other dependencies are not done", async () => {
@@ -131,7 +125,7 @@ describe("TaskDependencyResolver", () => {
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("parent-1");
 
-      expect(bridge._gramJsClient.sendMessage).not.toHaveBeenCalled();
+      expect(bridge.sendMessage).not.toHaveBeenCalled();
     });
 
     it("marks task as failed if trigger sendMessage throws", async () => {
@@ -142,7 +136,7 @@ describe("TaskDependencyResolver", () => {
       const taskStore = makeTaskStore(tasks);
       (taskStore.getDependents as ReturnType<typeof vi.fn>).mockReturnValue(["child-1"]);
       (taskStore.canExecute as ReturnType<typeof vi.fn>).mockReturnValue(true);
-      bridge._gramJsClient.sendMessage.mockRejectedValueOnce(new Error("network error"));
+      bridge.sendMessage.mockRejectedValueOnce(new Error("network error"));
 
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("parent-1");
@@ -167,8 +161,8 @@ describe("TaskDependencyResolver", () => {
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("parent-1");
 
-      expect(bridge._gramJsClient.sendMessage).toHaveBeenCalledOnce();
-      const sentMessage: string = bridge._gramJsClient.sendMessage.mock.calls[0][1].message;
+      expect(bridge.sendMessage).toHaveBeenCalledOnce();
+      const sentMessage: string = bridge.sendMessage.mock.calls[0][0].text;
       expect(sentMessage).not.toContain("[SYSTEM]");
     });
 
@@ -185,7 +179,7 @@ describe("TaskDependencyResolver", () => {
       const resolver = new TaskDependencyResolver(taskStore, bridge);
       await resolver.onTaskComplete("parent-1");
 
-      const sentMessage: string = bridge._gramJsClient.sendMessage.mock.calls[0][1].message;
+      const sentMessage: string = bridge.sendMessage.mock.calls[0][0].text;
       // "[TASK:child-1] " prefix + at most 500 chars of description
       const descriptionPart = sentMessage.replace("[TASK:child-1] ", "");
       expect(descriptionPart.length).toBeLessThanOrEqual(500);

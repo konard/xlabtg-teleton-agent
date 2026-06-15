@@ -46,7 +46,7 @@ Current fork version: `0.8.42`. <!-- x-release-please-version -->
 
 This README reflects the `xlabtg/teleton-agent` fork through merged PR [#480](https://github.com/xlabtg/teleton-agent/pull/480) / closed issue [#479](https://github.com/xlabtg/teleton-agent/issues/479). It was refreshed from the closed work history available at issue [#481](https://github.com/xlabtg/teleton-agent/issues/481): 236 closed issues and the 200 most recent merged pull requests as of the latest analyzed run.
 
-The current WebUI ships with 23 WebUI pages and 42 authenticated WebUI API route groups.
+The current WebUI ships with 26 WebUI pages and 31 authenticated WebUI API route groups.
 
 ### Closed-Work Summary
 
@@ -383,7 +383,7 @@ All environment variables override the corresponding `config.yaml` value at star
 
 ## WebUI Dashboard
 
-Optional web dashboard, localhost only, token auth. Start with `teleton start --webui` or `teleton setup --ui`. The current build exposes 23 WebUI pages and 42 authenticated WebUI API route groups.
+Optional web dashboard, localhost only, token auth. Start with `teleton start --webui` or `teleton setup --ui`. The current build exposes 26 WebUI pages and 31 authenticated WebUI API route groups.
 
 <table>
 <tr>
@@ -635,7 +635,7 @@ src/
 │   └── model-catalog.ts    # Shared model catalog (100+ model presets across all providers)
 ├── webui/                  # Optional web dashboard
 │   ├── server.ts           # Hono server, auth middleware, static serving
-│   └── routes/             # 42 authenticated API route groups
+│   └── routes/             # 31 authenticated API route groups
 ├── api/                    # Management API (HTTPS control plane)
 │   ├── server.ts           # Hono HTTPS server, TLS, middleware stack
 │   ├── bootstrap.ts        # API-only mode (no config needed)
