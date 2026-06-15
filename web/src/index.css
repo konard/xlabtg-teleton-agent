@@ -92,8 +92,8 @@
 
   /* ── Text ── */
   --text: rgba(0, 0, 0, 0.88);
-  --text-secondary: rgba(0, 0, 0, 0.50);
-  --text-tertiary: rgba(0, 0, 0, 0.40);
+  --text-secondary: rgba(0, 0, 0, 0.68);
+  --text-tertiary: rgba(0, 0, 0, 0.58);
   --text-on-accent: #ffffff;
 
   /* ── Accent ── */
@@ -102,11 +102,11 @@
   --accent-text: #0060D3;
 
   /* ── Semantic ── */
-  --green: #34C759;
+  --green: #1F7A3A;
   --green-dim: rgba(52, 199, 89, 0.12);
-  --orange: rgba(0, 0, 0, 0.50);
+  --orange: #8A5200;
   --orange-dim: rgba(0, 0, 0, 0.04);
-  --red: #FF3B30;
+  --red: #C01B1B;
   --red-dim: rgba(255, 59, 48, 0.12);
   --purple: #AF52DE;
   --purple-dim: rgba(175, 82, 222, 0.12);
@@ -1900,7 +1900,7 @@ button.btn-sm {
 
 .step-description {
   font-size: var(--font-md);
-  color: rgba(255, 255, 255, 0.75);
+  color: var(--text-secondary);
   margin-bottom: var(--space-lg);
 }
 
@@ -3614,8 +3614,13 @@ button.btn-lg {
   gap: 4px;
   font-size: 11px;
   color: var(--text-tertiary);
+  background: transparent;
+  border: 0;
   padding: 4px 8px;
   cursor: pointer;
+}
+.cmd-k-hint:hover {
+  background: var(--surface-hover);
 }
 .cmd-k-hint kbd {
   display: inline-block;

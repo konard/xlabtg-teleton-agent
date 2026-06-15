@@ -985,7 +985,7 @@ export function Workflows() {
         </span>
         <div style={{ display: "flex", gap: "8px" }}>
           <button
-            style={{ padding: "4px 12px", fontSize: "12px", opacity: 0.7 }}
+            style={{ padding: "4px 12px", fontSize: "12px" }}
             onClick={loadWorkflows}
           >
             Refresh
@@ -1065,7 +1065,7 @@ export function Workflows() {
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "12px" }}>
           <div>
-            <div style={{ fontWeight: 600, color: "#6ea8fe", marginBottom: "4px" }}>Triggers</div>
+            <div style={{ fontWeight: 600, color: "var(--accent-text)", marginBottom: "4px" }}>Triggers</div>
             <div>
               <strong>Time-based</strong> — cron schedule (e.g. every Monday at 9am)
             </div>
@@ -1077,7 +1077,7 @@ export function Workflows() {
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: "#5cb85c", marginBottom: "4px" }}>Actions</div>
+            <div style={{ fontWeight: 600, color: "var(--green)", marginBottom: "4px" }}>Actions</div>
             <div>
               <strong>Send message</strong> — send text to a Telegram chat
             </div>
@@ -1089,7 +1089,7 @@ export function Workflows() {
             </div>
           </div>
           <div>
-            <div style={{ fontWeight: 600, color: "#f0ad4e", marginBottom: "4px" }}>Limits</div>
+            <div style={{ fontWeight: 600, color: "var(--orange)", marginBottom: "4px" }}>Limits</div>
             <div>Max 100 workflows</div>
             <div>Max 10 actions per workflow</div>
             <div>Cron format: minute hour day month weekday</div>

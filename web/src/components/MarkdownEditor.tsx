@@ -182,7 +182,10 @@ export function MarkdownEditor({ value, onChange, onSave, placeholder }: Markdow
             onChangeRef.current(update.state.doc.toString());
           }
         }),
-        EditorView.contentAttributes.of({ 'aria-placeholder': placeholder ?? '' }),
+        EditorView.contentAttributes.of({
+          'aria-label': 'Markdown editor',
+          'aria-placeholder': placeholder ?? '',
+        }),
         EditorView.lineWrapping,
       ],
     });

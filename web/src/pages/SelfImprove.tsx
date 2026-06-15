@@ -37,7 +37,7 @@ function timeAgo(ms: number): string {
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "#dc2626",
-  high: "#d97706",
+  high: "#8A5200",
   medium: "#2563eb",
   low: "#6b7280",
 };
@@ -66,7 +66,7 @@ function SeverityBadge({ priority }: { priority: string }) {
 // ── Status badge ──────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
-  pending: "#d97706",
+  pending: "#8A5200",
   created: "#16a34a",
   dismissed: "#6b7280",
 };
@@ -228,7 +228,9 @@ function ExpandableHelp({
         }}
       >
         <span>📖 {title}</span>
-        <span style={{ fontSize: "11px", opacity: 0.6 }}>{open ? "▲ Collapse" : "▼ Expand"}</span>
+        <span style={{ fontSize: "11px", color: "var(--text-secondary)" }}>
+          {open ? "▲ Collapse" : "▼ Expand"}
+        </span>
       </button>
       {open && (
         <div
@@ -391,6 +393,7 @@ function SettingsPanel({
       <div>
         <label style={labelStyle}>Executor Plugin</label>
         <select
+          aria-label="Executor plugin"
           value={draft.selected_plugin}
           onChange={(e) => setDraft({ ...draft, selected_plugin: e.target.value })}
           style={inputStyle}
@@ -468,6 +471,7 @@ function SettingsPanel({
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <label style={{ fontSize: "13px", whiteSpace: "nowrap" }}>Run every</label>
             <select
+              aria-label="Schedule interval"
               value={draft.schedule_interval_hours}
               onChange={(e) =>
                 setDraft({ ...draft, schedule_interval_hours: Number(e.target.value) })
@@ -554,9 +558,9 @@ function QuickStats({
             padding: "10px 14px",
             borderRadius: "6px",
             background: "#fef3c711",
-            border: "1px solid #d97706",
+            border: "1px solid #8A5200",
             fontSize: "13px",
-            color: "#d97706",
+            color: "#8A5200",
           }}
         >
           ⚠ No self-improvement history found. Run an analysis to populate these tabs.
@@ -571,7 +575,7 @@ function QuickStats({
       >
         {[
           { label: "Critical", value: critical, color: "#dc2626" },
-          { label: "High", value: high, color: "#d97706" },
+          { label: "High", value: high, color: "#8A5200" },
           { label: "Medium", value: medium, color: "#2563eb" },
           { label: "Pending Tasks", value: pendingTasks, color: "#7c3aed" },
         ].map((s) => (
@@ -595,7 +599,7 @@ function QuickStats({
             borderRadius: "8px",
           }}
         >
-          <div style={{ fontSize: "12px", fontWeight: 600, opacity: 0.6, marginBottom: "4px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
             LAST SCAN
           </div>
           <div style={{ fontSize: "13px" }}>
@@ -614,7 +618,7 @@ function QuickStats({
             borderRadius: "8px",
           }}
         >
-          <div style={{ fontSize: "12px", fontWeight: 600, opacity: 0.6, marginBottom: "4px" }}>
+          <div style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)", marginBottom: "4px" }}>
             TOTAL SCANS
           </div>
           <div style={{ fontSize: "24px", fontWeight: 700 }}>{totalScans}</div>
@@ -705,7 +709,7 @@ function OverviewTab({
         )}
 
         {!hasPlugin && (
-          <span style={{ fontSize: "13px", color: "#d97706" }}>
+          <span style={{ fontSize: "13px", color: "#8A5200" }}>
             ⚠ No plugin selected — configure one in the Settings section below.
           </span>
         )}
@@ -1378,6 +1382,7 @@ function AnalyticsTab({
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <label style={{ fontSize: "11px", fontWeight: 600, opacity: 0.6 }}>REPOSITORY</label>
               <select
+                aria-label="Repository filter"
                 value={selectedRepo}
                 onChange={(e) => {
                   setSelectedRepo(e.target.value);
@@ -1395,6 +1400,7 @@ function AnalyticsTab({
             <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
               <label style={{ fontSize: "11px", fontWeight: 600, opacity: 0.6 }}>SCAN</label>
               <select
+                aria-label="Scan filter"
                 value={selectedScanId === "all" ? "all" : String(selectedScanId)}
                 onChange={(e) =>
                   setSelectedScanId(e.target.value === "all" ? "all" : Number(e.target.value))

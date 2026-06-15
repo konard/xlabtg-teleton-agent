@@ -417,7 +417,7 @@ export function Tools() {
             </span>
           )}
           <button
-            style={{ padding: '4px 12px', fontSize: '12px', opacity: 0.7 }}
+            style={{ padding: '4px 12px', fontSize: '12px' }}
             onClick={loadTools}
           >
             Refresh
