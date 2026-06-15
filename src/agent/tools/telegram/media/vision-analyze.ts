@@ -14,6 +14,7 @@ import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -114,7 +115,7 @@ export const visionAnalyzeExecutor: ToolExecutor<VisionAnalyzeParams> = async (
     let source: string;
 
     if (hasFilePath) {
-      log.info(`📷 Reading local image: ${filePath}`);
+      log.info(`Reading local image: ${filePath}`);
 
       // Validate workspace path
       let validatedPath;
@@ -154,10 +155,10 @@ export const visionAnalyzeExecutor: ToolExecutor<VisionAnalyzeParams> = async (
       data = readFileSync(validatedPath.absolutePath);
       source = `file:${filePath}`;
     } else {
-      log.info(`📷 Downloading image from message ${messageId}...`);
+      log.info(`Downloading image from message ${messageId}...`);
 
       // Get underlying GramJS client
-      const gramJsClient = context.bridge.getClient().getClient();
+      const gramJsClient = getClient(context.bridge);
 
       // Get the message
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- chatId/messageId guaranteed in this branch
@@ -229,7 +230,7 @@ export const visionAnalyzeExecutor: ToolExecutor<VisionAnalyzeParams> = async (
 
     // Encode as base64
     const base64 = data.toString("base64");
-    log.info(`📷 Encoded image: ${(data.length / 1024).toFixed(1)}KB (${mimeType})`);
+    log.info(`Encoded image: ${(data.length / 1024).toFixed(1)}KB (${mimeType})`);
 
     // Build multimodal message content
     const imageContent: ImageContent = {
@@ -271,7 +272,7 @@ export const visionAnalyzeExecutor: ToolExecutor<VisionAnalyzeParams> = async (
       };
     }
 
-    log.info(`🔍 Analyzing image with ${provider}/${modelId} vision...`);
+    log.info(`Analyzing image with ${provider}/${modelId} vision...`);
 
     // Call LLM with the image
     const response = await completeSimple(model, visionContext, {
@@ -290,7 +291,7 @@ export const visionAnalyzeExecutor: ToolExecutor<VisionAnalyzeParams> = async (
       };
     }
 
-    log.info(`✅ Vision analysis complete (${analysisText.length} chars)`);
+    log.info(`Vision analysis complete (${analysisText.length} chars)`);
 
     return {
       success: true,

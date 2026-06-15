@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient, resolveChannel } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -57,19 +58,8 @@ export const telegramEditChannelInfoExecutor: ToolExecutor<EditChannelInfoParams
       };
     }
 
-    const gramJsClient = context.bridge.getClient().getClient();
-
-    // Get channel entity
-    const entity = await gramJsClient.getEntity(channelId);
-
-    if (entity.className !== "Channel") {
-      return {
-        success: false,
-        error: `Entity is not a channel/group (got ${entity.className})`,
-      };
-    }
-
-    const channel = entity as Api.Channel;
+    const gramJsClient = getClient(context.bridge);
+    const channel = await resolveChannel(context.bridge, channelId);
     const updates: string[] = [];
 
     // Update title if provided
@@ -94,7 +84,7 @@ export const telegramEditChannelInfoExecutor: ToolExecutor<EditChannelInfoParams
       updates.push(`about → "${about.substring(0, 50)}${about.length > 50 ? "..." : ""}"`);
     }
 
-    log.info(`✏️ edit_channel_info: ${channel.title} - ${updates.join(", ")}`);
+    log.info(`edit_channel_info: ${channel.title} - ${updates.join(", ")}`);
 
     return {
       success: true,
@@ -104,19 +94,19 @@ export const telegramEditChannelInfoExecutor: ToolExecutor<EditChannelInfoParams
         updated: updates,
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error editing channel info");
 
     // Handle common errors
-    if (error.message?.includes("CHAT_ADMIN_REQUIRED")) {
+    const errMsg = getErrorMessage(error);
+    if (errMsg.includes("CHAT_ADMIN_REQUIRED")) {
       return {
         success: false,
         error: "You need admin rights to edit this channel",
       };
     }
 
-    if (error.message?.includes("CHAT_NOT_MODIFIED")) {
+    if (errMsg.includes("CHAT_NOT_MODIFIED")) {
       return {
         success: true,
         data: {
@@ -127,7 +117,7 @@ export const telegramEditChannelInfoExecutor: ToolExecutor<EditChannelInfoParams
 
     return {
       success: false,
-      error: getErrorMessage(error),
+      error: errMsg,
     };
   }
 };

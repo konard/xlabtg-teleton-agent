@@ -29,6 +29,8 @@ import {
   telegramResolveGiftOfferTool,
   telegramResolveGiftOfferExecutor,
 } from "./resolve-gift-offer.js";
+import { getUserGiftsEntry } from "./get-user-gifts.js";
+import { getAvailableGiftsBotEntry } from "./get-available-gifts-bot.js";
 import type { ToolEntry } from "../../types.js";
 
 export { telegramGetAvailableGiftsTool, telegramGetAvailableGiftsExecutor };
@@ -46,29 +48,91 @@ export { telegramSendGiftOfferTool, telegramSendGiftOfferExecutor };
 export { telegramResolveGiftOfferTool, telegramResolveGiftOfferExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramGetAvailableGiftsTool, executor: telegramGetAvailableGiftsExecutor },
-  { tool: telegramSendGiftTool, executor: telegramSendGiftExecutor, scope: "dm-only" },
-  { tool: telegramGetMyGiftsTool, executor: telegramGetMyGiftsExecutor },
+  {
+    tool: telegramGetAvailableGiftsTool,
+    executor: telegramGetAvailableGiftsExecutor,
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramSendGiftTool,
+    executor: telegramSendGiftExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramGetMyGiftsTool,
+    executor: telegramGetMyGiftsExecutor,
+    mode: "user",
+    tags: ["finance"],
+  },
   {
     tool: telegramTransferCollectibleTool,
     executor: telegramTransferCollectibleExecutor,
     scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
   },
   {
     tool: telegramSetCollectiblePriceTool,
     executor: telegramSetCollectiblePriceExecutor,
     scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
   },
-  { tool: telegramGetResaleGiftsTool, executor: telegramGetResaleGiftsExecutor },
-  { tool: telegramBuyResaleGiftTool, executor: telegramBuyResaleGiftExecutor, scope: "dm-only" },
-  { tool: telegramSetGiftStatusTool, executor: telegramSetGiftStatusExecutor, scope: "dm-only" },
-  { tool: telegramGetCollectibleInfoTool, executor: telegramGetCollectibleInfoExecutor },
-  { tool: telegramGetUniqueGiftTool, executor: telegramGetUniqueGiftExecutor },
-  { tool: telegramGetUniqueGiftValueTool, executor: telegramGetUniqueGiftValueExecutor },
-  { tool: telegramSendGiftOfferTool, executor: telegramSendGiftOfferExecutor, scope: "dm-only" },
+  {
+    tool: telegramGetResaleGiftsTool,
+    executor: telegramGetResaleGiftsExecutor,
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramBuyResaleGiftTool,
+    executor: telegramBuyResaleGiftExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramSetGiftStatusTool,
+    executor: telegramSetGiftStatusExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramGetCollectibleInfoTool,
+    executor: telegramGetCollectibleInfoExecutor,
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramGetUniqueGiftTool,
+    executor: telegramGetUniqueGiftExecutor,
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramGetUniqueGiftValueTool,
+    executor: telegramGetUniqueGiftValueExecutor,
+    mode: "user",
+    tags: ["finance"],
+  },
+  {
+    tool: telegramSendGiftOfferTool,
+    executor: telegramSendGiftOfferExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
+  },
   {
     tool: telegramResolveGiftOfferTool,
     executor: telegramResolveGiftOfferExecutor,
     scope: "dm-only",
+    mode: "user",
+    tags: ["finance"],
   },
+  getUserGiftsEntry,
+  getAvailableGiftsBotEntry,
 ];

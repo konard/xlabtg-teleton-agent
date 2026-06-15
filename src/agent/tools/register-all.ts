@@ -16,7 +16,7 @@ import { tools as dedustTools } from "./dedust/index.js";
 import { tools as journalTools } from "./journal/index.js";
 import { tools as workspaceTools } from "./workspace/index.js";
 import { tools as webTools } from "./web/index.js";
-import { tools as botTools } from "./bot/index.js";
+import { toolSearchTool, createToolSearchExecutor } from "./search/index.js";
 
 const ALL_CATEGORIES: ToolEntry[][] = [
   telegramTools,
@@ -27,13 +27,19 @@ const ALL_CATEGORIES: ToolEntry[][] = [
   journalTools,
   workspaceTools,
   webTools,
-  botTools,
 ];
 
 export function registerAllTools(registry: ToolRegistry): void {
   for (const category of ALL_CATEGORIES) {
-    for (const { tool, executor, scope } of category) {
-      registry.register(tool, executor, scope);
+    for (const { tool, executor, scope, mode, tags } of category) {
+      registry.register(tool, executor, scope, mode, tags);
     }
   }
+
+  // Register tool_search LAST so its executor closure captures a fully-populated registry.
+  // scope "open" (always available), tags ["core"] so getCoreTools() includes it.
+  // The executor lazily reads registry.getToolIndex() + registry.getEmbedder() at call time,
+  // both of which are set during startAgent() — after this registration.
+  const toolSearchExecutor = createToolSearchExecutor(registry);
+  registry.register(toolSearchTool, toolSearchExecutor, "open", "both", ["core"]);
 }

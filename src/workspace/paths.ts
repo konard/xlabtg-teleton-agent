@@ -98,3 +98,49 @@ export const MAX_FILE_SIZES = {
   document: 50 * 1024 * 1024, // 50 MB
   total_workspace: 500 * 1024 * 1024, // 500 MB total
 } as const;
+
+/**
+ * Extensions treated as text (vs binary) when reading a workspace file.
+ * Distinct from ALLOWED_EXTENSIONS (upload/media policy): this drives text/binary
+ * detection and includes markup (.xml/.html/.css) but not .pdf/.sql.
+ */
+export const TEXT_FILE_EXTENSIONS: readonly string[] = [
+  ".md",
+  ".txt",
+  ".json",
+  ".csv",
+  ".yaml",
+  ".yml",
+  ".xml",
+  ".html",
+  ".css",
+  ".js",
+  ".ts",
+  ".py",
+  ".sh",
+];
+
+/**
+ * Core files that must never be deleted (overwrite-protection is separate — see
+ * MEMORY_SCAN_FILES, a distinct security concern).
+ */
+export const PROTECTED_WORKSPACE_FILES: readonly string[] = [
+  "SOUL.md",
+  "STRATEGY.md",
+  "SECURITY.md",
+  "MEMORY.md",
+  "IDENTITY.md",
+  "USER.md",
+];
+
+/**
+ * Memory-sensitive files whose content is scanned for injection on write (plus
+ * anything under the memory/ directory). NOT the same set as
+ * PROTECTED_WORKSPACE_FILES: a scanned file may still be deletable, and vice versa.
+ */
+export const MEMORY_SCAN_FILES: readonly string[] = [
+  "MEMORY.md",
+  "HEARTBEAT.md",
+  "USER.md",
+  "IDENTITY.md",
+];

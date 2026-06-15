@@ -10,6 +10,7 @@ import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -46,7 +47,7 @@ export const telegramSetChatPhotoExecutor: ToolExecutor<SetChatPhotoParams> = as
   try {
     const { chat_id, photo_path, delete_photo = false } = params;
 
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     // Get entity to determine if it's a channel or regular chat
     const entity = await client.getEntity(chat_id);

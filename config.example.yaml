@@ -5,7 +5,7 @@
 agent:
   provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | nvidia
   api_key: "YOUR_API_KEY"
-  model: "claude-opus-4-5-20251101"  # Model ID (varies by provider)
+  model: "claude-haiku-4-5-20251001" # Model ID (varies by provider)
   # utility_model: "claude-3-5-haiku-20241022"  # Optional: cheap model for summarization
   max_tokens: 4096
   temperature: 0.7
@@ -37,12 +37,13 @@ self_correction:
 #   default_memory_policy: "isolated"
 
 telegram:
+  mode: "user"                       # "user" (default) or "bot" — user requires phone auth, bot requires bot_token
   api_id: 0                          # From https://my.telegram.org/apps
   api_hash: "YOUR_API_HASH"
   phone: "+1234567890"               # Phone number linked to Telegram account
   session_name: "teleton_session"    # GramJS session file name
   session_path: "~/.teleton"         # Directory for session files
-  dm_policy: "pairing"               # pairing | allowlist | open | disabled
+  dm_policy: "open"                  # open | allowlist | admin-only | disabled
   allow_from: []                     # Telegram user IDs (for allowlist policy)
   group_policy: "open"               # open | allowlist | disabled
   group_allow_from: []               # Group chat IDs (for allowlist group policy)
@@ -245,7 +246,7 @@ integrations:
 # Set enabled: false to disable and send all tools to the LLM.
 # tool_rag:
 #   enabled: true                      # Enabled by default — disable with false
-#   top_k: 25                          # Max tools to retrieve per LLM call
+#   top_k: 35                          # Max tools to retrieve per LLM call
 #   skip_unlimited_providers: false    # RAG applies to ALL providers (including Anthropic)
 #   always_include:                    # Tools always included regardless of query
 #     - telegram_send_message

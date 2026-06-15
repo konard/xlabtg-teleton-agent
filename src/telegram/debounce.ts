@@ -41,10 +41,10 @@ export class MessageDebouncer {
     if (!shouldDebounce) {
       const key = message.chatId;
       if (this.buffers.has(key)) {
-        log.debug(`📤 [Debouncer] Flushing pending buffer for ${key} before immediate processing`);
+        log.debug(`[Debouncer] Flushing pending buffer for ${key} before immediate processing`);
         await this.flushKey(key);
       }
-      log.debug(`⚡ [Debouncer] Processing immediately (no debounce)`);
+      log.debug(`[Debouncer] Processing immediately (no debounce)`);
       await this.processMessages([message]);
       return;
     }
@@ -55,7 +55,7 @@ export class MessageDebouncer {
     if (existing) {
       if (existing.messages.length >= this.maxBufferSize) {
         log.debug(
-          `📤 [Debouncer] Buffer full for ${key} (${existing.messages.length}/${this.maxBufferSize}), flushing`
+          `[Debouncer] Buffer full for ${key} (${existing.messages.length}/${this.maxBufferSize}), flushing`
         );
         await this.flushKey(key);
         const newBuffer: DebounceBuffer = { messages: [message], timer: null };
@@ -64,7 +64,7 @@ export class MessageDebouncer {
       } else {
         existing.messages.push(message);
         log.debug(
-          `📥 [Debouncer] Added to buffer for ${key} (${existing.messages.length} messages waiting)`
+          `[Debouncer] Added to buffer for ${key} (${existing.messages.length} messages waiting)`
         );
         this.resetTimer(key, existing);
       }
@@ -102,7 +102,7 @@ export class MessageDebouncer {
   private async flushKey(key: string): Promise<void> {
     const buffer = this.buffers.get(key);
     if (!buffer) {
-      log.debug(`📭 [Debouncer] No buffer to flush for ${key}`);
+      log.debug(`[Debouncer] No buffer to flush for ${key}`);
       return;
     }
 
@@ -114,18 +114,18 @@ export class MessageDebouncer {
     }
 
     if (buffer.messages.length === 0) {
-      log.debug(`📭 [Debouncer] Empty buffer for ${key}, nothing to flush`);
+      log.debug(`[Debouncer] Empty buffer for ${key}, nothing to flush`);
       return;
     }
 
-    log.debug(`📤 [Debouncer] Flushing ${buffer.messages.length} message(s) for ${key}`);
+    log.debug(`[Debouncer] Flushing ${buffer.messages.length} message(s) for ${key}`);
     await this.processMessages(buffer.messages);
   }
 
   private async processMessages(messages: TelegramMessage[]): Promise<void> {
     const sorted = messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
 
-    log.debug(`🔄 [Debouncer] Processing ${sorted.length} message(s)`);
+    log.debug(`[Debouncer] Processing ${sorted.length} message(s)`);
 
     try {
       await this.onFlush(sorted);

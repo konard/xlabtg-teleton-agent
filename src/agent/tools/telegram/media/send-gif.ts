@@ -5,6 +5,7 @@ import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -26,7 +27,7 @@ interface SendGifParams {
 export const telegramSendGifTool: Tool = {
   name: "telegram_send_gif",
   description:
-    "Send a GIF via queryId+resultId (from telegram_search_gifs) or a local GIF/MP4 file path.",
+    "Send a GIF via queryId+resultId (from telegram_search_gifs) or a local GIF/MP4 file path. Always call telegram_search_gifs first to get queryId/resultId.",
   parameters: Type.Object({
     chatId: Type.String({
       description: "The chat ID to send the GIF to",
@@ -81,7 +82,7 @@ export const telegramSendGifExecutor: ToolExecutor<SendGifParams> = async (
     }
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Method 1: Send GIF from inline bot result (@gif)
     if (hasInlineResult) {

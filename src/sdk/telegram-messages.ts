@@ -1,8 +1,9 @@
 import { randomLong, toLong } from "../utils/gramjs-bigint.js";
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { Api } from "telegram";
 import type { PluginLogger, SimpleMessage, MediaSendOptions } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
+import { getErrorMessage } from "../utils/errors.js";
 import {
   requireBridge as requireBridgeUtil,
   getClient as getClientUtil,
@@ -14,9 +15,24 @@ import {
  * Creates the Telegram messages, media, and advanced SDK methods.
  * These extend the core TelegramSDK with additional capabilities.
  */
-export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLogger) {
+export function createTelegramMessagesSDK(
+  bridge: ITelegramBridge,
+  log: PluginLogger,
+  mode?: "user" | "bot"
+) {
+  const telegramMode = mode ?? bridge.getMode();
+
   function requireBridge(): void {
     requireBridgeUtil(bridge);
+  }
+
+  function requireUserMode(methodName: string): void {
+    if (telegramMode === "bot") {
+      throw new PluginSDKError(
+        `sdk.telegram.${methodName}() requires user mode`,
+        "OPERATION_FAILED"
+      );
+    }
   }
 
   function getClient() {
@@ -27,6 +43,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
     // ─── Messages ──────────────────────────────────────────────
 
     async deleteMessage(chatId: string, messageId: number, revoke = true): Promise<void> {
+      requireUserMode("deleteMessage");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -49,10 +66,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
             })
           );
         }
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to delete message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to delete message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -63,6 +80,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       toChatId: string,
       messageId: number
     ): Promise<number | null> {
+      requireUserMode("forwardMessage");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -89,10 +107,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
           }
         }
         return null;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to forward message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to forward message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -103,6 +121,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       messageId: number,
       opts?: { silent?: boolean; unpin?: boolean }
     ): Promise<void> {
+      requireUserMode("pinMessage");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -116,16 +135,17 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
             unpin: opts?.unpin,
           })
         );
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to ${opts?.unpin ? "unpin" : "pin"} message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to ${opts?.unpin ? "unpin" : "pin"} message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async searchMessages(chatId: string, query: string, limit = 20): Promise<SimpleMessage[]> {
+      requireUserMode("searchMessages");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -143,10 +163,15 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         );
 
         const resultData = result as Api.messages.Messages;
-        return (resultData.messages ?? []).map(toSimpleMessage);
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
-        log.error("telegram.searchMessages() failed:", err);
+        return (resultData.messages ?? [])
+          .filter(
+            (m): m is Api.Message =>
+              m.className !== "MessageEmpty" && m.className !== "MessageService"
+          )
+          .map(toSimpleMessage);
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
+        log.error("telegram.searchMessages() failed:", error);
         return [];
       }
     },
@@ -156,6 +181,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       text: string,
       scheduleDate: number
     ): Promise<number | null> {
+      requireUserMode("scheduleMessage");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -166,16 +192,17 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id ?? null;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to schedule message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to schedule message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async getReplies(chatId: string, messageId: number, limit = 50): Promise<SimpleMessage[]> {
+      requireUserMode("getReplies");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -208,10 +235,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         // Sort oldest first for thread reading
         messages.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
         return messages;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to get replies: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to get replies: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -224,6 +251,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       photo: string | Buffer,
       opts?: MediaSendOptions
     ): Promise<number> {
+      requireUserMode("sendPhoto");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -235,10 +263,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send photo: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send photo: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -249,6 +277,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       video: string | Buffer,
       opts?: MediaSendOptions
     ): Promise<number> {
+      requireUserMode("sendVideo");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -271,10 +300,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send video: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send video: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -285,6 +314,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       voice: string | Buffer,
       opts?: MediaSendOptions
     ): Promise<number> {
+      requireUserMode("sendVoice");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -302,10 +332,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send voice: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send voice: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -316,13 +346,13 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       file: string | Buffer,
       opts?: MediaSendOptions & { fileName?: string }
     ): Promise<number> {
+      requireUserMode("sendFile");
       requireBridge();
       try {
         const gramJsClient = getClient();
         const Api = await getApi();
 
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS document attributes are untyped
-        const attributes: any[] = [];
+        const attributes: Api.TypeDocumentAttribute[] = [];
         if (opts?.fileName) {
           attributes.push(new Api.DocumentAttributeFilename({ fileName: opts.fileName }));
         }
@@ -336,16 +366,17 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send file: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send file: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async sendGif(chatId: string, gif: string | Buffer, opts?: MediaSendOptions): Promise<number> {
+      requireUserMode("sendGif");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -359,16 +390,17 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send GIF: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send GIF: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async sendSticker(chatId: string, sticker: string | Buffer): Promise<number> {
+      requireUserMode("sendSticker");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -378,16 +410,17 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
         });
 
         return result.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send sticker: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send sticker: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async downloadMedia(chatId: string, messageId: number): Promise<Buffer | null> {
+      requireUserMode("downloadMedia");
       requireBridge();
       const MAX_DOWNLOAD_SIZE = 50 * 1024 * 1024; // 50 MB
       try {
@@ -414,10 +447,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
 
         const buffer = await gramJsClient.downloadMedia(messages[0], {});
         return buffer ? Buffer.from(buffer as Buffer | string) : null;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to download media: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to download media: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -426,6 +459,7 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
     // ─── Scheduled Messages ────────────────────────────────────
 
     async getScheduledMessages(chatId: string): Promise<SimpleMessage[]> {
+      requireUserMode("getScheduledMessages");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -448,14 +482,15 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
           }
         }
         return messages;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
-        log.error("telegram.getScheduledMessages() failed:", err);
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
+        log.error("telegram.getScheduledMessages() failed:", error);
         return [];
       }
     },
 
     async deleteScheduledMessage(chatId: string, messageId: number): Promise<void> {
+      requireUserMode("deleteScheduledMessage");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -468,16 +503,17 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
             id: [messageId],
           })
         );
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to delete scheduled message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to delete scheduled message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async sendScheduledNow(chatId: string, messageId: number): Promise<void> {
+      requireUserMode("sendScheduledNow");
       requireBridge();
       try {
         const gramJsClient = getClient();
@@ -490,10 +526,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
             id: [messageId],
           })
         );
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send scheduled message now: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send scheduled message now: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -505,10 +541,10 @@ export function createTelegramMessagesSDK(bridge: TelegramBridge, log: PluginLog
       requireBridge();
       try {
         await bridge.setTyping(chatId);
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to set typing: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to set typing: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }

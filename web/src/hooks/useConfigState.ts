@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
-import { api, StatusData, MemoryStats, ToolRagStatus } from '../lib/api';
+import { api, StatusData, MemoryStats, ToolRagStatus, ConfigKeyData } from '../lib/api';
+import { errMsg } from '../lib/utils';
 
 export interface ProviderMeta {
   needsKey: boolean;
@@ -13,9 +14,9 @@ export function useConfigState() {
   const [status, setStatus] = useState<StatusData | null>(null);
   const [stats, setStats] = useState<MemoryStats | null>(null);
   const [toolRag, setToolRag] = useState<ToolRagStatus | null>(null);
+  const [configKeys, setConfigKeys] = useState<ConfigKeyData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
   const [modelOptions, setModelOptions] = useState<Array<{ value: string; name: string }>>([]);
 
   // Provider switch gating state
@@ -37,6 +38,7 @@ export function useConfigState() {
         setStatus(statusRes.data);
         setStats(statsRes.data);
         setToolRag(ragRes.data);
+        setConfigKeys(configRes.data);
         // Sync both server and local inputs from API values
         const inputs: Record<string, string> = {};
         for (const c of configRes.data) {
@@ -62,20 +64,14 @@ export function useConfigState() {
     setLocalInputs((prev) => ({ ...prev, [key]: serverInputs[key] ?? '' }));
   };
 
-  const showSuccess = (msg: string) => {
-    setSaveSuccess(msg);
-    setTimeout(() => setSaveSuccess(null), 2000);
-  };
-
   const saveConfig = async (key: string, value: string) => {
     if (!value.trim()) return; // never send empty values
     try {
       setError(null);
       await api.setConfigKey(key, value.trim());
       await loadData();
-      showSuccess(`Saved ${key.split('.').pop()}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -83,9 +79,8 @@ export function useConfigState() {
     try {
       const res = await api.updateToolRag(update);
       setToolRag(res.data);
-      showSuccess('Tool RAG updated');
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -127,7 +122,7 @@ export function useConfigState() {
         setPendingError(null);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     }
   };
 
@@ -153,9 +148,8 @@ export function useConfigState() {
       setPendingProvider(null);
       setPendingMeta(null);
       setPendingApiKey('');
-      showSuccess(`Switched to ${pendingMeta.displayName}`);
     } catch (err) {
-      setPendingError(err instanceof Error ? err.message : String(err));
+      setPendingError(errMsg(err));
     } finally {
       setPendingValidating(false);
     }
@@ -169,8 +163,8 @@ export function useConfigState() {
   };
 
   return {
-    loading, error, setError, saveSuccess, status, stats, toolRag,
-    localInputs, getLocal, getServer, setLocal, cancelLocal, saveConfig, saveToolRag, showSuccess,
+    loading, error, setError, status, stats, toolRag, configKeys,
+    localInputs, getLocal, getServer, setLocal, cancelLocal, saveConfig, saveToolRag,
     modelOptions, pendingProvider, pendingMeta, pendingApiKey, setPendingApiKey,
     pendingValidating, pendingError, setPendingError,
     handleProviderChange, handleProviderConfirm, handleProviderCancel, loadData,

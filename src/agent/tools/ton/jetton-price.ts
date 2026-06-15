@@ -73,8 +73,8 @@ export const jettonPriceExecutor: ToolExecutor<JettonPriceParams> = async (
         symbol = infoData.metadata?.symbol || symbol;
         name = infoData.metadata?.name || name;
       }
-    } catch (err) {
-      log.debug({ err }, "Failed to fetch jetton metadata");
+    } catch (innerError: unknown) {
+      log.debug({ err: innerError }, "Failed to fetch jetton metadata");
     }
 
     const priceInfo = {
@@ -113,7 +113,7 @@ export const jettonPriceExecutor: ToolExecutor<JettonPriceParams> = async (
         message,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error in jetton_price");
     return {
       success: false,

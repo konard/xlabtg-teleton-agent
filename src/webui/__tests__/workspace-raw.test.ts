@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { Hono } from "hono";
 
 vi.mock("node:fs", () => ({
-  readFileSync: vi.fn(),
   writeFileSync: vi.fn(),
   mkdirSync: vi.fn(),
   rmSync: vi.fn(),
@@ -11,6 +10,10 @@ vi.mock("node:fs", () => ({
   statSync: vi.fn(),
   existsSync: vi.fn(() => true),
   lstatSync: vi.fn(),
+}));
+
+vi.mock("node:fs/promises", () => ({
+  readFile: vi.fn(),
 }));
 
 vi.mock("../../workspace/validator.js", () => ({
@@ -46,7 +49,8 @@ vi.mock("../../utils/logger.js", () => ({
   })),
 }));
 
-import { readFileSync, statSync } from "node:fs";
+import { statSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { validateReadPath, WorkspaceSecurityError } from "../../workspace/validator.js";
 import { createWorkspaceRoutes } from "../routes/workspace.js";
 import type { WebUIServerDeps } from "../types.js";
@@ -71,7 +75,7 @@ describe("GET /workspace/raw", () => {
       filename: "test.png",
     });
     vi.mocked(statSync).mockReturnValue({ size: 1024 } as any);
-    vi.mocked(readFileSync).mockReturnValue(buf as any);
+    vi.mocked(readFile).mockResolvedValue(buf as any);
 
     const res = await app.request("/workspace/raw?path=test.png");
 
@@ -92,7 +96,7 @@ describe("GET /workspace/raw", () => {
       filename: "photo.jpg",
     });
     vi.mocked(statSync).mockReturnValue({ size: 1024 } as any);
-    vi.mocked(readFileSync).mockReturnValue(buf as any);
+    vi.mocked(readFile).mockResolvedValue(buf as any);
 
     const res = await app.request("/workspace/raw?path=photo.jpg");
 
@@ -111,7 +115,7 @@ describe("GET /workspace/raw", () => {
       filename: "icon.svg",
     });
     vi.mocked(statSync).mockReturnValue({ size: 256 } as any);
-    vi.mocked(readFileSync).mockReturnValue(buf as any);
+    vi.mocked(readFile).mockResolvedValue(buf as any);
 
     const res = await app.request("/workspace/raw?path=icon.svg");
 

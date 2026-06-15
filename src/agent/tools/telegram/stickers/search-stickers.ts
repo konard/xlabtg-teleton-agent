@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -20,7 +22,7 @@ interface SearchStickersParams {
 export const telegramSearchStickersTool: Tool = {
   name: "telegram_search_stickers",
   description:
-    "Search sticker packs globally by keyword or emoji. Returns packs with shortName, count, and install status. For installed-only, use telegram_get_my_stickers.",
+    "Search sticker packs globally by keyword or emoji. Returns packs with shortName, count, and install status. For installed-only, use telegram_get_my_stickers. Examples: 'pepe', 'cats', '🔥'.",
   parameters: Type.Object({
     query: Type.String({
       description:
@@ -47,7 +49,7 @@ export const telegramSearchStickersExecutor: ToolExecutor<SearchStickersParams> 
     const { query, limit = 10 } = params;
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Search for sticker sets
     const result = await gramJsClient.invoke(
@@ -64,13 +66,12 @@ export const telegramSearchStickersExecutor: ToolExecutor<SearchStickersParams> 
       };
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
     const sets = result.sets.slice(0, limit).map((set: any) => ({
       shortName: set.set.shortName,
       title: set.set.title,
       count: set.set.count,
       validIndices: `0-${set.set.count - 1}`,
-      installed: set.set.installed || false,
+      installed: set.set.installedDate != null,
     }));
 
     return {

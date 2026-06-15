@@ -1,7 +1,7 @@
 import { complete, type Context, type ToolCall } from "@mariozechner/pi-ai";
 import type { AgentRuntime } from "../agent/runtime.js";
 import type { ToolRegistry } from "../agent/tools/registry.js";
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type Database from "better-sqlite3";
 import type { SupportedProvider } from "../config/providers.js";
 import { getProviderModel, getEffectiveApiKey } from "../agent/client.js";
@@ -19,7 +19,7 @@ const AUTONOMOUS_PLANNER_TOOL_LIMIT = 64;
 export interface IntegrationDeps {
   agent: AgentRuntime;
   toolRegistry: ToolRegistry | null;
-  bridge: TelegramBridge;
+  bridge: ITelegramBridge;
   db: Database.Database;
 }
 

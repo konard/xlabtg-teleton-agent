@@ -10,7 +10,8 @@ interface DnsCheckParams {
 }
 export const dnsCheckTool: Tool = {
   name: "dns_check",
-  description: "Check .ton domain status: available, in auction, or owned.",
+  description:
+    "Check .ton domain status: available, in auction, or owned. Examples: alice.ton, fragment.ton.",
   category: "data-bearing",
   parameters: Type.Object({
     domain: Type.String({
@@ -107,8 +108,10 @@ export const dnsCheckExecutor: ToolExecutor<DnsCheckParams> = async (
 
     if (auctionsResponse.ok) {
       const auctions = await auctionsResponse.json();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON DNS API response is untyped
-      const auction = auctions.data?.find((a: any) => a.domain === fullDomain);
+      const auction = auctions.data?.find(
+        (a: { domain: string; price: string; date: number; bids: number }) =>
+          a.domain === fullDomain
+      );
 
       if (auction) {
         const currentBid = (BigInt(auction.price) / BigInt(1_000_000_000)).toString();

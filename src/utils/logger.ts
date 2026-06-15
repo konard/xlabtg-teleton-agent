@@ -144,6 +144,8 @@ const rootLogger = pino(
         "*.secret",
         "*.token",
         "*.mnemonic",
+        "bot_token",
+        "*.bot_token",
       ],
       censor: "[REDACTED]",
     },

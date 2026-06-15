@@ -51,8 +51,8 @@ const tonProxyModule: PluginModule = {
     try {
       await manager.start();
       log.info(`TON Proxy started on port ${proxyConfig.port}`);
-    } catch (err) {
-      log.error({ err }, "Failed to start TON Proxy");
+    } catch (error) {
+      log.error({ err: error }, "Failed to start TON Proxy");
       // Non-fatal: agent continues without proxy
       manager = null;
     }

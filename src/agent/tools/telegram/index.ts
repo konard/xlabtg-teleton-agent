@@ -12,6 +12,7 @@ import { tools as contactsTools } from "./contacts/index.js";
 import { tools as storiesTools } from "./stories/index.js";
 import { tools as memoryTools } from "./memory/index.js";
 import { tools as tasksTools } from "./tasks/index.js";
+import { sendButtonsEntry } from "./send-buttons.js";
 import type { ToolEntry } from "../types.js";
 
 // Messaging
@@ -71,4 +72,5 @@ export const tools: ToolEntry[] = [
   ...storiesTools,
   ...memoryTools,
   ...tasksTools,
+  sendButtonsEntry,
 ];

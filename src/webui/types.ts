@@ -1,10 +1,11 @@
 import type { AgentRuntime } from "../agent/runtime.js";
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { MemorySystem } from "../memory/index.js";
 import type { ToolRegistry } from "../agent/tools/registry.js";
 import type { WebUIConfig, Config, NetworkConfig } from "../config/schema.js";
 import type { Database } from "better-sqlite3";
-import type { PluginModule, PluginContext } from "../agent/tools/types.js";
+import type { PluginModule, PluginContext, ToolScope } from "../agent/tools/types.js";
+import type { ToolAccessLevel } from "../agent/tools/scope.js";
 import type { SDKDependencies } from "../sdk/index.js";
 import type { AgentLifecycle } from "../agent/lifecycle.js";
 import type { UserHookEvaluator } from "../agent/hooks/user-hook-evaluator.js";
@@ -31,7 +32,7 @@ export interface McpServerInfo {
 
 export interface WebUIServerDeps {
   agent: AgentRuntime;
-  bridge: TelegramBridge;
+  bridge: ITelegramBridge;
   memory: {
     db: Database;
     vectorEnabled?: MemorySystem["vectorEnabled"];
@@ -135,9 +136,13 @@ export interface ToolInfo {
   name: string;
   description: string;
   module: string;
-  scope: "always" | "dm-only" | "group-only" | "admin-only";
+  /** Per-tool access: who may use this tool (context-independent). */
+  level: ToolAccessLevel;
   category?: string;
-  enabled: boolean;
+  /** Legacy single-value scope (derived) — kept for backward compatibility. */
+  scope?: ToolScope;
+  /** Derived: false only when the tool is off. */
+  enabled?: boolean;
 }
 
 export interface ModuleInfo {

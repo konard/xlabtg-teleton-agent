@@ -13,12 +13,32 @@ export { telegramSetUsernameTool, telegramSetUsernameExecutor };
 export { telegramSetPersonalChannelTool, telegramSetPersonalChannelExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramUpdateProfileTool, executor: telegramUpdateProfileExecutor, scope: "dm-only" },
-  { tool: telegramSetBioTool, executor: telegramSetBioExecutor, scope: "dm-only" },
-  { tool: telegramSetUsernameTool, executor: telegramSetUsernameExecutor, scope: "dm-only" },
+  {
+    tool: telegramUpdateProfileTool,
+    executor: telegramUpdateProfileExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramSetBioTool,
+    executor: telegramSetBioExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramSetUsernameTool,
+    executor: telegramSetUsernameExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
+  },
   {
     tool: telegramSetPersonalChannelTool,
     executor: telegramSetPersonalChannelExecutor,
     scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
   },
 ];

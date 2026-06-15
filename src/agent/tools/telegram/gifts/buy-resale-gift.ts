@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -36,7 +37,7 @@ export const telegramBuyResaleGiftExecutor: ToolExecutor<BuyResaleGiftParams> = 
 ): Promise<ToolResult> => {
   try {
     const { slug } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Buy for self
     const toId = new Api.InputPeerSelf();
@@ -46,8 +47,7 @@ export const telegramBuyResaleGiftExecutor: ToolExecutor<BuyResaleGiftParams> = 
       toId,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const form: any = await gramJsClient.invoke(new Api.payments.GetPaymentForm({ invoice }));
+    const form = await gramJsClient.invoke(new Api.payments.GetPaymentForm({ invoice }));
 
     // Complete the purchase
     await gramJsClient.invoke(

@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+import type { TelegramClient } from "telegram";
 import { randomLong } from "../../../utils/gramjs-bigint.js";
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
@@ -31,7 +33,7 @@ interface DealProposeParams {
 export const dealProposeTool: Tool = {
   name: "deal_propose",
   description:
-    "Create a trade deal with Accept/Decline buttons. Sends an inline bot message — do NOT send another message after. Strategy compliance is enforced automatically (will reject bad deals). User always sends first. Expires in 2 minutes.",
+    "Create a TON trade deal (gift↔TON, TON↔gift). Sends a deal card with Accept/Decline buttons. Strategy limits enforced automatically. User ALWAYS sends first. Expires in 2 min. Do NOT send follow-up message after calling this.",
   parameters: Type.Object({
     chatId: Type.String({ description: "Chat ID where to send proposal" }),
     userId: Type.Number({ description: "Telegram user ID" }),
@@ -143,7 +145,12 @@ export const dealProposeExecutor: ToolExecutor<DealProposeParams> = async (
 
     if (botUsername) {
       try {
-        inlineSent = await sendInlineBotResult(context.bridge, params.chatId, botUsername, dealId);
+        inlineSent = await sendInlineBotResult(
+          context.bridge as any,
+          params.chatId,
+          botUsername,
+          dealId
+        );
       } catch (inlineError) {
         log.warn({ err: inlineError }, "[Deal] Failed to send inline bot result");
       }
@@ -208,8 +215,7 @@ export const dealProposeExecutor: ToolExecutor<DealProposeParams> = async (
  * This makes the deal card with buttons appear directly in the chat.
  */
 async function sendInlineBotResult(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deal data is dynamically structured
-  bridge: any,
+  bridge: { getClient(): { getClient(): TelegramClient } },
   chatId: string,
   botUsername: string,
   dealId: string
@@ -237,8 +243,7 @@ async function sendInlineBotResult(
   }
 
   // Find the deal result (skip help/not_found/wrong_user results)
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- deal data is dynamically structured
-  const dealResult = results.results.find((r: any) => r.id === dealId);
+  const dealResult = results.results.find((r) => r.id === dealId);
   const resultToSend = dealResult || results.results[0];
 
   // Send the inline result as a message in the chat

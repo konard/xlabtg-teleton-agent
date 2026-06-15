@@ -4,6 +4,7 @@ import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -28,7 +29,7 @@ export const telegramGetScheduledMessagesExecutor: ToolExecutor<
 > = async (params, context): Promise<ToolResult> => {
   try {
     const { chatId } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
     const entity = await gramJsClient.getEntity(chatId);
 
     const result = await gramJsClient.invoke(
@@ -47,7 +48,7 @@ export const telegramGetScheduledMessagesExecutor: ToolExecutor<
       hasMedia: !!msg.media,
     }));
 
-    log.info(`📋 get_scheduled_messages: ${scheduled.length} scheduled in ${chatId}`);
+    log.info(`get_scheduled_messages: ${scheduled.length} scheduled in ${chatId}`);
 
     return {
       success: true,

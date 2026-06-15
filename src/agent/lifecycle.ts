@@ -1,5 +1,6 @@
 import { EventEmitter } from "node:events";
 import { createLogger } from "../utils/logger.js";
+import { getErrorMessage } from "../utils/errors.js";
 
 const log = createLogger("Lifecycle");
 
@@ -75,12 +76,12 @@ export class AgentLifecycle extends EventEmitter {
         this.error = undefined;
         this.runningSince = Date.now();
         this.transition("running");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+      } catch (error) {
+        const message = getErrorMessage(error);
         this.error = message;
         this.runningSince = null;
         this.transition("stopped", message);
-        throw err;
+        throw error;
       } finally {
         this.startPromise = null;
       }
@@ -124,8 +125,8 @@ export class AgentLifecycle extends EventEmitter {
     this.stopPromise = (async () => {
       try {
         await fn();
-      } catch (err) {
-        log.error({ err }, "Error during agent stop");
+      } catch (error) {
+        log.error({ err: error }, "Error during agent stop");
       } finally {
         this.runningSince = null;
         this.transition("stopped");

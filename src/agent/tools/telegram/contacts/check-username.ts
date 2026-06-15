@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -46,7 +48,7 @@ export const telegramCheckUsernameExecutor: ToolExecutor<CheckUsernameParams> = 
       };
     }
 
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     try {
       // Try to resolve the username
@@ -58,7 +60,7 @@ export const telegramCheckUsernameExecutor: ToolExecutor<CheckUsernameParams> = 
 
       // Determine entity type and extract info
       let entityType: string | null = null;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+
       let entityInfo: Record<string, any> = {};
 
       if (result.users && result.users.length > 0) {
@@ -98,7 +100,7 @@ export const telegramCheckUsernameExecutor: ToolExecutor<CheckUsernameParams> = 
         }
       }
 
-      log.info(`🔍 check_username: @${cleanUsername} → ${entityType}`);
+      log.info(`check_username: @${cleanUsername} → ${entityType}`);
 
       return {
         success: true,
@@ -109,15 +111,11 @@ export const telegramCheckUsernameExecutor: ToolExecutor<CheckUsernameParams> = 
           entity: entityInfo,
         },
       };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    } catch (error: any) {
+    } catch (innerError: unknown) {
       // Username not found
-      if (
-        error.message?.includes("USERNAME_NOT_OCCUPIED") ||
-        error.message?.includes("No user has") ||
-        error.errorMessage === "USERNAME_NOT_OCCUPIED"
-      ) {
-        log.info(`🔍 check_username: @${cleanUsername} → not found (available)`);
+      const innerMsg = getErrorMessage(innerError);
+      if (innerMsg.includes("USERNAME_NOT_OCCUPIED") || innerMsg.includes("No user has")) {
+        log.info(`check_username: @${cleanUsername} → not found (available)`);
         return {
           success: true,
           data: {
@@ -130,16 +128,16 @@ export const telegramCheckUsernameExecutor: ToolExecutor<CheckUsernameParams> = 
       }
 
       // Invalid username format
-      if (error.message?.includes("USERNAME_INVALID")) {
+      if (innerMsg.includes("USERNAME_INVALID")) {
         return {
           success: false,
           error: `Invalid username format: @${cleanUsername}`,
         };
       }
 
-      throw error;
+      throw innerError;
     }
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error checking username");
     return {
       success: false,

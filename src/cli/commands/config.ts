@@ -112,12 +112,12 @@ async function actionSet(
           },
         });
       }
-    } catch (e) {
-      if (e instanceof CancelledError) {
+    } catch (error) {
+      if (error instanceof CancelledError) {
         console.log("Cancelled.");
         return;
       }
-      throw e;
+      throw error;
     }
   }
 

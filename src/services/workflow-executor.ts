@@ -1,4 +1,4 @@
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { WorkflowStore } from "./workflows.js";
 import type { CallApiAction, Workflow, WorkflowAction } from "./workflows.js";
 import { fetchWorkflowCallApiUrl, type OutboundFetchResponse } from "./workflow-security.js";
@@ -12,7 +12,7 @@ import {
 const log = createLogger("WorkflowExecutor");
 
 export interface WorkflowExecutorDeps {
-  bridge?: TelegramBridge;
+  bridge?: ITelegramBridge;
   store: WorkflowStore;
 }
 

@@ -113,6 +113,8 @@ function makeBridge() {
     sendMessage: vi.fn().mockResolvedValue({ id: 999, date: Math.floor(Date.now() / 1000) }),
     setTyping: vi.fn().mockResolvedValue(undefined),
     fetchReplyContext: vi.fn().mockResolvedValue(null),
+    getMode: vi.fn().mockReturnValue("user"),
+    requiresOffsetDedup: vi.fn().mockReturnValue(true),
   } as any;
 }
 

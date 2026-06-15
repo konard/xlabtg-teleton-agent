@@ -3,13 +3,9 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient, validateChannelUsername } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
-
-/**
- * Parameters for telegram_create_channel tool
- */
-const USERNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$/;
 
 interface CreateChannelParams {
   title: string;
@@ -63,11 +59,10 @@ export const telegramCreateChannelExecutor: ToolExecutor<CreateChannelParams> = 
     const { title, about = "", megagroup = false, username } = params;
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Create channel
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const result: any = await gramJsClient.invoke(
+    const result = await gramJsClient.invoke(
       new Api.channels.CreateChannel({
         title,
         about,
@@ -77,23 +72,25 @@ export const telegramCreateChannelExecutor: ToolExecutor<CreateChannelParams> = 
     );
 
     // Extract channel info from updates
-    const channel = result.chats?.[0];
+    const chats = "chats" in result ? result.chats : [];
+    const channel = chats[0];
 
     const data: Record<string, unknown> = {
       channelId: channel?.id?.toString() || "unknown",
       title,
       type: megagroup ? "megagroup" : "channel",
-      accessHash: channel?.accessHash?.toString(),
+      accessHash:
+        channel && channel.className === "Channel" ? channel.accessHash?.toString() : undefined,
     };
 
     // Set username if provided (best-effort — creation still succeeds on failure)
     if (username && channel) {
-      const clean = username.replace(/^@/, "");
+      const validation = validateChannelUsername(username);
 
-      if (!USERNAME_REGEX.test(clean)) {
-        data.usernameError =
-          "Invalid username format. Must be 5-32 characters, alphanumeric and underscores only, cannot start/end with underscore.";
+      if (!validation.ok) {
+        data.usernameError = validation.error;
       } else {
+        const clean = validation.clean;
         try {
           await gramJsClient.invoke(
             new Api.channels.UpdateUsername({
@@ -103,8 +100,7 @@ export const telegramCreateChannelExecutor: ToolExecutor<CreateChannelParams> = 
           );
           data.username = clean;
           data.link = `https://t.me/${clean}`;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-        } catch (usernameError: any) {
+        } catch (usernameError: unknown) {
           const msg = getErrorMessage(usernameError);
           if (msg.includes("USERNAME_OCCUPIED")) {
             data.usernameError = `Username @${clean} is already taken.`;
@@ -124,7 +120,7 @@ export const telegramCreateChannelExecutor: ToolExecutor<CreateChannelParams> = 
       success: true,
       data,
     };
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error creating channel");
     return {
       success: false,

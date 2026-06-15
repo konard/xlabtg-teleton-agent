@@ -7,6 +7,7 @@ import {
   type TelegramMessage,
   type SendMessageOptions,
 } from "./bridge.js";
+import type { SentMessage, ReplyContext } from "./bridge-interface.js";
 import { markdownToTelegramHtml } from "./formatting.js";
 import { createLogger } from "../utils/logger.js";
 import { validateBotTokenFormat } from "./bot-token.js";
@@ -77,6 +78,15 @@ export class TelegramBotBridge extends TelegramBridge {
     return this.connected;
   }
 
+  override getMode(): "user" | "bot" {
+    return "bot";
+  }
+
+  /** Bot mode dedups updates via update_id, so the offset store is not needed. */
+  override requiresOffsetDedup(): boolean {
+    return false;
+  }
+
   override getActiveProxyIndex(): number | undefined {
     return undefined;
   }
@@ -141,7 +151,7 @@ export class TelegramBotBridge extends TelegramBridge {
 
   override async sendMessage(
     options: SendMessageOptions & { _rawPeer?: Api.TypePeer }
-  ): Promise<Api.Message> {
+  ): Promise<SentMessage> {
     const chatId = options.chatId;
     const text = markdownToTelegramHtml(options.text);
     const replyMarkup = options.inlineKeyboard
@@ -163,8 +173,8 @@ export class TelegramBotBridge extends TelegramBridge {
     return {
       id: sent.message_id,
       date: sent.date,
-      message: sent.text,
-    } as unknown as Api.Message;
+      chatId,
+    };
   }
 
   override async setTyping(chatId: string): Promise<void> {
@@ -175,10 +185,8 @@ export class TelegramBotBridge extends TelegramBridge {
     }
   }
 
-  override async fetchReplyContext(
-    _rawMsg: Api.Message
-  ): Promise<{ text?: string; senderName?: string; isAgent?: boolean } | undefined> {
-    return undefined;
+  override async fetchReplyContext(_rawMsg: unknown): Promise<ReplyContext | null> {
+    return null;
   }
 
   override getClient(): never {

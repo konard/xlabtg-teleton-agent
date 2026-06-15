@@ -2,9 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 // ── Mocks ────────────────────────────────────────────────────────────────────
 
-const { mockExistsSync, mockReadFileSync } = vi.hoisted(() => ({
+const { mockExistsSync, mockReadFileSync, mockWriteFileSync } = vi.hoisted(() => ({
   mockExistsSync: vi.fn<(path: string) => boolean>().mockReturnValue(false),
   mockReadFileSync: vi.fn<(path: string, encoding: string) => string>().mockReturnValue(""),
+  mockWriteFileSync: vi.fn(),
 }));
 
 vi.mock("../../utils/logger.js", () => ({
@@ -19,6 +20,7 @@ vi.mock("../../utils/logger.js", () => ({
 vi.mock("fs", () => ({
   existsSync: (...args: unknown[]) => mockExistsSync(args[0] as string),
   readFileSync: (...args: unknown[]) => mockReadFileSync(args[0] as string, args[1] as string),
+  writeFileSync: (...args: unknown[]) => mockWriteFileSync(...args),
   realpathSync: vi.fn((p: string) => p),
 }));
 
@@ -42,10 +44,9 @@ beforeEach(() => {
   mockExistsSync.mockReturnValue(false);
 });
 
-// ── Heartbeat Section (scenarios 12-16) ──────────────────────────────────────
+// ── Heartbeat Section ────────────────────────────────────────────────────────
 
 describe("buildSystemPrompt() heartbeat section", () => {
-  // Scenario 12
   it("includes Heartbeat Protocol section when isHeartbeat: true", () => {
     const prompt = buildSystemPrompt({ isHeartbeat: true });
     expect(prompt).toContain("## Heartbeat Protocol");
@@ -53,7 +54,6 @@ describe("buildSystemPrompt() heartbeat section", () => {
     expect(prompt).toContain("woken by your periodic heartbeat timer");
   });
 
-  // Scenario 13
   it("does NOT include heartbeat section when isHeartbeat: false", () => {
     const prompt = buildSystemPrompt({ isHeartbeat: false });
     expect(prompt).not.toContain("## Heartbeat Protocol");
@@ -64,7 +64,6 @@ describe("buildSystemPrompt() heartbeat section", () => {
     expect(prompt).not.toContain("## Heartbeat Protocol");
   });
 
-  // Scenario 14
   it("includes HEARTBEAT.md content when file exists", () => {
     mockExistsSync.mockImplementation((p: string) =>
       p === WORKSPACE_PATHS.HEARTBEAT ? true : false
@@ -77,7 +76,6 @@ describe("buildSystemPrompt() heartbeat section", () => {
     expect(prompt).toContain("Check RSS feeds every hour");
   });
 
-  // Scenario 15
   it("works when HEARTBEAT.md does not exist", () => {
     mockExistsSync.mockReturnValue(false);
 
@@ -86,7 +84,6 @@ describe("buildSystemPrompt() heartbeat section", () => {
     expect(prompt).toContain("_No HEARTBEAT.md found._");
   });
 
-  // Scenario 16
   it("sanitizes HEARTBEAT.md content via sanitizeForContext()", () => {
     mockExistsSync.mockImplementation((p: string) =>
       p === WORKSPACE_PATHS.HEARTBEAT ? true : false
@@ -96,41 +93,31 @@ describe("buildSystemPrompt() heartbeat section", () => {
     );
 
     const prompt = buildSystemPrompt({ isHeartbeat: true });
-    // Our sanitizeForContext mock prepends [sanitized]
     expect(prompt).toContain("[sanitized]user-controlled content");
   });
 });
 
-// ── New prompt sections (scenarios 17-20) ────────────────────────────────────
+// ── Restructured prompt sections ─────────────────────────────────────────────
 
-describe("buildSystemPrompt() standard sections", () => {
-  // Scenario 17
-  it('includes "Active Memory" section', () => {
+describe("buildSystemPrompt() restructured sections", () => {
+  it("includes safety reminder as last section (recency bias)", () => {
     const prompt = buildSystemPrompt({});
-    expect(prompt).toContain("## Active Memory");
-    expect(prompt).toContain("memory_read");
-  });
-
-  // Scenario 18
-  it('includes "Safety" section', () => {
-    const prompt = buildSystemPrompt({});
-    expect(prompt).toContain("## Safety");
+    expect(prompt).toContain("<reminder>");
     expect(prompt).toContain("irreversible");
+    // Reminder should be at the very end
+    const reminderIdx = prompt.lastIndexOf("<reminder>");
+    const lastNewline = prompt.lastIndexOf("\n", prompt.length - 2);
+    expect(reminderIdx).toBeGreaterThan(lastNewline - 200);
   });
 
-  // Scenario 19
-  it('includes "Silent Reply" section with __SILENT__ token', () => {
+  it("does NOT include removed sections (Runtime tag)", () => {
     const prompt = buildSystemPrompt({});
-    expect(prompt).toContain("## Silent Reply");
+    expect(prompt).not.toContain("_Runtime:");
+  });
+
+  it("includes __SILENT__ in DEFAULT_SOUL personality", () => {
+    const prompt = buildSystemPrompt({});
     expect(prompt).toContain("__SILENT__");
-  });
-
-  // Scenario 20
-  it('includes "Runtime" section', () => {
-    const prompt = buildSystemPrompt({});
-    expect(prompt).toContain("_Runtime:");
-    expect(prompt).toContain("agent=teleton");
-    expect(prompt).toContain("channel=telegram");
   });
 
   it("applies active adaptive prompt sections", () => {
@@ -147,17 +134,11 @@ describe("buildSystemPrompt() standard sections", () => {
     expect(prompt).toContain("Confirm before irreversible actions and preserve privacy.");
     expect(prompt).not.toContain("Respond in 1-3 short sentences");
   });
-
-  it("Runtime section includes agentModel when provided", () => {
-    const prompt = buildSystemPrompt({ agentModel: "claude-opus-4-6" });
-    expect(prompt).toContain("model=claude-opus-4-6");
-  });
 });
 
-// ── DEFAULT_SOUL (scenarios 21-23) ──────────────────────────────────────────
+// ── DEFAULT_SOUL / loadSoul() ────────────────────────────────────────────────
 
 describe("DEFAULT_SOUL / loadSoul()", () => {
-  // Scenario 21
   it('default soul contains "autonomous" or "agent"', () => {
     mockExistsSync.mockReturnValue(false);
     const soul = loadSoul();
@@ -166,14 +147,12 @@ describe("DEFAULT_SOUL / loadSoul()", () => {
     expect(hasAutonomous || hasAgent).toBe(true);
   });
 
-  // Scenario 22
   it('default soul does NOT contain old filler "helpful and concise"', () => {
     mockExistsSync.mockReturnValue(false);
     const soul = loadSoul();
     expect(soul).not.toContain("helpful and concise");
   });
 
-  // Scenario 23
   it("custom SOUL.md overrides DEFAULT_SOUL", () => {
     mockExistsSync.mockImplementation((p: string) => (p === WORKSPACE_PATHS.SOUL ? true : false));
     mockReadFileSync.mockImplementation((p: string) =>

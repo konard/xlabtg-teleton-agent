@@ -3,10 +3,15 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import {
+  getClient,
+  validateChannelUsername,
+  resolveChannel,
+  cleanUsername,
+  mapTelegramError,
+} from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
-
-const USERNAME_REGEX = /^[a-zA-Z0-9][a-zA-Z0-9_]{3,30}[a-zA-Z0-9]$/;
 
 interface CheckChannelUsernameParams {
   channelId: string;
@@ -33,27 +38,14 @@ export const telegramCheckChannelUsernameExecutor: ToolExecutor<
 > = async (params, context): Promise<ToolResult> => {
   try {
     const { channelId, username } = params;
-    const clean = username.replace(/^@/, "");
-
-    if (!USERNAME_REGEX.test(clean)) {
-      return {
-        success: false,
-        error:
-          "Invalid username format. Must be 5-32 characters, alphanumeric and underscores only, cannot start/end with underscore.",
-      };
+    const validation = validateChannelUsername(username);
+    if (!validation.ok) {
+      return { success: false, error: validation.error };
     }
+    const clean = validation.clean;
 
-    const gramJsClient = context.bridge.getClient().getClient();
-    const entity = await gramJsClient.getEntity(channelId);
-
-    if (entity.className !== "Channel") {
-      return {
-        success: false,
-        error: `Entity is not a channel/group (got ${entity.className})`,
-      };
-    }
-
-    const channel = entity as Api.Channel;
+    const gramJsClient = getClient(context.bridge);
+    const channel = await resolveChannel(context.bridge, channelId);
     const available = await gramJsClient.invoke(
       new Api.channels.CheckUsername({
         channel,
@@ -69,33 +61,16 @@ export const telegramCheckChannelUsernameExecutor: ToolExecutor<
         available: !!available,
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-  } catch (error: any) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error checking channel username");
 
-    const msg = getErrorMessage(error);
-
-    if (msg.includes("USERNAME_INVALID")) {
-      return {
-        success: false,
-        error: `Invalid username format: "${params.username}"`,
-      };
-    }
-
-    if (msg.includes("CHANNELS_ADMIN_PUBLIC_TOO_MUCH")) {
-      return {
-        success: false,
-        error:
-          "You admin too many public channels. Make some channels private before assigning a new public username.",
-      };
-    }
-
-    if (msg.includes("USERNAME_PURCHASE_AVAILABLE")) {
+    // USERNAME_PURCHASE_AVAILABLE is reported as an available-for-purchase result, not an error
+    if (getErrorMessage(error).includes("USERNAME_PURCHASE_AVAILABLE")) {
       return {
         success: true,
         data: {
           channelId: params.channelId,
-          username: params.username.replace(/^@/, ""),
+          username: cleanUsername(params.username),
           available: false,
           purchaseAvailable: true,
           message: "This username is available for purchase on fragment.com",
@@ -103,9 +78,8 @@ export const telegramCheckChannelUsernameExecutor: ToolExecutor<
       };
     }
 
-    return {
-      success: false,
-      error: msg,
-    };
+    return mapTelegramError(error, {
+      USERNAME_INVALID: `Invalid username format: "${params.username}"`,
+    });
   }
 };

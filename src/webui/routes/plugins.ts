@@ -31,8 +31,8 @@ export function createPluginsRoutes(deps: WebUIServerDeps) {
         data[name] = priority;
       }
       return c.json<APIResponse<Record<string, number>>>({ success: true, data });
-    } catch (err) {
-      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    } catch (error: unknown) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -59,8 +59,8 @@ export function createPluginsRoutes(deps: WebUIServerDeps) {
         success: true,
         data: { pluginName, priority },
       });
-    } catch (err) {
-      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    } catch (error: unknown) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -69,8 +69,8 @@ export function createPluginsRoutes(deps: WebUIServerDeps) {
       const name = c.req.param("name");
       resetPluginPriority(deps.memory.db, name);
       return c.json<APIResponse<null>>({ success: true, data: null });
-    } catch (err) {
-      return c.json<APIResponse>({ success: false, error: getErrorMessage(err) }, 500);
+    } catch (error: unknown) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 

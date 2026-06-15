@@ -1,5 +1,7 @@
 import type { Task } from "../memory/agent/tasks.js";
 import type { ToolContext } from "../agent/tools/types.js";
+import type { ToolRegistry } from "../agent/tools/registry.js";
+import type { ToolCall } from "@mariozechner/pi-ai";
 import type { AgentRuntime } from "../agent/runtime.js";
 import {
   MAX_JSON_FIELD_CHARS,
@@ -62,8 +64,7 @@ export async function executeScheduledTask(
   task: Task,
   agent: AgentRuntime,
   toolContext: ToolContext,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- generic tool registry with dynamic execute()
-  toolRegistry: any,
+  toolRegistry: ToolRegistry,
   parentResults?: Array<{ taskId: string; description: string; result: unknown }>
 ): Promise<string> {
   if (!task.payload) {
@@ -81,7 +82,13 @@ export async function executeScheduledTask(
   if (payload.type === "tool_call") {
     // Mode 1: Auto-execute tool, feed result to agent
     try {
-      const result = await toolRegistry.execute(payload.tool, payload.params, toolContext);
+      const toolCall: ToolCall = {
+        type: "toolCall",
+        id: `scheduled-${task.id}`,
+        name: payload.tool,
+        arguments: payload.params ?? {},
+      };
+      const result = await toolRegistry.execute(toolCall, toolContext);
 
       // Build prompt with task context + tool result
       return buildAgentPrompt(
@@ -121,13 +128,23 @@ export async function executeScheduledTask(
   return buildAgentPrompt(task, null, parentResults);
 }
 
+type ExecutionData =
+  | null
+  | {
+      toolExecuted: string;
+      toolParams: Record<string, unknown>;
+      toolResult: unknown;
+      condition?: string;
+    }
+  | { toolExecuted: string; toolParams: Record<string, unknown>; toolError: string }
+  | { instructions: string; context?: Record<string, unknown> };
+
 /**
  * Build prompt for agent with task context
  */
 function buildAgentPrompt(
   task: Task,
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- polymorphic execution data shape
-  executionData: any,
+  executionData: ExecutionData,
   parentResults?: Array<{ taskId: string; description: string; result: unknown }>
 ): string {
   let prompt = `[SCHEDULED TASK - ${task.id}]\n`;
@@ -166,14 +183,14 @@ function buildAgentPrompt(
     return prompt;
   }
 
-  if (executionData.toolExecuted) {
+  if ("toolExecuted" in executionData) {
     // Tool was executed
     prompt += `TOOL EXECUTED:\n`;
     prompt += `• Name: ${executionData.toolExecuted}\n`;
     prompt += `• Params: ${truncateJson(executionData.toolParams, 2000)}\n`;
     prompt += `\n`;
 
-    if (executionData.toolError) {
+    if ("toolError" in executionData) {
       prompt += `❌ ERROR:\n${executionData.toolError}\n\n`;
       prompt += `→ The tool failed. Decide how to handle this error.\n`;
     } else {
@@ -185,7 +202,7 @@ function buildAgentPrompt(
 
       prompt += `→ Analyze this result and decide what action to take.\n`;
     }
-  } else if (executionData.instructions) {
+  } else if ("instructions" in executionData) {
     // Agent task
     prompt += `INSTRUCTIONS:\n${executionData.instructions}\n\n`;
 

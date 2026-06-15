@@ -1,6 +1,6 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import type { ContentfulStatusCode } from "hono/utils/http-status";
 import {
-  readFileSync,
   mkdirSync,
   rmSync,
   renameSync,
@@ -8,6 +8,7 @@ import {
   statSync,
   existsSync,
 } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
 import { WORKSPACE_ROOT } from "../../workspace/paths.js";
@@ -42,8 +43,7 @@ interface WorkspaceInfo {
 const MAX_SCAN_DEPTH = 10;
 const MAX_SCAN_ENTRIES = 5000;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Hono context type
-function errorResponse(c: any, error: unknown, status: number = 500) {
+function errorResponse(c: Context, error: unknown, status: ContentfulStatusCode = 500) {
   if (error instanceof WorkspaceSecurityError) {
     log.warn(
       { attemptedPath: error.attemptedPath, message: error.message },
@@ -191,7 +191,7 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
   });
 
   // Serve raw image file with correct MIME type
-  app.get("/raw", (c) => {
+  app.get("/raw", async (c) => {
     try {
       const path = c.req.query("path");
       if (!path) {
@@ -221,7 +221,7 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
         return c.json(response, 413);
       }
 
-      const buffer = readFileSync(validated.absolutePath);
+      const buffer = await readFile(validated.absolutePath);
 
       const headers: Record<string, string> = {
         "Content-Type": mime,
@@ -242,7 +242,7 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
   });
 
   // Read file content
-  app.get("/read", (c) => {
+  app.get("/read", async (c) => {
     try {
       const path = c.req.query("path");
       if (!path) {
@@ -259,7 +259,7 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
         return c.json(response, 413);
       }
 
-      const content = readFileSync(validated.absolutePath, "utf-8");
+      const content = await readFile(validated.absolutePath, "utf-8");
 
       const response: APIResponse<{ content: string; size: number }> = {
         success: true,

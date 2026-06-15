@@ -38,9 +38,9 @@ LLM provider and agentic loop configuration.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `nvidia`, `cocoon`, `local`. |
+| `agent.provider` | `enum` | `"anthropic"` | LLM provider. One of: `anthropic`, `claude-code`, `codex`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `nvidia`, `cocoon`, `local`. |
 | `agent.api_key` | `string` | `""` | API key for the chosen provider. Can be overridden with `TELETON_API_KEY` env var. |
-| `agent.model` | `string` | `"claude-opus-4-6"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
+| `agent.model` | `string` | `"claude-haiku-4-5-20251001"` | Primary model ID. Auto-detected from provider if not set (only for non-Anthropic providers). |
 | `agent.utility_model` | `string` | *auto-detected* | Cheap/fast model used for summarization and compaction. If omitted, the platform selects one based on the provider (e.g., `claude-haiku-4-5-20251001` for Anthropic, `gpt-4o-mini` for OpenAI). |
 | `agent.base_url` | `string` | *optional* | Base URL for local LLM server (e.g., `http://localhost:11434/v1`). Must be a valid URL. |
 | `agent.max_tokens` | `number` | `4096` | Maximum tokens in each LLM response. |
@@ -65,7 +65,7 @@ Controls when conversation sessions are cleared, giving the agent a fresh memory
 agent:
   provider: "anthropic"
   api_key: "sk-ant-..."
-  model: "claude-opus-4-6"
+  model: "claude-haiku-4-5-20251001"
   utility_model: "claude-haiku-4-5-20251001"
   max_tokens: 4096
   temperature: 0.7
@@ -83,18 +83,18 @@ When you change the `provider` and omit `model`, the platform auto-selects:
 
 | Provider | Default Model | Default Utility Model |
 |----------|--------------|----------------------|
-| `anthropic` | `claude-opus-4-6` | `claude-haiku-4-5-20251001` |
-| `claude-code` | `claude-opus-4-6` | `claude-haiku-4-5-20251001` |
-| `openai` | `gpt-5.4` | `gpt-4o-mini` |
+| `anthropic` | `claude-haiku-4-5-20251001` | `claude-haiku-4-5-20251001` |
+| `codex` | `gpt-5.5` | `gpt-5.1-codex-mini` |
+| `openai` | `gpt-5.5` | `gpt-4o-mini` |
 | `google` | `gemini-2.5-flash` | `gemini-2.0-flash-lite` |
 | `xai` | `grok-3` | `grok-3-mini-fast` |
 | `groq` | `llama-3.3-70b-versatile` | `llama-3.1-8b-instant` |
 | `openrouter` | `anthropic/claude-opus-4.5` | `google/gemini-2.5-flash-lite` |
-| `moonshot` | `k2p5` | `k2p5` |
+| `moonshot` | `k2p6` | `k2p6` |
 | `mistral` | `devstral-small-2507` | `ministral-8b-latest` |
 | `cerebras` | `qwen-3-235b-a22b-instruct-2507` | `llama3.1-8b` |
-| `zai` | `glm-4.7` | `glm-4.7-flash` |
-| `minimax` | `MiniMax-M2.5` | `MiniMax-M2` |
+| `zai` | `glm-5.1` | `glm-4.5-air` |
+| `minimax` | `MiniMax-M2.7` | `MiniMax-M2.7` |
 | `huggingface` | `deepseek-ai/DeepSeek-V3.2` | `Qwen/Qwen3-Next-80B-A3B-Instruct` |
 | `nvidia` | `meta/llama-3.1-8b-instruct` | `meta/llama-3.1-8b-instruct` |
 | `cocoon` | `Qwen/Qwen3-32B` | `Qwen/Qwen3-32B` |
@@ -322,8 +322,8 @@ Periodic heartbeat timer that triggers the agent to check for pending tasks.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `heartbeat.enabled` | `boolean` | `true` | Enable the periodic heartbeat timer. |
-| `heartbeat.interval_ms` | `number` | `1800000` | Heartbeat interval in milliseconds. Minimum `60000` (60 seconds), default `1800000` (30 minutes). |
-| `heartbeat.prompt` | `string` | `"Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION."` | Prompt sent to the agent on each heartbeat tick. |
+| `heartbeat.interval_ms` | `number` | `3600000` | Heartbeat interval in milliseconds. Minimum `60000` (60 seconds), default `3600000` (60 minutes). |
+| `heartbeat.prompt` | `string` | `"Execute your HEARTBEAT.md checklist now. Work through each item using tool calls."` | Prompt sent to the agent on each heartbeat tick. |
 | `heartbeat.self_configurable` | `boolean` | `false` | Allow the agent to modify heartbeat config at runtime via `config_set`. |
 
 ### Example
@@ -331,8 +331,8 @@ Periodic heartbeat timer that triggers the agent to check for pending tasks.
 ```yaml
 heartbeat:
   enabled: true
-  interval_ms: 1800000
-  prompt: "Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION."
+  interval_ms: 3600000
+  prompt: "Execute your HEARTBEAT.md checklist now. Work through each item using tool calls."
   self_configurable: false
 ```
 
@@ -345,8 +345,8 @@ Semantic tool retrieval configuration. When enabled, the agent uses embedding-ba
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `tool_rag.enabled` | `boolean` | `true` | Enable semantic tool retrieval (Tool RAG). |
-| `tool_rag.top_k` | `number` | `25` | Maximum number of tools to retrieve per LLM call. |
-| `tool_rag.always_include` | `string[]` | `["telegram_send_message", "telegram_reply_message", "telegram_send_photo", "telegram_send_document", "journal_*", "workspace_*", "web_*"]` | Tool name patterns always included regardless of relevance score. Supports prefix glob with `*`. |
+| `tool_rag.top_k` | `number` | `35` | Maximum number of tools to retrieve per LLM call. |
+| `tool_rag.always_include` | `string[]` | `["telegram_send_message", "telegram_quote_reply", "telegram_send_photo", "journal_*", "workspace_*"]` | Tool name patterns always included regardless of relevance score. Supports prefix glob with `*`. |
 | `tool_rag.skip_unlimited_providers` | `boolean` | `false` | Skip Tool RAG for providers with no tool limit (e.g., Anthropic). When `true`, all tools are sent to those providers. |
 
 ### Example
@@ -354,12 +354,13 @@ Semantic tool retrieval configuration. When enabled, the agent uses embedding-ba
 ```yaml
 tool_rag:
   enabled: true
-  top_k: 25
+  top_k: 35
   always_include:
     - "telegram_send_message"
-    - "telegram_reply_message"
+    - "telegram_quote_reply"
+    - "telegram_send_photo"
     - "journal_*"
-    - "web_*"
+    - "workspace_*"
   skip_unlimited_providers: false
 ```
 
@@ -653,7 +654,7 @@ Each provider has a dedicated environment variable. Only the key for the configu
 | Variable | Provider | Key Format |
 |----------|----------|------------|
 | `ANTHROPIC_API_KEY` | Anthropic (Claude) | `sk-ant-...` |
-| `OPENAI_API_KEY` | OpenAI (GPT-5.4) | `sk-proj-...` |
+| `OPENAI_API_KEY` | OpenAI (GPT-5.5) | `sk-proj-...` |
 | `GOOGLE_API_KEY` | Google (Gemini) | `AIza...` |
 | `XAI_API_KEY` | xAI (Grok) | `xai-...` |
 | `GROQ_API_KEY` | Groq | `gsk_...` |
@@ -717,7 +718,7 @@ meta:
 agent:
   provider: "anthropic"
   api_key: "sk-ant-..."
-  model: "claude-opus-4-6"
+  model: "claude-haiku-4-5-20251001"
   max_tokens: 4096
   temperature: 0.7
   max_agentic_iterations: 5
@@ -757,11 +758,11 @@ logging:
 
 heartbeat:
   enabled: true
-  interval_ms: 1800000
+  interval_ms: 3600000
 
 tool_rag:
   enabled: true
-  top_k: 25
+  top_k: 35
 
 dev:
   hot_reload: false

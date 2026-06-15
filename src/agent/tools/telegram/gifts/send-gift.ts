@@ -5,6 +5,7 @@ import { hasVerifiedDeal } from "../../../../deals/module.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -24,7 +25,7 @@ interface SendGiftParams {
 export const telegramSendGiftTool: Tool = {
   name: "telegram_send_gift",
   description:
-    "Purchase and deliver a Star Gift to a user. Costs Stars. Browse the catalog with telegram_get_available_gifts first to get giftId. Requires a verified deal (use deal_propose first). NOT for resale marketplace items — use telegram_buy_resale_gift for those.",
+    "Purchase and deliver a Star Gift to a user. Costs Stars. Browse the catalog with telegram_get_available_gifts first to get giftId. ALWAYS confirm the gift and cost with the owner before purchasing. NOT for resale marketplace items — use telegram_buy_resale_gift for those.",
   parameters: Type.Object({
     userId: Type.String({
       description: "User ID or @username to send the gift to",
@@ -63,7 +64,7 @@ export const telegramSendGiftExecutor: ToolExecutor<SendGiftParams> = async (
       };
     }
 
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     const user = await gramJsClient.getInputEntity(userId);
 
@@ -74,8 +75,7 @@ export const telegramSendGiftExecutor: ToolExecutor<SendGiftParams> = async (
       message: message ? new Api.TextWithEntities({ text: message, entities: [] }) : undefined,
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const form: any = await gramJsClient.invoke(
+    const form = await gramJsClient.invoke(
       new Api.payments.GetPaymentForm({
         invoice: new Api.InputInvoiceStarGift(invoiceData),
       })

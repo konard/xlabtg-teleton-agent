@@ -1,9 +1,17 @@
 import { z } from "zod";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../constants/limits.js";
 import pkg from "../../package.json" with { type: "json" };
+import { SUPPORTED_PROVIDER_IDS } from "./providers.js";
 
 export const DMPolicy = z.enum(["allowlist", "open", "admin-only", "disabled"]);
 export const GroupPolicy = z.enum(["open", "allowlist", "admin-only", "disabled"]);
+
+// Exec enums exported so the UI whitelist (configurable-keys.ts) reuses them
+// instead of re-listing the literals.
+// "allowlist" (fork) restricts exec to a vetted set of command prefixes; it sits
+// between "off" and "yolo" (full system access).
+export const ExecMode = z.enum(["off", "allowlist", "yolo"]);
+export const ExecScope = z.enum(["admin-only", "allowlist", "all"]);
 
 export const SessionResetPolicySchema = z.object({
   daily_reset_enabled: z.boolean().default(true).describe("Enable daily session reset"),
@@ -57,33 +65,14 @@ export const CompactionConfigSchema = z.object({
 });
 
 export const AgentConfigSchema = z.object({
-  provider: z
-    .enum([
-      "anthropic",
-      "claude-code",
-      "openai",
-      "google",
-      "xai",
-      "groq",
-      "openrouter",
-      "moonshot",
-      "mistral",
-      "cerebras",
-      "zai",
-      "minimax",
-      "huggingface",
-      "nvidia",
-      "cocoon",
-      "local",
-    ])
-    .default("anthropic"),
+  provider: z.enum(SUPPORTED_PROVIDER_IDS).default("anthropic"),
   api_key: z.string().default(""),
   base_url: z
     .string()
     .url()
     .optional()
     .describe("Base URL for local LLM server (e.g. http://localhost:11434/v1)"),
-  model: z.string().default("claude-opus-4-6"),
+  model: z.string().default("claude-haiku-4-5-20251001"),
   utility_model: z
     .string()
     .optional()
@@ -175,51 +164,99 @@ export const CommandAccessSchema = z.object({
     .describe("Send 'Use /help for available commands.' reply for unrecognized commands"),
 });
 
-export const TelegramConfigSchema = z.object({
-  api_id: z.number(),
-  api_hash: z.string(),
-  phone: z.string(),
-  session_name: z.string().default("teleton_session"),
-  session_path: z.string().default("~/.teleton"),
-  dm_policy: DMPolicy.default("allowlist"),
-  allow_from: z.array(z.number()).default([]),
-  group_policy: GroupPolicy.default("open"),
-  group_allow_from: z.array(z.number()).default([]),
-  require_mention: z.boolean().default(true),
-  max_message_length: z
-    .number()
-    .min(1)
-    .max(TELEGRAM_MAX_MESSAGE_LENGTH)
-    .default(TELEGRAM_MAX_MESSAGE_LENGTH)
-    .describe(
-      "Maximum incoming message length in characters. Messages exceeding this limit are rejected early " +
-        "(DoS/context-overflow defense). Also controls outgoing message splitting. " +
-        "Admins are exempt. Default: 4096 (Telegram max). Reduce for stricter limits."
+export const TelegramConfigSchema = z
+  .object({
+    mode: z.enum(["user", "bot"]).default("user"),
+    api_id: z.number(),
+    api_hash: z.string(),
+    phone: z.string(),
+    session_name: z.string().default("teleton_session"),
+    session_path: z.string().default("~/.teleton"),
+    dm_policy: DMPolicy.default("allowlist"),
+    allow_from: z.array(z.number()).default([]),
+    group_policy: GroupPolicy.default("open"),
+    group_allow_from: z.array(z.number()).default([]),
+    require_mention: z.boolean().default(true),
+    max_message_length: z
+      .number()
+      .min(1)
+      .max(TELEGRAM_MAX_MESSAGE_LENGTH)
+      .default(TELEGRAM_MAX_MESSAGE_LENGTH)
+      .describe(
+        "Maximum incoming message length in characters. Messages exceeding this limit are rejected early " +
+          "(DoS/context-overflow defense). Also controls outgoing message splitting. " +
+          "Admins are exempt. Default: 4096 (Telegram max). Reduce for stricter limits."
+      ),
+    typing_simulation: z.boolean().default(true),
+    rate_limit_messages_per_second: z.number().default(1.0),
+    rate_limit_groups_per_minute: z.number().default(20),
+    admin_ids: z.array(z.number()).default([]),
+    agent_channel: z.string().nullable().default(null),
+    owner_name: z.string().optional().describe("Owner's first name (e.g., 'Alex')"),
+    owner_username: z.string().optional().describe("Owner's Telegram username (without @)"),
+    owner_id: z.number().optional().describe("Owner's Telegram user ID"),
+    debounce_ms: z
+      .number()
+      .default(1500)
+      .describe("Debounce delay in milliseconds for group messages (0 = disabled)"),
+    bot_token: z
+      .string()
+      .optional()
+      .describe("Telegram Bot token from @BotFather for inline deal buttons"),
+    bot_username: z
+      .string()
+      .optional()
+      .describe("Bot username without @ (e.g., 'teleton_deals_bot')"),
+    stream_mode: z
+      .enum(["all", "replace", "off"])
+      .default("replace")
+      .describe(
+        "Bot streaming mode: replace=each iteration replaces draft (default), all=concatenate all iterations, off=no streaming"
+      ),
+    guest_mode: z
+      .boolean()
+      .default(false)
+      .describe("Allow the bot to answer guest queries in chats it is not a member of"),
+    command_access: CommandAccessSchema.default(CommandAccessSchema.parse({})).describe(
+      "Configurable command access control settings"
     ),
-  typing_simulation: z.boolean().default(true),
-  rate_limit_messages_per_second: z.number().default(1.0),
-  rate_limit_groups_per_minute: z.number().default(20),
-  admin_ids: z.array(z.number()).default([]),
-  agent_channel: z.string().nullable().default(null),
-  owner_name: z.string().optional().describe("Owner's first name (e.g., 'Alex')"),
-  owner_username: z.string().optional().describe("Owner's Telegram username (without @)"),
-  owner_id: z.number().optional().describe("Owner's Telegram user ID"),
-  debounce_ms: z
-    .number()
-    .default(1500)
-    .describe("Debounce delay in milliseconds for group messages (0 = disabled)"),
-  bot_token: z
-    .string()
-    .optional()
-    .describe("Telegram Bot token from @BotFather for inline deal buttons"),
-  bot_username: z
-    .string()
-    .optional()
-    .describe("Bot username without @ (e.g., 'teleton_deals_bot')"),
-  command_access: CommandAccessSchema.default(CommandAccessSchema.parse({})).describe(
-    "Configurable command access control settings"
-  ),
-});
+  })
+  .superRefine((data, ctx) => {
+    if (data.mode === "user") {
+      if (!data.api_id)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "api_id is required in user mode",
+          path: ["api_id"],
+        });
+      if (!data.api_hash)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "api_hash is required in user mode",
+          path: ["api_hash"],
+        });
+      if (!data.phone)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "phone is required in user mode",
+          path: ["phone"],
+        });
+    }
+    if (data.mode === "bot") {
+      if (!data.bot_token)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "bot_token is required in bot mode",
+          path: ["bot_token"],
+        });
+      if (!data.owner_id)
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "owner_id is required in bot mode",
+          path: ["owner_id"],
+        });
+    }
+  });
 
 export const StorageConfigSchema = z.object({
   sessions_file: z.string().default("~/.teleton/sessions.json"),
@@ -654,7 +691,7 @@ const McpServerSchema = z
       .describe("Environment variables for stdio server"),
     url: z.string().url().optional().describe("SSE/HTTP endpoint URL (alternative to command)"),
     scope: z
-      .enum(["always", "dm-only", "group-only", "admin-only"])
+      .enum(["always", "dm-only", "group-only", "admin-only", "open", "allowlist", "disabled"])
       .default("always")
       .describe("Tool scope"),
     enabled: z.boolean().default(true).describe("Enable/disable this server"),
@@ -668,19 +705,25 @@ const _McpObject = z.object({
 });
 export const McpConfigSchema = _McpObject.default(_McpObject.parse({}));
 
+const _ToolSearchObject = z.object({
+  enabled: z
+    .boolean()
+    .default(false)
+    .describe("Enable ToolSearch mode: core tools + meta-tool replaces RAG pre-selection"),
+});
+export const ToolSearchConfigSchema = _ToolSearchObject.default(_ToolSearchObject.parse({}));
+
 const _ToolRagObject = z.object({
   enabled: z.boolean().default(true).describe("Enable semantic tool retrieval (Tool RAG)"),
-  top_k: z.number().default(25).describe("Max tools to retrieve per LLM call"),
+  top_k: z.number().default(35).describe("Max tools to retrieve per LLM call"),
   always_include: z
     .array(z.string())
     .default([
       "telegram_send_message",
-      "telegram_reply_message",
+      "telegram_quote_reply",
       "telegram_send_photo",
-      "telegram_send_document",
       "journal_*",
       "workspace_*",
-      "web_*",
     ])
     .describe("Tool name patterns always included (prefix glob with *)"),
   skip_unlimited_providers: z
@@ -745,16 +788,10 @@ const _ExecAuditObject = z.object({
 });
 
 const _ExecObject = z.object({
-  mode: z
-    .enum(["off", "allowlist", "yolo"])
-    .default("off")
-    .describe(
-      "Exec mode: off (disabled), allowlist (only permitted commands), or yolo (full system access — dangerous)"
-    ),
-  scope: z
-    .enum(["admin-only", "allowlist", "all"])
-    .default("admin-only")
-    .describe("Who can trigger exec tools"),
+  mode: ExecMode.default("off").describe(
+    "Exec mode: off (disabled), allowlist (only permitted commands), or yolo (full system access — dangerous)"
+  ),
+  scope: ExecScope.default("admin-only").describe("Who can trigger exec tools"),
   allowlist: z
     .array(z.number())
     .default([])
@@ -818,13 +855,11 @@ const _HeartbeatObject = z.object({
   interval_ms: z
     .number()
     .min(60_000)
-    .default(1_800_000)
-    .describe("Heartbeat interval in milliseconds (min 60s, default 30min)"),
+    .default(3_600_000)
+    .describe("Heartbeat interval in milliseconds (min 60s, default 60min)"),
   prompt: z
     .string()
-    .default(
-      "Read HEARTBEAT.md if it exists. Follow it strictly. If nothing needs attention, reply NO_ACTION."
-    )
+    .default("Execute your HEARTBEAT.md checklist now. Work through each item using tool calls.")
     .describe("Prompt sent to agent on each heartbeat tick"),
   self_configurable: z
     .boolean()
@@ -995,6 +1030,7 @@ export const ConfigSchema = z.object({
   marketplace: MarketplaceConfigSchema,
   tool_rag: ToolRagConfigSchema,
   cache: CacheConfigSchema,
+  tool_search: ToolSearchConfigSchema.optional(),
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
   integrations: IntegrationsConfigSchema,
@@ -1118,6 +1154,7 @@ export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;
 export type ToolRagConfig = z.infer<typeof ToolRagConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
+export type ToolSearchConfig = z.infer<typeof ToolSearchConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
 export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
 export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;

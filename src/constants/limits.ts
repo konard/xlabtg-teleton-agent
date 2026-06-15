@@ -12,7 +12,7 @@ export const SQLITE_CACHE_SIZE_KB = 64_000;
 export const SQLITE_MMAP_SIZE = 256_000_000;
 export const SECONDS_PER_DAY = 86_400;
 export const SECONDS_PER_HOUR = 3_600;
-export const COMPACTION_MAX_MESSAGES = 1000;
+export const COMPACTION_MAX_MESSAGES = 200;
 export const COMPACTION_KEEP_RECENT = 20;
 export const COMPACTION_MAX_TOKENS_RATIO = 0.75;
 export const COMPACTION_SOFT_THRESHOLD_RATIO = 0.5;
@@ -80,10 +80,10 @@ export const WEB_SEARCH_MAX_RESULTS = 10; // max allowed count
 export const WEB_DOWNLOAD_BINARY_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 
 // ─── Tool Execution ─────────────────────────────────────────────
-export const TOOL_CONCURRENCY_LIMIT = 2;
+export const TOOL_CONCURRENCY_LIMIT = 3;
 
 // ─── Tool RAG ──────────────────────────────────────────────────
-export const TOOL_RAG_DEFAULT_TOP_K = 25;
+export const TOOL_RAG_DEFAULT_TOP_K = 35;
 export const TOOL_RAG_MIN_SCORE = 0.1;
 export const TOOL_RAG_VECTOR_WEIGHT = 0.6;
 export const TOOL_RAG_KEYWORD_WEIGHT = 0.4;

@@ -15,6 +15,7 @@
 import type Database from "better-sqlite3";
 import type { StorageSDK } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
+import { getErrorMessage } from "../utils/errors.js";
 
 const KV_TABLE = "_kv";
 const CLEANUP_PROBABILITY = 0.05; // 5% chance per read to cleanup expired
@@ -72,9 +73,9 @@ export function createStorageSDK(db: Database.Database): StorageSDK {
       let serialized: string;
       try {
         serialized = JSON.stringify(value);
-      } catch (err) {
+      } catch (error) {
         throw new PluginSDKError(
-          `Failed to serialize value: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to serialize value: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }

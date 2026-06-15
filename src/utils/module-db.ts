@@ -139,14 +139,14 @@ export function migrateFromMainDb(moduleDb: Database.Database, tables: string[])
         // Source tables are intentionally left in memory.db (copy-only migration).
         // DROP TABLE was removed to prevent a malformed plugin from deleting core tables.
         log.info(`Migrated ${src.c} rows from memory.db → ${table}`);
-      } catch (e) {
-        log.warn({ err: e }, `Could not migrate table ${table}`);
+      } catch (innerError) {
+        log.warn({ err: innerError }, `Could not migrate table ${table}`);
       }
     }
 
     moduleDb.exec(`DETACH DATABASE main_db`);
-  } catch (e) {
-    log.warn({ err: e }, `Migration from memory.db failed`);
+  } catch (error) {
+    log.warn({ err: error }, `Migration from memory.db failed`);
     try {
       moduleDb.exec(`DETACH DATABASE main_db`);
     } catch {}

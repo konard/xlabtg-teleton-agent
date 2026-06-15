@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -28,14 +29,11 @@ export const telegramGetUniqueGiftValueExecutor: ToolExecutor<GetUniqueGiftValue
 ): Promise<ToolResult> => {
   try {
     const { slug } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     log.info(`get_unique_gift_value: slug=${slug}`);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const result: any = await gramJsClient.invoke(
-      new Api.payments.GetUniqueStarGiftValueInfo({ slug })
-    );
+    const result = await gramJsClient.invoke(new Api.payments.GetUniqueStarGiftValueInfo({ slug }));
 
     return {
       success: true,
@@ -59,15 +57,15 @@ export const telegramGetUniqueGiftValueExecutor: ToolExecutor<GetUniqueGiftValue
         value: result.value?.toString(),
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-  } catch (error: any) {
-    if (error.errorMessage === "STARGIFT_SLUG_INVALID") {
+  } catch (error: unknown) {
+    const errMsg = getErrorMessage(error);
+    if (errMsg.includes("STARGIFT_SLUG_INVALID")) {
       return {
         success: false,
         error: `Invalid NFT slug "${params.slug}". Check the slug from t.me/nft/<slug>.`,
       };
     }
     log.error({ err: error }, "Error getting unique gift value");
-    return { success: false, error: getErrorMessage(error) };
+    return { success: false, error: errMsg };
   }
 };

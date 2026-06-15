@@ -1,11 +1,6 @@
-import {
-  complete,
-  type Context,
-  type Message,
-  type TextContent,
-  type ToolCall,
-} from "@mariozechner/pi-ai";
-import { getUtilityModel } from "../agent/client.js";
+import { complete, type Context, type Message, type TextContent } from "@mariozechner/pi-ai";
+import { extractText, extractToolNames, stripEnvelopePrefix } from "../utils/pi-message.js";
+import { getUtilityModel } from "../providers/model-resolver.js";
 import type { SupportedProvider } from "../config/providers.js";
 import {
   CHARS_PER_TOKEN_ESTIMATE,
@@ -84,10 +79,7 @@ function extractMessageContent(message: Message): string {
   if (message.role === "user") {
     return typeof message.content === "string" ? message.content : "[complex content]";
   } else if (message.role === "assistant") {
-    return message.content
-      .filter((block): block is TextContent => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    return extractText(message);
   }
   return "";
 }
@@ -98,19 +90,16 @@ export function formatMessagesForSummary(messages: Message[]): string {
   for (const msg of messages) {
     if (msg.role === "user") {
       const content = typeof msg.content === "string" ? msg.content : "[complex]";
-      const bodyMatch = content.match(/\] (.+)/s);
-      const body = bodyMatch ? bodyMatch[1] : content;
+      const body = stripEnvelopePrefix(content);
       formatted.push(`User: ${body}`);
     } else if (msg.role === "assistant") {
       const textBlocks = msg.content.filter((b): b is TextContent => b.type === "text");
       if (textBlocks.length > 0) {
-        const text = textBlocks.map((b) => b.text).join("\n");
-        formatted.push(`Assistant: ${text}`);
+        formatted.push(`Assistant: ${extractText(msg)}`);
       }
-      const toolCalls = msg.content.filter((b): b is ToolCall => b.type === "toolCall");
-      if (toolCalls.length > 0) {
-        const toolNames = toolCalls.map((b) => b.name).join(", ");
-        formatted.push(`[Used tools: ${toolNames}]`);
+      const toolNames = extractToolNames(msg);
+      if (toolNames.length > 0) {
+        formatted.push(`[Used tools: ${toolNames.join(", ")}]`);
       }
     } else if (msg.role === "toolResult") {
       formatted.push(`[Tool result: ${msg.toolName}]`);
@@ -351,9 +340,7 @@ export async function summarizeWithFallback(params: {
       utilityModel: params.utilityModel,
     });
   } catch (fullError) {
-    log.warn(
-      `Full summarization failed: ${fullError instanceof Error ? fullError.message : String(fullError)}`
-    );
+    log.warn(`Full summarization failed: ${getErrorMessage(fullError)}`);
   }
 
   const smallMessages: Message[] = [];
@@ -394,9 +381,7 @@ export async function summarizeWithFallback(params: {
         chunksProcessed: result.chunksProcessed,
       };
     } catch (partialError) {
-      log.warn(
-        `Partial summarization also failed: ${partialError instanceof Error ? partialError.message : String(partialError)}`
-      );
+      log.warn(`Partial summarization also failed: ${getErrorMessage(partialError)}`);
     }
   }
 

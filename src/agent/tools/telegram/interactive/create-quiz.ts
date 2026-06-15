@@ -1,9 +1,10 @@
-import { randomLong } from "../../../../utils/gramjs-bigint.js";
+import { randomLong, toLong } from "../../../../utils/gramjs-bigint.js";
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -26,7 +27,7 @@ interface CreateQuizParams {
 export const telegramCreateQuizTool: Tool = {
   name: "telegram_create_quiz",
   description:
-    "Create a quiz (poll with one correct answer revealed on vote). For opinion polls, use telegram_create_poll.",
+    "Create a quiz (poll with one correct answer revealed on vote). For opinion polls, use telegram_create_poll. Examples: trivia games, knowledge checks.",
   parameters: Type.Object({
     chatId: Type.String({
       description: "The chat ID where the quiz will be created",
@@ -99,7 +100,7 @@ export const telegramCreateQuizExecutor: ToolExecutor<CreateQuizParams> = async 
     }
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Create quiz poll with correct answer
     const poll = new Api.Poll({
@@ -117,6 +118,7 @@ export const telegramCreateQuizExecutor: ToolExecutor<CreateQuizParams> = async 
       multipleChoice: false, // Quizzes only allow one answer
       closePeriod,
       closeDate,
+      hash: toLong(0),
     });
 
     const _result = await gramJsClient.invoke(
@@ -124,7 +126,7 @@ export const telegramCreateQuizExecutor: ToolExecutor<CreateQuizParams> = async 
         peer: chatId,
         media: new Api.InputMediaPoll({
           poll,
-          correctAnswers: [Buffer.from([correctOptionIndex])],
+          correctAnswers: [correctOptionIndex],
           solution: explanation,
           solutionEntities: [],
         }),

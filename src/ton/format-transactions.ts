@@ -1,5 +1,5 @@
 import { fromNano } from "@ton/ton";
-import type { Transaction } from "@ton/ton";
+import type { Transaction, Cell } from "@ton/ton";
 
 export type TransactionType =
   | "ton_received"
@@ -26,8 +26,7 @@ const OP_CODES = {
 };
 
 export function parseMessageBody(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Cell body type varies at runtime
-  body: any
+  body: Cell | null
 ): { op: number; comment?: string; jettonAmount?: string; nftAddress?: string } | null {
   if (!body) return null;
   try {

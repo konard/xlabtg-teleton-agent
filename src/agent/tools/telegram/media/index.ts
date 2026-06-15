@@ -2,7 +2,6 @@ import { telegramSendPhotoTool, telegramSendPhotoExecutor } from "./send-photo.j
 import { telegramSendVoiceTool, telegramSendVoiceExecutor } from "./send-voice.js";
 import { telegramSendStickerTool, telegramSendStickerExecutor } from "./send-sticker.js";
 import { telegramSendGifTool, telegramSendGifExecutor } from "./send-gif.js";
-import { telegramSendVideoTool, telegramSendVideoExecutor } from "./send-video.js";
 import { telegramDownloadMediaTool, telegramDownloadMediaExecutor } from "./download-media.js";
 import { visionAnalyzeTool, visionAnalyzeExecutor } from "./vision-analyze.js";
 import {
@@ -15,18 +14,51 @@ export { telegramSendPhotoTool, telegramSendPhotoExecutor };
 export { telegramSendVoiceTool, telegramSendVoiceExecutor };
 export { telegramSendStickerTool, telegramSendStickerExecutor };
 export { telegramSendGifTool, telegramSendGifExecutor };
-export { telegramSendVideoTool, telegramSendVideoExecutor };
 export { telegramDownloadMediaTool, telegramDownloadMediaExecutor };
 export { visionAnalyzeTool, visionAnalyzeExecutor };
 export { telegramTranscribeAudioTool, telegramTranscribeAudioExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramSendPhotoTool, executor: telegramSendPhotoExecutor },
-  { tool: telegramSendVoiceTool, executor: telegramSendVoiceExecutor },
-  { tool: telegramSendStickerTool, executor: telegramSendStickerExecutor },
-  { tool: telegramSendGifTool, executor: telegramSendGifExecutor },
-  { tool: telegramSendVideoTool, executor: telegramSendVideoExecutor },
-  { tool: telegramDownloadMediaTool, executor: telegramDownloadMediaExecutor },
-  { tool: visionAnalyzeTool, executor: visionAnalyzeExecutor },
-  { tool: telegramTranscribeAudioTool, executor: telegramTranscribeAudioExecutor },
+  {
+    tool: telegramSendPhotoTool,
+    executor: telegramSendPhotoExecutor,
+    mode: "both",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendVoiceTool,
+    executor: telegramSendVoiceExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendStickerTool,
+    executor: telegramSendStickerExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendGifTool,
+    executor: telegramSendGifExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramDownloadMediaTool,
+    executor: telegramDownloadMediaExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: visionAnalyzeTool,
+    executor: visionAnalyzeExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramTranscribeAudioTool,
+    executor: telegramTranscribeAudioExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
 ];

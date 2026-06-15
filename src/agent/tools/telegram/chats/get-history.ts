@@ -1,8 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
+import { isUserBridge } from "../../../../telegram/bridge-guards.js";
 
 const log = createLogger("Tools");
 
@@ -64,10 +67,10 @@ export const telegramGetHistoryExecutor: ToolExecutor<GetHistoryParams> = async 
     }
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Use cached peer if available, fall back to raw chatId string
-    const entity = context.bridge.getPeer(chatId) || chatId;
+    const entity = isUserBridge(context.bridge) ? context.bridge.getPeer(chatId) || chatId : chatId;
 
     // Fetch messages using GramJS getMessages
     const messages = await gramJsClient.getMessages(entity, {
@@ -76,7 +79,7 @@ export const telegramGetHistoryExecutor: ToolExecutor<GetHistoryParams> = async 
     });
 
     // Parse and format messages
-    const formattedMessages = messages.map((msg) => ({
+    const formattedMessages = messages.map((msg: any) => ({
       id: msg.id,
       text: msg.message || "",
       senderId: msg.senderId?.toString() || null,

@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -33,7 +34,7 @@ export const telegramGetCollectibleInfoExecutor: ToolExecutor<GetCollectibleInfo
 ): Promise<ToolResult> => {
   try {
     const { type, value } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     const collectible =
       type === "username"
@@ -42,7 +43,7 @@ export const telegramGetCollectibleInfoExecutor: ToolExecutor<GetCollectibleInfo
 
     const result = await gramJsClient.invoke(new Api.fragment.GetCollectibleInfo({ collectible }));
 
-    log.info(`💎 get_collectible_info: ${type}=${value}`);
+    log.info(`get_collectible_info: ${type}=${value}`);
 
     return {
       success: true,
@@ -57,12 +58,9 @@ export const telegramGetCollectibleInfoExecutor: ToolExecutor<GetCollectibleInfo
         url: result.url,
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-  } catch (error: any) {
-    if (
-      error.errorMessage === "PHONE_NOT_OCCUPIED" ||
-      error.errorMessage === "USERNAME_NOT_OCCUPIED"
-    ) {
+  } catch (error: unknown) {
+    const errMsg = getErrorMessage(error);
+    if (errMsg.includes("PHONE_NOT_OCCUPIED") || errMsg.includes("USERNAME_NOT_OCCUPIED")) {
       return {
         success: false,
         error: `Collectible not found: ${params.type} "${params.value}" is not a Fragment collectible.`,

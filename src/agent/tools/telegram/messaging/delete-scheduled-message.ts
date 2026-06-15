@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -32,7 +33,7 @@ export const telegramDeleteScheduledMessageExecutor: ToolExecutor<
 > = async (params, context): Promise<ToolResult> => {
   try {
     const { chatId, messageIds } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
     const entity = await gramJsClient.getEntity(chatId);
 
     await gramJsClient.invoke(
@@ -42,7 +43,7 @@ export const telegramDeleteScheduledMessageExecutor: ToolExecutor<
       })
     );
 
-    log.info(`🗑️ delete_scheduled: ${messageIds.length} messages cancelled in ${chatId}`);
+    log.info(`delete_scheduled: ${messageIds.length} messages cancelled in ${chatId}`);
 
     return {
       success: true,
@@ -52,9 +53,9 @@ export const telegramDeleteScheduledMessageExecutor: ToolExecutor<
         deletedCount: messageIds.length,
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-  } catch (error: any) {
-    if (error.errorMessage === "MESSAGE_ID_INVALID") {
+  } catch (error: unknown) {
+    const errMsg = getErrorMessage(error);
+    if (errMsg.includes("MESSAGE_ID_INVALID")) {
       return {
         success: false,
         error: "One or more message IDs are invalid or not scheduled messages.",

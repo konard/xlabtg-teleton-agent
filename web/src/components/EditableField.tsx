@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { InfoTip } from './InfoTip';
+import { Stepper } from './Stepper';
 
 export interface EditableFieldProps {
   label: string;
@@ -76,12 +77,13 @@ export function EditableField({
   const badgeEl = badge ? (
     <span style={{
       fontSize: 11,
-      padding: '1px 6px',
-      borderRadius: 4,
-      backgroundColor: badge === 'Set' ? 'var(--accent)' : 'var(--red)',
-      color: 'var(--text-on-accent)',
+      padding: '2px 8px',
+      backgroundColor: badge === 'Set' ? 'color-mix(in srgb, var(--accent) 15%, transparent)' : 'color-mix(in srgb, var(--red) 15%, transparent)',
+      color: badge === 'Set' ? 'var(--accent)' : 'var(--red)',
       marginLeft: 6,
-      fontWeight: 500,
+      fontWeight: 600,
+      borderRadius: 'var(--radius-pill)',
+      letterSpacing: '0.3px',
     }}>
       {badge}
     </span>
@@ -111,7 +113,6 @@ export function EditableField({
           padding: '4px 8px',
           fontSize: 13,
           border: '1px solid var(--accent)',
-          borderRadius: 4,
           background: 'var(--accent)',
           color: 'var(--text-on-accent)',
           cursor: saving ? 'wait' : 'pointer',
@@ -127,10 +128,9 @@ export function EditableField({
         style={{
           padding: '4px 8px',
           fontSize: 13,
-          border: '1px solid var(--separator)',
-          borderRadius: 4,
-          background: 'var(--surface)',
-          color: 'var(--text)',
+          border: '1px solid var(--border)',
+          background: 'var(--bg-glass)',
+          color: 'var(--text-primary)',
           cursor: 'pointer',
           lineHeight: 1,
         }}
@@ -140,7 +140,25 @@ export function EditableField({
     </div>
   ) : null;
 
-  const inputEl = (
+  const inputEl = type === 'number' ? (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', minWidth: 20, textAlign: 'center' }}>
+        {value}
+      </span>
+      <Stepper
+        value={parseFloat(value) || 0}
+        onChange={(v) => {
+          const str = String(v);
+          onChange(str);
+          onSave(str);
+        }}
+        min={min}
+        max={max}
+        step={step}
+        disabled={saving}
+      />
+    </div>
+  ) : (
     <input
       ref={inputRef}
       type={type}
@@ -156,10 +174,9 @@ export function EditableField({
         flex: 1,
         padding: '6px 10px',
         fontSize: 14,
-        border: '1px solid var(--separator)',
-        borderRadius: 4,
-        background: 'var(--surface)',
-        color: 'var(--text)',
+        border: '1px solid var(--border)',
+        background: 'var(--bg-glass)',
+        color: 'var(--text-primary)',
         minWidth: 0,
       }}
     />
@@ -169,9 +186,9 @@ export function EditableField({
     return (
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, minHeight: 36 }}>
         <div style={{ flex: '0 0 auto', minWidth: 120 }}>{labelRow}</div>
-        <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center' }}>
+        <div style={{ flex: 1, display: 'flex', gap: 6, alignItems: 'center', justifyContent: 'flex-end' }}>
           {inputEl}
-          {actionButtons}
+          {type !== 'number' && actionButtons}
         </div>
       </div>
     );
@@ -180,9 +197,9 @@ export function EditableField({
   return (
     <div className="form-group">
       <label>{labelRow}</label>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', justifyContent: type === 'number' ? 'space-between' : undefined }}>
         {inputEl}
-        {actionButtons}
+        {type !== 'number' && actionButtons}
       </div>
     </div>
   );
