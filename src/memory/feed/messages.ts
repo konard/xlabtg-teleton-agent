@@ -22,10 +22,34 @@ export interface TelegramMessage {
   timestamp: number;
 }
 
+function tableExists(db: Database.Database, name: string): boolean {
+  const row = db
+    .prepare(`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`)
+    .get(name) as { name: string } | undefined;
+  return !!row;
+}
+
+function pruneMessagesBefore(db: Database.Database, cutoffSec: number): number {
+  const hasMessageVec = tableExists(db, "tg_messages_vec");
+  return db.transaction(() => {
+    if (hasMessageVec) {
+      db.prepare(
+        `
+        DELETE FROM tg_messages_vec
+        WHERE id IN (
+          SELECT id FROM tg_messages WHERE timestamp < ?
+        )
+      `
+      ).run(cutoffSec);
+    }
+    const result = db.prepare("DELETE FROM tg_messages WHERE timestamp < ?").run(cutoffSec);
+    return result.changes;
+  })();
+}
+
 export function pruneOldMessages(db: Database.Database, maxAgeDays = 90): number {
   const cutoffSec = Math.floor(Date.now() / 1000) - maxAgeDays * 86_400;
-  const result = db.prepare("DELETE FROM tg_messages WHERE timestamp < ?").run(cutoffSec);
-  return result.changes;
+  return pruneMessagesBefore(db, cutoffSec);
 }
 
 export class MessageStore {
@@ -193,8 +217,7 @@ export class MessageStore {
 
   pruneOldMessages(maxAgeDays = 90): number {
     const cutoffSec = Math.floor(Date.now() / 1000) - maxAgeDays * 86_400;
-    const result = this.db.prepare("DELETE FROM tg_messages WHERE timestamp < ?").run(cutoffSec);
-    return result.changes;
+    return pruneMessagesBefore(this.db, cutoffSec);
   }
 
   getRecentMessages(chatId: string, limit: number = 20): TelegramMessage[] {

@@ -105,6 +105,12 @@ memory:
     max_entries: 10000
     archive_days: 30
     auto_cleanup: false
+
+feed:
+  retention_days: 90
+  max_messages: 100000
 ```
 
 Cleanup always archives active memory rows before removing them from search. Pinned memories and explicit memories are protected. Use `POST /api/memory/cleanup?dry_run=true` to inspect candidates before archiving, or the WebUI `Memory -> Priority` tab to review scores, pin/unpin memories, and run cleanup.
+
+Telegram feed retention runs on the same scheduler cycle. It permanently prunes old `tg_messages` rows, their local `tg_messages_vec` entries, and the matching FTS postings by `feed.retention_days` and `feed.max_messages`.

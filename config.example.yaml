@@ -127,6 +127,12 @@ memory:
     archive_days: 30
     auto_cleanup: false # Set true to let the scheduler archive candidates automatically
 
+# Telegram feed retention. The scheduler prunes tg_messages, tg_messages_vec,
+# and the feed FTS index by age and total message count.
+feed:
+  retention_days: 90
+  max_messages: 100000
+
 # Temporal context engine.
 # Timezone can also be overridden with TELETON_TIMEZONE.
 temporal_context:

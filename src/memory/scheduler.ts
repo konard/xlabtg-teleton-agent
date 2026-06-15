@@ -2,7 +2,11 @@ import type Database from "better-sqlite3";
 import { createLogger } from "../utils/logger.js";
 import type { SemanticVectorStore } from "./vector-store.js";
 import { MemoryScorer, type MemoryScoringConfig } from "./scoring.js";
-import { MemoryRetentionService, type MemoryRetentionConfig } from "./retention.js";
+import {
+  MemoryRetentionService,
+  type FeedRetentionConfig,
+  type MemoryRetentionConfig,
+} from "./retention.js";
 import { getAutonomousTaskStore } from "./agent/autonomous-tasks.js";
 
 const log = createLogger("Memory");
@@ -18,6 +22,7 @@ export interface MemoryPrioritizationSchedulerConfig {
     auto_cleanup?: boolean;
     checkpoint_retention_days?: number;
   };
+  feed?: FeedRetentionConfig;
   pause_timeout_hours?: number;
 }
 
@@ -52,7 +57,13 @@ export class MemoryPrioritizationScheduler {
         ? config.pause_timeout_hours
         : DEFAULT_PAUSE_TIMEOUT_HOURS;
     this.scorer = new MemoryScorer(db, config.scoring);
-    this.retention = new MemoryRetentionService(db, config.retention, this.scorer, vectorStore);
+    this.retention = new MemoryRetentionService(
+      db,
+      config.retention,
+      this.scorer,
+      vectorStore,
+      config.feed
+    );
   }
 
   start(): void {
@@ -81,6 +92,7 @@ export class MemoryPrioritizationScheduler {
       } else {
         this.retention.pruneExpiredArchive();
       }
+      const feedCleanup = await this.retention.pruneFeedMessages();
       let checkpointsDeleted = 0;
       let pausedTasksCancelled = 0;
       try {
@@ -94,6 +106,8 @@ export class MemoryPrioritizationScheduler {
         {
           scored: result.scored,
           autoCleanup: this.autoCleanup,
+          feedDeleted: feedCleanup.deleted,
+          feedVectorDeleted: feedCleanup.vectorDeleted,
           checkpointsDeleted,
           pausedTasksCancelled,
         },

@@ -4,6 +4,45 @@ import { ensureSchema } from "../schema.js";
 import { MemoryPrioritizationScheduler } from "../scheduler.js";
 import { getAutonomousTaskStore } from "../agent/autonomous-tasks.js";
 
+function ensureFeedVectorTable(db: InstanceType<typeof Database>): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tg_messages_vec (
+      id TEXT PRIMARY KEY,
+      embedding BLOB NOT NULL
+    )
+  `);
+}
+
+function insertFeedMessage(
+  db: InstanceType<typeof Database>,
+  id: string,
+  text: string,
+  timestamp: number
+): void {
+  db.prepare(
+    `INSERT OR IGNORE INTO tg_chats (id, type, is_monitored) VALUES ('chat-1', 'dm', 1)`
+  ).run();
+  db.prepare(
+    `
+    INSERT INTO tg_messages (
+      id,
+      chat_id,
+      sender_id,
+      text,
+      embedding,
+      is_from_agent,
+      has_media,
+      timestamp
+    )
+    VALUES (?, 'chat-1', NULL, ?, NULL, 0, 0, ?)
+  `
+  ).run(id, text, timestamp);
+  db.prepare(`INSERT INTO tg_messages_vec (id, embedding) VALUES (?, ?)`).run(
+    id,
+    Buffer.from("vector")
+  );
+}
+
 describe("MemoryPrioritizationScheduler.runOnce", () => {
   let db: InstanceType<typeof Database>;
 
@@ -93,5 +132,31 @@ describe("MemoryPrioritizationScheduler.runOnce", () => {
       }
     ).c;
     expect(count).toBe(0);
+  });
+
+  it("prunes old feed messages during the scheduler run", async () => {
+    ensureFeedVectorTable(db);
+    const now = Math.floor(Date.now() / 1000);
+    insertFeedMessage(db, "old-feed", "old scheduler feed row", now - 45 * 86400);
+    insertFeedMessage(db, "new-feed", "new scheduler feed row", now - 2 * 86400);
+
+    const scheduler = new MemoryPrioritizationScheduler(db, {
+      enabled: true,
+      interval_minutes: 60,
+      feed: { retention_days: 30, max_messages: 100 },
+    });
+    await scheduler.runOnce();
+
+    const messages = db.prepare(`SELECT id FROM tg_messages ORDER BY id`).all() as Array<{
+      id: string;
+    }>;
+    const oldVectorCount = (
+      db.prepare(`SELECT COUNT(*) AS c FROM tg_messages_vec WHERE id = 'old-feed'`).get() as {
+        c: number;
+      }
+    ).c;
+
+    expect(messages.map((row) => row.id)).toEqual(["new-feed"]);
+    expect(oldVectorCount).toBe(0);
   });
 });

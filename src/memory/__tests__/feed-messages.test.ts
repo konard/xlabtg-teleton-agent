@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
 import * as sqliteVec from "sqlite-vec";
 import { ensureSchema, ensureVectorTables } from "../schema.js";
-import { MessageStore, type TelegramMessage } from "../feed/messages.js";
+import { MessageStore, pruneOldMessages, type TelegramMessage } from "../feed/messages.js";
 import type { EmbeddingProvider } from "../embeddings/provider.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -45,6 +45,15 @@ function createVectorDb(dimensions: number): InstanceType<typeof Database> | nul
     return null;
   }
   return db;
+}
+
+function ensurePlainVectorTable(db: InstanceType<typeof Database>): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tg_messages_vec (
+      id TEXT PRIMARY KEY,
+      embedding BLOB NOT NULL
+    )
+  `);
 }
 
 function makeMessage(overrides: Partial<TelegramMessage> = {}): TelegramMessage {
@@ -380,6 +389,57 @@ describe("MessageStore", () => {
       const msgs = store.getRecentMessages("chat-r");
       const child = msgs.find((m) => m.id === "child");
       expect(child!.replyToId).toBe("parent");
+    });
+  });
+
+  // ============================================
+  // pruneOldMessages
+  // ============================================
+
+  describe("pruneOldMessages", () => {
+    it("deletes old feed rows with their local vectors and FTS postings", async () => {
+      ensurePlainVectorTable(db);
+      const now = Math.floor(Date.now() / 1000);
+      await store.storeMessage(
+        makeMessage({ id: "old-prune", text: "legacytoken old", timestamp: now - 120 * 86400 })
+      );
+      await store.storeMessage(
+        makeMessage({ id: "new-prune", text: "keeptoken new", timestamp: now - 2 * 86400 })
+      );
+      db.prepare(`INSERT INTO tg_messages_vec (id, embedding) VALUES (?, ?)`).run(
+        "old-prune",
+        Buffer.from("vector")
+      );
+      db.prepare(`INSERT INTO tg_messages_vec (id, embedding) VALUES (?, ?)`).run(
+        "new-prune",
+        Buffer.from("vector")
+      );
+
+      const deleted = pruneOldMessages(db, 90);
+      const oldVectorCount = (
+        db.prepare(`SELECT COUNT(*) AS c FROM tg_messages_vec WHERE id = 'old-prune'`).get() as {
+          c: number;
+        }
+      ).c;
+      const oldMatches = db
+        .prepare(
+          `
+          SELECT m.id
+          FROM tg_messages_fts mf
+          JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH ?
+        `
+        )
+        .all("legacytoken");
+
+      expect(deleted).toBe(1);
+      expect(db.prepare(`SELECT id FROM tg_messages WHERE id = 'old-prune'`).get()).toBeUndefined();
+      expect(oldVectorCount).toBe(0);
+      expect(oldMatches).toHaveLength(0);
+      expect(db.prepare(`SELECT id FROM tg_messages WHERE id = 'new-prune'`).get()).toBeDefined();
+      expect(
+        db.prepare(`SELECT id FROM tg_messages_vec WHERE id = 'new-prune'`).get()
+      ).toBeDefined();
     });
   });
 
