@@ -81,6 +81,17 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
 
 const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
 const NVIDIA_DISABLE_STREAMING_USAGE_MODELS = new Set(["z-ai/glm-5.1"]);
+const NVIDIA_CACHE_RETENTION = "none";
+const DEFAULT_CACHE_RETENTION = "long";
+const NVIDIA_MAX_TEMPERATURE = 1;
+
+function normalizeProviderTemperature(provider: SupportedProvider, temperature: number): number {
+  if (provider !== "nvidia" || !Number.isFinite(temperature)) {
+    return temperature;
+  }
+
+  return Math.min(Math.max(temperature, 0), NVIDIA_MAX_TEMPERATURE);
+}
 
 /** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
 function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
@@ -101,6 +112,7 @@ function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
       supportsDeveloperRole: false,
       supportsReasoningEffort: false,
       supportsStrictMode: false,
+      supportsLongCacheRetention: false,
       maxTokensField: "max_tokens",
       ...(disablesStreamingUsage ? { supportsUsageInStreaming: false } : {}),
     },
@@ -290,14 +302,17 @@ export async function chatWithContext(
     tools,
   };
 
-  const temperature = options.temperature ?? config.temperature;
+  const temperature = normalizeProviderTemperature(
+    provider,
+    options.temperature ?? config.temperature
+  );
 
   const completeOptions: Record<string, unknown> = {
     apiKey: getEffectiveApiKey(provider, config.api_key),
     maxTokens: options.maxTokens ?? config.max_tokens,
     temperature,
     sessionId: options.sessionId,
-    cacheRetention: "long",
+    cacheRetention: provider === "nvidia" ? NVIDIA_CACHE_RETENTION : DEFAULT_CACHE_RETENTION,
     signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
   };
   if (isCocoon) {

@@ -41,6 +41,7 @@ describe("NVIDIA model routing", () => {
 
     expect("compat" in model && model.compat?.maxTokensField).toBe("max_tokens");
     expect("compat" in model && model.compat?.supportsStrictMode).toBe(false);
+    expect("compat" in model && model.compat?.supportsLongCacheRetention).toBe(false);
   });
 
   it("keeps GLM-5.1 on the OpenAI-compatible NVIDIA endpoint", () => {
