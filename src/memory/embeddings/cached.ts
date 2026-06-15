@@ -26,6 +26,7 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
   private readonly stmtCacheGet: Database.Statement;
   private readonly stmtCachePut: Database.Statement;
   private readonly stmtCacheTouch: Database.Statement;
+  private readonly stmtCacheDelete: Database.Statement;
 
   constructor(
     private inner: EmbeddingProvider,
@@ -44,6 +45,9 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
     this.stmtCacheTouch = db.prepare(
       `UPDATE embedding_cache SET accessed_at = unixepoch() WHERE hash = ? AND model = ? AND provider = ?`
     );
+    this.stmtCacheDelete = db.prepare(
+      `DELETE FROM embedding_cache WHERE hash = ? AND model = ? AND provider = ?`
+    );
   }
 
   private cacheGet(hash: string): { embedding: Buffer | string } | undefined {
@@ -60,6 +64,10 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
     this.stmtCacheTouch.run(hash, this.model, this.id);
   }
 
+  private cacheDelete(hash: string): void {
+    this.stmtCacheDelete.run(hash, this.model, this.id);
+  }
+
   async warmup(): Promise<boolean> {
     return this.inner.warmup?.() ?? true;
   }
@@ -67,25 +75,32 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
   async embedQuery(text: string): Promise<number[]> {
     const hash = hashText(text);
     const resourceCache = getCache();
-    const cached = resourceCache?.getCachedByKey<number[]>(
-      resourceCache.makeKey("embeddings", hash, this.cacheConfig())
-    );
-    if (cached) return cached;
+    const cacheKey = resourceCache?.makeKey("embeddings", hash, this.cacheConfig());
+    const cached = cacheKey ? resourceCache?.getCachedByKey<number[]>(cacheKey) : undefined;
+    if (cached !== undefined) {
+      if (cached.length > 0) return cached;
+      resourceCache?.invalidate({ key: cacheKey });
+    }
 
     const row = this.cacheGet(hash);
     if (row) {
-      this.hits++;
-      this.cacheTouch(hash);
-      this.tick();
       const embedding = deserializeEmbedding(row.embedding);
-      resourceCache?.set("embeddings", hash, this.cacheConfig(), embedding);
-      return embedding;
+      if (embedding.length > 0) {
+        this.hits++;
+        this.cacheTouch(hash);
+        this.tick();
+        resourceCache?.set("embeddings", hash, this.cacheConfig(), embedding);
+        return embedding;
+      }
+      this.cacheDelete(hash);
     }
 
     this.misses++;
     const embedding = await this.inner.embedQuery(text);
-    this.cachePut(hash, serializeEmbedding(embedding));
-    resourceCache?.set("embeddings", hash, this.cacheConfig(), embedding);
+    if (embedding.length > 0) {
+      this.cachePut(hash, serializeEmbedding(embedding));
+      resourceCache?.set("embeddings", hash, this.cacheConfig(), embedding);
+    }
     this.tick();
     return embedding;
   }
@@ -101,22 +116,31 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
     // Check cache for each text
     for (let i = 0; i < texts.length; i++) {
       const resourceCache = getCache();
-      const cached = resourceCache?.getCachedByKey<number[]>(
-        resourceCache.makeKey("embeddings", hashes[i], this.cacheConfig())
-      );
-      if (cached) {
-        results[i] = cached;
-        continue;
+      const cacheKey = resourceCache?.makeKey("embeddings", hashes[i], this.cacheConfig());
+      const cached = cacheKey ? resourceCache?.getCachedByKey<number[]>(cacheKey) : undefined;
+      if (cached !== undefined) {
+        if (cached.length > 0) {
+          results[i] = cached;
+          continue;
+        }
+        resourceCache?.invalidate({ key: cacheKey });
       }
 
       const row = this.cacheGet(hashes[i]);
 
       if (row) {
-        this.hits++;
-        this.cacheTouch(hashes[i]);
         const embedding = deserializeEmbedding(row.embedding);
-        results[i] = embedding;
-        resourceCache?.set("embeddings", hashes[i], this.cacheConfig(), embedding);
+        if (embedding.length > 0) {
+          this.hits++;
+          this.cacheTouch(hashes[i]);
+          results[i] = embedding;
+          resourceCache?.set("embeddings", hashes[i], this.cacheConfig(), embedding);
+        } else {
+          this.cacheDelete(hashes[i]);
+          this.misses++;
+          missIndices.push(i);
+          missTexts.push(texts[i]);
+        }
       } else {
         this.misses++;
         missIndices.push(i);
