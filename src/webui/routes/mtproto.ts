@@ -11,8 +11,98 @@ import {
 import { getMtprotoProxySecretValidationError } from "../../telegram/mtproto-proxy.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 
+type MtprotoConfigLike = Record<string, unknown> & {
+  proxies?: unknown;
+  bot_api_proxy?: unknown;
+};
+
 function unique(values: Array<string | undefined>): string[] {
   return [...new Set(values.filter((value): value is string => !!value))];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function maskSecretValue(secret: string): string {
+  if (secret.length <= 4) return "****";
+  const visible = secret.slice(-4);
+  const maskedLength = Math.max(secret.length - visible.length, 4);
+  return `${"*".repeat(maskedLength)}${visible}`;
+}
+
+function maskProxyUrlCredentials(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+
+  try {
+    const url = new URL(value);
+    if (!url.username && !url.password) return value;
+    if (url.username) url.username = "****";
+    if (url.password) url.password = "****";
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function maskMtprotoProxy(proxy: unknown): unknown {
+  if (!isRecord(proxy)) return proxy;
+
+  return {
+    ...proxy,
+    ...(typeof proxy.secret === "string" && proxy.secret.length > 0
+      ? { secret: maskSecretValue(proxy.secret) }
+      : {}),
+  };
+}
+
+function maskMtprotoConfig(mtproto: unknown): MtprotoConfigLike {
+  const config = isRecord(mtproto) ? mtproto : { enabled: false, proxies: [] };
+  const proxies = Array.isArray(config.proxies) ? config.proxies.map(maskMtprotoProxy) : [];
+
+  return {
+    ...config,
+    proxies,
+    ...(typeof config.bot_api_proxy === "string"
+      ? { bot_api_proxy: maskProxyUrlCredentials(config.bot_api_proxy) }
+      : {}),
+  };
+}
+
+function getMtprotoProxies(config: Record<string, unknown>): MtprotoProxyEntry[] {
+  const mtproto = config.mtproto;
+  if (!isRecord(mtproto) || !Array.isArray(mtproto.proxies)) {
+    return [];
+  }
+  return mtproto.proxies as MtprotoProxyEntry[];
+}
+
+function findOriginalProxy(
+  proxy: MtprotoProxyEntry,
+  index: number,
+  existingProxies: MtprotoProxyEntry[]
+): MtprotoProxyEntry | undefined {
+  const indexed = existingProxies[index];
+  if (indexed && proxy.secret === maskSecretValue(indexed.secret)) {
+    return indexed;
+  }
+
+  return existingProxies.find(
+    (existing) =>
+      existing.server === proxy.server &&
+      existing.port === proxy.port &&
+      proxy.secret === maskSecretValue(existing.secret)
+  );
+}
+
+function restoreMaskedProxySecrets(
+  proxies: MtprotoProxyEntry[],
+  existingProxies: MtprotoProxyEntry[]
+): MtprotoProxyEntry[] {
+  return proxies.map((proxy, index) => {
+    const original = findOriginalProxy(proxy, index, existingProxies);
+    return original ? { ...proxy, secret: original.secret } : proxy;
+  });
 }
 
 function readSessionCandidate(path: string): string | undefined {
@@ -79,7 +169,7 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
     const config = deps.agent.getConfig() as Record<string, any>;
     const mtproto = config.mtproto ?? { enabled: false, proxies: [] };
-    return c.json({ success: true, data: mtproto } as APIResponse);
+    return c.json({ success: true, data: maskMtprotoConfig(mtproto) } as APIResponse);
   });
 
   // GET /api/mtproto/status — runtime connection status
@@ -155,7 +245,12 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
   app.put("/proxies", async (c) => {
     try {
       const body = await c.req.json<{ proxies: MtprotoProxyEntry[] }>();
-      const proxies = body.proxies ?? [];
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
+      const runtimeConfig = deps.agent.getConfig() as Record<string, any>;
+      const proxies = restoreMaskedProxySecrets(
+        body.proxies ?? [],
+        getMtprotoProxies(runtimeConfig)
+      );
 
       // Validate entries
       for (let i = 0; i < proxies.length; i++) {
@@ -194,11 +289,9 @@ export function createMtprotoRoutes(deps: WebUIServerDeps) {
       setNestedValue(raw, "mtproto.proxies", proxies);
       writeRawConfig(raw, deps.configPath);
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- runtime config is dynamic
-      const runtimeConfig = deps.agent.getConfig() as Record<string, any>;
       setNestedValue(runtimeConfig, "mtproto.proxies", proxies);
 
-      return c.json({ success: true, data: { proxies } } as APIResponse);
+      return c.json({ success: true, data: maskMtprotoConfig({ proxies }) } as APIResponse);
     } catch (err) {
       return c.json(
         { success: false, error: err instanceof Error ? err.message : String(err) } as APIResponse,
