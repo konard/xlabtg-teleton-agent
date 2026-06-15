@@ -149,6 +149,12 @@
   },
   "overrides": {
     "@aws-sdk/xml-builder": "3.972.19",
+    "@google/genai": {
+      "ws": "8.21.0"
+    },
+    "@mistralai/mistralai": {
+      "ws": "8.21.0"
+    },
     "axios": ">=1.16.1",
     "basic-ftp": "^6.0.1",
     "brace-expansion": ">=2.0.3",
@@ -158,6 +164,9 @@
     "fast-xml-builder": "^1.2.0",
     "flatted": ">=3.4.2",
     "follow-redirects": ">=1.15.12",
+    "openai": {
+      "ws": "8.21.0"
+    },
     "path-to-regexp": ">=8.4.0",
     "picomatch": ">=4.0.4",
     "smol-toml": ">=1.6.1",
