@@ -29,21 +29,25 @@ git fetch tonresistor
 
 ## Current divergence
 
-The two histories have **diverged** — they share a common ancestor but neither
-is a prefix of the other:
+As of the **2026-06 full sync** (see history below) the fork is **caught up**
+with upstream:
 
-- **Merge-base:** `3fd5732` (upstream `v0.8.5`)
-- **Fork is behind upstream by:** ~206 commits (core fixes the fork hasn't taken)
-- **Fork is ahead of upstream by:** ~1347 commits (the fork's custom feature set)
+- **Latest synced upstream tag:** `v0.8.6`
+- **Fork is behind upstream by:** 0 commits
+- **Fork is ahead of upstream by:** ~1357 commits (the fork's custom feature set)
 
-A live, regenerated snapshot of exactly which files conflict lives in
+The full `git merge tonresistor/main` was performed and all 102 conflicting
+files were resolved by ownership bucket (see history). Future drift will again
+show up here; a live snapshot of the conflict surface lives in
 [`sync-conflicts.md`](./sync-conflicts.md).
 
-> **Why not just `git merge tonresistor/main`?** That merge touches **~152 files
-> at once** — including the core agent runtime, `package.json`, and the CI
-> workflows. A single PR of that size is impossible to review safely and would
-> very likely break one of the fork's 1347 commits of custom work. We sync
-> deliberately instead.
+> **Why the full merge was viable this time.** The merge touched ~152 files
+> (102 with real conflicts) — including the core agent runtime, `package.json`,
+> and the CI workflows. Rather than a blind merge, each conflict was resolved by
+> the ownership rules below: fork-owned subsystems kept the fork version (so the
+> ~1357 commits of custom work and their tests stay green), upstream's new files
+> and non-conflicting changes were taken wholesale, and shared "hybrid" files
+> were hand-merged. The result builds and passes the full test suite.
 
 ## Tooling
 
@@ -199,6 +203,26 @@ larger refactor tracked separately — it must not itself become a giant conflic
 
 ## Sync history
 
+- **2026-06 (`v0.8.6`, full merge):** the complete `git merge tonresistor/main`
+  was performed in one PR, integrating all 206 upstream commits since `v0.8.5`.
+  102 conflicting files were resolved by ownership bucket:
+  - **upstream taken wholesale** — all upstream-only new files and
+    non-conflicting changes, plus the pervasive tool-registry refactor
+    (`mode`/`tags` on `ToolEntry`) and its ~150 tool files;
+  - **fork preserved** — WebUI, services, Groq/NVIDIA/claude-code providers and
+    their pinned model defaults, command-access, exec allowlist, recurring tasks,
+    transcript, compaction, knowledge indexer, memory schema, agent runtime
+    (the fork's instrumented loop) and config loader — so every fork feature and
+    its tests stay green;
+  - **hybrid hand-merges** — `package.json`/lockfiles, `config/schema`,
+    `webui/server`, `index.ts`, `web/lib/api`, CI/Docker/docs;
+  - **reconciliations** — `ITelegramBridge` (fork bridges now implement it),
+    `telegram_send_video` re-registered, zero-trust `PolicyEngine` re-wired into
+    `registry.execute`, and merge-orphaned upstream files (codex provider, bridge
+    factory, env/maintenance helpers) removed as dead code.
+
+  Result: `typecheck`, `lint`, `build` (sdk+backend+web) and the full `vitest`
+  suite all pass. This advanced the effective base to `v0.8.6` (behind → 0).
 - **2026-03 (`v0.8.5`, base `3fd5732`):** selective integration of upstream
   security/robustness/concurrency fixes (exec allowlist scope, plugin
   start/stop timeouts, concurrent hooks, retry hardening) plus dependency bumps,
