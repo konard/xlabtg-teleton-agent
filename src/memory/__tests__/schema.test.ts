@@ -9,6 +9,7 @@ import {
   CURRENT_SCHEMA_VERSION,
 } from "../schema.js";
 import { getAutonomousTaskStore } from "../agent/autonomous-tasks.js";
+import { loadAllToolConfigs, initializeToolConfig, saveToolConfig } from "../tool-config.js";
 
 describe("Memory Schema", () => {
   let db: InstanceType<typeof Database>;
@@ -1494,7 +1495,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.38.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.39.0");
     });
   });
 
@@ -1873,5 +1874,238 @@ describe("Memory Schema", () => {
       };
       expect(row.enabled).toBe(1);
     });
+
+    describe("scope_level migration 1.39.0 (issue #631 regression)", () => {
+      // Re-creates the tool_config schema exactly as it existed on databases
+      // produced before this fix: the fork-sync (PRs #625/#630) merged the
+      // consuming code but dropped the migrations that add scope_level and
+      // widen the scope CHECK, so older databases lack the column entirely.
+      function createLegacyToolConfig(opts?: { scopeCheck?: boolean }): void {
+        db.exec(`DROP TABLE IF EXISTS tool_config;`);
+        const scopeColumn =
+          opts?.scopeCheck === false
+            ? "scope TEXT,"
+            : "scope TEXT CHECK(scope IN ('always', 'dm-only', 'group-only', 'admin-only')),";
+        db.exec(`
+          CREATE TABLE tool_config (
+            tool_name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+            ${scopeColumn}
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_by INTEGER
+          );
+        `);
+      }
+
+      function hasColumn(table: string, column: string): boolean {
+        const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+        return columns.some((col) => col.name === column);
+      }
+
+      it("a fresh database has tool_config.scope_level after migrations", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        expect(hasColumn("tool_config", "scope_level")).toBe(true);
+      });
+
+      it("loadAllToolConfigs() no longer throws 'no such column: scope_level'", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        // This is the exact call from the crash stack trace in the issue.
+        expect(() => loadAllToolConfigs(db)).not.toThrow();
+        expect(loadAllToolConfigs(db).size).toBe(0);
+      });
+
+      it("seeding tool config writes the widened scope values without error", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        // initializeToolConfig/saveToolConfig persist levelToScope() values
+        // ('open', 'disabled', ...) that the legacy narrow CHECK rejected.
+        expect(() => initializeToolConfig(db, "bash", "all")).not.toThrow();
+        expect(() => saveToolConfig(db, "bash", "off")).not.toThrow();
+        expect(() => saveToolConfig(db, "read", "allowlist")).not.toThrow();
+        expect(() => saveToolConfig(db, "write", "admin")).not.toThrow();
+
+        const config = loadAllToolConfigs(db);
+        expect(config.get("bash")?.level).toBe("off");
+        expect(config.get("read")?.level).toBe("allowlist");
+        expect(config.get("write")?.level).toBe("admin");
+      });
+
+      it("upgrading a 1.38.0 database adds scope_level and backfills from legacy columns", () => {
+        ensureSchema(db);
+        createLegacyToolConfig();
+        // Cover the common backfill branches with realistic legacy rows.
+        const insert = db.prepare(
+          `INSERT INTO tool_config (tool_name, enabled, scope) VALUES (?, ?, ?)`
+        );
+        insert.run("disabled_tool", 0, "always"); // enabled=0 → off
+        insert.run("admin_tool", 1, "admin-only"); // scope=admin-only → admin
+        insert.run("open_tool", 1, "always"); // default → all
+        setSchemaVersion(db, "1.38.0");
+
+        runMigrations(db);
+
+        expect(hasColumn("tool_config", "scope_level")).toBe(true);
+        const rows = db.prepare(`SELECT tool_name, scope_level FROM tool_config`).all() as Array<{
+          tool_name: string;
+          scope_level: string;
+        }>;
+        const byName = Object.fromEntries(rows.map((r) => [r.tool_name, r.scope_level]));
+        expect(byName["disabled_tool"]).toBe("off");
+        expect(byName["admin_tool"]).toBe("admin");
+        expect(byName["open_tool"]).toBe("all");
+      });
+
+      it("backfill maps every legacy scope value to the correct access level", () => {
+        ensureSchema(db);
+        // A CHECK-free legacy table lets us insert the full range of scope
+        // values an upstream database could carry into the backfill CASE.
+        createLegacyToolConfig({ scopeCheck: false });
+        const insert = db.prepare(
+          `INSERT INTO tool_config (tool_name, enabled, scope) VALUES (?, ?, ?)`
+        );
+        insert.run("t_off_enabled0", 0, "open"); // enabled=0 wins → off
+        insert.run("t_admin", 1, "admin-only"); // → admin
+        insert.run("t_allowlist", 1, "allowlist"); // → allowlist
+        insert.run("t_disabled", 1, "disabled"); // → off
+        insert.run("t_open", 1, "open"); // → all
+        insert.run("t_null", 1, null); // → all
+        setSchemaVersion(db, "1.38.0");
+
+        runMigrations(db);
+
+        const rows = db.prepare(`SELECT tool_name, scope_level FROM tool_config`).all() as Array<{
+          tool_name: string;
+          scope_level: string;
+        }>;
+        const byName = Object.fromEntries(rows.map((r) => [r.tool_name, r.scope_level]));
+        expect(byName["t_off_enabled0"]).toBe("off");
+        expect(byName["t_admin"]).toBe("admin");
+        expect(byName["t_allowlist"]).toBe("allowlist");
+        expect(byName["t_disabled"]).toBe("off");
+        expect(byName["t_open"]).toBe("all");
+        expect(byName["t_null"]).toBe("all");
+      });
+
+      it("preserves an existing scope_level column instead of clobbering it", () => {
+        ensureSchema(db);
+        // Simulate a database created by the original upstream code that
+        // already has scope_level populated with explicit access levels.
+        db.exec(`DROP TABLE IF EXISTS tool_config;`);
+        db.exec(`
+          CREATE TABLE tool_config (
+            tool_name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+            scope TEXT,
+            scope_level TEXT NOT NULL DEFAULT 'all',
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_by INTEGER
+          );
+        `);
+        // enabled=0 but scope_level explicitly 'admin' — the CASE backfill
+        // would have produced 'off', so this proves the column is preserved.
+        db.prepare(
+          `INSERT INTO tool_config (tool_name, enabled, scope, scope_level) VALUES (?, ?, ?, ?)`
+        ).run("explicit", 0, "always", "admin");
+        setSchemaVersion(db, "1.38.0");
+
+        runMigrations(db);
+
+        const row = db
+          .prepare(`SELECT scope_level FROM tool_config WHERE tool_name = 'explicit'`)
+          .get() as { scope_level: string };
+        expect(row.scope_level).toBe("admin");
+      });
+
+      it("scope CHECK constraint accepts the widened scope values", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        const widenedScopes = ["open", "allowlist", "disabled"];
+        for (const scope of widenedScopes) {
+          expect(() =>
+            db
+              .prepare(`INSERT INTO tool_config (tool_name, scope) VALUES (?, ?)`)
+              .run(`tool-${scope}`, scope)
+          ).not.toThrow();
+        }
+        expect(() =>
+          db.prepare(`INSERT INTO tool_config (tool_name, scope) VALUES ('bad', 'nonsense')`).run()
+        ).toThrow();
+      });
+
+      it("scope_level CHECK constraint rejects invalid access levels", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        for (const level of ["all", "allowlist", "admin", "off"]) {
+          expect(() =>
+            db
+              .prepare(`INSERT INTO tool_config (tool_name, scope_level) VALUES (?, ?)`)
+              .run(`lvl-${level}`, level)
+          ).not.toThrow();
+        }
+        expect(() =>
+          db
+            .prepare(`INSERT INTO tool_config (tool_name, scope_level) VALUES ('bad', 'nope')`)
+            .run()
+        ).toThrow();
+      });
+
+      it("scope_level defaults to 'all'", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        db.prepare(`INSERT INTO tool_config (tool_name) VALUES ('defaulted')`).run();
+        const row = db
+          .prepare(`SELECT scope_level FROM tool_config WHERE tool_name = 'defaulted'`)
+          .get() as { scope_level: string };
+        expect(row.scope_level).toBe("all");
+      });
+
+      it("migration 1.39.0 is idempotent", () => {
+        ensureSchema(db);
+        createLegacyToolConfig();
+        db.prepare(`INSERT INTO tool_config (tool_name, enabled, scope) VALUES (?, ?, ?)`).run(
+          "tool",
+          1,
+          "admin-only"
+        );
+        setSchemaVersion(db, "1.38.0");
+
+        runMigrations(db);
+        // Second run must not throw and must leave data intact.
+        expect(() => runMigrations(db)).not.toThrow();
+
+        const row = db
+          .prepare(`SELECT scope_level FROM tool_config WHERE tool_name = 'tool'`)
+          .get() as { scope_level: string };
+        expect(row.scope_level).toBe("admin");
+      });
+
+      it("migrations stamp the schema version to at least 1.39.0", () => {
+        ensureSchema(db);
+        runMigrations(db);
+
+        expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
+        expect(versionAtLeast(CURRENT_SCHEMA_VERSION, "1.39.0")).toBe(true);
+      });
+    });
   });
 });
+
+// Local semver helper for the assertion above (the schema module keeps its own
+// comparison private). Returns true when `version` >= `minimum`.
+function versionAtLeast(version: string, minimum: string): boolean {
+  const a = version.split(".").map(Number);
+  const b = minimum.split(".").map(Number);
+  for (let i = 0; i < Math.max(a.length, b.length); i++) {
+    const diff = (a[i] ?? 0) - (b[i] ?? 0);
+    if (diff !== 0) return diff > 0;
+  }
+  return true;
+}
