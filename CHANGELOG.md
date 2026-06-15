@@ -12,6 +12,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.45](https://github.com/xlabtg/teleton-agent/compare/v0.8.44...v0.8.45) (2026-06-15)
+
+
+### Bug Fixes
+
+* **agent:** учитывать abort signal в LLM-запросе ([c98b51c](https://github.com/xlabtg/teleton-agent/commit/c98b51c597353acb720db95c6c668701d8694580))
+* **agent:** учитывать abort signal в LLM-запросе ([533b2d0](https://github.com/xlabtg/teleton-agent/commit/533b2d0f86a5a89314839433195b42225cb953f0))
+* **api:** исправить per-method rate limiters ([726cbed](https://github.com/xlabtg/teleton-agent/commit/726cbedad21274bf8ef352d3cfe84661442ef282))
+* **integrations:** защитить oauth token exchange от ssrf ([0af3e4a](https://github.com/xlabtg/teleton-agent/commit/0af3e4a6d150cd74cad00591156680afbd053651))
+* **integrations:** защитить OAuth token exchange от SSRF ([9327127](https://github.com/xlabtg/teleton-agent/commit/9327127c4caae6a95ca528b0ccaddd2841785fdd))
+* **memory:** добавить retention для Telegram feed ([4f231ec](https://github.com/xlabtg/teleton-agent/commit/4f231ec042a8467cde2a7845309608575c40e5c3))
+* **memory:** добавить retention для Telegram feed ([791787e](https://github.com/xlabtg/teleton-agent/commit/791787ec0b59cf5fca1fbb9ae3cf73035404143f))
+* **memory:** исправить синхронизацию tg_messages FTS при upsert ([939c2f7](https://github.com/xlabtg/teleton-agent/commit/939c2f7b32cecb5cf4d5f5a6b94a49ba6c273120))
+* **memory:** не кэшировать пустые embeddings ([a4bf53c](https://github.com/xlabtg/teleton-agent/commit/a4bf53cc79187a6a25f8876fa0bb6870fc614a95))
+* **memory:** не кэшировать пустые embeddings в embedQuery ([8295057](https://github.com/xlabtg/teleton-agent/commit/8295057e358880d4814ae594102e9e6ee5c69558))
+* **memory:** синхронизировать tg_messages FTS при upsert ([741e4ed](https://github.com/xlabtg/teleton-agent/commit/741e4ed31d28b322d73cc851580e241d832d9ab8))
+* **security:** chmod реальных SQLite-файлов при hardening ([d4a36f0](https://github.com/xlabtg/teleton-agent/commit/d4a36f075b5f2875a5722e4ad20080f229980735))
+* **security:** закрыть права на workspace-директории ([9441b95](https://github.com/xlabtg/teleton-agent/commit/9441b95ebf64f458fbe6e434123eb6602d365e8f))
+* **security:** закрыть права на workspace-директории ([adfa501](https://github.com/xlabtg/teleton-agent/commit/adfa501216081455b96ac9275ec9cce99c232e7d))
+* **security:** защитить workspace_rename от обхода core-файлов ([b9f75ff](https://github.com/xlabtg/teleton-agent/commit/b9f75ff50c694651252c2ac4f5ad6c5e735b772e))
+* **security:** защитить workspace_rename от обхода core-файлов ([165cb2b](https://github.com/xlabtg/teleton-agent/commit/165cb2b7f7668ff682e3154230cccfea93df0ece))
+* **security:** обновить form-data для audit-ci ([f72153b](https://github.com/xlabtg/teleton-agent/commit/f72153b750757e6dd440af7869551a15ff819644))
+* **security:** обновить protobufjs для audit-ci ([3edda48](https://github.com/xlabtg/teleton-agent/commit/3edda48ba37ebf0842ae9618aa70a1928254ae06))
+* **security:** обновить protobufjs до безопасной версии ([3e538ad](https://github.com/xlabtg/teleton-agent/commit/3e538ad2fbfd968391fdff914d420c809d7c9d78))
+* **security:** обновить ws для audit-ci ([2a521ec](https://github.com/xlabtg/teleton-agent/commit/2a521ec4afdf78e1f7bdbe7c8a3cad26709b82c9))
+* **security:** укрепить права реальных файлов БД ([b6eed22](https://github.com/xlabtg/teleton-agent/commit/b6eed228e4f0e1b5d54d745e3384ae1d73056277))
+* **webui:** маскировать секреты MTProto proxy ([996f45c](https://github.com/xlabtg/teleton-agent/commit/996f45c46ff77d7c90287c391c77a7129fe64f62))
+* **webui:** маскировать секреты MTProto proxy ([9292b15](https://github.com/xlabtg/teleton-agent/commit/9292b15d387f309f323169913d19f03946b9e72b))
+* **webui:** очищать SSE listeners при ошибках стрима ([c7274d6](https://github.com/xlabtg/teleton-agent/commit/c7274d64ae754ef439f64e66acf697bec3bb947e))
+* **webui:** очищать SSE-listeners при ошибках стрима ([7a3b8fc](https://github.com/xlabtg/teleton-agent/commit/7a3b8fc371ca186af6831d5538617607ad546817))
+* **webui:** убрать записи из GET temporal context ([924a166](https://github.com/xlabtg/teleton-agent/commit/924a1665398794f25387aa06c4bdc7ce32735b38))
+* **webui:** убрать записи из GET temporal context ([01a740b](https://github.com/xlabtg/teleton-agent/commit/01a740b4fb3f60b626c4223038471059eabbe054))
+* **web:** исправить падения a11y-аудита ([a54a845](https://github.com/xlabtg/teleton-agent/commit/a54a8459df374d914a74fb49254e690d985759a9))
+* **web:** предотвратить сохранение Soul-буфера в другую вкладку ([6acf340](https://github.com/xlabtg/teleton-agent/commit/6acf340b0ab344995f955c799b7d0321644a9b0c))
+* **web:** предотвратить сохранение Soul-буфера в другую вкладку ([1925998](https://github.com/xlabtg/teleton-agent/commit/1925998f99d23e998343a58a2fb5523e6a86cf92))
+* защищает загрузчики WebUI от устаревших ответов ([d920e0b](https://github.com/xlabtg/teleton-agent/commit/d920e0bc3df0cc7d04c0f68b66bfa1c7e2ac91d2))
+
 ## [0.8.44](https://github.com/xlabtg/teleton-agent/compare/v0.8.43...v0.8.44) (2026-06-15)
 
 
