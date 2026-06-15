@@ -7,9 +7,11 @@ import {
   isIntegrationAuthType,
 } from "./base.js";
 import { ensureIntegrationTables } from "./storage.js";
+import { createPinnedOutboundFetch, validateResolvedOutboundUrl } from "../outbound-url-guard.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("IntegrationAuth");
+const OAUTH_TOKEN_URL_GUARD = { allowedProtocols: ["https:"] as const, label: "OAuth token URL" };
 
 interface CredentialRow {
   id: string;
@@ -61,6 +63,10 @@ const SECRET_KEYS = new Set([
 const MISSING_CREDENTIAL_KEY_ERROR =
   "Integration credential encryption key is required. Set TELETON_INTEGRATIONS_KEY " +
   "or integrations.credential_key before storing or reading integration credentials.";
+
+export async function validateOAuthTokenUrl(raw: string): Promise<void> {
+  await validateResolvedOutboundUrl(raw, OAUTH_TOKEN_URL_GUARD);
+}
 
 function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
@@ -351,25 +357,30 @@ async function requestOAuthToken(
   expiresIn?: number;
   scope?: string;
 }> {
-  const response = await fetch(tokenUrl, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams(params),
-  });
-  if (!response.ok) {
-    throw new Error(`OAuth token request failed with HTTP ${response.status}`);
+  const target = await createPinnedOutboundFetch(tokenUrl, OAUTH_TOKEN_URL_GUARD);
+  try {
+    const response = await target.fetch(target.url, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams(params),
+    });
+    if (!response.ok) {
+      throw new Error(`OAuth token request failed with HTTP ${response.status}`);
+    }
+    const json = (await response.json()) as OAuthTokenResponse;
+    if (typeof json.access_token !== "string" || json.access_token.length === 0) {
+      throw new Error("OAuth token response did not include access_token");
+    }
+    return {
+      accessToken: json.access_token,
+      refreshToken: typeof json.refresh_token === "string" ? json.refresh_token : undefined,
+      tokenType: typeof json.token_type === "string" ? json.token_type : "Bearer",
+      expiresIn: typeof json.expires_in === "number" ? json.expires_in : undefined,
+      scope: typeof json.scope === "string" ? json.scope : undefined,
+    };
+  } finally {
+    await target.close();
   }
-  const json = (await response.json()) as OAuthTokenResponse;
-  if (typeof json.access_token !== "string" || json.access_token.length === 0) {
-    throw new Error("OAuth token response did not include access_token");
-  }
-  return {
-    accessToken: json.access_token,
-    refreshToken: typeof json.refresh_token === "string" ? json.refresh_token : undefined,
-    tokenType: typeof json.token_type === "string" ? json.token_type : "Bearer",
-    expiresIn: typeof json.expires_in === "number" ? json.expires_in : undefined,
-    scope: typeof json.scope === "string" ? json.scope : undefined,
-  };
 }
 
 function readString(credentials: Record<string, unknown>, key: string): string {
