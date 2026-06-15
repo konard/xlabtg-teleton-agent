@@ -219,6 +219,25 @@ The Upstash index must be provisioned with the same dimension the embedding prov
 
 ---
 
+## feed
+
+Telegram feed retention for the SQLite `tg_messages` table, the local vector companion, and the FTS index. The memory scheduler applies both limits on each run.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `feed.retention_days` | `number` | `90` | Maximum age in days for retained Telegram feed messages. |
+| `feed.max_messages` | `number` | `100000` | Maximum feed messages retained after age-based pruning. |
+
+### Example
+
+```yaml
+feed:
+  retention_days: 90
+  max_messages: 100000
+```
+
+---
+
 ## deals
 
 Configuration for the peer-to-peer deals/escrow system.

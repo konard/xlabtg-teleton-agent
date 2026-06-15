@@ -27,6 +27,63 @@ function insertKnowledge(
   ).run(id, text, `hash-${id}`, createdAt, createdAt);
 }
 
+function ensureFeedVectorTable(db: InstanceType<typeof Database>): void {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS tg_messages_vec (
+      id TEXT PRIMARY KEY,
+      embedding BLOB NOT NULL
+    )
+  `);
+}
+
+function insertFeedMessage(
+  db: InstanceType<typeof Database>,
+  id: string,
+  text: string,
+  timestamp: number,
+  chatId = "chat-retention"
+): void {
+  db.prepare(`INSERT OR IGNORE INTO tg_chats (id, type, is_monitored) VALUES (?, 'dm', 1)`).run(
+    chatId
+  );
+  db.prepare(
+    `
+    INSERT INTO tg_messages (
+      id,
+      chat_id,
+      sender_id,
+      text,
+      embedding,
+      is_from_agent,
+      has_media,
+      timestamp
+    )
+    VALUES (?, ?, NULL, ?, NULL, 0, 0, ?)
+  `
+  ).run(id, chatId, text, timestamp);
+  db.prepare(`INSERT INTO tg_messages_vec (id, embedding) VALUES (?, ?)`).run(
+    id,
+    Buffer.from("vector")
+  );
+}
+
+function countFeedRows(db: InstanceType<typeof Database>, table: string, id: string): number {
+  return (db.prepare(`SELECT COUNT(*) AS c FROM ${table} WHERE id = ?`).get(id) as { c: number }).c;
+}
+
+function searchFeedToken(db: InstanceType<typeof Database>, token: string): Array<{ id: string }> {
+  return db
+    .prepare(
+      `
+      SELECT m.id
+      FROM tg_messages_fts mf
+      JOIN tg_messages m ON m.rowid = mf.rowid
+      WHERE tg_messages_fts MATCH ?
+    `
+    )
+    .all(token) as Array<{ id: string }>;
+}
+
 function createSemanticVectorStore(
   deleteRemote: (ids: string[]) => Promise<void>
 ): SemanticVectorStore {
@@ -194,5 +251,52 @@ describe("memory prioritization", () => {
     expect(deleteRemote).toHaveBeenCalledTimes(2);
     expect(deleteRemote).toHaveBeenLastCalledWith(["remote-stale"]);
     expect(retention.getPendingRemoteVectorDeletions()).toHaveLength(0);
+  });
+
+  it("prunes feed messages older than the configured window with vectors and FTS postings", async () => {
+    ensureFeedVectorTable(db);
+    const now = Math.floor(Date.now() / 1000);
+    insertFeedMessage(db, "feed-old", "oldtoken stale feed row", now - 40 * 24 * 60 * 60);
+    insertFeedMessage(db, "feed-new", "newtoken recent feed row", now - 2 * 24 * 60 * 60);
+
+    const retention = new MemoryRetentionService(db, {}, undefined, undefined, {
+      retention_days: 30,
+      max_messages: 100,
+    });
+
+    const result = await retention.pruneFeedMessages(now);
+
+    expect(result.deleted).toBe(1);
+    expect(countFeedRows(db, "tg_messages", "feed-old")).toBe(0);
+    expect(countFeedRows(db, "tg_messages_vec", "feed-old")).toBe(0);
+    expect(searchFeedToken(db, "oldtoken")).toHaveLength(0);
+    expect(countFeedRows(db, "tg_messages", "feed-new")).toBe(1);
+    expect(countFeedRows(db, "tg_messages_vec", "feed-new")).toBe(1);
+    expect(searchFeedToken(db, "newtoken")).toEqual([{ id: "feed-new" }]);
+  });
+
+  it("prunes feed overflow by keeping the newest configured number of messages", async () => {
+    ensureFeedVectorTable(db);
+    const now = Math.floor(Date.now() / 1000);
+    for (let i = 1; i <= 5; i++) {
+      insertFeedMessage(db, `feed-${i}`, `token${i} feed row`, now - (5 - i));
+    }
+
+    const retention = new MemoryRetentionService(db, {}, undefined, undefined, {
+      retention_days: 365,
+      max_messages: 3,
+    });
+
+    const result = await retention.pruneFeedMessages(now);
+    const remaining = db
+      .prepare(`SELECT id FROM tg_messages ORDER BY timestamp ASC`)
+      .all() as Array<{ id: string }>;
+
+    expect(result.deleted).toBe(2);
+    expect(remaining.map((row) => row.id)).toEqual(["feed-3", "feed-4", "feed-5"]);
+    expect(countFeedRows(db, "tg_messages_vec", "feed-1")).toBe(0);
+    expect(countFeedRows(db, "tg_messages_vec", "feed-2")).toBe(0);
+    expect(searchFeedToken(db, "token1")).toHaveLength(0);
+    expect(searchFeedToken(db, "token5")).toEqual([{ id: "feed-5" }]);
   });
 });

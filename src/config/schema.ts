@@ -397,6 +397,22 @@ const _MemoryObject = z.object({
 });
 export const MemoryConfigSchema = _MemoryObject.default(_MemoryObject.parse({}));
 
+const _FeedObject = z.object({
+  retention_days: z
+    .number()
+    .int()
+    .min(1)
+    .default(90)
+    .describe("Days to retain Telegram feed messages in tg_messages before pruning"),
+  max_messages: z
+    .number()
+    .int()
+    .min(1)
+    .default(100_000)
+    .describe("Maximum Telegram feed messages to keep after age-based pruning"),
+});
+export const FeedConfigSchema = _FeedObject.default(_FeedObject.parse({}));
+
 const _TemporalWeightingObject = z.object({
   enabled: z.boolean().default(true).describe("Enable temporal relevance weighting for RAG"),
   decay_curve: z
@@ -1019,6 +1035,7 @@ export const ConfigSchema = z.object({
   embedding: EmbeddingConfigSchema,
   vector_memory: VectorMemoryConfigSchema,
   memory: MemoryConfigSchema,
+  feed: FeedConfigSchema,
   audit_trail: AuditTrailConfigSchema,
   temporal_context: TemporalContextConfigSchema,
   self_correction: SelfCorrectionConfigSchema,
@@ -1143,6 +1160,7 @@ export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
 export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
 export type VectorMemoryConfig = z.infer<typeof VectorMemoryConfigSchema>;
 export type MemoryConfig = z.infer<typeof MemoryConfigSchema>;
+export type FeedConfig = z.infer<typeof _FeedObject>;
 export type AuditTrailConfig = z.infer<typeof _AuditTrailObject>;
 export type SelfCorrectionConfig = z.infer<typeof _SelfCorrectionObject>;
 export type MemoryPrioritizationConfig = z.infer<typeof _MemoryPrioritizationObject>;

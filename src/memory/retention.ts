@@ -13,6 +13,11 @@ export interface MemoryRetentionConfig {
   archive_days?: number;
 }
 
+export interface FeedRetentionConfig {
+  retention_days?: number;
+  max_messages?: number;
+}
+
 export interface MemoryCleanupCandidate {
   id: string;
   text: string;
@@ -62,11 +67,21 @@ export interface PendingRemoteVectorDeletion {
   updatedAt: number;
 }
 
+export interface FeedCleanupResult {
+  deleted: number;
+  vectorDeleted: number;
+  remoteDeleted: number;
+  ageDeleted: number;
+  overflowDeleted: number;
+}
+
 interface RetentionOptions {
   minScore: number;
   maxAgeDays: number;
   maxEntries: number;
   archiveDays: number;
+  feedRetentionDays: number;
+  feedMaxMessages: number;
 }
 
 interface MemoryRetentionRow {
@@ -111,11 +126,18 @@ interface PendingRemoteVectorDeletionRow {
   updated_at: number;
 }
 
+interface FeedCleanupCandidateRow {
+  id: string;
+  reason: "age" | "count";
+}
+
 const DEFAULT_RETENTION: RetentionOptions = {
   minScore: 0.1,
   maxAgeDays: 90,
   maxEntries: 10_000,
   archiveDays: 30,
+  feedRetentionDays: 90,
+  feedMaxMessages: 100_000,
 };
 
 function clamp01(value: number): number {
@@ -123,21 +145,30 @@ function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value));
 }
 
-function resolveRetention(config: MemoryRetentionConfig = {}): RetentionOptions {
+function positiveNumber(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function positiveInteger(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
+}
+
+function resolveRetention(
+  config: MemoryRetentionConfig = {},
+  feedConfig: FeedRetentionConfig = {}
+): RetentionOptions {
   return {
     minScore: clamp01(config.min_score ?? DEFAULT_RETENTION.minScore),
-    maxAgeDays:
-      typeof config.max_age_days === "number" && config.max_age_days > 0
-        ? config.max_age_days
-        : DEFAULT_RETENTION.maxAgeDays,
-    maxEntries:
-      typeof config.max_entries === "number" && config.max_entries > 0
-        ? Math.floor(config.max_entries)
-        : DEFAULT_RETENTION.maxEntries,
-    archiveDays:
-      typeof config.archive_days === "number" && config.archive_days > 0
-        ? config.archive_days
-        : DEFAULT_RETENTION.archiveDays,
+    maxAgeDays: positiveNumber(config.max_age_days, DEFAULT_RETENTION.maxAgeDays),
+    maxEntries: positiveInteger(config.max_entries, DEFAULT_RETENTION.maxEntries),
+    archiveDays: positiveNumber(config.archive_days, DEFAULT_RETENTION.archiveDays),
+    feedRetentionDays: positiveNumber(
+      feedConfig.retention_days,
+      DEFAULT_RETENTION.feedRetentionDays
+    ),
+    feedMaxMessages: positiveInteger(feedConfig.max_messages, DEFAULT_RETENTION.feedMaxMessages),
   };
 }
 
@@ -178,9 +209,10 @@ export class MemoryRetentionService {
     private db: Database.Database,
     config: MemoryRetentionConfig = {},
     scorer?: MemoryScorer,
-    private vectorStore?: SemanticVectorStore
+    private vectorStore?: SemanticVectorStore,
+    feedConfig: FeedRetentionConfig = {}
   ) {
-    this.options = resolveRetention(config);
+    this.options = resolveRetention(config, feedConfig);
     this.scorer = scorer ?? new MemoryScorer(db);
   }
 
@@ -494,6 +526,76 @@ export class MemoryRetentionService {
     return deleted;
   }
 
+  async pruneFeedMessages(now = Math.floor(Date.now() / 1000)): Promise<FeedCleanupResult> {
+    if (!this.tableExists("tg_messages")) {
+      return this.emptyFeedCleanupResult();
+    }
+
+    const candidates = this.getFeedCleanupCandidates(now);
+    if (candidates.length === 0) {
+      return this.emptyFeedCleanupResult();
+    }
+
+    const ids = [...new Set(candidates.map((row) => row.id))];
+    const ageIds = new Set(candidates.filter((row) => row.reason === "age").map((row) => row.id));
+    const overflowIds = new Set(
+      candidates.filter((row) => row.reason === "count").map((row) => row.id)
+    );
+    const hasMessageVec = this.tableExists("tg_messages_vec");
+
+    const local = this.db.transaction((messageIds: string[]) => {
+      const deleteVector = hasMessageVec
+        ? this.db.prepare(`DELETE FROM tg_messages_vec WHERE id = ?`)
+        : null;
+      const deleteMessage = this.db.prepare(`DELETE FROM tg_messages WHERE id = ?`);
+      let vectorDeleted = 0;
+      let deleted = 0;
+
+      for (const id of messageIds) {
+        vectorDeleted += deleteVector?.run(id).changes ?? 0;
+        deleted += deleteMessage.run(id).changes;
+      }
+
+      return { deleted, vectorDeleted };
+    })(ids);
+
+    let remoteDeleted = 0;
+    if (local.deleted > 0 && this.vectorStore?.isConfigured) {
+      try {
+        await this.vectorStore.deleteMessages(ids);
+        remoteDeleted = ids.length;
+      } catch (error) {
+        log.warn(
+          { err: error, pending: ids.length },
+          "Semantic message vector cleanup failed; local feed retention completed"
+        );
+      }
+    }
+
+    if (local.deleted > 0) {
+      log.debug(
+        {
+          deleted: local.deleted,
+          vectorDeleted: local.vectorDeleted,
+          remoteDeleted,
+          ageDeleted: ageIds.size,
+          overflowDeleted: overflowIds.size,
+          retentionDays: this.options.feedRetentionDays,
+          maxMessages: this.options.feedMaxMessages,
+        },
+        "Telegram feed retention pruned messages"
+      );
+    }
+
+    return {
+      deleted: local.deleted,
+      vectorDeleted: local.vectorDeleted,
+      remoteDeleted,
+      ageDeleted: ageIds.size,
+      overflowDeleted: overflowIds.size,
+    };
+  }
+
   private getRows(): MemoryRetentionRow[] {
     return this.db
       .prepare(
@@ -523,6 +625,46 @@ export class MemoryRetentionService {
       `
       )
       .all() as MemoryRetentionRow[];
+  }
+
+  private getFeedCleanupCandidates(now: number): FeedCleanupCandidateRow[] {
+    const cutoff = now - this.options.feedRetentionDays * SECONDS_PER_DAY;
+    return this.db
+      .prepare(
+        `
+        WITH expired AS (
+          SELECT id, 'age' AS reason
+          FROM tg_messages
+          WHERE timestamp < ?
+        ),
+        ranked_remaining AS (
+          SELECT
+            id,
+            ROW_NUMBER() OVER (ORDER BY timestamp DESC, rowid DESC) AS retention_rank
+          FROM tg_messages
+          WHERE timestamp >= ?
+        ),
+        overflow AS (
+          SELECT id, 'count' AS reason
+          FROM ranked_remaining
+          WHERE retention_rank > ?
+        )
+        SELECT id, reason FROM expired
+        UNION ALL
+        SELECT id, reason FROM overflow
+      `
+      )
+      .all(cutoff, cutoff, this.options.feedMaxMessages) as FeedCleanupCandidateRow[];
+  }
+
+  private emptyFeedCleanupResult(): FeedCleanupResult {
+    return {
+      deleted: 0,
+      vectorDeleted: 0,
+      remoteDeleted: 0,
+      ageDeleted: 0,
+      overflowDeleted: 0,
+    };
   }
 
   private getCandidateReasons(
