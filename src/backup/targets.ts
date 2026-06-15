@@ -24,20 +24,20 @@ export interface BackupTarget {
 }
 
 /** Top-level SQLite databases stored directly under TELETON_ROOT. */
-const SQLITE_FILES = ["memory.db", "deals.db"];
+export const SQLITE_FILES = ["memory.db", "deals.db"] as const;
 
 /**
  * Plain files (non-SQLite) under TELETON_ROOT that hold critical state.
  * wallet.json holds the (encrypted) TON mnemonic; the session/offset files
  * keep the Telegram login alive.
  */
-const PLAIN_FILES = [
+export const PLAIN_FILES = [
   "config.yaml",
   "wallet.json",
   "telegram_session.txt",
   "gramjs_bot_session.txt",
   "telegram-offset.json",
-];
+] as const;
 
 /** Directories copied recursively. */
 const DIRECTORIES = ["workspace"];

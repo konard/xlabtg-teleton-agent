@@ -9,22 +9,24 @@ import { chmodSync, existsSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import { TELETON_ROOT, WORKSPACE_PATHS } from "./paths.js";
 import { createLogger } from "../utils/logger.js";
+import { PLAIN_FILES, SQLITE_FILES } from "../backup/targets.js";
 
 const log = createLogger("Permissions");
 
 const TARGET_MODE = 0o600;
 const TARGET_DIR_MODE = 0o700;
 
+const SQLITE_SIDECAR_SUFFIXES = ["-wal", "-shm", "-journal"] as const;
+
+function sqliteFilesWithSidecars(): string[] {
+  return SQLITE_FILES.flatMap((file) => [
+    file,
+    ...SQLITE_SIDECAR_SUFFIXES.map((suffix) => `${file}${suffix}`),
+  ]);
+}
+
 /** Files in TELETON_ROOT that should be 0o600 */
-const ROOT_FILES = [
-  "config.yaml",
-  "wallet.json",
-  "telegram_session.txt",
-  "telegram-offset.json",
-  "teleton.db",
-  "teleton.db-wal",
-  "teleton.db-shm",
-];
+const ROOT_FILES = [...PLAIN_FILES, ...sqliteFilesWithSidecars()];
 
 /** Directories that should be 0o700 */
 const SECURE_DIRS = ["secrets", "plugins", "tls"];
