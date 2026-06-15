@@ -38,40 +38,62 @@ export function createNotificationsRoutes(deps: WebUIServerDeps) {
   app.get("/stream", (c) => {
     return streamSSE(c, async (stream) => {
       let aborted = false;
-
-      stream.onAbort(() => {
-        aborted = true;
-      });
-
-      // Send current unread count immediately on connect
-      try {
-        const count = svc().unreadCount();
-        await stream.writeSSE({
-          event: "unread-count",
-          data: JSON.stringify({ count }),
-        });
-      } catch {
-        // db may not be ready yet — ignore
-      }
+      let listening = false;
 
       const onUpdate = (count: number) => {
         if (aborted) return;
-        void stream.writeSSE({
-          event: "unread-count",
-          data: JSON.stringify({ count }),
-        });
+        void stream
+          .writeSSE({
+            event: "unread-count",
+            data: JSON.stringify({ count }),
+          })
+          .catch(() => {
+            aborted = true;
+            cleanup();
+          });
       };
 
-      notificationBus.on("update", onUpdate);
-
-      // Heartbeat to keep connection alive
-      while (!aborted) {
-        await stream.sleep(30_000);
-        if (aborted) break;
-        await stream.writeSSE({ event: "ping", data: "" });
+      function cleanup() {
+        if (!listening) return;
+        listening = false;
+        notificationBus.off("update", onUpdate);
       }
 
-      notificationBus.off("update", onUpdate);
+      stream.onAbort(() => {
+        aborted = true;
+        cleanup();
+      });
+
+      try {
+        // Send current unread count immediately on connect. DB readiness errors
+        // are ignored; stream write errors must still reach finally cleanup.
+        let count: number | null = null;
+        try {
+          count = svc().unreadCount();
+        } catch {
+          count = null;
+        }
+        if (count !== null && !aborted) {
+          await stream.writeSSE({
+            event: "unread-count",
+            data: JSON.stringify({ count }),
+          });
+        }
+
+        if (aborted) return;
+
+        notificationBus.on("update", onUpdate);
+        listening = true;
+
+        // Heartbeat to keep connection alive
+        while (!aborted) {
+          await stream.sleep(30_000);
+          if (aborted) break;
+          await stream.writeSSE({ event: "ping", data: "" });
+        }
+      } finally {
+        cleanup();
+      }
     });
   });
 
