@@ -170,6 +170,7 @@
     },
     "path-to-regexp": ">=8.4.0",
     "picomatch": ">=4.0.4",
+    "protobufjs": "7.6.4",
     "smol-toml": ">=1.6.1",
     "vite": "^7.3.2"
   }
