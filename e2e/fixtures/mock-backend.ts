@@ -45,6 +45,12 @@ export interface MockBackendOptions {
   sources?: MemorySourceFixture[];
   /** Initial security settings returned by GET /api/security/settings. */
   securitySettings?: SecuritySettingsFixture;
+  /** Seed Soul editor files returned by GET /api/soul/:file. */
+  soulFiles?: Record<string, string>;
+  /** Artificial GET delays for specific Soul files, in milliseconds. */
+  soulLoadDelayMs?: Record<string, number>;
+  /** Observe Soul editor PUT requests. */
+  onSoulUpdate?: (filename: string, content: string) => void;
 }
 
 const NOW = Date.UTC(2026, 0, 1, 12, 0, 0); // fixed clock for determinism
@@ -118,6 +124,18 @@ const DEFAULT_SECURITY: SecuritySettingsFixture = {
   rate_limit_rpm: 120,
 };
 
+const DEFAULT_SOUL_FILES: Record<string, string> = {
+  "SOUL.md": "# SOUL\n\nInitial soul content.",
+  "SECURITY.md": "# SECURITY\n\nInitial security content.",
+  "STRATEGY.md": "# STRATEGY\n\nInitial strategy content.",
+  "MEMORY.md": "# MEMORY\n\nInitial memory content.",
+  "HEARTBEAT.md": "# HEARTBEAT\n\nInitial heartbeat content.",
+};
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Install the mock backend on a page. Call this BEFORE page.goto().
  */
@@ -133,6 +151,7 @@ export async function setupMockBackend(
   const sources = options.sources ?? DEFAULT_SOURCES;
   let security: SecuritySettingsFixture = { ...(options.securitySettings ?? DEFAULT_SECURITY) };
   const pipelines: unknown[] = [];
+  const soulFiles: Record<string, string> = { ...DEFAULT_SOUL_FILES, ...options.soulFiles };
 
   await page.route("**/*", async (route) => {
     const request = route.request();
@@ -309,6 +328,26 @@ export async function setupMockBackend(
     // ── Memory ─────────────────────────────────────────────────────────
     if (path === "/api/memory/sources") {
       return json(route, ok(sources));
+    }
+
+    // ── Soul editor ────────────────────────────────────────────────────
+    const soulFileMatch = path.match(/^\/api\/soul\/([^/]+)$/);
+    if (soulFileMatch) {
+      const filename = decodeURIComponent(soulFileMatch[1]);
+      if (method === "GET") {
+        const loadDelayMs = options.soulLoadDelayMs?.[filename] ?? 0;
+        if (loadDelayMs > 0) {
+          await delay(loadDelayMs);
+        }
+        return json(route, ok({ content: soulFiles[filename] ?? "" }));
+      }
+      if (method === "PUT") {
+        const payload = JSON.parse(request.postData() || "{}") as { content?: string };
+        const content = payload.content ?? "";
+        soulFiles[filename] = content;
+        options.onSoulUpdate?.(filename, content);
+        return json(route, ok({ message: `${filename} saved` }));
+      }
     }
 
     // ── Pipelines ──────────────────────────────────────────────────────
