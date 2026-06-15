@@ -2,6 +2,7 @@ import { telegramSendPhotoTool, telegramSendPhotoExecutor } from "./send-photo.j
 import { telegramSendVoiceTool, telegramSendVoiceExecutor } from "./send-voice.js";
 import { telegramSendStickerTool, telegramSendStickerExecutor } from "./send-sticker.js";
 import { telegramSendGifTool, telegramSendGifExecutor } from "./send-gif.js";
+import { telegramSendVideoTool, telegramSendVideoExecutor } from "./send-video.js";
 import { telegramDownloadMediaTool, telegramDownloadMediaExecutor } from "./download-media.js";
 import { visionAnalyzeTool, visionAnalyzeExecutor } from "./vision-analyze.js";
 import {
@@ -14,6 +15,7 @@ export { telegramSendPhotoTool, telegramSendPhotoExecutor };
 export { telegramSendVoiceTool, telegramSendVoiceExecutor };
 export { telegramSendStickerTool, telegramSendStickerExecutor };
 export { telegramSendGifTool, telegramSendGifExecutor };
+export { telegramSendVideoTool, telegramSendVideoExecutor };
 export { telegramDownloadMediaTool, telegramDownloadMediaExecutor };
 export { visionAnalyzeTool, visionAnalyzeExecutor };
 export { telegramTranscribeAudioTool, telegramTranscribeAudioExecutor };
@@ -40,6 +42,12 @@ export const tools: ToolEntry[] = [
   {
     tool: telegramSendGifTool,
     executor: telegramSendGifExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendVideoTool,
+    executor: telegramSendVideoExecutor,
     mode: "user",
     tags: ["media"],
   },

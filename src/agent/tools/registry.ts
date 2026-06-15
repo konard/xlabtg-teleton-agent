@@ -1,5 +1,6 @@
 import { validateToolCall } from "@mariozechner/pi-ai";
 import type { Tool as PiAiTool, ToolCall } from "@mariozechner/pi-ai";
+import { validateToolExecution } from "./validation.js";
 import type { TSchema } from "@sinclair/typebox";
 import type {
   RegisteredTool,
@@ -234,6 +235,32 @@ export class ToolRegistry {
 
     try {
       const validatedArgs = validateToolCall(this.getAll(), toolCall);
+
+      // Zero-trust policy enforcement (fork feature): deny / require approval
+      // for tool calls that match a configured PolicyEngine rule.
+      const validationDb = this.db ?? context.db;
+      if (validationDb) {
+        const validation = await validateToolExecution({
+          db: validationDb,
+          tool: toolCall.name,
+          params: validatedArgs,
+          context,
+          module: null,
+        });
+        if (validation.decision !== "allow") {
+          return {
+            success: false,
+            error:
+              validation.decision === "require_approval"
+                ? `Tool "${toolCall.name}" requires approval (${validation.approvalId}): ${validation.reason}`
+                : validation.reason,
+            data:
+              validation.decision === "require_approval"
+                ? { approvalId: validation.approvalId, decision: validation.decision }
+                : { decision: validation.decision },
+          };
+        }
+      }
 
       let timeoutHandle: ReturnType<typeof setTimeout>;
       const result = await Promise.race([
