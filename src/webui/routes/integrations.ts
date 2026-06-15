@@ -8,6 +8,7 @@ import {
   type IntegrationConfig,
   isIntegrationAuthType,
   isIntegrationType,
+  validateOAuthTokenUrl,
 } from "../../services/integrations/index.js";
 import { getErrorMessage } from "../../utils/errors.js";
 
@@ -242,6 +243,14 @@ export function createIntegrationsRoutes(deps: WebUIServerDeps): Hono {
       if (!code) return c.json<APIResponse>({ success: false, error: "code is required" }, 400);
       if (!redirectUri) {
         return c.json<APIResponse>({ success: false, error: "redirectUri is required" }, 400);
+      }
+      try {
+        await validateOAuthTokenUrl(tokenUrl);
+      } catch (error) {
+        return c.json<APIResponse>(
+          { success: false, error: `tokenUrl is not allowed: ${getErrorMessage(error)}` },
+          400
+        );
       }
       const credential = await registry.auth.exchangeOAuthCode({
         integrationId: c.req.param("id"),

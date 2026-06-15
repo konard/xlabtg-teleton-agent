@@ -3,6 +3,12 @@ import Database from "better-sqlite3";
 import { IntegrationAuthManager } from "../auth.js";
 import { ensureIntegrationTables } from "../storage.js";
 
+const dnsMocks = vi.hoisted(() => ({
+  lookup: vi.fn(),
+}));
+
+vi.mock("node:dns/promises", () => dnsMocks);
+
 vi.mock("../../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
     info: vi.fn(),
@@ -23,6 +29,8 @@ describe("IntegrationAuthManager — WORK4-003 regression", () => {
     db.prepare(
       `INSERT INTO integrations (id, name, type, provider) VALUES ('svc', 'Test', 'api', 'custom-http')`
     ).run();
+    dnsMocks.lookup.mockReset();
+    dnsMocks.lookup.mockResolvedValue([{ address: "93.184.216.34", family: 4 }]);
     delete process.env.TELETON_INTEGRATIONS_KEY;
   });
 
@@ -113,5 +121,101 @@ describe("IntegrationAuthManager — WORK4-003 regression", () => {
     const retrieved = manager.getCredential(cred.id);
     expect(retrieved).not.toBeNull();
     expect(retrieved!.credentials.apiKey).toBe("env-secret");
+  });
+
+  it("exchanges OAuth codes through a pinned fetch dispatcher", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          access_token: "access-token",
+          refresh_token: "refresh-token",
+          token_type: "Bearer",
+          expires_in: 3600,
+          scope: "read",
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      )
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new IntegrationAuthManager(db, "a".repeat(64));
+
+    const credential = await manager.exchangeOAuthCode({
+      integrationId: "svc",
+      tokenUrl: "https://oauth.example.com/token",
+      clientId: "client-id",
+      code: "oauth-code",
+      redirectUri: "https://teleton.example.com/oauth/callback",
+    });
+
+    expect(dnsMocks.lookup).toHaveBeenCalledWith("oauth.example.com", {
+      all: true,
+      verbatim: true,
+    });
+    expect(fetchMock).toHaveBeenCalledOnce();
+    const [url, init] = fetchMock.mock.calls[0] as [URL, RequestInit & { dispatcher?: unknown }];
+    expect(String(url)).toBe("https://oauth.example.com/token");
+    expect(init.dispatcher).toBeDefined();
+    expect(init.redirect).toBe("manual");
+    expect(init.method).toBe("POST");
+    expect(String(init.body)).toContain("grant_type=authorization_code");
+    expect(credential.credentials).toMatchObject({
+      accessToken: "access-token",
+      refreshToken: "refresh-token",
+      tokenType: "Bearer",
+      tokenUrl: "https://oauth.example.com/token",
+    });
+  });
+
+  it("rejects OAuth tokenUrl values targeting metadata IPs before fetch", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "access-token" }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new IntegrationAuthManager(db, "a".repeat(64));
+
+    await expect(
+      manager.exchangeOAuthCode({
+        integrationId: "svc",
+        tokenUrl: "https://169.254.169.254/latest/meta-data/",
+        clientId: "client-id",
+        code: "oauth-code",
+        redirectUri: "https://teleton.example.com/oauth/callback",
+      })
+    ).rejects.toThrow(/private|loopback|metadata|not allowed/i);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    const row = db.prepare("SELECT id FROM integration_credentials").get();
+    expect(row).toBeUndefined();
+  });
+
+  it("rejects OAuth tokenUrl values whose hostname resolves to metadata IPs", async () => {
+    dnsMocks.lookup.mockResolvedValueOnce([{ address: "169.254.169.254", family: 4 }]);
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ access_token: "access-token" }), {
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new IntegrationAuthManager(db, "a".repeat(64));
+
+    await expect(
+      manager.exchangeOAuthCode({
+        integrationId: "svc",
+        tokenUrl: "https://rebind.example.com/oauth/token",
+        clientId: "client-id",
+        code: "oauth-code",
+        redirectUri: "https://teleton.example.com/oauth/callback",
+      })
+    ).rejects.toThrow(/private|loopback|metadata|not allowed/i);
+
+    expect(dnsMocks.lookup).toHaveBeenCalledWith("rebind.example.com", {
+      all: true,
+      verbatim: true,
+    });
+    expect(fetchMock).not.toHaveBeenCalled();
+    const row = db.prepare("SELECT id FROM integration_credentials").get();
+    expect(row).toBeUndefined();
   });
 });
