@@ -132,6 +132,19 @@ telegram:
   api_id: 12345
 `;
 
+// Config with an empty phone in user mode — the exact scenario reported in #628.
+// The agent failed to start and only printed a raw Zod JSON dump.
+const EMPTY_PHONE_USER_MODE = `
+agent:
+  api_key: sk-ant-test
+  provider: anthropic
+telegram:
+  mode: user
+  api_id: 12345
+  api_hash: abcdef
+  phone: ""
+`;
+
 // Config with invalid types
 const INVALID_TYPES = `
 agent:
@@ -376,6 +389,25 @@ describe("Config Loader", () => {
     it("should reject invalid provider names", () => {
       writeTestConfig(INVALID_PROVIDER);
       expect(() => loadConfig(TEST_CONFIG_PATH)).toThrow(/Invalid config/);
+    });
+
+    it("should report a human-readable, actionable error for empty phone in user mode (#628)", () => {
+      writeTestConfig(EMPTY_PHONE_USER_MODE);
+
+      let message = "";
+      try {
+        loadConfig(TEST_CONFIG_PATH);
+      } catch (error) {
+        message = (error as Error).message;
+      }
+
+      // No raw JSON dump — the field path, the validation message, the config
+      // file path, and the recovery hint must all be present and readable.
+      expect(message).toContain("telegram.phone: phone is required in user mode");
+      expect(message).toContain(TEST_CONFIG_PATH);
+      expect(message).toContain("teleton setup");
+      expect(message).not.toContain('"code":');
+      expect(message).not.toContain('"path":');
     });
   });
 
