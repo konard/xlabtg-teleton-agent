@@ -92,6 +92,89 @@ describe("MTProto routes", () => {
     ]);
   });
 
+  it("masks proxy secrets in config reads", async () => {
+    const app = buildApp({
+      mtproto: {
+        enabled: true,
+        proxies,
+        bot_api_proxy: "http://proxy-user:proxy-password@localhost:8080",
+      },
+    });
+
+    const res = await app.request("/mtproto");
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.enabled).toBe(true);
+    expect(json.data.bot_api_proxy).toContain("****:****@localhost:8080");
+    expect(json.data.bot_api_proxy).not.toContain("proxy-user");
+    expect(json.data.bot_api_proxy).not.toContain("proxy-password");
+    expect(json.data.proxies).toHaveLength(2);
+    expect(json.data.proxies[0]).toMatchObject({
+      server: "proxy1.example.com",
+      port: 443,
+    });
+    expect(json.data.proxies[0].secret).not.toBe(proxies[0].secret);
+    expect(json.data.proxies[0].secret).toMatch(/\*+aaaa$/);
+    expect(JSON.stringify(json)).not.toContain(proxies[0].secret);
+    expect(JSON.stringify(json)).not.toContain(proxies[1].secret);
+  });
+
+  it("preserves stored proxy secrets when saving an unchanged masked config response", async () => {
+    const config = {
+      telegram: { api_id: 12345, api_hash: "hash" },
+      mtproto: { enabled: true, proxies },
+    };
+    const app = buildApp(config);
+
+    const configRes = await app.request("/mtproto");
+    const configJson = await configRes.json();
+    const maskedProxies = configJson.data.proxies;
+
+    expect(maskedProxies[0].secret).not.toBe(proxies[0].secret);
+
+    mockExistsSync.mockReturnValue(true);
+    mockReadFileSync.mockReturnValue(
+      "agent:\n" +
+        "  provider: openai\n" +
+        "  model: gpt-4o-mini\n" +
+        "  api_key: sk-testkey123456\n" +
+        "telegram:\n" +
+        "  api_id: 12345\n" +
+        "  api_hash: hash\n" +
+        "  phone: '+1234567890'\n" +
+        "mtproto:\n" +
+        "  enabled: true\n" +
+        "  proxies:\n" +
+        "    - server: proxy1.example.com\n" +
+        "      port: 443\n" +
+        `      secret: ${proxies[0].secret}\n` +
+        "    - server: proxy2.example.com\n" +
+        "      port: 8443\n" +
+        `      secret: ${proxies[1].secret}\n`
+    );
+
+    const saveRes = await app.request("/mtproto/proxies", {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ proxies: maskedProxies }),
+    });
+    const saveJson = await saveRes.json();
+
+    expect(saveRes.status).toBe(200);
+    expect(saveJson.success).toBe(true);
+    expect(JSON.stringify(saveJson)).not.toContain(proxies[0].secret);
+    expect(JSON.stringify(saveJson)).not.toContain(proxies[1].secret);
+    expect(config.mtproto.proxies).toEqual(proxies);
+
+    const writtenYaml = mockWriteFileSync.mock.calls.at(-1)?.[1] as string;
+    expect(writtenYaml).toContain(`secret: ${proxies[0].secret}`);
+    expect(writtenYaml).toContain(`secret: ${proxies[1].secret}`);
+    expect(writtenYaml).not.toContain(maskedProxies[0].secret);
+    expect(writtenYaml).not.toContain(maskedProxies[1].secret);
+  });
+
   it("returns per-proxy availability and latency without exposing proxy secrets", async () => {
     const app = buildApp({
       telegram: { api_id: 12345, api_hash: "hash" },
@@ -210,7 +293,14 @@ describe("MTProto routes", () => {
     expect(res.status).toBe(200);
     expect(json.success).toBe(true);
     expect(json.data.proxies).toEqual([
+      { server: "proxy.example.com", port: 443, secret: expect.stringMatching(/\*+6f6d$/) },
+    ]);
+    expect(JSON.stringify(json)).not.toContain(tlsSecret);
+    expect(config.mtproto.proxies).toEqual([
       { server: "proxy.example.com", port: 443, secret: tlsSecret },
     ]);
+
+    const writtenYaml = mockWriteFileSync.mock.calls.at(-1)?.[1] as string;
+    expect(writtenYaml).toContain(`secret: ${tlsSecret}`);
   });
 });
