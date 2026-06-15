@@ -1,8 +1,9 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { Hono } from "hono";
 import Database from "better-sqlite3";
 import { ensureSchema } from "../../memory/schema.js";
 import { BehaviorTracker } from "../../services/behavior-tracker.js";
+import { TemporalContextService } from "../../services/temporal-context.js";
 import { createTemporalRoutes } from "../routes/temporal.js";
 import type { WebUIServerDeps } from "../types.js";
 
@@ -52,6 +53,7 @@ describe("Temporal WebUI routes", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     db.close();
   });
 
@@ -63,6 +65,17 @@ describe("Temporal WebUI routes", () => {
     expect(json.success).toBe(true);
     expect(json.data.metadata.dayName).toBe("Friday");
     expect(json.data.metadata.hourOfDay).toBe(9);
+  });
+
+  it("GET /context/temporal does not run temporal write operations", async () => {
+    const syncSpy = vi.spyOn(TemporalContextService.prototype, "syncTemporalMetadata");
+    const analyzeSpy = vi.spyOn(TemporalContextService.prototype, "analyzeAndStorePatterns");
+
+    const res = await app.request("/context/temporal?time=2026-04-24T09:00:00Z");
+
+    expect(res.status).toBe(200);
+    expect(syncSpy).not.toHaveBeenCalled();
+    expect(analyzeSpy).not.toHaveBeenCalled();
   });
 
   it("GET /context/patterns returns detected temporal patterns", async () => {
@@ -79,6 +92,9 @@ describe("Temporal WebUI routes", () => {
       timestamp: Date.parse("2026-05-01T09:00:00Z") / 1000,
     });
 
+    const analyzeRes = await app.request("/context/patterns/analyze", { method: "POST" });
+    expect(analyzeRes.status).toBe(200);
+
     const res = await app.request("/context/patterns?includeDisabled=true");
     expect(res.status).toBe(200);
     const json = await res.json();
@@ -86,6 +102,39 @@ describe("Temporal WebUI routes", () => {
     expect(json.success).toBe(true);
     expect(json.data.length).toBeGreaterThan(0);
     expect(json.data[0].description).toContain("weekly review");
+  });
+
+  it("GET /context/patterns does not run temporal pattern analysis", async () => {
+    const analyzeSpy = vi.spyOn(TemporalContextService.prototype, "analyzeAndStorePatterns");
+
+    const res = await app.request("/context/patterns?includeDisabled=true");
+
+    expect(res.status).toBe(200);
+    expect(analyzeSpy).not.toHaveBeenCalled();
+  });
+
+  it("POST /context/temporal/sync runs metadata synchronization", async () => {
+    const syncSpy = vi.spyOn(TemporalContextService.prototype, "syncTemporalMetadata");
+
+    const res = await app.request("/context/temporal/sync", { method: "POST" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.synced).toBeGreaterThanOrEqual(0);
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("POST /context/patterns/analyze runs temporal pattern analysis", async () => {
+    const analyzeSpy = vi.spyOn(TemporalContextService.prototype, "analyzeAndStorePatterns");
+
+    const res = await app.request("/context/patterns/analyze", { method: "POST" });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json.success).toBe(true);
+    expect(json.data.upserted).toBeGreaterThanOrEqual(0);
+    expect(analyzeSpy).toHaveBeenCalledTimes(1);
   });
 
   it("PUT /context/patterns/:id updates a stored pattern", async () => {
@@ -101,6 +150,9 @@ describe("Temporal WebUI routes", () => {
       text: "deploy check",
       timestamp: Date.parse("2026-05-01T09:00:00Z") / 1000,
     });
+
+    const analyzeRes = await app.request("/context/patterns/analyze", { method: "POST" });
+    expect(analyzeRes.status).toBe(200);
 
     const patternsRes = await app.request("/context/patterns?includeDisabled=true");
     const patternsJson = await patternsRes.json();

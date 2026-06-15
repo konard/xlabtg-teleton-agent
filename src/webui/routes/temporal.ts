@@ -38,7 +38,6 @@ export function createTemporalRoutes(deps: WebUIServerDeps) {
   app.get("/temporal", (c) => {
     try {
       const service = getService(deps);
-      service.syncTemporalMetadata();
       const data = service.getCurrentTemporalContext({
         time: c.req.query("time") ?? undefined,
         limit: parseLimit(c.req.query("limit"), 5),
@@ -50,14 +49,35 @@ export function createTemporalRoutes(deps: WebUIServerDeps) {
     }
   });
 
+  app.post("/temporal/sync", (c) => {
+    try {
+      const service = getService(deps);
+      const data = service.syncTemporalMetadata();
+      const response: APIResponse<typeof data> = { success: true, data };
+      return c.json(response);
+    } catch (error) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
+    }
+  });
+
   app.get("/patterns", (c) => {
     try {
       const service = getService(deps);
-      service.analyzeAndStorePatterns();
       const data = service.listPatterns({
         includeDisabled: c.req.query("includeDisabled") === "true",
         limit: parseLimit(c.req.query("limit"), 100),
       });
+      const response: APIResponse<typeof data> = { success: true, data };
+      return c.json(response);
+    } catch (error) {
+      return c.json<APIResponse>({ success: false, error: getErrorMessage(error) }, 500);
+    }
+  });
+
+  app.post("/patterns/analyze", (c) => {
+    try {
+      const service = getService(deps);
+      const data = service.analyzeAndStorePatterns();
       const response: APIResponse<typeof data> = { success: true, data };
       return c.json(response);
     } catch (error) {
