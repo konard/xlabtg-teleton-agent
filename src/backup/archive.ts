@@ -5,14 +5,21 @@
 // `teleton backup` can also be inspected/extracted with the system `tar`
 // utility (and vice-versa), while keeping the tooling fully cross-platform and
 // free of native/3rd-party archiving dependencies.
+//
+// Long file names (> 100 bytes in UTF-8, e.g. paths with non-ASCII characters)
+// are handled via the GNU tar LongLink extension (type flag 'L'): a synthetic
+// ././@LongLink entry carrying the full UTF-8 name precedes the real entry,
+// which stores a truncated placeholder in its own 100-byte name field.  All
+// major tar implementations (GNU tar, BSD tar, Windows bsdtar, 7-Zip) read
+// this extension transparently.
 
 import { gzipSync, gunzipSync } from "zlib";
 
 const BLOCK_SIZE = 512;
-// `name` field of the ustar header is 100 bytes. We keep archive entry names
-// short (relative paths inside the backup) so the `prefix` field is never
-// required.
+// `name` field of the ustar header is 100 bytes.
 const MAX_NAME_LENGTH = 100;
+// GNU tar LongLink pseudo-file name.
+const GNU_LONGLINK = "././@LongLink";
 
 export interface ArchiveEntry {
   /** Relative path stored inside the archive (POSIX separators). */
@@ -37,19 +44,24 @@ function writeOctal(block: Buffer, value: number, offset: number, length: number
   block[offset + length - 1] = 0;
 }
 
-function buildHeader(entry: ArchiveEntry): Buffer {
-  if (Buffer.byteLength(entry.name, "utf-8") > MAX_NAME_LENGTH) {
-    throw new Error(`Archive entry name too long (max ${MAX_NAME_LENGTH} bytes): ${entry.name}`);
-  }
-
+function buildHeader(
+  name: string,
+  dataLength: number,
+  typeflag: string,
+  mode: number,
+  mtime: number
+): Buffer {
   const header = Buffer.alloc(BLOCK_SIZE, 0);
-  writeString(header, entry.name, 0, 100);
-  writeOctal(header, entry.mode ?? 0o644, 100, 8);
+  // Always write only the first MAX_NAME_LENGTH bytes of the ASCII representation.
+  // For regular entries with long names the full name is stored in a preceding
+  // GNU LongLink entry; the truncated name here acts as a human-readable hint.
+  writeString(header, name.slice(0, MAX_NAME_LENGTH), 0, MAX_NAME_LENGTH);
+  writeOctal(header, mode, 100, 8);
   writeOctal(header, 0, 108, 8); // uid
   writeOctal(header, 0, 116, 8); // gid
-  writeOctal(header, entry.data.length, 124, 12);
-  writeOctal(header, Math.floor(entry.mtime ?? 0), 136, 12);
-  header[156] = "0".charCodeAt(0); // typeflag: normal file
+  writeOctal(header, dataLength, 124, 12);
+  writeOctal(header, Math.floor(mtime), 136, 12);
+  header[156] = typeflag.charCodeAt(0);
   writeString(header, "ustar", 257, 6); // magic (NUL-terminated)
   header[263] = "0".charCodeAt(0); // version
   header[264] = "0".charCodeAt(0);
@@ -71,14 +83,32 @@ function padToBlock(size: number): number {
   return remainder === 0 ? 0 : BLOCK_SIZE - remainder;
 }
 
+/** Append a single entry (with optional GNU LongLink preamble) to the chunk list. */
+function pushEntry(chunks: Buffer[], entry: ArchiveEntry): void {
+  const nameBytes = Buffer.byteLength(entry.name, "utf-8");
+
+  if (nameBytes > MAX_NAME_LENGTH) {
+    // Emit a GNU LongLink entry that carries the full UTF-8 name.
+    const longData = Buffer.from(entry.name + "\0", "utf-8");
+    chunks.push(buildHeader(GNU_LONGLINK, longData.length, "L", 0o644, 0));
+    chunks.push(longData);
+    const longPad = padToBlock(longData.length);
+    if (longPad > 0) chunks.push(Buffer.alloc(longPad, 0));
+  }
+
+  chunks.push(
+    buildHeader(entry.name, entry.data.length, "0", entry.mode ?? 0o644, entry.mtime ?? 0)
+  );
+  chunks.push(entry.data);
+  const padding = padToBlock(entry.data.length);
+  if (padding > 0) chunks.push(Buffer.alloc(padding, 0));
+}
+
 /** Build an uncompressed tar buffer from the given entries. */
 export function createTar(entries: ArchiveEntry[]): Buffer {
   const chunks: Buffer[] = [];
   for (const entry of entries) {
-    chunks.push(buildHeader(entry));
-    chunks.push(entry.data);
-    const padding = padToBlock(entry.data.length);
-    if (padding > 0) chunks.push(Buffer.alloc(padding, 0));
+    pushEntry(chunks, entry);
   }
   // Two zero-filled blocks mark the end of the archive.
   chunks.push(Buffer.alloc(BLOCK_SIZE * 2, 0));
@@ -89,6 +119,7 @@ export function createTar(entries: ArchiveEntry[]): Buffer {
 export function parseTar(buffer: Buffer): ArchiveEntry[] {
   const entries: ArchiveEntry[] = [];
   let offset = 0;
+  let pendingLongName: string | null = null;
 
   while (offset + BLOCK_SIZE <= buffer.length) {
     const header = buffer.subarray(offset, offset + BLOCK_SIZE);
@@ -96,7 +127,8 @@ export function parseTar(buffer: Buffer): ArchiveEntry[] {
     // End-of-archive marker: a fully zeroed block.
     if (header.every((byte) => byte === 0)) break;
 
-    const name = header.subarray(0, 100).toString("ascii").replace(/\0.*$/, "");
+    const headerName = header.subarray(0, 100).toString("ascii").replace(/\0.*$/, "");
+    const typeflag = String.fromCharCode(header[156]);
     const sizeField = header.subarray(124, 136).toString("ascii").replace(/\0.*$/, "").trim();
     const size = parseInt(sizeField, 8) || 0;
     const modeField = header.subarray(100, 108).toString("ascii").replace(/\0.*$/, "").trim();
@@ -105,6 +137,15 @@ export function parseTar(buffer: Buffer): ArchiveEntry[] {
     offset += BLOCK_SIZE;
     const data = Buffer.from(buffer.subarray(offset, offset + size));
     offset += size + padToBlock(size);
+
+    if (typeflag === "L" && headerName === GNU_LONGLINK) {
+      // GNU LongLink: data contains the full UTF-8 name for the next entry.
+      pendingLongName = data.toString("utf-8").replace(/\0.*$/, "");
+      continue;
+    }
+
+    const name = pendingLongName ?? headerName;
+    pendingLongName = null;
 
     entries.push({ name, data, mode });
   }
