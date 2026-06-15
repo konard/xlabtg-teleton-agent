@@ -676,11 +676,13 @@ export function ensureSchema(db: Database.Database): void {
     END;
 
     CREATE TRIGGER IF NOT EXISTS tg_messages_fts_delete AFTER DELETE ON tg_messages BEGIN
-      DELETE FROM tg_messages_fts WHERE rowid = old.rowid;
+      INSERT INTO tg_messages_fts(tg_messages_fts, rowid, text, id, chat_id, sender_id, timestamp)
+      VALUES ('delete', old.rowid, old.text, old.id, old.chat_id, old.sender_id, old.timestamp);
     END;
 
     CREATE TRIGGER IF NOT EXISTS tg_messages_fts_update AFTER UPDATE ON tg_messages BEGIN
-      DELETE FROM tg_messages_fts WHERE rowid = old.rowid;
+      INSERT INTO tg_messages_fts(tg_messages_fts, rowid, text, id, chat_id, sender_id, timestamp)
+      VALUES ('delete', old.rowid, old.text, old.id, old.chat_id, old.sender_id, old.timestamp);
       INSERT INTO tg_messages_fts(rowid, text, id, chat_id, sender_id, timestamp)
       VALUES (new.rowid, new.text, new.id, new.chat_id, new.sender_id, new.timestamp);
     END;
@@ -1104,7 +1106,7 @@ function repairAutonomousTaskChildForeignKeys(db: Database.Database): number {
   return tablesToRepair.length;
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.39.0";
+export const CURRENT_SCHEMA_VERSION = "1.40.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -2384,6 +2386,41 @@ export function runMigrations(db: Database.Database): void {
       );
     } catch (error) {
       log.error({ err: error }, "Migration 1.39.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.40.0")) {
+    log.info("Running migration 1.40.0: Repair and rebuild tg_messages_fts");
+    try {
+      if (tableExists(db, "tg_messages") && tableExists(db, "tg_messages_fts")) {
+        db.exec(`
+          DROP TRIGGER IF EXISTS tg_messages_fts_insert;
+          DROP TRIGGER IF EXISTS tg_messages_fts_delete;
+          DROP TRIGGER IF EXISTS tg_messages_fts_update;
+
+          CREATE TRIGGER tg_messages_fts_insert AFTER INSERT ON tg_messages BEGIN
+            INSERT INTO tg_messages_fts(rowid, text, id, chat_id, sender_id, timestamp)
+            VALUES (new.rowid, new.text, new.id, new.chat_id, new.sender_id, new.timestamp);
+          END;
+
+          CREATE TRIGGER tg_messages_fts_delete AFTER DELETE ON tg_messages BEGIN
+            INSERT INTO tg_messages_fts(tg_messages_fts, rowid, text, id, chat_id, sender_id, timestamp)
+            VALUES ('delete', old.rowid, old.text, old.id, old.chat_id, old.sender_id, old.timestamp);
+          END;
+
+          CREATE TRIGGER tg_messages_fts_update AFTER UPDATE ON tg_messages BEGIN
+            INSERT INTO tg_messages_fts(tg_messages_fts, rowid, text, id, chat_id, sender_id, timestamp)
+            VALUES ('delete', old.rowid, old.text, old.id, old.chat_id, old.sender_id, old.timestamp);
+            INSERT INTO tg_messages_fts(rowid, text, id, chat_id, sender_id, timestamp)
+            VALUES (new.rowid, new.text, new.id, new.chat_id, new.sender_id, new.timestamp);
+          END;
+        `);
+        db.prepare(`INSERT INTO tg_messages_fts(tg_messages_fts) VALUES ('rebuild')`).run();
+      }
+      log.info("Migration 1.40.0 complete: tg_messages_fts triggers repaired and index rebuilt");
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.40.0 failed");
       throw error;
     }
   }

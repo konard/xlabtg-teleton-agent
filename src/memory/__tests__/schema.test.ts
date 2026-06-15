@@ -1495,7 +1495,7 @@ describe("Memory Schema", () => {
     });
 
     it("CURRENT_SCHEMA_VERSION is set to expected value", () => {
-      expect(CURRENT_SCHEMA_VERSION).toBe("1.39.0");
+      expect(CURRENT_SCHEMA_VERSION).toBe("1.40.0");
     });
   });
 
@@ -1657,6 +1657,92 @@ describe("Memory Schema", () => {
         )
         .get() as { name: string } | undefined;
       expect(table).toBeDefined();
+      expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
+    });
+
+    it("runMigrations from version 1.39.0 rebuilds stale tg_messages_fts postings", () => {
+      ensureSchema(db);
+      db.prepare(`INSERT INTO tg_chats (id, type) VALUES ('chat1', 'dm')`).run();
+      db.prepare(
+        `INSERT INTO tg_messages (id, chat_id, text, timestamp)
+         VALUES ('msg1', 'chat1', 'oldtoken message', 1000)`
+      ).run();
+      const first = db.prepare(`SELECT rowid FROM tg_messages WHERE id = 'msg1'`).get() as {
+        rowid: number;
+      };
+
+      db.prepare(
+        `INSERT OR REPLACE INTO tg_messages (id, chat_id, text, timestamp)
+         VALUES ('msg1', 'chat1', 'newtoken message', 2000)`
+      ).run();
+      const second = db.prepare(`SELECT rowid FROM tg_messages WHERE id = 'msg1'`).get() as {
+        rowid: number;
+      };
+      const staleBefore = db
+        .prepare(
+          `
+          SELECT mf.rowid AS fts_rowid, m.id
+          FROM tg_messages_fts mf
+          LEFT JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH 'oldtoken'
+        `
+        )
+        .all();
+
+      expect(second.rowid).not.toBe(first.rowid);
+      expect(staleBefore).toHaveLength(1);
+
+      setSchemaVersion(db, "1.39.0");
+      runMigrations(db);
+
+      const staleAfter = db
+        .prepare(
+          `
+          SELECT mf.rowid AS fts_rowid, m.id
+          FROM tg_messages_fts mf
+          LEFT JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH 'oldtoken'
+        `
+        )
+        .all();
+      const freshAfter = db
+        .prepare(
+          `
+          SELECT m.id, m.text
+          FROM tg_messages_fts mf
+          JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH 'newtoken'
+        `
+        )
+        .all();
+
+      expect(staleAfter).toHaveLength(0);
+      expect(freshAfter).toEqual([{ id: "msg1", text: "newtoken message" }]);
+
+      db.prepare(`UPDATE tg_messages SET text = 'finaltoken message' WHERE id = 'msg1'`).run();
+      const replacedAfterMigration = db
+        .prepare(
+          `
+          SELECT m.id, m.text
+          FROM tg_messages_fts mf
+          JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH 'newtoken'
+        `
+        )
+        .all();
+      const updatedAfterMigration = db
+        .prepare(
+          `
+          SELECT m.id, m.text
+          FROM tg_messages_fts mf
+          JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH 'finaltoken'
+        `
+        )
+        .all();
+
+      expect(replacedAfterMigration).toHaveLength(0);
+      expect(updatedAfterMigration).toEqual([{ id: "msg1", text: "finaltoken message" }]);
       expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
     });
   });
@@ -2087,12 +2173,12 @@ describe("Memory Schema", () => {
         expect(row.scope_level).toBe("admin");
       });
 
-      it("migrations stamp the schema version to at least 1.39.0", () => {
+      it("migrations stamp the schema version to at least 1.40.0", () => {
         ensureSchema(db);
         runMigrations(db);
 
         expect(getSchemaVersion(db)).toBe(CURRENT_SCHEMA_VERSION);
-        expect(versionAtLeast(CURRENT_SCHEMA_VERSION, "1.39.0")).toBe(true);
+        expect(versionAtLeast(CURRENT_SCHEMA_VERSION, "1.40.0")).toBe(true);
       });
     });
   });

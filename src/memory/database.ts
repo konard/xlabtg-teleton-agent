@@ -186,46 +186,21 @@ export class MemoryDatabase {
    * Call this if FTS triggers didn't fire correctly.
    */
   rebuildFtsIndexes(): { knowledge: number; messages: number } {
-    this.db.exec(`DELETE FROM knowledge_fts`);
-    const knowledgeRows = this.db
-      .prepare(`SELECT rowid, text, id, path, source FROM knowledge`)
-      .all() as Array<{
-      rowid: number;
-      text: string;
-      id: string;
-      path: string | null;
-      source: string;
-    }>;
+    const knowledgeCount = (
+      this.db.prepare(`SELECT COUNT(*) AS count FROM knowledge`).get() as { count: number }
+    ).count;
+    const messageCount = (
+      this.db.prepare(`SELECT COUNT(*) AS count FROM tg_messages WHERE text IS NOT NULL`).get() as {
+        count: number;
+      }
+    ).count;
 
-    const insertKnowledge = this.db.prepare(
-      `INSERT INTO knowledge_fts(rowid, text, id, path, source) VALUES (?, ?, ?, ?, ?)`
-    );
-    for (const row of knowledgeRows) {
-      insertKnowledge.run(row.rowid, row.text, row.id, row.path, row.source);
-    }
+    this.db.exec(`
+      INSERT INTO knowledge_fts(knowledge_fts) VALUES ('rebuild');
+      INSERT INTO tg_messages_fts(tg_messages_fts) VALUES ('rebuild');
+    `);
 
-    this.db.exec(`DELETE FROM tg_messages_fts`);
-    const messageRows = this.db
-      .prepare(
-        `SELECT rowid, text, id, chat_id, sender_id, timestamp FROM tg_messages WHERE text IS NOT NULL`
-      )
-      .all() as Array<{
-      rowid: number;
-      text: string;
-      id: string;
-      chat_id: string;
-      sender_id: string | null;
-      timestamp: number;
-    }>;
-
-    const insertMessage = this.db.prepare(
-      `INSERT INTO tg_messages_fts(rowid, text, id, chat_id, sender_id, timestamp) VALUES (?, ?, ?, ?, ?, ?)`
-    );
-    for (const row of messageRows) {
-      insertMessage.run(row.rowid, row.text, row.id, row.chat_id, row.sender_id, row.timestamp);
-    }
-
-    return { knowledge: knowledgeRows.length, messages: messageRows.length };
+    return { knowledge: knowledgeCount, messages: messageCount };
   }
 
   close(): void {

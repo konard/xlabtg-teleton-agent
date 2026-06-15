@@ -86,10 +86,21 @@ export class MessageStore {
       this.db
         .prepare(
           `
-        INSERT OR REPLACE INTO tg_messages (
+        INSERT INTO tg_messages (
           id, chat_id, sender_id, text, embedding, reply_to_id,
           is_from_agent, has_media, media_type, timestamp
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          chat_id = excluded.chat_id,
+          sender_id = excluded.sender_id,
+          text = excluded.text,
+          embedding = excluded.embedding,
+          reply_to_id = excluded.reply_to_id,
+          is_from_agent = excluded.is_from_agent,
+          has_media = excluded.has_media,
+          media_type = excluded.media_type,
+          timestamp = excluded.timestamp,
+          indexed_at = unixepoch()
       `
         )
         .run(

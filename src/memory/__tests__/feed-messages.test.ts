@@ -181,7 +181,7 @@ describe("MessageStore", () => {
       expect(chat.last_message_at).toBe(ts);
     });
 
-    it("replaces an existing message with same id (INSERT OR REPLACE)", async () => {
+    it("updates an existing message with same id", async () => {
       await store.storeMessage(makeMessage({ id: "dup-msg", text: "First version" }));
       await store.storeMessage(makeMessage({ id: "dup-msg", text: "Updated version" }));
 
@@ -190,6 +190,43 @@ describe("MessageStore", () => {
       }[];
       expect(rows).toHaveLength(1);
       expect(rows[0].text).toBe("Updated version");
+    });
+
+    it("keeps tg_messages_fts in sync when a message is updated", async () => {
+      await store.storeMessage(makeMessage({ id: "dup-fts", text: "oldtoken message" }));
+      const before = db.prepare("SELECT rowid FROM tg_messages WHERE id = ?").get("dup-fts") as {
+        rowid: number;
+      };
+
+      await store.storeMessage(makeMessage({ id: "dup-fts", text: "newtoken message" }));
+      const after = db.prepare("SELECT rowid FROM tg_messages WHERE id = ?").get("dup-fts") as {
+        rowid: number;
+      };
+
+      const oldMatches = db
+        .prepare(
+          `
+          SELECT mf.rowid AS fts_rowid, m.id, m.text
+          FROM tg_messages_fts mf
+          LEFT JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH ?
+        `
+        )
+        .all("oldtoken");
+      const newMatches = db
+        .prepare(
+          `
+          SELECT m.id, m.text
+          FROM tg_messages_fts mf
+          JOIN tg_messages m ON m.rowid = mf.rowid
+          WHERE tg_messages_fts MATCH ?
+        `
+        )
+        .all("newtoken") as Array<{ id: string; text: string }>;
+
+      expect(after.rowid).toBe(before.rowid);
+      expect(oldMatches).toHaveLength(0);
+      expect(newMatches).toEqual([{ id: "dup-fts", text: "newtoken message" }]);
     });
 
     it("does not call embedder when vectorEnabled is false", async () => {
