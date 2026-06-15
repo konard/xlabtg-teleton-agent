@@ -2,6 +2,8 @@ import { Component, type ReactNode } from 'react';
 
 interface Props {
   children: ReactNode;
+  /** When this value changes, a captured error is cleared (e.g. on route change). */
+  resetKey?: string;
 }
 
 interface State {
@@ -14,6 +16,12 @@ export class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { hasError: true, error: error.message };
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, error: null });
+    }
   }
 
   render() {

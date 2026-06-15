@@ -1,6 +1,6 @@
 import type { TelegramConfig, Config } from "../config/schema.js";
 import type { AgentRuntime } from "../agent/runtime.js";
-import type { TelegramBridge } from "./bridge.js";
+import type { ITelegramBridge } from "./bridge-interface.js";
 import { type TelegramMessage } from "./bridge.js";
 import { MessageStore, ChatStore, UserStore } from "../memory/feed/index.js";
 import type Database from "better-sqlite3";
@@ -24,6 +24,7 @@ import {
   RATE_LIMITER_GROUP_CLEANUP_THRESHOLD,
   LOG_MESSAGE_PREVIEW_CHARS,
 } from "../constants/limits.js";
+import { getErrorMessage } from "../utils/errors.js";
 
 const log = createLogger("Telegram");
 import type { PluginMessageEvent } from "@teleton-agent/sdk";
@@ -88,19 +89,50 @@ class RateLimiter {
 
 class ChatQueue {
   private chains = new Map<string, Promise<void>>();
+  private activeTasks = 0;
+  private maxConcurrent: number;
+  private waitQueue: Array<() => void> = [];
+
+  constructor(maxConcurrent = 10) {
+    this.maxConcurrent = maxConcurrent;
+  }
+
+  private async acquireSlot(chatId: string): Promise<void> {
+    if (this.activeTasks < this.maxConcurrent) {
+      this.activeTasks++;
+      return;
+    }
+    log.warn(
+      `Backpressure: chat ${chatId} queued (${this.activeTasks}/${this.maxConcurrent} active)`
+    );
+    return new Promise<void>((resolve) => {
+      this.waitQueue.push(() => {
+        this.activeTasks++;
+        resolve();
+      });
+    });
+  }
+
+  private releaseSlot(): void {
+    this.activeTasks--;
+    const next = this.waitQueue.shift();
+    if (next) next();
+  }
 
   enqueue(chatId: string, task: () => Promise<void>): Promise<void> {
     const prev = this.chains.get(chatId) ?? Promise.resolve();
     const next = prev
-      .then(task, () => task())
+      .then(
+        () => this.acquireSlot(chatId).then(task),
+        () => this.acquireSlot(chatId).then(task)
+      )
       .finally(() => {
-        // Auto-cleanup: remove entry if this is still the tail of the chain
+        this.releaseSlot();
         if (this.chains.get(chatId) === next) {
           this.chains.delete(chatId);
         }
       });
 
-    // Register as new tail BEFORE awaiting (atomic in single-threaded JS)
     this.chains.set(chatId, next);
     return next;
   }
@@ -118,7 +150,7 @@ class ChatQueue {
 }
 
 export class MessageHandler {
-  private bridge: TelegramBridge;
+  private bridge: ITelegramBridge;
   private config: TelegramConfig;
   private fullConfig?: Config;
   private agent: AgentRuntime;
@@ -134,7 +166,7 @@ export class MessageHandler {
   private recentMessageIds: MessageDedupCache = new MessageDedupCache();
 
   constructor(
-    bridge: TelegramBridge,
+    bridge: ITelegramBridge,
     config: TelegramConfig,
     agent: AgentRuntime,
     db: Database.Database,
@@ -167,6 +199,13 @@ export class MessageHandler {
 
   setOwnUserId(userId: string | undefined): void {
     this.ownUserId = userId;
+  }
+
+  setBridge(bridge: ITelegramBridge): void {
+    log.info(`Swapping bridge to ${bridge.getMode()}`);
+    this.bridge = bridge;
+    const uid = bridge.getOwnUserId();
+    this.ownUserId = uid !== undefined ? String(uid) : this.ownUserId;
   }
 
   setPluginMessageHooks(hooks: Array<(e: PluginMessageEvent) => Promise<void>>): void {
@@ -204,9 +243,12 @@ export class MessageHandler {
    * checks (stale offset, bot sender, length cap). Returns null to continue.
    */
   private runPreChecks(message: TelegramMessage, isAdmin: boolean): PolicyDecision | null {
-    const chatOffset = readOffset(message.chatId) ?? 0;
-    if (message.id <= chatOffset) {
-      return { shouldRespond: false, reason: "Already processed" };
+    // Bridges that redeliver (user mode) need handler-side dedup; bot mode dedupes via update_id.
+    if (this.bridge.requiresOffsetDedup()) {
+      const chatOffset = readOffset(message.chatId) ?? 0;
+      if (message.id <= chatOffset) {
+        return { shouldRespond: false, reason: "Already processed" };
+      }
     }
 
     if (message.isBot) {
@@ -264,10 +306,10 @@ export class MessageHandler {
         timestamp: message.timestamp,
       };
       for (const hook of this.pluginMessageHooks) {
-        hook(event).catch((err) => {
+        hook(event).catch((error) => {
           log.error(
-            { err: err instanceof Error ? err : undefined },
-            `Plugin onMessage hook error: ${err instanceof Error ? err.message : err}`
+            { err: error instanceof Error ? error : undefined },
+            `Plugin onMessage hook error: ${getErrorMessage(error)}`
           );
         });
       }
@@ -287,7 +329,7 @@ export class MessageHandler {
           message.chatId.length > 10
             ? message.chatId.slice(0, 7) + ".." + message.chatId.slice(-2)
             : message.chatId;
-        log.info(`⏭️  Group ${chatShort} msg:${message.id} (not mentioned)`);
+        log.info(`Group ${chatShort} msg:${message.id} (not mentioned)`);
       } else {
         log.debug(`Skipping message ${message.id} from ${message.senderId}: ${context.reason}`);
       }
@@ -309,11 +351,13 @@ export class MessageHandler {
     await this.chatQueue.enqueue(message.chatId, async () => {
       try {
         // Re-check offset after queue wait to prevent duplicate processing
-        // (GramJS may fire duplicate NewMessage events during reconnection)
-        const postQueueOffset = readOffset(message.chatId) ?? 0;
-        if (message.id <= postQueueOffset) {
-          log.debug(`Skipping message ${message.id} (already processed after queue wait)`);
-          return;
+        // (GramJS may fire duplicate NewMessage events during reconnection).
+        if (this.bridge.requiresOffsetDedup()) {
+          const postQueueOffset = readOffset(message.chatId) ?? 0;
+          if (message.id <= postQueueOffset) {
+            log.debug(`Skipping message ${message.id} (already processed after queue wait)`);
+            return;
+          }
         }
 
         // 4. Persistent typing simulation if enabled
@@ -433,6 +477,7 @@ export class MessageHandler {
           const effectiveText = transcriptionText
             ? `🎤 (voice): ${transcriptionText}${message.text ? `\n${message.text}` : ""}`
             : message.text;
+
           const response = await this.agent.processMessage({
             chatId: message.chatId,
             userMessage: effectiveText,
@@ -569,7 +614,7 @@ export class MessageHandler {
                 {
                   id: sentMessage.id,
                   chatId: message.chatId,
-                  senderId: this.ownUserId ? parseInt(this.ownUserId) : 0,
+                  senderId: this.ownUserId ? parseInt(this.ownUserId, 10) : 0,
                   text: part,
                   isGroup: message.isGroup,
                   isChannel: message.isChannel,
@@ -581,6 +626,28 @@ export class MessageHandler {
                 true
               );
             }
+          } else if (
+            telegramSendCalled &&
+            response.content &&
+            response.content.trim().length > 0 &&
+            !isSilentReply(response.content)
+          ) {
+            // Tool already sent the message to Telegram — store in feed for conversation history
+            await this.storeTelegramMessage(
+              {
+                id: 0, // tool-sent message ID not propagated back
+                chatId: message.chatId,
+                senderId: this.ownUserId ? parseInt(this.ownUserId, 10) : 0,
+                text: response.content,
+                isGroup: message.isGroup,
+                isChannel: message.isChannel,
+                isBot: false,
+                mentionsMe: false,
+                timestamp: new Date(),
+                hasMedia: false,
+              },
+              true
+            );
           }
 
           // 9. Clear pending history after responding (for groups)
@@ -588,8 +655,10 @@ export class MessageHandler {
             this.pendingHistory.clearPending(message.chatId);
           }
 
-          // Mark as processed AFTER successful handling (prevents message loss on crash)
-          writeOffset(message.id, message.chatId);
+          // Mark as processed AFTER successful handling (prevents message loss on crash).
+          if (this.bridge.requiresOffsetDedup()) {
+            writeOffset(message.id, message.chatId);
+          }
         } finally {
           if (typingInterval) clearInterval(typingInterval);
         }

@@ -4,6 +4,7 @@ import { Api, helpers } from "telegram";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../../../constants/limits.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -59,7 +60,7 @@ export const telegramQuoteReplyExecutor: ToolExecutor<QuoteReplyParams> = async 
     const { chatId, messageId, quoteText, text, quoteOffset = 0 } = params;
 
     // Get the underlying GramJS client
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     // Resolve the peer (chat entity)
     const peer = await client.getInputEntity(chatId);

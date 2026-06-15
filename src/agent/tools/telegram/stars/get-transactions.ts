@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -20,7 +22,8 @@ interface GetTransactionsParams {
  */
 export const telegramGetStarsTransactionsTool: Tool = {
   name: "telegram_get_stars_transactions",
-  description: "Get your Stars transaction history. Filterable by inbound/outbound.",
+  description:
+    "Get your Telegram Stars payment history (gift purchases, received Stars). Filter by direction: inbound or outbound. NOT for TON blockchain transactions — use ton_my_transactions for those.",
   category: "data-bearing",
   parameters: Type.Object({
     limit: Type.Optional(
@@ -52,10 +55,9 @@ export const telegramGetStarsTransactionsExecutor: ToolExecutor<GetTransactionsP
 ): Promise<ToolResult> => {
   try {
     const { limit = 20, inbound, outbound } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const result: any = await gramJsClient.invoke(
+    const result = await gramJsClient.invoke(
       new Api.payments.GetStarsTransactions({
         peer: new Api.InputPeerSelf(),
         inbound,
@@ -65,10 +67,9 @@ export const telegramGetStarsTransactionsExecutor: ToolExecutor<GetTransactionsP
       })
     );
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
     const transactions = (result.history || []).map((tx: any) => ({
       id: tx.id,
-      stars: tx.stars?.toString(),
+      stars: tx.amount?.amount?.toString(),
       date: tx.date,
       type: tx.peer?.className || "unknown",
       description: tx.description || null,
@@ -82,7 +83,7 @@ export const telegramGetStarsTransactionsExecutor: ToolExecutor<GetTransactionsP
       data: {
         transactions,
         count: transactions.length,
-        balance: result.balance?.toString(),
+        balance: result.balance?.amount?.toString(),
       },
     };
   } catch (error) {

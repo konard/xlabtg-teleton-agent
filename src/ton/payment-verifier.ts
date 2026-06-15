@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { fromNano } from "@ton/ton";
-import { Address } from "@ton/core";
+import { Address, type Cell } from "@ton/core";
 import { getCachedTonClient } from "./wallet-service.js";
 import { withBlockchainRetry } from "../utils/retry.js";
 import { PAYMENT_TOLERANCE_RATIO } from "../constants/limits.js";
@@ -13,8 +13,7 @@ const DEFAULT_MAX_PAYMENT_AGE_MINUTES = 10;
 
 const OP_COMMENT = 0x0;
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any -- Cell body type varies at runtime
-function parseComment(body: any): string | null {
+function parseComment(body: Cell | null): string | null {
   if (!body) return null;
   try {
     const slice = body.beginParse();

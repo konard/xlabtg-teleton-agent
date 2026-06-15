@@ -6,13 +6,38 @@ import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 
 const log = createLogger("Tools");
+
+interface StonfiPool {
+  address: string;
+  token0_address: string;
+  token1_address: string;
+  volume_24h_usd?: string;
+  lp_total_supply_usd?: string;
+  apy_7d?: string;
+  lp_fee?: number;
+  deprecated?: boolean;
+}
+
+interface FormattedPool {
+  rank: number;
+  pair: string;
+  poolAddress: string;
+  token0: { address: string; symbol: string };
+  token1: { address: string; symbol: string };
+  volume24h: string;
+  tvl: string;
+  apy7d: string;
+  lpFee: number;
+}
+
 interface JettonPoolsParams {
   jetton_address?: string;
   limit?: number;
 }
 export const stonfiPoolsTool: Tool = {
   name: "stonfi_pools",
-  description: "List STON.fi liquidity pools. Filter by jetton or get top pools by volume.",
+  description:
+    "List STON.fi DEX liquidity pools sorted by 24h volume. Filter by jetton address or get top pools. Returns TVL, APY, and fees. NOT DeDust pools — for those use dedust_pools.",
   category: "data-bearing",
   parameters: Type.Object({
     jetton_address: Type.Optional(
@@ -56,8 +81,7 @@ export const stonfiPoolsExecutor: ToolExecutor<JettonPoolsParams> = async (
     // Filter by jetton if provided
     if (jetton_address) {
       const targetAddress = jetton_address.toLowerCase();
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-      pools = pools.filter((p: any) => {
+      pools = pools.filter((p: StonfiPool) => {
         const token0 = (p.token0_address || "").toLowerCase();
         const token1 = (p.token1_address || "").toLowerCase();
         return (
@@ -71,11 +95,9 @@ export const stonfiPoolsExecutor: ToolExecutor<JettonPoolsParams> = async (
 
     // Sort by volume and limit
     pools = pools
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-      .filter((p: any) => !p.deprecated)
+      .filter((p: StonfiPool) => !p.deprecated)
       .sort(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-        (a: any, b: any) =>
+        (a: StonfiPool, b: StonfiPool) =>
           parseFloat(b.volume_24h_usd || "0") - parseFloat(a.volume_24h_usd || "0")
       )
       .slice(0, limit);
@@ -97,8 +119,7 @@ export const stonfiPoolsExecutor: ToolExecutor<JettonPoolsParams> = async (
     }
 
     // Format pools
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-    const formattedPools = pools.map((p: any, index: number) => {
+    const formattedPools: FormattedPool[] = pools.map((p: StonfiPool, index: number) => {
       const token0Symbol = assetMap[p.token0_address] || "???";
       const token1Symbol = assetMap[p.token1_address] || "???";
       const pair = `${token0Symbol}/${token1Symbol}`;
@@ -123,8 +144,7 @@ export const stonfiPoolsExecutor: ToolExecutor<JettonPoolsParams> = async (
       ? `Pools for ${jetton_address}:\n\n`
       : `🏊 Top ${formattedPools.length} Pools by Volume:\n\n`;
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-    formattedPools.forEach((p: any) => {
+    formattedPools.forEach((p) => {
       message += `#${p.rank} ${p.pair}\n`;
       message += `   Volume 24h: $${Number(p.volume24h).toLocaleString()}\n`;
       message += `   TVL: $${Number(p.tvl).toLocaleString()}\n`;

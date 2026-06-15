@@ -1,4 +1,5 @@
-import { writeFile, mkdir, readdir, readFile, unlink } from "fs/promises";
+import { writeFile, mkdir, readdir, readFile } from "fs/promises";
+import { mkdirSync, renameSync } from "fs";
 import { join } from "path";
 import { complete, type Context } from "@mariozechner/pi-ai";
 import {
@@ -153,6 +154,16 @@ This session was compacted and migrated to a new session ID. The summary above p
 
     await writeFile(filepath, content, "utf-8");
 
+    // Append summary to daily log so the agent sees it in the prompt (yesterday+today)
+    const { writeSessionEndSummary } = await import("../memory/daily-logs.js");
+    writeSessionEndSummary(summary, "compaction");
+
+    // Index in knowledge_fts so memory_search and RAG can find it later
+    const { getKnowledgeIndexer } = await import("../memory/agent/knowledge.js");
+    getKnowledgeIndexer()
+      ?.indexFile(filepath)
+      .catch(() => {});
+
     const relPath = filepath.replace(TELETON_ROOT, "~/.teleton");
     log.info(`Session memory saved: ${relPath}`);
   } catch (error) {
@@ -161,12 +172,19 @@ This session was compacted and migrated to a new session ID. The summary above p
 }
 
 const CONSOLIDATION_THRESHOLD = 20;
-const CONSOLIDATION_BATCH = 10;
+const CONSOLIDATION_AGE_DAYS = 7;
+const CONSOLIDATION_FALLBACK_BATCH = 10;
+const CONSOLIDATION_MAX_TOKENS = 4000;
+const CONSOLIDATION_MIN_CLUSTER_SIZE = 2;
 
 /**
  * Consolidate old session memory files when they exceed a threshold.
- * Reads the oldest session files, LLM-summarizes them into a single file,
- * and deletes the originals to prevent unbounded accumulation.
+ *
+ * - Only considers files older than 7 days.
+ * - Clusters files by keyword overlap (slug words + first heading words).
+ * - Consolidates each thematic cluster separately.
+ * - Soft-deletes originals by moving them to an archived/ subdirectory.
+ * - Falls back to chronological grouping if no clusters are found.
  */
 export async function consolidateOldMemoryFiles(params: {
   apiKey: string;
@@ -176,6 +194,7 @@ export async function consolidateOldMemoryFiles(params: {
   try {
     const { TELETON_ROOT } = await import("../workspace/paths.js");
     const memoryDir = join(TELETON_ROOT, "memory");
+    const archiveDir = join(memoryDir, "archived");
 
     let entries: string[];
     try {
@@ -184,50 +203,127 @@ export async function consolidateOldMemoryFiles(params: {
       return { consolidated: 0 };
     }
 
-    // Session files match YYYY-MM-DD-slug.md (not plain YYYY-MM-DD.md daily logs)
+    // Session files match YYYY-MM-DD-slug.md (not plain YYYY-MM-DD.md daily logs, not consolidated-)
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - CONSOLIDATION_AGE_DAYS);
+    const cutoffStr = cutoff.toISOString().split("T")[0];
+
     const sessionFiles = entries
-      .filter((f) => /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) && !f.startsWith("consolidated-"))
+      .filter(
+        (f) =>
+          /^\d{4}-\d{2}-\d{2}-.+\.md$/.test(f) &&
+          !f.startsWith("consolidated-") &&
+          f.slice(0, 10) < cutoffStr
+      )
       .sort();
 
     if (sessionFiles.length < CONSOLIDATION_THRESHOLD) {
       return { consolidated: 0 };
     }
 
-    const batch = sessionFiles.slice(0, CONSOLIDATION_BATCH);
-    log.info(`Consolidating ${batch.length} old session memory files...`);
+    // Extract keywords from slug + first heading for each file
+    const fileKeywords: Array<{ file: string; keywords: Set<string> }> = [];
+    for (const file of sessionFiles) {
+      const slug = file.slice(11).replace(/\.md$/, ""); // strip YYYY-MM-DD-
+      const slugWords = slug.split("-").filter((w) => w.length > 3);
 
-    const contents: string[] = [];
-    for (const file of batch) {
-      const text = await readFile(join(memoryDir, file), "utf-8");
-      contents.push(`--- ${file} ---\n${text}`);
+      let headingWords: string[] = [];
+      try {
+        const text = await readFile(join(memoryDir, file), "utf-8");
+        const firstHeading = text.split("\n").find((l) => l.startsWith("#")) ?? "";
+        headingWords = firstHeading
+          .replace(/^#+\s*/, "")
+          .toLowerCase()
+          .split(/\W+/)
+          .filter((w) => w.length > 3);
+      } catch {
+        // keep empty — slug words alone are enough
+      }
+
+      fileKeywords.push({ file, keywords: new Set([...slugWords, ...headingWords]) });
     }
 
-    const combined = contents.join("\n\n");
-    let summary: string;
-    try {
-      const result = await summarizeWithFallback({
-        messages: [{ role: "user", content: combined, timestamp: Date.now() }],
-        apiKey: params.apiKey,
-        contextWindow: DEFAULT_CONTEXT_WINDOW,
-        maxSummaryTokens: DEFAULT_MAX_SUMMARY_TOKENS,
-        customInstructions:
-          "Consolidate these session memories into a single comprehensive summary. Preserve key facts, decisions, patterns, and important context. Remove redundancy. Organize by topic.",
-        provider: params.provider,
-        utilityModel: params.utilityModel,
-      });
-      summary = result.summary;
-    } catch (error) {
-      log.warn({ err: error }, "Consolidation summary failed, skipping");
-      return { consolidated: 0 };
+    // Greedy keyword-overlap clustering: group files sharing ≥1 keyword
+    const assigned = new Set<string>();
+    const clusters: string[][] = [];
+
+    for (let i = 0; i < fileKeywords.length; i++) {
+      if (assigned.has(fileKeywords[i].file)) continue;
+      const cluster: string[] = [fileKeywords[i].file];
+      assigned.add(fileKeywords[i].file);
+
+      for (let j = i + 1; j < fileKeywords.length; j++) {
+        if (assigned.has(fileKeywords[j].file)) continue;
+        const hasOverlap = [...fileKeywords[i].keywords].some((k) =>
+          fileKeywords[j].keywords.has(k)
+        );
+        if (hasOverlap) {
+          cluster.push(fileKeywords[j].file);
+          assigned.add(fileKeywords[j].file);
+        }
+      }
+
+      if (cluster.length >= CONSOLIDATION_MIN_CLUSTER_SIZE) {
+        clusters.push(cluster);
+      }
     }
 
-    const dateOf = (f: string) => f.slice(0, 10);
-    const dateRange = `${dateOf(batch[0])}_to_${dateOf(batch[batch.length - 1])}`;
-    const outFile = `consolidated-${dateRange}.md`;
-    const outContent = `# Consolidated Session Memories
+    // Fallback: no thematic clusters found — use oldest N files chronologically
+    if (clusters.length === 0) {
+      log.info("No thematic clusters found, falling back to chronological grouping");
+      clusters.push(sessionFiles.slice(0, CONSOLIDATION_FALLBACK_BATCH));
+    }
 
-## Period
-${batch[0]} → ${batch[batch.length - 1]}
+    // Ensure archive directory exists
+    mkdirSync(archiveDir, { recursive: true });
+
+    let totalConsolidated = 0;
+
+    for (const cluster of clusters) {
+      log.info(
+        `Consolidating cluster of ${cluster.length} files: ${cluster.slice(0, 3).join(", ")}${cluster.length > 3 ? "…" : ""}`
+      );
+
+      const contents: string[] = [];
+      for (const file of cluster) {
+        const text = await readFile(join(memoryDir, file), "utf-8");
+        contents.push(`--- ${file} ---\n${text}`);
+      }
+
+      const combined = contents.join("\n\n");
+      const sourceList = cluster.map((f) => `- ${f}`).join("\n");
+
+      let summary: string;
+      try {
+        const result = await summarizeWithFallback({
+          messages: [{ role: "user", content: combined, timestamp: Date.now() }],
+          apiKey: params.apiKey,
+          contextWindow: DEFAULT_CONTEXT_WINDOW,
+          maxSummaryTokens: CONSOLIDATION_MAX_TOKENS,
+          customInstructions: `Consolidate these session memories into a single comprehensive summary.
+Source files:
+${sourceList}
+
+Preserve key facts, decisions, patterns, and important context. Remove redundancy. Organize by topic. You may reference source file names when relevant.`,
+          provider: params.provider,
+          utilityModel: params.utilityModel,
+        });
+        summary = result.summary;
+      } catch (error) {
+        log.warn({ err: error }, "Consolidation summary failed for cluster, skipping");
+        continue;
+      }
+
+      const dateOf = (f: string) => f.slice(0, 10);
+      const dateRange = `${dateOf(cluster[0])}_to_${dateOf(cluster[cluster.length - 1])}`;
+      const outFile = `consolidated-${dateRange}.md`;
+      const outContent = `# Consolidated Session Memories
+
+## Metadata
+
+- **Period**: ${cluster[0]} → ${cluster[cluster.length - 1]}
+- **Source Files** (${cluster.length}):
+${sourceList}
 
 ## Summary
 
@@ -235,17 +331,21 @@ ${summary}
 
 ---
 
-*Consolidated from ${batch.length} session files by Teleton memory consolidation*
+*Consolidated from ${cluster.length} session files. Originals archived in memory/archived/.*
 `;
 
-    await writeFile(join(memoryDir, outFile), outContent, "utf-8");
+      await writeFile(join(memoryDir, outFile), outContent, "utf-8");
 
-    for (const file of batch) {
-      await unlink(join(memoryDir, file));
+      // Soft-delete: move originals to archive instead of deleting
+      for (const file of cluster) {
+        renameSync(join(memoryDir, file), join(archiveDir, file));
+      }
+
+      totalConsolidated += cluster.length;
+      log.info(`Consolidated ${cluster.length} files → ${outFile}`);
     }
 
-    log.info(`Consolidated ${batch.length} files → ${outFile}`);
-    return { consolidated: batch.length };
+    return { consolidated: totalConsolidated };
   } catch (error) {
     log.error({ err: error }, "Memory consolidation failed");
     return { consolidated: 0 };

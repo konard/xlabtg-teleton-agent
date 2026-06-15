@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { timingSafeEqual } from "node:crypto";
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import { WorkflowStore } from "./workflows.js";
 import type { CronTrigger, EventTrigger, WebhookTrigger } from "./workflows.js";
 import { WorkflowExecutor } from "./workflow-executor.js";
@@ -28,7 +28,7 @@ export class WorkflowScheduler {
 
   constructor(
     private db: Database.Database,
-    private bridge?: TelegramBridge
+    private bridge?: ITelegramBridge
   ) {
     this.store = new WorkflowStore(db);
   }

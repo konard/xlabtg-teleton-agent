@@ -1,5 +1,5 @@
-import type { TelegramBridge } from "../bridge.js";
-import type Database from "better-sqlite3";
+import type { ITelegramBridge } from "../bridge-interface.js";
+import { isUserBridge } from "../bridge-guards.js";
 import { createLogger } from "../../utils/logger.js";
 
 const log = createLogger("Telegram");
@@ -16,17 +16,21 @@ export type CallbackHandler = (data: {
 export class CallbackQueryHandler {
   private handlers: Map<string, CallbackHandler> = new Map();
 
-  constructor(
-    private bridge: TelegramBridge,
-    private db: Database.Database
-  ) {}
+  constructor(private bridge: ITelegramBridge) {}
 
   register(actionPrefix: string, handler: CallbackHandler): void {
     this.handlers.set(actionPrefix, handler);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS raw update event shape
-  async handle(event: any): Promise<void> {
+  async handle(event: {
+    queryId: bigint;
+    data?: Buffer;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- peer type varies across GramJS update shapes
+    peer?: any;
+    chatInstance?: string;
+    msgId?: number;
+    userId: bigint;
+  }): Promise<void> {
     try {
       const queryId = event.queryId;
       const data = event.data?.toString() || "";
@@ -63,10 +67,11 @@ export class CallbackQueryHandler {
     }
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS BigInteger queryId
-  private async answerCallback(queryId: any, message?: string, alert = false): Promise<void> {
+  private async answerCallback(queryId: bigint, message?: string, alert = false): Promise<void> {
     try {
-      await this.bridge.getClient().answerCallbackQuery(queryId, { message, alert });
+      if (isUserBridge(this.bridge)) {
+        await this.bridge.getClient().answerCallbackQuery(queryId, { message, alert });
+      }
     } catch (error) {
       log.error({ err: error }, "Error answering callback");
     }

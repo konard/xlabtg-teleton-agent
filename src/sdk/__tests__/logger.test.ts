@@ -20,22 +20,26 @@ vi.mock("../../workspace/paths.js", () => ({
 import { createPluginSDK } from "../index.js";
 import type { PluginSDK } from "@teleton-agent/sdk";
 
+const mockGramJsClient = {
+  invoke: vi.fn(),
+  sendMessage: vi.fn(),
+  sendFile: vi.fn(),
+  getEntity: vi.fn(),
+  getInputEntity: vi.fn(),
+  getMessages: vi.fn(),
+  downloadMedia: vi.fn(),
+  uploadFile: vi.fn(),
+  getMe: vi.fn(),
+};
 const mockBridge = {
   isAvailable: vi.fn(() => true),
+  getMode: vi.fn(() => "user"),
   getClient: () => ({
-    getClient: () => ({
-      invoke: vi.fn(),
-      sendMessage: vi.fn(),
-      sendFile: vi.fn(),
-      getEntity: vi.fn(),
-      getInputEntity: vi.fn(),
-      getMessages: vi.fn(),
-      downloadMedia: vi.fn(),
-      uploadFile: vi.fn(),
-    }),
+    getClient: () => mockGramJsClient,
     getMe: vi.fn(),
     answerCallbackQuery: vi.fn(),
   }),
+  getRawClient: () => mockGramJsClient,
   sendMessage: vi.fn(),
   editMessage: vi.fn(),
   sendReaction: vi.fn(),

@@ -7,6 +7,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -44,7 +45,7 @@ export const telegramKickUserExecutor: ToolExecutor<KickUserParams> = async (
       };
     }
 
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     // Kick = ban then immediately unban
     await client.invoke(
@@ -85,7 +86,7 @@ export const telegramKickUserExecutor: ToolExecutor<KickUserParams> = async (
         message: `👢 User ${user_id} kicked from chat`,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error in telegram_kick_user");
     return {
       success: false,
@@ -141,7 +142,7 @@ export const telegramBanUserExecutor: ToolExecutor<BanUserParams> = async (
       };
     }
 
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     // Calculate until_date (0 = permanent)
     const untilDate = duration_hours ? Math.floor(Date.now() / 1000) + duration_hours * 3600 : 0;
@@ -173,9 +174,9 @@ export const telegramBanUserExecutor: ToolExecutor<BanUserParams> = async (
             participant: user_id,
           })
         );
-      } catch (e) {
+      } catch (innerError: unknown) {
         // Ignore if deletion fails (might not have permission)
-        log.warn({ err: e }, "Could not delete user messages");
+        log.warn({ err: innerError }, "Could not delete user messages");
       }
     }
 
@@ -192,7 +193,7 @@ export const telegramBanUserExecutor: ToolExecutor<BanUserParams> = async (
         message: `🚫 User ${user_id} banned ${durationStr}`,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error in telegram_ban_user");
     return {
       success: false,
@@ -235,7 +236,7 @@ export const telegramUnbanUserExecutor: ToolExecutor<UnbanUserParams> = async (
       };
     }
 
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     await client.invoke(
       new Api.channels.EditBanned({
@@ -257,7 +258,7 @@ export const telegramUnbanUserExecutor: ToolExecutor<UnbanUserParams> = async (
         message: `✅ User ${user_id} unbanned`,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error in telegram_unban_user");
     return {
       success: false,

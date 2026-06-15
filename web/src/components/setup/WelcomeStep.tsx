@@ -1,31 +1,19 @@
 import { useState, useEffect } from 'react';
 import { setup, SetupStatusResponse } from '../../lib/api';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
 
 export function WelcomeStep({ data, onChange }: StepProps) {
   const [status, setStatus] = useState<SetupStatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [initDone, setInitDone] = useState(false);
 
   useEffect(() => {
     setup.getStatus()
       .then((s) => setStatus(s))
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => setError(errMsg(err)))
       .finally(() => setLoading(false));
   }, []);
-
-  const handleAccept = async (accepted: boolean) => {
-    onChange({ ...data, riskAccepted: accepted });
-    if (accepted && !initDone) {
-      try {
-        await setup.initWorkspace(data.agentName || undefined);
-        setInitDone(true);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      }
-    }
-  };
 
   return (
     <div className="step-content">
@@ -66,6 +54,33 @@ export function WelcomeStep({ data, onChange }: StepProps) {
         </div>
       </div>
 
+      <div className="form-group">
+        <label>Telegram Mode</label>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            type="button"
+            className={data.telegramMode === 'user' ? 'btn-active' : 'btn-ghost'}
+            onClick={() => onChange({ ...data, telegramMode: 'user' })}
+            style={{ flex: 1 }}
+          >
+            User Account
+          </button>
+          <button
+            type="button"
+            className={data.telegramMode === 'bot' ? 'btn-active' : 'btn-ghost'}
+            onClick={() => onChange({ ...data, telegramMode: 'bot' })}
+            style={{ flex: 1 }}
+          >
+            Bot
+          </button>
+        </div>
+        <div className="helper-text">
+          {data.telegramMode === 'user'
+            ? 'Full access via your Telegram account (MTProto). Requires API ID, hash, and phone.'
+            : 'Runs as a Telegram Bot (Bot API). Requires only a bot token. Some features are unavailable.'}
+        </div>
+      </div>
+
       {status?.configExists && (
         <div className="info-box">
           Existing configuration detected. It will be overwritten when setup completes.
@@ -74,16 +89,7 @@ export function WelcomeStep({ data, onChange }: StepProps) {
 
       {error && <div className="alert error">{error}</div>}
 
-      <div className="form-group">
-        <label className="label-inline">
-          <input
-            type="checkbox"
-            checked={data.riskAccepted}
-            onChange={(e) => handleAccept(e.target.checked)}
-          />
-          <span>I understand the risks and accept full responsibility</span>
-        </label>
-      </div>
+      {/* Risk checkbox moved to setup-nav bar (Setup.tsx) for inline layout with Next button */}
 
       {loading && <div className="loading">Checking workspace...</div>}
     </div>

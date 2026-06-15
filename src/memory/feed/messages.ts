@@ -22,6 +22,12 @@ export interface TelegramMessage {
   timestamp: number;
 }
 
+export function pruneOldMessages(db: Database.Database, maxAgeDays = 90): number {
+  const cutoffSec = Math.floor(Date.now() / 1000) - maxAgeDays * 86_400;
+  const result = db.prepare("DELETE FROM tg_messages WHERE timestamp < ?").run(cutoffSec);
+  return result.changes;
+}
+
 export class MessageStore {
   constructor(
     private db: Database.Database,
@@ -172,6 +178,12 @@ export class MessageStore {
         "Semantic memory message sync failed; local fallback ready"
       );
     }
+  }
+
+  pruneOldMessages(maxAgeDays = 90): number {
+    const cutoffSec = Math.floor(Date.now() / 1000) - maxAgeDays * 86_400;
+    const result = this.db.prepare("DELETE FROM tg_messages WHERE timestamp < ?").run(cutoffSec);
+    return result.changes;
   }
 
   getRecentMessages(chatId: string, limit: number = 20): TelegramMessage[] {

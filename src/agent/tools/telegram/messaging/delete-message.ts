@@ -1,5 +1,4 @@
 import { Type } from "@sinclair/typebox";
-import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
@@ -55,29 +54,8 @@ export const telegramDeleteMessageExecutor: ToolExecutor<DeleteMessageParams> = 
       };
     }
 
-    // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
-
-    // Check if it's a channel/supergroup (negative ID starting with -100)
-    const isChannel = chatId.startsWith("-100");
-
-    if (isChannel) {
-      // Use channels.DeleteMessages for channels/supergroups
-      const channel = await gramJsClient.getEntity(chatId);
-      await gramJsClient.invoke(
-        new Api.channels.DeleteMessages({
-          channel: channel,
-          id: messageIds,
-        })
-      );
-    } else {
-      // Use messages.DeleteMessages for regular chats
-      await gramJsClient.invoke(
-        new Api.messages.DeleteMessages({
-          id: messageIds,
-          revoke,
-        })
-      );
+    for (const msgId of messageIds) {
+      await context.bridge.deleteMessage(chatId, msgId);
     }
 
     return {

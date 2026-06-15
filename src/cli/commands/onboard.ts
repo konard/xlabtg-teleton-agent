@@ -985,6 +985,7 @@ async function runInteractiveOnboarding(
       },
     },
     telegram: {
+      mode: "user",
       api_id: apiId,
       api_hash: apiHash,
       phone,
@@ -1005,6 +1006,8 @@ async function runInteractiveOnboarding(
       debounce_ms: 1500,
       bot_token: botToken,
       bot_username: botUsername,
+      stream_mode: "replace",
+      guest_mode: false,
       command_access: CommandAccessSchema.parse({}),
     },
     storage: {
@@ -1198,6 +1201,7 @@ async function runNonInteractiveOnboarding(
       },
     },
     telegram: {
+      mode: "user",
       api_id: options.apiId,
       api_hash: options.apiHash,
       phone: options.phone,
@@ -1218,6 +1222,8 @@ async function runNonInteractiveOnboarding(
       debounce_ms: 1500,
       bot_token: undefined,
       bot_username: undefined,
+      stream_mode: "replace",
+      guest_mode: false,
       command_access: CommandAccessSchema.parse({}),
     },
     storage: {

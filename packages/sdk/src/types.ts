@@ -47,10 +47,8 @@ export interface TonPrice {
 
 /** Result of a TON send operation */
 export interface TonSendResult {
-  /** Real on-chain tx hash when confirmed; null when pending */
-  txRef: string | null;
-  /** Confirmation status */
-  txStatus: "confirmed" | "pending" | "failed";
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
+  txRef: string;
   /** Amount sent in TON */
   amount: number;
 }
@@ -135,6 +133,8 @@ export interface JettonSendResult {
   success: boolean;
   /** Wallet sequence number used */
   seqno: number;
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
+  txRef?: string;
 }
 
 /**
@@ -341,6 +341,8 @@ export interface DexSwapResult {
   minOutput: string;
   /** Slippage used */
   slippage: string;
+  /** On-chain transaction hash (hex), verifiable on TON explorers */
+  txRef?: string;
 }
 
 /** DEX sub-namespace on TonSDK */
@@ -1097,6 +1099,11 @@ export interface TonSDK {
  * before the bridge is ready (i.e., during plugin loading).
  */
 export interface TelegramSDK {
+  /**
+   * Returns the current Telegram mode: "user" (MTProto) or "bot" (Bot API).
+   */
+  getMode(): "user" | "bot";
+
   /**
    * Send a text message to a chat.
    *

@@ -8,7 +8,7 @@
  */
 
 import type { DealContext } from "../types.js";
-import type { StyledButtonDef, DealMessage } from "./styled-keyboard.js";
+import type { StyledButtonDef, DealMessage } from "../../sdk/formatting.js";
 
 /**
  * Escape HTML special characters
@@ -34,6 +34,16 @@ function formatAsset(type: "ton" | "gift", tonAmount?: number, giftSlug?: string
   return "???";
 }
 
+/** What the user gives in a deal, formatted. */
+function formatUserGives(deal: DealContext): string {
+  return formatAsset(deal.userGivesType, deal.userGivesTonAmount, deal.userGivesGiftSlug);
+}
+
+/** What the agent gives in a deal, formatted. */
+function formatAgentGives(deal: DealContext): string {
+  return formatAsset(deal.agentGivesType, deal.agentGivesTonAmount, deal.agentGivesGiftSlug);
+}
+
 /**
  * Format remaining time
  */
@@ -50,16 +60,8 @@ function getRemainingTime(expiresAt: number): string {
  * Proposal state - Accept/Decline
  */
 export function buildProposalMessage(deal: DealContext): DealMessage {
-  const userGives = formatAsset(
-    deal.userGivesType,
-    deal.userGivesTonAmount,
-    deal.userGivesGiftSlug
-  );
-  const agentGives = formatAsset(
-    deal.agentGivesType,
-    deal.agentGivesTonAmount,
-    deal.agentGivesGiftSlug
-  );
+  const userGives = formatUserGives(deal);
+  const agentGives = formatAgentGives(deal);
   const remaining = getRemainingTime(deal.expiresAt);
   const user = deal.username ? `@${esc(deal.username)}` : `${deal.userId}`;
 
@@ -84,16 +86,8 @@ ${TIMER_EMOJI} Expires in ${remaining}`;
  * Accepted state - Payment/gift instructions
  */
 export function buildAcceptedMessage(deal: DealContext, agentWallet: string): DealMessage {
-  const userGives = formatAsset(
-    deal.userGivesType,
-    deal.userGivesTonAmount,
-    deal.userGivesGiftSlug
-  );
-  const agentGives = formatAsset(
-    deal.agentGivesType,
-    deal.agentGivesTonAmount,
-    deal.agentGivesGiftSlug
-  );
+  const userGives = formatUserGives(deal);
+  const agentGives = formatAgentGives(deal);
 
   let instructions: string;
   let buttons: StyledButtonDef[][];
@@ -157,11 +151,7 @@ This usually takes 10-30 seconds.`;
  * Verified - Sending agent's part
  */
 export function buildSendingMessage(deal: DealContext): DealMessage {
-  const agentGives = formatAsset(
-    deal.agentGivesType,
-    deal.agentGivesTonAmount,
-    deal.agentGivesGiftSlug
-  );
+  const agentGives = formatAgentGives(deal);
 
   const text = `✅ <b>Payment Verified</b>
 
@@ -175,16 +165,8 @@ Sending ${agentGives}...`;
  * Completed - Final recap
  */
 export function buildCompletedMessage(deal: DealContext): DealMessage {
-  const userGives = formatAsset(
-    deal.userGivesType,
-    deal.userGivesTonAmount,
-    deal.userGivesGiftSlug
-  );
-  const agentGives = formatAsset(
-    deal.agentGivesType,
-    deal.agentGivesTonAmount,
-    deal.agentGivesGiftSlug
-  );
+  const userGives = formatUserGives(deal);
+  const agentGives = formatAgentGives(deal);
   const user = deal.username ? `@${esc(deal.username)}` : `${deal.userId}`;
 
   const duration = deal.completedAt

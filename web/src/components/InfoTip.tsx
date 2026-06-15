@@ -4,7 +4,7 @@ interface InfoTipProps {
   text: string;
 }
 
-const TOOLTIP_BG = 'rgba(24, 24, 27, 0.95)';
+const TOOLTIP_BG = 'var(--bg-secondary)';
 const HIDE_GRACE_MS = 75;
 
 export function InfoTip({ text }: InfoTipProps) {
@@ -45,24 +45,29 @@ export function InfoTip({ text }: InfoTipProps) {
       onBlur={hide}
     >
       {/* Trigger icon */}
-      <span
-        tabIndex={0}
-        role="button"
+      <button
+        type="button"
         aria-describedby={visible ? tooltipId : undefined}
         aria-label="Info"
         style={{
+          background: 'transparent',
+          border: 'none',
+          height: 'auto',
+          width: 'auto',
+          padding: 0,
           cursor: 'help',
           display: 'inline-flex',
-          color: visible ? 'var(--text)' : 'var(--text-secondary)',
+          alignItems: 'center',
+          borderRadius: '50%',
+          color: visible ? 'var(--text-primary)' : 'var(--text-secondary)',
           transition: 'color 0.15s',
-          outline: 'none',
         }}
       >
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="7" cy="7" r="6" stroke="currentColor" strokeWidth="1.5" />
           <text x="7" y="10.5" textAnchor="middle" fill="currentColor" fontSize="9" fontWeight="600" fontFamily="sans-serif">i</text>
         </svg>
-      </span>
+      </button>
 
       {/* Tooltip */}
       <span
@@ -79,13 +84,10 @@ export function InfoTip({ text }: InfoTipProps) {
           maxWidth: '250px',
           minWidth: '64px',
           padding: '6px 12px',
-          background: TOOLTIP_BG,
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          border: '1px solid var(--glass-border)',
+          background: 'var(--bg-tertiary)',
+          border: '1px solid var(--border)',
           borderRadius: '6px',
-          boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)',
-          color: '#ffffff',
+          color: 'var(--text-primary)',
           fontSize: 'var(--font-sm)',
           fontWeight: 400,
           lineHeight: '1.4',
@@ -110,8 +112,8 @@ export function InfoTip({ text }: InfoTipProps) {
             width: '8px',
             height: '8px',
             background: TOOLTIP_BG,
-            borderRight: '1px solid var(--glass-border)',
-            borderBottom: '1px solid var(--glass-border)',
+            borderRight: '1px solid var(--border-glass)',
+            borderBottom: '1px solid var(--border-glass)',
           }}
         />
       </span>

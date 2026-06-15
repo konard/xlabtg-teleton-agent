@@ -34,6 +34,7 @@ import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../constants/limits.js";
 import { TelegramAuthManager } from "../setup-auth.js";
 import { createLogger } from "../../utils/logger.js";
 import { validateBotTokenWithTelegram } from "../../telegram/bot-token.js";
+import { getErrorMessage } from "../../utils/errors.js";
 
 const log = createLogger("Setup");
 
@@ -96,11 +97,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
           },
         },
       });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        500
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -114,8 +112,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       toolLimit: p.toolLimit,
       keyPrefix: p.keyPrefix,
       consoleUrl: p.consoleUrl,
-      requiresApiKey: p.id !== "cocoon" && p.id !== "local" && p.id !== "claude-code",
-      autoDetectsKey: p.id === "claude-code",
+      requiresApiKey: p.id !== "cocoon" && p.id !== "local",
       requiresBaseUrl: p.id === "local",
     }));
     return c.json({ success: true, data: providers });
@@ -164,11 +161,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       const body = await c.req.json<{ provider: string; apiKey: string }>();
       const error = validateApiKeyFormat(body.provider as SupportedProvider, body.apiKey);
       return c.json({ success: true, data: { valid: !error, error } });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        400
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 400);
     }
   });
 
@@ -177,11 +171,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
     try {
       const body = await c.req.json<{ token: string }>();
       return c.json({ success: true, data: await validateBotTokenWithTelegram(body.token ?? "") });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        400
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 400);
     }
   });
 
@@ -210,11 +201,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         success: true,
         data: { created: !isNewWorkspace(workspace) === false, path: workspace.root },
       });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        500
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -235,11 +223,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         success: true,
         data: { address: wallet.address, mnemonic: wallet.mnemonic },
       });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        500
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -256,11 +241,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       saveWallet(wallet);
       log.info("TON wallet imported via setup UI");
       return c.json({ success: true, data: { address: wallet.address } });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        400
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 400);
     }
   });
 
@@ -285,19 +267,19 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         getConfiguredMtprotoProxies()
       );
       return c.json({ success: true, data: result });
-    } catch (err: unknown) {
-      const error = err as { errorMessage?: string; seconds?: number; message?: string };
-      if (error.seconds) {
+    } catch (error: unknown) {
+      const tgError = error as { errorMessage?: string; seconds?: number; message?: string };
+      if (tgError.seconds) {
         return c.json(
           {
             success: false,
-            error: `Rate limited. Please wait ${error.seconds} seconds.`,
+            error: `Rate limited. Please wait ${tgError.seconds} seconds.`,
           },
           429
         );
       }
       return c.json(
-        { success: false, error: error.errorMessage || error.message || String(err) },
+        { success: false, error: tgError.errorMessage || tgError.message || String(error) },
         500
       );
     }
@@ -313,19 +295,19 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
 
       const result = await authManager.verifyCode(body.authSessionId, body.code);
       return c.json({ success: true, data: result });
-    } catch (err: unknown) {
-      const error = err as { errorMessage?: string; seconds?: number; message?: string };
-      if (error.seconds) {
+    } catch (error: unknown) {
+      const tgError = error as { errorMessage?: string; seconds?: number; message?: string };
+      if (tgError.seconds) {
         return c.json(
           {
             success: false,
-            error: `Rate limited. Please wait ${error.seconds} seconds.`,
+            error: `Rate limited. Please wait ${tgError.seconds} seconds.`,
           },
           429
         );
       }
       return c.json(
-        { success: false, error: error.errorMessage || error.message || String(err) },
+        { success: false, error: tgError.errorMessage || tgError.message || String(error) },
         500
       );
     }
@@ -341,19 +323,19 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
 
       const result = await authManager.verifyPassword(body.authSessionId, body.password);
       return c.json({ success: true, data: result });
-    } catch (err: unknown) {
-      const error = err as { errorMessage?: string; seconds?: number; message?: string };
-      if (error.seconds) {
+    } catch (error: unknown) {
+      const tgError = error as { errorMessage?: string; seconds?: number; message?: string };
+      if (tgError.seconds) {
         return c.json(
           {
             success: false,
-            error: `Rate limited. Please wait ${error.seconds} seconds.`,
+            error: `Rate limited. Please wait ${tgError.seconds} seconds.`,
           },
           429
         );
       }
       return c.json(
-        { success: false, error: error.errorMessage || error.message || String(err) },
+        { success: false, error: tgError.errorMessage || tgError.message || String(error) },
         500
       );
     }
@@ -372,19 +354,19 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         return c.json({ success: false, error: "Session expired or invalid" }, 400);
       }
       return c.json({ success: true, data: result });
-    } catch (err: unknown) {
-      const error = err as { errorMessage?: string; seconds?: number; message?: string };
-      if (error.seconds) {
+    } catch (error: unknown) {
+      const tgError = error as { errorMessage?: string; seconds?: number; message?: string };
+      if (tgError.seconds) {
         return c.json(
           {
             success: false,
-            error: `Rate limited. Please wait ${error.seconds} seconds.`,
+            error: `Rate limited. Please wait ${tgError.seconds} seconds.`,
           },
           429
         );
       }
       return c.json(
-        { success: false, error: error.errorMessage || error.message || String(err) },
+        { success: false, error: tgError.errorMessage || tgError.message || String(error) },
         500
       );
     }
@@ -405,16 +387,16 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         getConfiguredMtprotoProxies()
       );
       return c.json({ success: true, data: result });
-    } catch (err: unknown) {
-      const error = err as { errorMessage?: string; seconds?: number; message?: string };
-      if (error.seconds) {
+    } catch (error: unknown) {
+      const tgError = error as { errorMessage?: string; seconds?: number; message?: string };
+      if (tgError.seconds) {
         return c.json(
-          { success: false, error: `Rate limited. Please wait ${error.seconds} seconds.` },
+          { success: false, error: `Rate limited. Please wait ${tgError.seconds} seconds.` },
           429
         );
       }
       return c.json(
-        { success: false, error: error.errorMessage || error.message || String(err) },
+        { success: false, error: tgError.errorMessage || tgError.message || String(error) },
         500
       );
     }
@@ -430,16 +412,16 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
 
       const result = await authManager.refreshQrToken(body.authSessionId);
       return c.json({ success: true, data: result });
-    } catch (err: unknown) {
-      const error = err as { errorMessage?: string; seconds?: number; message?: string };
-      if (error.seconds) {
+    } catch (error: unknown) {
+      const tgError = error as { errorMessage?: string; seconds?: number; message?: string };
+      if (tgError.seconds) {
         return c.json(
-          { success: false, error: `Rate limited. Please wait ${error.seconds} seconds.` },
+          { success: false, error: `Rate limited. Please wait ${tgError.seconds} seconds.` },
           429
         );
       }
       return c.json(
-        { success: false, error: error.errorMessage || error.message || String(err) },
+        { success: false, error: tgError.errorMessage || tgError.message || String(error) },
         500
       );
     }
@@ -453,11 +435,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         .catch(() => ({ authSessionId: "" }));
       await authManager.cancelSession(body.authSessionId);
       return c.json({ success: true });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        500
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -472,11 +451,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
         model: provider.model,
         dimensions: provider.dimensions,
       });
-    } catch (error) {
-      return c.json(
-        { success: false, error: error instanceof Error ? error.message : String(error) },
-        500
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 500);
     }
   });
 
@@ -524,6 +500,7 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
           },
         },
         telegram: {
+          ...(input.telegram.mode === "bot" ? { mode: "bot" as const } : {}),
           api_id: input.telegram.api_id,
           api_hash: input.telegram.api_hash,
           phone: input.telegram.phone,
@@ -569,9 +546,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
           top_k: 25,
           always_include: [
             "telegram_send_message",
-            "telegram_reply_message",
+            "telegram_quote_reply",
             "telegram_send_photo",
-            "telegram_send_document",
             "journal_*",
             "workspace_*",
             "web_*",
@@ -611,11 +587,8 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
 
       log.info(`Configuration saved: ${configPath}`);
       return c.json({ success: true, data: { path: configPath } });
-    } catch (err) {
-      return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) },
-        400
-      );
+    } catch (error: unknown) {
+      return c.json({ success: false, error: getErrorMessage(error) }, 400);
     }
   });
 

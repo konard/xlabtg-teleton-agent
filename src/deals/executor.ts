@@ -4,12 +4,14 @@
  */
 
 import type Database from "better-sqlite3";
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { Deal } from "./types.js";
 import { sendTon } from "../ton/transfer.js";
+import { tonExplorerTxUrl } from "../ton/confirm.js";
 import { formatAsset } from "./utils.js";
 import { JournalStore } from "../memory/journal-store.js";
 import { getErrorMessage } from "../utils/errors.js";
+import { getClient } from "../sdk/telegram-utils.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Deal");
@@ -28,7 +30,7 @@ export interface ExecutionResult {
 export async function executeDeal(
   dealId: string,
   db: Database.Database,
-  bridge: TelegramBridge
+  bridge: ITelegramBridge
 ): Promise<ExecutionResult> {
   try {
     // Load deal
@@ -95,37 +97,12 @@ export async function executeDeal(
       });
 
       if (!sendResult) {
-        throw new Error("TON transfer failed (wallet not initialized or invalid parameters)");
+        throw new Error("TON transfer failed or could not be confirmed on-chain");
       }
+      const txHash = sendResult.hash;
 
-      const { txHash, status: txStatus } = sendResult;
-
-      if (txStatus === "pending") {
-        // Broadcast succeeded but on-chain confirmation timed out.
-        // Record pending state so an operator can reconcile later.
-        db.prepare(
-          `UPDATE deals SET
-            status = 'completed',
-            agent_sent_tx_status = 'pending',
-            completed_at = unixepoch()
-          WHERE id = ?`
-        ).run(dealId);
-
-        log.warn(`Deal #${dealId} TON broadcast ok but confirmation pending`);
-
-        await bridge.sendMessage({
-          chatId: deal.chat_id,
-          text: `✅ **Deal #${dealId} — payment sent!**
-
-I've broadcast **${deal.agent_gives_ton_amount} TON** to your wallet. The transaction is pending on-chain confirmation — you should see it shortly.
-
-Thank you for trading! 🎉`,
-        });
-
-        return { success: true };
-      }
-
-      // txStatus === "confirmed" — store real on-chain hash
+      // Update deal: mark as completed with the real, on-chain-confirmed tx hash
+      // (agent_sent_at already set by lock)
       db.prepare(
         `UPDATE deals SET
           status = 'completed',
@@ -135,10 +112,10 @@ Thank you for trading! 🎉`,
         WHERE id = ?`
       ).run(txHash, dealId);
 
-      log.info(`Deal #${dealId} completed - TON sent - TX: ${txHash?.slice(0, 8) ?? "unknown"}...`);
+      log.info(`Deal #${dealId} completed - TON sent - TX: ${txHash.slice(0, 8)}...`);
 
       // Log to business journal
-      logDealToJournal(deal, db, txHash ?? undefined);
+      logDealToJournal(deal, db, txHash);
 
       // Notify user in chat
       await bridge.sendMessage({
@@ -148,13 +125,14 @@ Thank you for trading! 🎉`,
 I've sent **${deal.agent_gives_ton_amount} TON** to your wallet.
 
 TX Hash: \`${txHash}\`
+${tonExplorerTxUrl(txHash)}
 
 Thank you for trading! 🎉`,
       });
 
       return {
         success: true,
-        txHash: txHash ?? undefined,
+        txHash,
       };
     }
 
@@ -172,7 +150,7 @@ Thank you for trading! 🎉`,
       );
 
       // Transfer collectible gift using Telegram API
-      const gramJsClient = bridge.getClient().getClient();
+      const gramJsClient = getClient(bridge);
       const Api = (await import("telegram")).Api;
 
       try {
@@ -192,10 +170,13 @@ Thank you for trading! 🎉`,
               toId: toUser,
             })
           );
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS error shape is untyped
-        } catch (freeTransferError: any) {
+        } catch (freeTransferError: unknown) {
           // If PAYMENT_REQUIRED, use payment flow
-          if (freeTransferError?.errorMessage === "PAYMENT_REQUIRED") {
+          if (
+            freeTransferError instanceof Error &&
+            "errorMessage" in freeTransferError &&
+            (freeTransferError as { errorMessage?: string }).errorMessage === "PAYMENT_REQUIRED"
+          ) {
             log.info("Transfer requires payment, using payment flow...");
 
             const invoice = new Api.InputInvoiceStarGiftTransfer({
@@ -203,8 +184,7 @@ Thank you for trading! 🎉`,
               toId: toUser,
             });
 
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS payment form response is untyped
-            const form: any = await gramJsClient.invoke(
+            const form = await gramJsClient.invoke(
               new Api.payments.GetPaymentForm({
                 invoice: invoice,
               })
@@ -341,7 +321,7 @@ function logDealToJournal(deal: Deal, db: Database.Database, txHash?: string): v
 export async function autoExecuteAfterVerification(
   dealId: string,
   db: Database.Database,
-  bridge: TelegramBridge
+  bridge: ITelegramBridge
 ): Promise<void> {
   log.info(`Auto-executing deal #${dealId} after verification...`);
 

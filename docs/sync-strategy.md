@@ -1,110 +1,231 @@
 # Fork Synchronization Strategy
 
-## Overview
+How to keep `xlabtg/teleton-agent` in sync with its true upstream
+`TONresistor/teleton-agent` **without breaking the fork's custom features** and
+without an unreviewable "big bang" merge.
 
-This document describes the strategy for keeping `xlabtg/teleton-agent` in sync with the upstream
-`TONresistor/teleton-agent` repository while preserving all fork-specific features.
+> **TL;DR** — Never blind-merge. Run `node scripts/sync-upstream.mjs` to see the
+> exact conflict surface, then sync one ownership bucket at a time using the
+> rules below. The weekly [`Upstream Sync`](../.github/workflows/sync-upstream.yml)
+> workflow keeps a tracking PR open so the divergence never goes unnoticed.
 
-## Repository Relationship
+## Repository relationship
 
-| Repository | Role | Commits ahead |
+Teleton Agent has a **three-level** fork chain:
+
+| Level | Repository | Role |
 |---|---|---|
-| `TONresistor/teleton-agent` | True upstream (original) | Source of core improvements |
-| `xlabtg/teleton-agent` | Fork | +175 commits (WebUI, analytics, dashboard, etc.) |
+| Upstream | [`TONresistor/teleton-agent`](https://github.com/TONresistor/teleton-agent) | Original project — source of core fixes & security patches |
+| Fork | [`xlabtg/teleton-agent`](https://github.com/xlabtg/teleton-agent) | This repo — adds WebUI, analytics, Groq provider, command controls, … |
+| Contributor forks | e.g. `konard/xlabtg-teleton-agent` | Personal forks that open PRs against `xlabtg/teleton-agent` |
 
-As of 2026-03-19, the fork is **9 commits behind** TONresistor upstream.
+The remote that points at the true upstream is conventionally named
+`tonresistor` (the sync tool adds it automatically if missing):
+
+```bash
+git remote add tonresistor https://github.com/TONresistor/teleton-agent.git
+git fetch tonresistor
+```
+
+## Current divergence
+
+As of the **2026-06 full sync** (see history below) the fork is **caught up**
+with upstream:
+
+- **Latest synced upstream tag:** `v0.8.6`
+- **Fork is behind upstream by:** 0 commits
+- **Fork is ahead of upstream by:** ~1357 commits (the fork's custom feature set)
+
+The full `git merge tonresistor/main` was performed and all 102 conflicting
+files were resolved by ownership bucket (see history). Future drift will again
+show up here; a live snapshot of the conflict surface lives in
+[`sync-conflicts.md`](./sync-conflicts.md).
+
+> **Why the full merge was viable this time.** The merge touched ~152 files
+> (102 with real conflicts) — including the core agent runtime, `package.json`,
+> and the CI workflows. Rather than a blind merge, each conflict was resolved by
+> the ownership rules below: fork-owned subsystems kept the fork version (so the
+> ~1357 commits of custom work and their tests stay green), upstream's new files
+> and non-conflicting changes were taken wholesale, and shared "hybrid" files
+> were hand-merged. The result builds and passes the full test suite.
+
+## Tooling
+
+### `scripts/sync-upstream.mjs` — the divergence reporter
+
+A dependency-free Node script (run with nothing but Node ≥ 20) that:
+
+1. ensures the `tonresistor` remote exists and fetches it,
+2. measures ahead / behind / merge-base, and
+3. lists the files changed on **both** sides since the merge-base — the real
+   conflict surface — classifying each into an ownership bucket.
+
+```bash
+# Print the report to stdout
+node scripts/sync-upstream.mjs
+
+# Machine-readable form (ahead/behind/conflicts/buckets)
+node scripts/sync-upstream.mjs --json
+
+# Refresh the committed snapshot at docs/sync-conflicts.md
+node scripts/sync-upstream.mjs --write docs/sync-conflicts.md
+```
+
+The classification rules are unit-tested
+(`scripts/__tests__/sync-upstream.test.mjs`, run via `node --test scripts/__tests__/`),
+so the "Conflict Resolution Rules" below are executable, not just prose.
+
+### `.github/workflows/sync-upstream.yml` — weekly tracking PR
+
+Runs every Monday (and on demand via *workflow_dispatch*). When the fork is
+behind, it regenerates `docs/sync-conflicts.md` and opens/refreshes a single
+tracking PR (`chore/upstream-sync-report`) so a maintainer can perform the
+controlled sync. **It never merges into `main` itself** — surfacing the work for
+human review is the whole point.
 
 ## Conflict Resolution Rules
 
-### Always prefer TONresistor (upstream) for:
-- Core agent runtime (`src/agent/runtime.ts`) — async/concurrency, robustness
-- Security fixes — auth, exec scope, data retention
-- Bug fixes in low-level infrastructure
-- Dependency version bumps (prefer stable over alpha)
-- CLI/startup logic
+Every conflicting file falls into one of three buckets. When in doubt, a file is
+treated as **hybrid** (manual review) — the tool never silently drops one side's
+work.
 
-### Always prefer fork (`xlabtg`) for:
-- WebUI (`web/`) — dashboard, analytics, sessions, security center
-- `improvements/` directory — feature documentation
-- Services (`src/services/`) — MetricsService, AnalyticsService
-- All fork-specific pages/components not present in upstream
+### Prefer **upstream** (`git checkout --theirs <file>`)
 
-### Manual review required (hybrid merge):
-- `src/agent/runtime.ts` — adopt upstream concurrency fixes but keep fork's metrics calls
-- `src/agent/token-usage.ts` — keep fork's analytics integration
-- `src/agent/hooks/user-hook-evaluator.ts` — keep fork's `evaluateWithTrace()` for HookTestPanel
-- `.github/workflows/ci.yml` — keep fork's 4-job parallel CI structure
+Core runtime, security, and platform code that should track upstream closely:
 
-## Changes Merged in This Sync (2026-03-19)
+- `src/agent/**` (except the hybrid files below) — agent loop, tools, providers
+- `src/memory/**`, `src/session/**` — persistence & RAG
+- `src/api/**` — HTTPS management API
+- `src/ton-proxy/**` — TON Proxy module
+- `src/cli/**` — CLI & startup
+- `src/workspace/**` — sandbox / permission hardening
+- `packages/sdk/**` — Plugin SDK contract
 
-The following TONresistor upstream changes were integrated:
+### Prefer **fork** (`git checkout --ours <file>`)
 
-### Security fix: exec `allowlist` scope (`src/agent/tools/exec/module.ts`)
-- **Before**: `allowlist` fell through to `"always"` scope (too permissive)
-- **After**: `allowlist` correctly maps to `"admin-only"` scope
-- **Source commit**: `494b06f fix: security hardening, robustness guards, data retention`
+Features that exist only in the fork:
 
-### Plugin timeout safety (`src/agent/tools/plugin-watcher.ts`)
-- Added `PLUGIN_START_TIMEOUT_MS = 30_000` and `PLUGIN_STOP_TIMEOUT_MS = 30_000` constants
-- All `plugin.stop?.()` and `plugin.start?.()` calls are now wrapped in `Promise.race` with these
-  timeouts to prevent indefinitely hanging plugins from blocking the agent
-- **Source commit**: `2e47cd0 fix: robustness, async IO, concurrency limit`
+- `web/**` — the WebUI (except the shared files below)
+- `src/services/**` — MetricsService, AnalyticsService, TTS, schedulers
+- `src/providers/groq/**`, `src/webui/routes/groq.ts` — Groq multi-modal provider
+- `improvements/**` — fork feature notes
+- `CHANGELOG.md` — regenerated by release-please from fork history
+- The sync tooling itself (`docs/sync-*.md`, `scripts/sync-upstream.mjs`, …)
 
-### Async/concurrency improvements (`src/agent/runtime.ts`)
-- `session:start` hook now fires concurrently (non-blocking) instead of `await`-blocking
-- Embedding computation starts concurrently, awaited together with `session:start` via `Promise.all`
-- `tool:error` and `tool:after` observing hooks now fire concurrently and are awaited together
-  with `Promise.allSettled` after the loop, reducing per-tool-call hook overhead
-- Additional server error patterns for retry: `overloaded`, `Internal server error`, `api_error`
-- Rate-limit retry no longer decrements `iteration` (prevents double-counting)
-- Fork's `getMetrics()?.recordToolCall()` and `getAnalytics()?.recordRequestMetric()` calls are
-  preserved
-- **Source commit**: `2e47cd0 fix: robustness, async IO, concurrency limit`
+### **Hybrid** — hand-merge, keep both sides
 
-### Dependency version bumps (`package.json`)
-- `@mariozechner/pi-ai`: `^0.58.1` → `^0.58.4`
-- `@modelcontextprotocol/sdk`: `^1.26.0` → `^1.27.1`
-- `@tavily/core`: `^0.7.1` → `^0.7.2`
-- `better-sqlite3`: `^12.6.2` → `^12.8.0`
-- `hono`: `^4.11.9` → `^4.12.8`
-- `sqlite-vec`: `^0.1.7-alpha.2` → `^0.1.7` (stable release)
-- **Note**: TypeScript and ESLint versions were NOT downgraded (upstream regressed these)
-- **Source commits**: `bfff26d feat: agent perf, heartbeat fix, WebUI redesign, dep bumps`
+Files where both the fork and upstream add things that must coexist. Never
+auto-resolve these:
 
-### CLI update checker (`src/cli/update-check.ts`)
-- New module that checks npm registry for newer versions of teleton once every 24 hours
-- Skips check in Docker and dev/git-clone environments
-- Shows a banner and optionally runs `npm i -g teleton@latest` if user confirms
-- Not yet wired into startup (upstream reverted this as premature in `1dc7681`)
-- **Source commit**: `c58aff6 feat(cli): add npm update checker`
+| File(s) | Why |
+|---|---|
+| `package.json`, `package-lock.json`, `web/package*.json` | keep upstream version bumps **and** fork-only deps |
+| `src/config/schema.ts`, `src/config/configurable-keys.ts` | both extend config (e.g. fork's Groq vs upstream's Heartbeat) |
+| `src/webui/server.ts` | both register routes — keep both mounts |
+| `src/agent/runtime.ts`, `src/agent/token-usage.ts`, `src/agent/hooks/user-hook-evaluator.ts` | adopt upstream concurrency/robustness **but** keep fork metrics/analytics hooks |
+| `web/src/lib/api.ts`, `web/src/pages/Config.tsx` | both add API methods / config tabs — keep both |
+| `vitest.config.ts`, `tsup.config.ts`, `tsconfig*.json`, `eslint.config.js`, `Dockerfile`, `config.example.yaml`, `README.md` | shared tooling/docs — reconcile fork settings with upstream |
+| `.github/workflows/**` | keep the fork's CI structure, fold in upstream changes |
+| anything unrecognised | review manually before resolving |
 
-## How to Perform Future Syncs
+## Controlled sync procedure
 
 ```bash
-# Add TONresistor as a remote (first time only)
-git remote add tonresistor https://github.com/TONresistor/teleton-agent.git
+# 1. See what's coming and which buckets it falls into.
+node scripts/sync-upstream.mjs
+
+# 2. Branch off the latest main.
+git checkout main && git pull
+git checkout -b chore/sync-upstream
+
+# 3. Start the merge (expect conflicts — that's fine).
 git fetch tonresistor
+git merge tonresistor/main
 
-# See what's new in upstream
-git log HEAD..tonresistor/main --oneline
+# 4. Resolve by bucket (see docs/sync-conflicts.md for the per-file list):
+#    - Prefer UPSTREAM files:
+git checkout --theirs <file> && git add <file>
+#    - Prefer FORK files:
+git checkout --ours <file> && git add <file>
+#    - HYBRID files: open each, merge both sides by hand, then `git add`.
 
-# See which files differ
-git diff --name-only HEAD tonresistor/main
-
-# Cherry-pick specific commits (preferred over merge/rebase for selective adoption)
-git cherry-pick <commit-sha>
-
-# Or for a full controlled rebase (advanced — requires careful conflict resolution):
-git fetch tonresistor
-git rebase tonresistor/main
-# Resolve conflicts using the rules in the "Conflict Resolution Rules" section above
+# 5. Finish and validate (see checklist below).
+git commit
+npm install && npm run build && npm test
 ```
 
-## Architecture Direction
+If the merge proves too large to resolve in one PR, **cherry-pick** the
+highest-value upstream commits instead (the approach used in the
+2026-03 sync, see history below):
 
-The fork is moving toward a `core (upstream) + extensions (fork)` model:
+```bash
+git log --oneline tonresistor/main ^main      # what's new upstream
+git cherry-pick <commit-sha>                   # take one fix at a time
+```
 
-- **Core** (`src/agent/`, `src/config/`, `src/session/`, `src/memory/`) — track upstream closely
-- **Extensions** (`src/services/`, `web/src/pages/Analytics*`, `web/src/pages/Security*`,
-  `web/src/pages/Sessions*`) — fork-owned, not in upstream
-- **Shared** (`web/src/components/`, `.github/workflows/`) — merge carefully, resolve per above rules
+## Validation checklist
+
+After any sync, before opening the PR:
+
+```bash
+npm run typecheck
+npm run lint
+npm test
+npm run build
+```
+
+Then smoke-test the critical flows that the fork owns:
+
+| Flow | Must work |
+|---|---|
+| Telegram commands | ✅ |
+| Command access control | ✅ |
+| Web UI config (incl. Commands & Groq tabs) | ✅ |
+| Groq provider (STT/TTS) | ✅ |
+| Plugins | ✅ |
+
+## Long-term direction: fork layering
+
+The fork is steadily moving toward a **`core (upstream) + extensions (fork)`**
+layout so future syncs touch as few shared files as possible:
+
+- **Core** (`src/agent/**`, `src/memory/**`, `src/session/**`, `src/api/**`,
+  `packages/sdk/**`) — track upstream; avoid editing in place.
+- **Extensions** (`src/services/**`, `src/providers/groq/**`,
+  fork-only `web/**` pages) — fork-owned, additive, never in upstream.
+- **Shared seams** (`src/config/schema.ts`, `src/webui/server.ts`,
+  `web/src/lib/api.ts`) — keep fork additions append-only so they merge cleanly.
+
+The end goal is to express fork features through **hooks / middleware / additive
+registration** rather than by modifying core files, shrinking the hybrid bucket
+over time. Mechanically extracting existing fork code into `src/extensions/` is a
+larger refactor tracked separately — it must not itself become a giant conflict.
+
+## Sync history
+
+- **2026-06 (`v0.8.6`, full merge):** the complete `git merge tonresistor/main`
+  was performed in one PR, integrating all 206 upstream commits since `v0.8.5`.
+  102 conflicting files were resolved by ownership bucket:
+  - **upstream taken wholesale** — all upstream-only new files and
+    non-conflicting changes, plus the pervasive tool-registry refactor
+    (`mode`/`tags` on `ToolEntry`) and its ~150 tool files;
+  - **fork preserved** — WebUI, services, Groq/NVIDIA/claude-code providers and
+    their pinned model defaults, command-access, exec allowlist, recurring tasks,
+    transcript, compaction, knowledge indexer, memory schema, agent runtime
+    (the fork's instrumented loop) and config loader — so every fork feature and
+    its tests stay green;
+  - **hybrid hand-merges** — `package.json`/lockfiles, `config/schema`,
+    `webui/server`, `index.ts`, `web/lib/api`, CI/Docker/docs;
+  - **reconciliations** — `ITelegramBridge` (fork bridges now implement it),
+    `telegram_send_video` re-registered, zero-trust `PolicyEngine` re-wired into
+    `registry.execute`, and merge-orphaned upstream files (codex provider, bridge
+    factory, env/maintenance helpers) removed as dead code.
+
+  Result: `typecheck`, `lint`, `build` (sdk+backend+web) and the full `vitest`
+  suite all pass. This advanced the effective base to `v0.8.6` (behind → 0).
+- **2026-03 (`v0.8.5`, base `3fd5732`):** selective integration of upstream
+  security/robustness/concurrency fixes (exec allowlist scope, plugin
+  start/stop timeouts, concurrent hooks, retry hardening) plus dependency bumps,
+  via cherry-pick rather than a full merge — preserving fork metrics/analytics
+  hooks. This is why the merge-base is still `v0.8.5`: past syncs took commits
+  selectively instead of advancing the base.

@@ -15,6 +15,7 @@ export function createMocks() {
     getMessages: vi.fn(),
     downloadMedia: vi.fn(),
     uploadFile: vi.fn(),
+    getMe: vi.fn(),
   };
 
   const mockBridgeClient = {
@@ -25,7 +26,9 @@ export function createMocks() {
 
   const mockBridge = {
     isAvailable: vi.fn(() => true),
+    getMode: vi.fn(() => "user"),
     getClient: () => mockBridgeClient,
+    getRawClient: () => mockBridgeClient,
     sendMessage: vi.fn(),
     editMessage: vi.fn(),
     sendReaction: vi.fn(),

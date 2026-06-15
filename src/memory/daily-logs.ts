@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, appendFileSync, readFileSync } from "fs";
+import { existsSync, mkdirSync, appendFileSync, readFileSync, readdirSync, unlinkSync } from "fs";
 import { join } from "path";
 import { WORKSPACE_PATHS } from "../workspace/index.js";
 import { createLogger } from "../utils/logger.js";
@@ -104,6 +104,47 @@ export function writeSessionEndSummary(summary: string, reason: string): void {
 
 export function writeSummaryToDailyLog(summary: string): void {
   appendToDailyLog(`### Memory Flush (Pre-Compaction)\n\n${summary}`);
+}
+
+/**
+ * Delete daily log files older than maxAgeDays.
+ * Uses the filename date (YYYY-MM-DD.md) to determine age.
+ * Returns the number of files deleted.
+ */
+export function cleanupOldDailyLogs(maxAgeDays = 60): number {
+  if (!existsSync(MEMORY_DIR)) return 0;
+
+  const cutoffMs = Date.now() - maxAgeDays * 86_400_000;
+  const datePattern = /^(\d{4}-\d{2}-\d{2})\.md$/;
+  let deleted = 0;
+
+  try {
+    const files = readdirSync(MEMORY_DIR);
+    for (const file of files) {
+      const match = datePattern.exec(file);
+      if (!match) continue;
+
+      const fileDate = new Date(match[1]).getTime();
+      if (Number.isNaN(fileDate)) continue;
+
+      if (fileDate < cutoffMs) {
+        try {
+          unlinkSync(join(MEMORY_DIR, file));
+          deleted++;
+        } catch (innerError) {
+          log.warn({ err: innerError, file }, "Failed to delete old daily log");
+        }
+      }
+    }
+  } catch (error) {
+    log.error({ err: error }, "Failed to list memory directory for cleanup");
+  }
+
+  if (deleted > 0) {
+    log.info(`Cleaned up ${deleted} daily log file(s) older than ${maxAgeDays} days`);
+  }
+
+  return deleted;
 }
 
 export function writeConversationMilestone(chatId: string, topic: string, details: string): void {

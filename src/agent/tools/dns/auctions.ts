@@ -5,12 +5,31 @@ import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 
 const log = createLogger("Tools");
+
+interface TonApiDnsAuction {
+  domain: string;
+  price: string;
+  bids: number;
+  date: number;
+  owner?: string;
+}
+
+interface FormattedAuction {
+  domain: string;
+  currentBid: string;
+  bids: number;
+  endsAt: number;
+  endDate: string;
+  owner: string | undefined;
+}
+
 interface DnsAuctionsParams {
   limit?: number;
 }
 export const dnsAuctionsTool: Tool = {
   name: "dns_auctions",
-  description: "List active .ton domain auctions with current bids and end times.",
+  description:
+    "List active .ton domain auctions with current bids and end times. Use dns_bid to bid on a result.",
   category: "data-bearing",
   parameters: Type.Object({
     limit: Type.Optional(
@@ -53,26 +72,26 @@ export const dnsAuctionsExecutor: ToolExecutor<DnsAuctionsParams> = async (
     }
 
     // Format and limit results
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON DNS API response is untyped
-    const formattedAuctions = auctions.data.slice(0, limit).map((auction: any) => {
-      const currentBid = (BigInt(auction.price) / BigInt(1_000_000_000)).toString();
-      const endDate = new Date(auction.date * 1000).toISOString().replace("T", " ").split(".")[0];
+    const formattedAuctions: FormattedAuction[] = auctions.data
+      .slice(0, limit)
+      .map((auction: TonApiDnsAuction) => {
+        const currentBid = (BigInt(auction.price) / BigInt(1_000_000_000)).toString();
+        const endDate = new Date(auction.date * 1000).toISOString().replace("T", " ").split(".")[0];
 
-      return {
-        domain: auction.domain,
-        currentBid: `${currentBid} TON`,
-        bids: auction.bids,
-        endsAt: auction.date,
-        endDate: endDate + " UTC",
-        owner: auction.owner,
-      };
-    });
+        return {
+          domain: auction.domain,
+          currentBid: `${currentBid} TON`,
+          bids: auction.bids,
+          endsAt: auction.date,
+          endDate: endDate + " UTC",
+          owner: auction.owner,
+        };
+      });
 
     // Create summary message
     const summary = formattedAuctions
       .map(
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON DNS API response is untyped
-        (a: any, i: number) =>
+        (a: FormattedAuction, i: number) =>
           `${i + 1}. ${a.domain} - ${a.currentBid} (${a.bids} bids) - Ends: ${a.endDate}`
       )
       .join("\n");

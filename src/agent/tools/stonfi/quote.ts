@@ -3,11 +3,10 @@ import type { Tool, ToolExecutor, ToolResult } from "../types.js";
 import { StonApiClient } from "@ston-fi/api";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
+import { toUnits } from "../../../ton/units.js";
+import { STONFI_PTON_ADDRESS as NATIVE_TON_ADDRESS } from "../../../ton/dex-constants.js";
 
 const log = createLogger("Tools");
-
-// Native TON address used by STON.fi API
-const NATIVE_TON_ADDRESS = "EQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAM9c";
 interface JettonQuoteParams {
   from_asset: string;
   to_asset: string;
@@ -59,11 +58,7 @@ export const stonfiQuoteExecutor: ToolExecutor<JettonQuoteParams> = async (
     // Fetch decimals for accurate conversion (TON=9, USDT=6, WBTC=8, etc.)
     const fromAssetInfo = await stonApiClient.getAsset(fromAddress);
     const fromDecimals = fromAssetInfo?.decimals ?? 9;
-    const amountStr = amount.toFixed(fromDecimals);
-    const [whole, frac = ""] = amountStr.split(".");
-    const offerUnits = BigInt(
-      whole + (frac + "0".repeat(fromDecimals)).slice(0, fromDecimals)
-    ).toString();
+    const offerUnits = toUnits(amount, fromDecimals).toString();
 
     const simulationResult = await stonApiClient.simulateSwap({
       offerAddress: fromAddress,

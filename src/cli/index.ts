@@ -229,7 +229,11 @@ mcp
     "Add an MCP server (e.g. teleton mcp add @modelcontextprotocol/server-filesystem /tmp)"
   )
   .option("-n, --name <name>", "Server name (auto-derived from package if omitted)")
-  .option("-s, --scope <scope>", "Tool scope: always | dm-only | group-only | admin-only", "always")
+  .option(
+    "-s, --scope <scope>",
+    "Tool scope: always | open | dm-only | group-only | admin-only | allowlist | disabled",
+    "always"
+  )
   .option(
     "-e, --env <KEY=VALUE...>",
     "Environment variables (repeatable)",

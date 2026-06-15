@@ -1,5 +1,5 @@
 import type { AgentRuntime } from "../agent/runtime.js";
-import type { TelegramBridge } from "../telegram/bridge.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import type { MemorySystem } from "../memory/index.js";
 import type { ToolRegistry } from "../agent/tools/registry.js";
 import type { WebUIServerDeps, LoadedPlugin, McpServerInfo } from "../webui/types.js";
@@ -15,7 +15,7 @@ import type { ManagedAgentService } from "../agents/service.js";
 
 export interface ApiServerDeps {
   agent?: AgentRuntime | null;
-  bridge?: TelegramBridge | null;
+  bridge?: ITelegramBridge | null;
   memory?: {
     db: Database;
     vectorEnabled?: MemorySystem["vectorEnabled"];

@@ -4,7 +4,7 @@
  */
 
 import type Database from "better-sqlite3";
-import type { TelegramBridge } from "../../telegram/bridge.js";
+import type { ITelegramBridge } from "../../telegram/bridge-interface.js";
 import type { DealBot } from "../index.js";
 import type { DealContext } from "../types.js";
 import type { ToolContext } from "../../agent/tools/types.js";
@@ -37,7 +37,7 @@ interface PollerConfig {
 
 export class VerificationPoller {
   private db: Database.Database;
-  private bridge: TelegramBridge;
+  private bridge: ITelegramBridge;
   private bot: DealBot;
   private config: PollerConfig;
   private intervalId: NodeJS.Timeout | null = null;
@@ -45,7 +45,7 @@ export class VerificationPoller {
 
   constructor(
     db: Database.Database,
-    bridge: TelegramBridge,
+    bridge: ITelegramBridge,
     bot: DealBot,
     config: Partial<PollerConfig> = {}
   ) {
@@ -60,11 +60,11 @@ export class VerificationPoller {
    */
   start(): void {
     if (this.intervalId) {
-      log.warn("⚠️ [Poller] Already running");
+      log.warn("[Poller] Already running");
       return;
     }
 
-    log.info(`🔄 [Poller] Started (interval: ${this.config.pollIntervalMs}ms)`);
+    log.info(`[Poller] Started (interval: ${this.config.pollIntervalMs}ms)`);
 
     this.intervalId = setInterval(() => {
       this.poll().catch((err) => log.error({ err }, "[Poller] Unhandled poll error"));
@@ -81,7 +81,7 @@ export class VerificationPoller {
     if (this.intervalId) {
       clearInterval(this.intervalId);
       this.intervalId = null;
-      log.info("🛑 [Poller] Stopped");
+      log.info("[Poller] Stopped");
     }
   }
 
@@ -97,7 +97,7 @@ export class VerificationPoller {
       for (const deal of deals) {
         const retryCount = this.retryMap.get(deal.dealId) || 0;
         if (retryCount === 0) {
-          log.info(`🔍 [Poller] Verifying deal ${deal.dealId}...`);
+          log.info(`[Poller] Verifying deal ${deal.dealId}...`);
         }
         await this.verifyDeal(deal);
       }
@@ -114,7 +114,7 @@ export class VerificationPoller {
 
     // Check max retries
     if (retryCount >= this.config.maxRetries) {
-      log.info(`⏰ [Poller] Deal ${deal.dealId} verification timeout after ${retryCount} retries`);
+      log.info(`[Poller] Deal ${deal.dealId} verification timeout after ${retryCount} retries`);
       await this.handleTimeout(deal);
       return;
     }
@@ -187,10 +187,10 @@ export class VerificationPoller {
   ): Promise<{ verified: boolean; giftMsgId?: string }> {
     try {
       // Get agent's own user ID
-      const me = this.bridge.getClient().getMe();
-      if (!me) return { verified: false };
+      const ownUserId = this.bridge.getOwnUserId();
+      if (!ownUserId) return { verified: false };
 
-      const botUserId = Number(me.id);
+      const botUserId = Number(ownUserId);
 
       // Import gift executor
       const { telegramGetMyGiftsExecutor } =
@@ -250,7 +250,7 @@ export class VerificationPoller {
     playerWallet?: string,
     giftMsgId?: string
   ): Promise<void> {
-    log.info(`✅ [Poller] Deal ${deal.dealId} payment verified!`);
+    log.info(`[Poller] Deal ${deal.dealId} payment verified!`);
 
     // Update deal status to 'verified' (atomic: only if still payment_claimed)
     let transitioned: boolean;
@@ -281,7 +281,7 @@ export class VerificationPoller {
 
     // Another poller already transitioned this deal — abort
     if (!transitioned) {
-      log.warn(`⚠️ [Poller] Deal ${deal.dealId} already transitioned by another poller, skipping`);
+      log.warn(`[Poller] Deal ${deal.dealId} already transitioned by another poller, skipping`);
       return;
     }
 
@@ -307,7 +307,7 @@ export class VerificationPoller {
         await this.bot.editMessageByInlineId(deal.inlineMessageId, text, buttons);
       }
 
-      log.info(`🎉 [Poller] Deal ${deal.dealId} completed successfully!`);
+      log.info(`[Poller] Deal ${deal.dealId} completed successfully!`);
     } else {
       // Deal failed
       if (deal.inlineMessageId) {

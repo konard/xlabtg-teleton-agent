@@ -25,6 +25,16 @@ export interface KnowledgeChunk {
   hash: string;
 }
 
+let _instance: KnowledgeIndexer | null = null;
+
+export function setKnowledgeIndexer(indexer: KnowledgeIndexer): void {
+  _instance = indexer;
+}
+
+export function getKnowledgeIndexer(): KnowledgeIndexer | null {
+  return _instance;
+}
+
 export interface SemanticVectorIndexStats {
   upserted: number;
   deleted: number;
@@ -74,6 +84,10 @@ export class KnowledgeIndexer {
     private semanticVectorStore?: SemanticVectorStore,
     private temporalConfig?: TemporalContextConfig
   ) {}
+
+  getEmbedder(): EmbeddingProvider {
+    return this.embedder;
+  }
 
   async indexAll(options?: { force?: boolean }): Promise<KnowledgeIndexResult> {
     const files = this.listMemoryFiles();
@@ -375,6 +389,66 @@ export class KnowledgeIndexer {
     }
 
     return stats;
+  }
+
+  async pruneOrphans(): Promise<{ markedInactive: number; deleted: number }> {
+    // Find all active memory chunks pointing to files that no longer exist
+    const paths = this.db
+      .prepare(
+        `SELECT DISTINCT path FROM knowledge WHERE path IS NOT NULL AND source = 'memory'
+         AND (status = 'active' OR status IS NULL)`
+      )
+      .all() as Array<{ path: string }>;
+
+    let markedInactive = 0;
+
+    const orphanedPaths: string[] = [];
+    for (const { path } of paths) {
+      const absPath = join(this.workspaceDir, path);
+      // Also check archived/ — consolidated files are moved there, keep their chunks searchable
+      const archivedPath = join(
+        this.workspaceDir,
+        "memory",
+        "archived",
+        path.replace(/^memory\//, "")
+      );
+      if (!existsSync(absPath) && !existsSync(archivedPath)) {
+        orphanedPaths.push(path);
+      }
+    }
+
+    if (orphanedPaths.length > 0) {
+      const ph = orphanedPaths.map(() => "?").join(", ");
+      const result = this.db
+        .prepare(
+          `UPDATE knowledge SET status = 'inactive', updated_at = unixepoch()
+           WHERE path IN (${ph}) AND source = 'memory'`
+        )
+        .run(...orphanedPaths);
+      markedInactive = result.changes;
+    }
+
+    // Delete chunks inactive for > 30 days
+    const staleIds = this.db
+      .prepare(
+        `SELECT id FROM knowledge WHERE status = 'inactive' AND updated_at < unixepoch() - ?`
+      )
+      .all(30 * 86400) as Array<{ id: string }>;
+
+    let deleted = 0;
+    if (staleIds.length > 0) {
+      const ids = staleIds.map((r) => r.id);
+      const placeholders = ids.map(() => "?").join(", ");
+      this.db.transaction(() => {
+        if (this.vectorEnabled) {
+          this.db.prepare(`DELETE FROM knowledge_vec WHERE id IN (${placeholders})`).run(...ids);
+        }
+        this.db.prepare(`DELETE FROM knowledge WHERE id IN (${placeholders})`).run(...ids);
+      })();
+      deleted = ids.length;
+    }
+
+    return { markedInactive, deleted };
   }
 
   private listMemoryFiles(): string[] {

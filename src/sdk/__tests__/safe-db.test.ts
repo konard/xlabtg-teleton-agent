@@ -10,7 +10,12 @@ function createTestDb() {
 }
 
 function createSafeDbViaSDK(db: Database.Database) {
-  const mockBridge = { isAvailable: () => false, getClient: () => null } as any;
+  const mockBridge = {
+    isAvailable: () => false,
+    getMode: () => "user",
+    getClient: () => null,
+    getRawClient: () => null,
+  } as any;
   const deps: SDKDependencies = { bridge: mockBridge };
   const sdk = createPluginSDK(deps, {
     pluginName: "test-plugin",

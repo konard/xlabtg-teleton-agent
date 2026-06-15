@@ -2,46 +2,13 @@ name: Telegram Notify
 
 on:
   workflow_run:
-    workflows: ["CI", "Release"]
+    workflows: ["Release"]
     types: [completed]
 
+permissions:
+  contents: read
+
 jobs:
-  # ---- Commit notification (only after CI passes) ----
-  commit:
-    if: >-
-      github.event.workflow_run.name == 'CI'
-      && github.event.workflow_run.conclusion == 'success'
-      && github.event.workflow_run.head_branch == 'main'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Build message file
-        env:
-          FULL: ${{ github.event.workflow_run.head_commit.message }}
-          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
-          REPO: ${{ github.repository }}
-        run: |
-          TITLE=$(echo "$FULL" | head -1)
-          BODY=$(echo "$FULL" | tail -n +3)
-          COMMIT_URL="https://github.com/${REPO}/commit/${COMMIT_SHA}"
-          {
-            echo "<b>${TITLE}</b>"
-            if [ -n "$BODY" ]; then
-              echo ""
-              echo "$BODY"
-            fi
-            echo ""
-            echo "<a href=\"${COMMIT_URL}\">View commit</a>"
-          } > "$GITHUB_WORKSPACE/.tg_message.txt"
-
-      - name: Send commit to Telegram
-        uses: appleboy/telegram-action@master
-        with:
-          to: ${{ secrets.TELEGRAM_CHAT_ID }}
-          token: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          format: html
-          disable_web_page_preview: true
-          message_file: .tg_message.txt
-
   # ---- Release notification (only after Release workflow passes) ----
   release:
     if: >-
@@ -68,7 +35,7 @@ jobs:
 
       - name: Send release to Telegram
         if: steps.ver.outputs.found == 'true'
-        uses: appleboy/telegram-action@master
+        uses: appleboy/telegram-action@v1.0.1
         with:
           to: ${{ secrets.TELEGRAM_CHAT_ID }}
           token: ${{ secrets.TELEGRAM_BOT_TOKEN }}

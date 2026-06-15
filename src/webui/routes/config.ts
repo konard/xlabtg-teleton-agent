@@ -22,6 +22,7 @@ import { setToncenterApiKey, invalidateEndpointCache } from "../../ton/endpoint.
 import { invalidateTonClientCache } from "../../ton/wallet-service.js";
 import { DEFAULT_CACHE_CONFIG, getCache, type ResourceCacheConfig } from "../../services/cache.js";
 import { getEventBus } from "../../services/event-bus.js";
+import { getErrorMessage } from "../../utils/errors.js";
 
 function emitConfigChanged(deps: WebUIServerDeps, key: string, action: "set" | "unset"): void {
   try {
@@ -153,9 +154,12 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
 
       const response: APIResponse<ConfigKeyData[]> = { success: true, data };
       return c.json(response);
-    } catch (err) {
+    } catch (error: unknown) {
       return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) } as APIResponse,
+        {
+          success: false,
+          error: getErrorMessage(error),
+        } as APIResponse,
         500
       );
     }
@@ -250,11 +254,11 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         };
         emitConfigChanged(deps, key, "set");
         return c.json({ success: true, data: result } as APIResponse<ConfigKeyData>);
-      } catch (err) {
+      } catch (error: unknown) {
         return c.json(
           {
             success: false,
-            error: err instanceof Error ? err.message : String(err),
+            error: getErrorMessage(error),
           } as APIResponse,
           500
         );
@@ -321,9 +325,12 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
       };
       emitConfigChanged(deps, key, "set");
       return c.json({ success: true, data: result } as APIResponse<ConfigKeyData>);
-    } catch (err) {
+    } catch (error: unknown) {
       return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) } as APIResponse,
+        {
+          success: false,
+          error: getErrorMessage(error),
+        } as APIResponse,
         500
       );
     }
@@ -386,9 +393,12 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
       };
       emitConfigChanged(deps, key, "unset");
       return c.json({ success: true, data: result } as APIResponse<ConfigKeyData>);
-    } catch (err) {
+    } catch (error: unknown) {
       return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) } as APIResponse,
+        {
+          success: false,
+          error: getErrorMessage(error),
+        } as APIResponse,
         500
       );
     }
@@ -406,7 +416,7 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
     const provider = c.req.param("provider");
     try {
       const meta = getProviderMetadata(provider as SupportedProvider);
-      const needsKey = provider !== "claude-code" && provider !== "cocoon" && provider !== "local";
+      const needsKey = provider !== "cocoon" && provider !== "local";
       return c.json({
         success: true,
         data: {
@@ -417,9 +427,12 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
           displayName: meta.displayName,
         },
       } as APIResponse);
-    } catch (err) {
+    } catch (error: unknown) {
       return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) } as APIResponse,
+        {
+          success: false,
+          error: getErrorMessage(error),
+        } as APIResponse,
         400
       );
     }
@@ -437,9 +450,12 @@ export function createConfigRoutes(deps: WebUIServerDeps) {
         success: true,
         data: { valid: !error, error: error ?? null },
       } as APIResponse);
-    } catch (err) {
+    } catch (error: unknown) {
       return c.json(
-        { success: false, error: err instanceof Error ? err.message : String(err) } as APIResponse,
+        {
+          success: false,
+          error: getErrorMessage(error),
+        } as APIResponse,
         400
       );
     }

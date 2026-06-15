@@ -8,9 +8,15 @@ import type { InlineRouter, PluginBotHandlers } from "../bot/inline-router.js";
 import type { GramJSBotClient } from "../bot/gramjs-bot.js";
 import type { Bot } from "grammy";
 import type { PluginRateLimiter } from "../bot/rate-limiter.js";
-import { toTLMarkup, toGrammyKeyboard, prefixButtons } from "../bot/services/styled-keyboard.js";
-import { stripCustomEmoji, parseHtml } from "../bot/services/html-parser.js";
-import { compileGlob } from "../bot/inline-router.js";
+import {
+  toTLMarkup,
+  toGrammyKeyboard,
+  prefixButtons,
+  stripCustomEmoji,
+  compileGlob,
+} from "./formatting.js";
+import { editInlineViaGramJS } from "../bot/services/inline-transport.js";
+import { getGramJSErrorMessage } from "../utils/errors.js";
 
 const RATE_LIMIT_WINDOW_MS = 60_000;
 
@@ -98,21 +104,17 @@ export function createBotSDK(
       // Try GramJS first (styled buttons)
       if (gramjsBot?.isConnected() && keyboard) {
         try {
-          const strippedHtml = stripCustomEmoji(text);
-          const { text: plainText, entities } = parseHtml(strippedHtml);
-          const markup = toTLMarkup(keyboard);
-
-          await gramjsBot.editInlineMessageByStringId({
+          await editInlineViaGramJS({
+            gramjsBot,
             inlineMessageId,
-            text: plainText,
-            entities: entities.length > 0 ? entities : undefined,
-            replyMarkup: markup,
+            html: stripCustomEmoji(text),
+            buttons: keyboard,
           });
           return;
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS error shape is untyped
-        } catch (error: any) {
-          if (error?.errorMessage === "MESSAGE_NOT_MODIFIED") return;
-          log.warn(`GramJS edit failed, falling back to Grammy: ${error?.errorMessage || error}`);
+        } catch (error: unknown) {
+          log.warn(
+            `GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
+          );
         }
       }
 
@@ -125,10 +127,10 @@ export function createBotSDK(
             link_preview_options: { is_disabled: true },
             reply_markup: kb,
           });
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- Grammy error shape is untyped
-        } catch (error: any) {
-          if (error?.description?.includes("message is not modified")) return;
-          log.error(`Failed to edit inline message: ${error?.description || error}`);
+        } catch (error: unknown) {
+          const grammyErr = error as { description?: string };
+          if (grammyErr.description?.includes("message is not modified")) return;
+          log.error(`Failed to edit inline message: ${grammyErr.description || error}`);
         }
       }
     },

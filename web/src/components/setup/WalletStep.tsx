@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { setup, WalletStatus } from '../../lib/api';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
+import { Loading } from '../Loading';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -32,7 +34,7 @@ export function WalletStep({ data, onChange }: StepProps) {
           onChange({ ...data, walletAddress: s.address, walletAction: 'keep' });
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => setError(errMsg(err)))
       .finally(() => setLoading(false));
   }, []);
 
@@ -56,13 +58,13 @@ export function WalletStep({ data, onChange }: StepProps) {
         setMnemonicWords(result.mnemonic);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(errMsg(err));
     } finally {
       setActionLoading(false);
     }
   };
 
-  if (loading) return <div className="loading">Checking wallet...</div>;
+  if (loading) return <Loading text='Checking wallet...' />;
 
   const showMnemonic = mnemonicWords.length > 0;
   const actionNeeded = data.walletAction !== 'keep' && !showMnemonic;
@@ -79,7 +81,7 @@ export function WalletStep({ data, onChange }: StepProps) {
       {walletStatus?.exists && walletStatus.address && !showMnemonic && (
         <div className="card">
           <div className="helper-text" style={{ marginTop: 0, marginBottom: '4px' }}>Current wallet</div>
-          <div className="mono" style={{ fontSize: '13px', wordBreak: 'break-all' }}>
+          <div className="mono" style={{ wordBreak: 'break-all' }}>
             {walletStatus.address}
           </div>
         </div>
@@ -131,9 +133,9 @@ export function WalletStep({ data, onChange }: StepProps) {
         <>
           {data.walletAddress && (
             <div className="card" style={{ marginBottom: '16px' }}>
-              <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '4px' }}>Wallet Address</div>
+              <div style={{ color: 'var(--text-secondary)', marginBottom: '4px' }}>Wallet Address</div>
               <div className="form-row" style={{ alignItems: 'center' }}>
-                <span className="mono" style={{ fontWeight: 600, fontSize: '14px', wordBreak: 'break-all', color: 'var(--text)' }}>
+                <span className="mono" style={{ fontWeight: 600, fontSize: '14px', wordBreak: 'break-all', color: 'var(--text-primary)' }}>
                   {data.walletAddress}
                 </span>
                 <CopyButton text={data.walletAddress} />
@@ -160,7 +162,7 @@ export function WalletStep({ data, onChange }: StepProps) {
           </div>
 
           <div className="form-group" style={{ marginTop: '16px' }}>
-            <label className="label-inline" style={{ color: 'var(--text)' }}>
+            <label className="label-inline" style={{ color: 'var(--text-primary)' }}>
               <input
                 type="checkbox"
                 checked={data.mnemonicSaved}

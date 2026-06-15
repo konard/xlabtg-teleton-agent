@@ -16,7 +16,7 @@ interface NftListParams {
 export const nftListTool: Tool = {
   name: "nft_list",
   description:
-    "Browse NFTs owned by a TON wallet. Defaults to your own wallet. Optionally filter by collection address. Returns name, preview image, and collection metadata per NFT.",
+    "Browse NFTs owned by a TON wallet. Defaults to your own wallet. Optionally filter by collection address. Returns name, preview image, and collection metadata per NFT. Examples: 'show my NFTs', 'list NFTs in DNS collection for EQ...'.",
   parameters: Type.Object({
     address: Type.Optional(
       Type.String({
@@ -38,6 +38,22 @@ export const nftListTool: Tool = {
   }),
   category: "data-bearing",
 };
+
+interface TonApiNftPreview {
+  resolution: string;
+  url: string;
+}
+
+interface TonApiNftItem {
+  address: string;
+  metadata?: { name?: string; description?: string; image?: string };
+  collection?: { address?: string; name?: string };
+  previews?: TonApiNftPreview[];
+  sale?: { price?: { value?: string; token_name?: string }; marketplace?: string };
+  owner?: { address?: string };
+  trust?: string;
+  dns?: string;
+}
 
 interface NftItem {
   address: string;
@@ -91,20 +107,16 @@ export const nftListExecutor: ToolExecutor<NftListParams> = async (
         error: "Invalid API response: missing nft_items array",
       };
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON API response is untyped
-    const rawItems: any[] = data.nft_items;
+    const rawItems: TonApiNftItem[] = data.nft_items;
 
     // Filter out blacklisted NFTs
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON API response is untyped
-    const filtered = rawItems.filter((item: any) => item.trust !== "blacklist");
+    const filtered = rawItems.filter((item) => item.trust !== "blacklist");
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON API response is untyped
-    const nfts: NftItem[] = filtered.map((item: any) => {
+    const nfts: NftItem[] = filtered.map((item) => {
       const meta = item.metadata || {};
       const coll = item.collection || {};
       const sale = item.sale;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TON API response is untyped
-      const previews: any[] = item.previews || [];
+      const previews = item.previews || [];
 
       // Pick a mid-resolution preview (500x500 if available)
       const preview =

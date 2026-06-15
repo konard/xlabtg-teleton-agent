@@ -119,7 +119,7 @@ function makeConfig(overrides?: Partial<Config>): Config {
   } as Config;
 }
 
-const minimalSdkDeps = { bridge: {} as any };
+const minimalSdkDeps = { bridge: { getMode: () => "user" } as any };
 
 function makeRawPlugin(overrides?: Record<string, unknown>) {
   return {

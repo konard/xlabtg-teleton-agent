@@ -663,6 +663,7 @@ export interface SetupConfig {
     max_agentic_iterations?: number;
   };
   telegram: {
+    mode?: 'user' | 'bot';
     api_id: number;
     api_hash: string;
     phone: string;
@@ -857,13 +858,60 @@ export interface MemoryVectorSyncResult {
   message: string;
 }
 
+export interface ConversationChat {
+  id: string;
+  type: string;
+  title: string | null;
+  username: string | null;
+  message_count: number;
+  last_message_at: number | null;
+  last_message: string | null;
+}
+
+export interface ConversationMessage {
+  id: string;
+  chat_id: string;
+  sender_id: string | null;
+  text: string | null;
+  is_from_agent: number;
+  has_media: number;
+  media_type: string | null;
+  timestamp: number;
+}
+
+export interface WalletInfo {
+  address: string | null;
+  balance: string;
+}
+
+export interface WalletTransaction {
+  type: string;
+  hash: string;
+  amount?: string;
+  from?: string;
+  to?: string;
+  comment?: string | null;
+  date: string;
+  secondsAgo: number;
+  explorer: string;
+  jettonAmount?: string;
+  jettonWallet?: string;
+  nftAddress?: string;
+}
+
+export type ToolAccessLevel = 'all' | 'allowlist' | 'admin' | 'off';
+
 export interface ToolInfo {
   name: string;
   description: string;
   module: string;
-  scope: "always" | "dm-only" | "group-only" | "admin-only";
+  /** Per-tool access: who may use this tool (context-independent). */
+  level: ToolAccessLevel;
   category?: string;
-  enabled: boolean;
+  /** Legacy single-value scope (derived) — present for backward compatibility. */
+  scope?: string;
+  /** Derived: false only when the tool is off. */
+  enabled?: boolean;
 }
 
 export interface ModuleInfo {
@@ -1071,8 +1119,9 @@ export interface WorkspaceInfo {
 
 export interface ToolConfigData {
   tool: string;
-  enabled: boolean;
-  scope: string;
+  level: ToolAccessLevel;
+  scope?: string;
+  enabled?: boolean;
 }
 
 export interface ToolUsageStats {
@@ -2181,7 +2230,11 @@ export interface SelfImprovementTask {
 
 // ── Fetch helpers ───────────────────────────────────────────────────
 
-async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+async function fetchJson<T>(
+  endpoint: string,
+  options: RequestInit | undefined,
+  opts: { credentials?: boolean; unwrapData?: boolean }
+): Promise<T> {
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...options?.headers,
@@ -2190,6 +2243,7 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...options,
     headers,
+    ...(opts.credentials ? { credentials: 'include' } : {}), // send HttpOnly cookie automatically
   });
 
   if (!response.ok) {
@@ -2198,7 +2252,11 @@ async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promis
   }
 
   const json = await response.json();
-  return json.data !== undefined ? json.data : json;
+  return opts.unwrapData ? (json.data !== undefined ? json.data : json) : json;
+}
+
+async function fetchSetupAPI<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  return fetchJson<T>(endpoint, options, { unwrapData: true });
 }
 
 /** Read a cookie value by name from document.cookie (browser only). */
@@ -2475,6 +2533,22 @@ export const api = {
     return fetchAPI<APIResponse<MemoryGraphData>>(
       `/memory/graph/path?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
     );
+  },
+
+  async getWallet() {
+    return fetchAPI<APIResponse<WalletInfo>>('/wallet');
+  },
+
+  async getWalletTransactions() {
+    return fetchAPI<APIResponse<WalletTransaction[]>>('/wallet/transactions');
+  },
+
+  async getConversations() {
+    return fetchAPI<APIResponse<ConversationChat[]>>('/conversations');
+  },
+
+  async getConversationMessages(chatId: string, limit = 50, offset = 0) {
+    return fetchAPI<APIResponse<ConversationMessage[]>>(`/conversations/${encodeURIComponent(chatId)}/messages?limit=${limit}&offset=${offset}`);
   },
 
   async getSoulFile(filename: string) {
@@ -2774,7 +2848,11 @@ export const api = {
 
   async updateToolConfig(
     toolName: string,
-    config: { enabled?: boolean; scope?: "always" | "dm-only" | "group-only" | "admin-only" }
+    config: {
+      enabled?: boolean;
+      scope?: "always" | "dm-only" | "group-only" | "admin-only";
+      level?: ToolAccessLevel;
+    }
   ) {
     return fetchAPI<APIResponse<ToolConfigData>>(`/tools/${toolName}`, {
       method: "PUT",

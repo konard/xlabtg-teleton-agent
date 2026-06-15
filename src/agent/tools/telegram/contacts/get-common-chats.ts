@@ -1,9 +1,11 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { Api } from "telegram";
 import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -20,7 +22,8 @@ interface GetCommonChatsParams {
  */
 export const telegramGetCommonChatsTool: Tool = {
   name: "telegram_get_common_chats",
-  description: "Find groups and channels you share with another user.",
+  description:
+    "Find groups and channels you share with another user. Example: 'what groups do we share with @durov?'.",
   category: "data-bearing",
   parameters: Type.Object({
     userId: Type.String({
@@ -48,7 +51,7 @@ export const telegramGetCommonChatsExecutor: ToolExecutor<GetCommonChatsParams> 
     const { userId, limit = 50 } = params;
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Get user entity
     const userEntity = await gramJsClient.getInputEntity(userId);
@@ -63,15 +66,18 @@ export const telegramGetCommonChatsExecutor: ToolExecutor<GetCommonChatsParams> 
     );
 
     // Parse common chats
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const commonChats = result.chats.map((chat: any) => ({
-      chatId: chat.id?.toString(),
-      title: chat.title || null,
-      username: chat.username || null,
-      isChannel: chat.broadcast || false,
-      isMegagroup: chat.megagroup || false,
-      membersCount: chat.participantsCount || null,
-    }));
+    const commonChats = result.chats.map((chat: any) => {
+      const isChannel = chat.className === "Channel";
+      const chan = isChannel ? (chat as Api.Channel) : undefined;
+      return {
+        chatId: chat.id?.toString(),
+        title: "title" in chat ? chat.title : null,
+        username: chan?.username || null,
+        isChannel: chan?.broadcast || false,
+        isMegagroup: chan?.megagroup || false,
+        membersCount: chan?.participantsCount || null,
+      };
+    });
 
     return {
       success: true,

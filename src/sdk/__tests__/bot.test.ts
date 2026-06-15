@@ -4,28 +4,6 @@ import type { InlineRouter, PluginBotHandlers } from "../../bot/inline-router.js
 import type { PluginRateLimiter } from "../../bot/rate-limiter.js";
 import type { PluginLogger, BotManifest } from "@teleton-agent/sdk";
 
-// Mock html-parser module
-vi.mock("../../bot/services/html-parser.js", () => ({
-  stripCustomEmoji: (text: string) => text,
-  parseHtml: (text: string) => ({ text, entities: [] }),
-}));
-
-// Mock styled-keyboard module
-vi.mock("../../bot/services/styled-keyboard.js", () => ({
-  toTLMarkup: (buttons: any) => ({ _: "ReplyInlineMarkup", buttons }),
-  toGrammyKeyboard: (buttons: any) => ({ _: "InlineKeyboard", buttons }),
-  hasStyledButtons: () => true,
-  prefixButtons: (rows: any[][], pluginName: string) =>
-    rows.map((row: any[]) =>
-      row.map((btn: any) => ({
-        text: btn.text,
-        callbackData: btn.callback ? `${pluginName}:${btn.callback}` : "",
-        copyText: btn.copy,
-        style: btn.style,
-      }))
-    ),
-}));
-
 function createMockRouter(): InlineRouter & { _plugins: Map<string, PluginBotHandlers> } {
   const plugins = new Map<string, PluginBotHandlers>();
   return {

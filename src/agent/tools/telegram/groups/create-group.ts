@@ -7,6 +7,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -36,7 +37,7 @@ export const telegramCreateGroupExecutor: ToolExecutor<CreateGroupParams> = asyn
   try {
     const { title, users } = params;
 
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     // Resolve user entities
     const userEntities: Api.TypeInputUser[] = [];
@@ -51,8 +52,8 @@ export const telegramCreateGroupExecutor: ToolExecutor<CreateGroupParams> = asyn
             })
           );
         }
-      } catch (e) {
-        log.warn({ err: e }, `Could not resolve user ${user}`);
+      } catch (innerError: unknown) {
+        log.warn({ err: innerError }, `Could not resolve user ${user}`);
       }
     }
 
@@ -96,7 +97,7 @@ export const telegramCreateGroupExecutor: ToolExecutor<CreateGroupParams> = asyn
         message: `👥 Group "${title}" created with ${userEntities.length} members`,
       },
     };
-  } catch (error) {
+  } catch (error: unknown) {
     log.error({ err: error }, "Error in telegram_create_group");
     return {
       success: false,

@@ -1,12 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { loadWallet, getKeyPair, getCachedTonClient } from "../../../ton/wallet-service.js";
-import { WalletContractV5R1, toNano, internal, beginCell } from "@ton/ton";
-import { Address, SendMode } from "@ton/core";
+import { loadWallet, getCachedTonClient } from "../../../ton/wallet-service.js";
+import { toNano, internal, beginCell } from "@ton/ton";
+import { Address } from "@ton/core";
 import { tonapiFetch } from "../../../constants/api-endpoints.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { openWallet } from "../../../ton/wallet-open.js";
+import { sendWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 
 const log = createLogger("Tools");
 
@@ -115,24 +117,16 @@ export const dnsSetSiteExecutor: ToolExecutor<DnsSetSiteParams> = async (
       };
     }
 
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
+    const client = await getCachedTonClient();
+    const opened = await openWallet(client);
+    if (!opened) {
       return { success: false, error: "Wallet key derivation failed." };
     }
-
-    const wallet = WalletContractV5R1.create({
-      workchain: 0,
-      publicKey: keyPair.publicKey,
-    });
-
-    const client = await getCachedTonClient();
-    const contract = client.open(wallet);
+    const { keyPair, contract } = opened;
 
     const adnlBuffer = Buffer.from(adnl_address, "hex");
 
-    await withTxLock(async () => {
-      const seqno = await contract.getSeqno();
-
+    const sent = await withTxLock(async () => {
       // Build ADNL record value cell: dns_adnl_address#ad01 + adnl_addr:bits256 + flags:uint8
       const valueCell = beginCell()
         .storeUint(DNS_ADNL_ADDRESS_PREFIX, 16) // #ad01
@@ -148,10 +142,8 @@ export const dnsSetSiteExecutor: ToolExecutor<DnsSetSiteParams> = async (
         .storeRef(valueCell) // value cell reference
         .endCell();
 
-      await contract.sendTransfer({
-        seqno,
+      return sendWalletTx(client, contract, {
         secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY,
         messages: [
           internal({
             to: Address.parse(nftAddress),
@@ -163,6 +155,10 @@ export const dnsSetSiteExecutor: ToolExecutor<DnsSetSiteParams> = async (
       });
     });
 
+    if (!sent) {
+      return { success: false, error: "DNS update failed or could not be confirmed on-chain." };
+    }
+
     return {
       success: true,
       data: {
@@ -170,7 +166,8 @@ export const dnsSetSiteExecutor: ToolExecutor<DnsSetSiteParams> = async (
         adnlAddress: adnl_address,
         nftAddress,
         from: walletData.address,
-        message: `Set TON Site record for ${fullDomain} → ADNL ${adnl_address}\n  NFT: ${nftAddress}\n  Transaction sent (changes apply in a few seconds)`,
+        txHash: sent.hash,
+        message: `Set TON Site record for ${fullDomain} → ADNL ${adnl_address} — confirmed on-chain\n  NFT: ${nftAddress}\n  tx ${sent.hash}\n  ${tonExplorerTxUrl(sent.hash)}`,
       },
     };
   } catch (error) {

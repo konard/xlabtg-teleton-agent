@@ -35,7 +35,7 @@ export default defineConfig({
   platform: "node",
   splitting: true,
   clean: false,
-  dts: false,
+  dts: true,
   sourcemap: false,
   outDir: "dist",
   external,

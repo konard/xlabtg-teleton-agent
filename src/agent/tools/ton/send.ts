@@ -15,7 +15,7 @@ interface SendParams {
 export const tonSendTool: Tool = {
   name: "ton_send",
   description:
-    "Transfer TON to a recipient address. Amount in TON (not nanoTON). Always use a verified address from the user — never guess. Confirm amount and destination before executing. For sending jetton tokens, use jetton_send.",
+    "Transfer TON to a recipient address. Amount in TON (not nanoTON). ALWAYS confirm the exact amount and destination with the owner before executing. Never guess addresses. For sending jetton tokens, use jetton_send.",
   parameters: Type.Object({
     to: Type.String({
       description:
@@ -57,12 +57,13 @@ export const tonSendExecutor: ToolExecutor<SendParams> = async (
       };
     }
 
-    const sendResult = await sendTon({ toAddress: to, amount, comment });
+    const result = await sendTon({ toAddress: to, amount, comment });
 
-    if (!sendResult) {
+    if (!result) {
       return {
         success: false,
-        error: "TON transfer failed — check blockchain node connectivity.",
+        error:
+          "TON transfer failed or could not be confirmed on-chain — check wallet balance and node connectivity.",
       };
     }
 
@@ -73,9 +74,8 @@ export const tonSendExecutor: ToolExecutor<SendParams> = async (
         amount,
         comment: comment || null,
         from: walletData.address,
-        txHash: sendResult.txHash,
-        txStatus: sendResult.status,
-        message: `Sent ${amount} TON to ${to}${comment ? ` (${comment})` : ""} — tx status: ${sendResult.status}`,
+        txHash: result.hash,
+        message: `Sent ${amount} TON to ${to}${comment ? ` (${comment})` : ""} — tx ${result.hash}`,
       },
     };
   } catch (error) {

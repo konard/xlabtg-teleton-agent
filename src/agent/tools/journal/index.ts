@@ -18,9 +18,21 @@ export { journalQueryTool, journalQueryExecutor };
 export { journalUpdateTool, journalUpdateExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: journalLogTool, executor: journalLogExecutor, scope: "dm-only" },
-  { tool: journalUpdateTool, executor: journalUpdateExecutor, scope: "dm-only" },
-  { tool: journalQueryTool, executor: journalQueryExecutor },
+  {
+    tool: journalLogTool,
+    executor: journalLogExecutor,
+    scope: "dm-only",
+    mode: "both",
+    tags: ["finance"],
+  },
+  {
+    tool: journalUpdateTool,
+    executor: journalUpdateExecutor,
+    scope: "dm-only",
+    mode: "both",
+    tags: ["finance"],
+  },
+  { tool: journalQueryTool, executor: journalQueryExecutor, mode: "both", tags: ["finance"] },
 ];
 
 // Re-export types from journal-store

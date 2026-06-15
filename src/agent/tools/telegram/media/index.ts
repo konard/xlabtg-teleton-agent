@@ -21,12 +21,52 @@ export { visionAnalyzeTool, visionAnalyzeExecutor };
 export { telegramTranscribeAudioTool, telegramTranscribeAudioExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramSendPhotoTool, executor: telegramSendPhotoExecutor },
-  { tool: telegramSendVoiceTool, executor: telegramSendVoiceExecutor },
-  { tool: telegramSendStickerTool, executor: telegramSendStickerExecutor },
-  { tool: telegramSendGifTool, executor: telegramSendGifExecutor },
-  { tool: telegramSendVideoTool, executor: telegramSendVideoExecutor },
-  { tool: telegramDownloadMediaTool, executor: telegramDownloadMediaExecutor },
-  { tool: visionAnalyzeTool, executor: visionAnalyzeExecutor },
-  { tool: telegramTranscribeAudioTool, executor: telegramTranscribeAudioExecutor },
+  {
+    tool: telegramSendPhotoTool,
+    executor: telegramSendPhotoExecutor,
+    mode: "both",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendVoiceTool,
+    executor: telegramSendVoiceExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendStickerTool,
+    executor: telegramSendStickerExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendGifTool,
+    executor: telegramSendGifExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramSendVideoTool,
+    executor: telegramSendVideoExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramDownloadMediaTool,
+    executor: telegramDownloadMediaExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: visionAnalyzeTool,
+    executor: visionAnalyzeExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
+  {
+    tool: telegramTranscribeAudioTool,
+    executor: telegramTranscribeAudioExecutor,
+    mode: "user",
+    tags: ["media"],
+  },
 ];

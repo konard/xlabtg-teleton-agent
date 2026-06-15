@@ -11,9 +11,20 @@ import { PluginSDKError } from "@teleton-agent/sdk";
 import { tonapiFetch } from "../constants/api-endpoints.js";
 import { loadWallet, getKeyPair, getCachedTonClient } from "../ton/wallet-service.js";
 import { WalletContractV5R1, toNano, internal } from "@ton/ton";
-import { Address, beginCell, SendMode } from "@ton/core";
+import { Address, beginCell } from "@ton/core";
 import { withTxLock } from "../ton/tx-lock.js";
+import { sendWalletTx, type SentTx } from "../ton/confirm.js";
 import { createHash } from "crypto";
+import { getErrorMessage } from "../utils/errors.js";
+
+interface TonApiDnsAuction {
+  domain: string;
+  nft?: { address?: string };
+  owner?: { address?: string };
+  price: string;
+  date: number;
+  bids: number;
+}
 
 /** .ton DNS root collection contract */
 const DNS_ROOT_COLLECTION = "EQC3dNlesgVD8YbAazcauIrXBPfiVhMMr5YYk2in0Mtsz0Bz";
@@ -36,25 +47,29 @@ async function sendWalletMessage(
   value: bigint,
   body?: ReturnType<typeof beginCell.prototype.endCell>,
   bounce = true
-): Promise<void> {
-  await withTxLock(async () => {
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
-      throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
-    }
+): Promise<SentTx> {
+  const keyPair = await getKeyPair();
+  if (!keyPair) {
+    throw new PluginSDKError("Wallet key derivation failed", "OPERATION_FAILED");
+  }
 
-    const tonClient = await getCachedTonClient();
+  const tonClient = await getCachedTonClient();
+  const sent = await withTxLock(async () => {
     const wallet = WalletContractV5R1.create({ workchain: 0, publicKey: keyPair.publicKey });
     const walletContract = tonClient.open(wallet);
-    const seqno = await walletContract.getSeqno();
-
-    await walletContract.sendTransfer({
-      seqno,
+    return sendWalletTx(tonClient, walletContract, {
       secretKey: keyPair.secretKey,
-      sendMode: SendMode.PAY_GAS_SEPARATELY,
       messages: [internal({ to, value, body, bounce })],
     });
   });
+
+  if (!sent) {
+    throw new PluginSDKError(
+      "Transaction failed or could not be confirmed on-chain",
+      "OPERATION_FAILED"
+    );
+  }
+  return sent;
 }
 
 function normalizeDomain(domain: string): string {
@@ -88,12 +103,12 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
           nftAddress: data.item?.address || data.nft_item?.address || undefined,
           walletAddress: walletRecord?.address || undefined,
         };
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
-        log.debug("dns.check() failed:", err);
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
+        log.debug("dns.check() failed:", error);
         // On error, return unknown state
         throw new PluginSDKError(
-          `Failed to check domain: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to check domain: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -119,8 +134,8 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
           owner: data.owner?.address || data.item?.owner?.address || null,
           expirationDate: data.expiring_at || undefined,
         };
-      } catch (err) {
-        log.debug("dns.resolve() failed:", err);
+      } catch (error) {
+        log.debug("dns.resolve() failed:", error);
         return null;
       }
     },
@@ -136,8 +151,7 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
         }
 
         const data = await response.json();
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- TonAPI auction response is untyped
-        return (data.data || []).map((a: any) => ({
+        return (data.data || []).map((a: TonApiDnsAuction) => ({
           domain: a.domain || "",
           nftAddress: a.nft?.address || "",
           owner: a.owner?.address || "",
@@ -145,8 +159,8 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
           endTime: a.date || 0,
           bids: a.bids || 0,
         }));
-      } catch (err) {
-        log.debug("dns.getAuctions() failed:", err);
+      } catch (error) {
+        log.debug("dns.getAuctions() failed:", error);
         return [];
       }
     },
@@ -169,10 +183,10 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
       try {
         await sendWalletMessage(Address.parse(DNS_ROOT_COLLECTION), toNano(bidAmount), domainCell);
         return { domain: normalized, success: true, bidAmount };
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to start auction: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to start auction: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -201,12 +215,9 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
           toNano(amount.toString())
         );
         return { domain: normalized, bidAmount: amount.toString(), success: true };
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
-        throw new PluginSDKError(
-          `Failed to bid: ${err instanceof Error ? err.message : String(err)}`,
-          "OPERATION_FAILED"
-        );
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
+        throw new PluginSDKError(`Failed to bid: ${getErrorMessage(error)}`, "OPERATION_FAILED");
       }
     },
 
@@ -246,10 +257,10 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
 
       try {
         await sendWalletMessage(Address.parse(resolveResult.nftAddress), toNano("0.05"), body);
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to link domain: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to link domain: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -277,10 +288,10 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
 
       try {
         await sendWalletMessage(Address.parse(resolveResult.nftAddress), toNano("0.05"), body);
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to unlink domain: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to unlink domain: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -324,10 +335,10 @@ export function createDnsSDK(log: PluginLogger): DnsSDK {
 
       try {
         await sendWalletMessage(Address.parse(resolveResult.nftAddress), toNano("0.05"), body);
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to set site record: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to set site record: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }

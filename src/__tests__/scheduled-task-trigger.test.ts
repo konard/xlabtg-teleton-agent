@@ -137,8 +137,12 @@ describe("TeletonApp scheduled task triggers", () => {
 
     expect(app.messageHandler.handleMessage).not.toHaveBeenCalled();
     expect(toolRegistry.execute).toHaveBeenCalledWith(
-      "telegram_send_message",
-      { chatId: "192802079", text: "Privet" },
+      {
+        type: "toolCall",
+        id: `scheduled-${task.id}`,
+        name: "telegram_send_message",
+        arguments: { chatId: "192802079", text: "Privet" },
+      },
       expect.objectContaining({ chatId: "192802079", db })
     );
     expect(agent.processMessage).toHaveBeenCalledWith(

@@ -6,6 +6,13 @@ import type Database from "better-sqlite3";
 import type { DealContext, DealStatus } from "../types.js";
 import { DEAL_VERIFICATION_WINDOW_SECONDS } from "../../constants/limits.js";
 
+/** Column list selected by every deal query, mapped by rowToDeal. */
+const DEAL_COLUMNS = `id, user_telegram_id, user_username, chat_id,
+        user_gives_type, user_gives_ton_amount, user_gives_gift_slug, user_gives_value_ton,
+        agent_gives_type, agent_gives_ton_amount, agent_gives_gift_slug, agent_gives_value_ton,
+        profit_ton, status, created_at, expires_at,
+        inline_message_id, payment_claimed_at, user_payment_verified_at, completed_at`;
+
 interface DealRow {
   id: string;
   user_telegram_id: number;
@@ -61,11 +68,7 @@ export function getDeal(db: Database.Database, dealId: string): DealContext | nu
   const row = db
     .prepare(
       `SELECT
-        id, user_telegram_id, user_username, chat_id,
-        user_gives_type, user_gives_ton_amount, user_gives_gift_slug, user_gives_value_ton,
-        agent_gives_type, agent_gives_ton_amount, agent_gives_gift_slug, agent_gives_value_ton,
-        profit_ton, status, created_at, expires_at,
-        inline_message_id, payment_claimed_at, user_payment_verified_at, completed_at
+        ${DEAL_COLUMNS}
       FROM deals WHERE id = ?`
     )
     .get(dealId) as DealRow | undefined;
@@ -155,11 +158,7 @@ export function getDealsAwaitingVerification(db: Database.Database): DealContext
   const rows = db
     .prepare(
       `SELECT
-        id, user_telegram_id, user_username, chat_id,
-        user_gives_type, user_gives_ton_amount, user_gives_gift_slug, user_gives_value_ton,
-        agent_gives_type, agent_gives_ton_amount, agent_gives_gift_slug, agent_gives_value_ton,
-        profit_ton, status, created_at, expires_at,
-        inline_message_id, payment_claimed_at, user_payment_verified_at, completed_at
+        ${DEAL_COLUMNS}
       FROM deals
       WHERE status = 'payment_claimed'
       ORDER BY payment_claimed_at ASC
@@ -177,11 +176,7 @@ export function getDealsAwaitingExecution(db: Database.Database): DealContext[] 
   const rows = db
     .prepare(
       `SELECT
-        id, user_telegram_id, user_username, chat_id,
-        user_gives_type, user_gives_ton_amount, user_gives_gift_slug, user_gives_value_ton,
-        agent_gives_type, agent_gives_ton_amount, agent_gives_gift_slug, agent_gives_value_ton,
-        profit_ton, status, created_at, expires_at,
-        inline_message_id, payment_claimed_at, user_payment_verified_at, completed_at
+        ${DEAL_COLUMNS}
       FROM deals
       WHERE status = 'verified' AND agent_sent_at IS NULL
       ORDER BY user_payment_verified_at ASC

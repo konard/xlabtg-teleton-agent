@@ -495,7 +495,7 @@ export class AgentRuntime {
           }
         }
 
-        session = resetSessionWithPolicy(chatId, resetPolicy);
+        session = resetSessionWithPolicy(chatId);
       }
 
       let context: Context = loadContextFromTranscript(session.sessionId);
@@ -2322,8 +2322,6 @@ export class AgentRuntime {
         providerMeta.toolLimit === null && this.config.tool_rag?.skip_unlimited_providers !== false
       );
 
-    const predictedToolNames = this.getPredictedToolNames(effectiveMessage);
-
     if (useRAG && queryEmbedding) {
       const tools = await this.toolRegistry.getForContextWithRAG(
         effectiveMessage,
@@ -2331,8 +2329,7 @@ export class AgentRuntime {
         effectiveIsGroup,
         providerMeta.toolLimit,
         chatId,
-        isAdmin,
-        predictedToolNames
+        isAdmin
       );
       log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
       return tools;

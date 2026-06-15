@@ -147,82 +147,21 @@ describe("createTelegramSDK — core", () => {
 
   // ─── sendDice ───────────────────────────────────────────────
   describe("sendDice()", () => {
-    it("invokes API and extracts value from Updates", async () => {
-      mockGramJsClient.invoke.mockResolvedValue(
-        new Api.Updates({
-          updates: [
-            {
-              className: "UpdateNewMessage",
-              message: new Api.Message({
-                id: 55,
-                media: { className: "MessageMediaDice", value: 4 },
-              }),
-            },
-          ],
-        })
-      );
+    it("calls bridge.sendDice and returns result", async () => {
+      mockBridge.sendDice = vi.fn().mockResolvedValue({ id: 55 });
 
       const result = await sdk.sendDice("12345", "dice");
 
-      expect(mockGramJsClient.invoke).toHaveBeenCalledOnce();
-      expect(result).toEqual({ value: 4, messageId: 55 });
+      expect(mockBridge.sendDice).toHaveBeenCalledWith("12345", "dice");
+      expect(result).toEqual({ value: 0, messageId: 55 });
     });
 
-    it("extracts from UpdateNewChannelMessage", async () => {
-      mockGramJsClient.invoke.mockResolvedValue(
-        new Api.UpdatesCombined({
-          updates: [
-            {
-              className: "UpdateNewChannelMessage",
-              message: new Api.Message({
-                id: 88,
-                media: { className: "MessageMediaDice", value: 6 },
-              }),
-            },
-          ],
-        })
-      );
+    it("passes emoticon to bridge", async () => {
+      mockBridge.sendDice = vi.fn().mockResolvedValue({ id: 88 });
 
-      const result = await sdk.sendDice("-10012345", "dice");
-      expect(result).toEqual({ value: 6, messageId: 88 });
-    });
-
-    it("passes replyToId when provided", async () => {
-      mockGramJsClient.invoke.mockResolvedValue(
-        new Api.Updates({
-          updates: [
-            {
-              className: "UpdateNewMessage",
-              message: new Api.Message({
-                id: 1,
-                media: { className: "MessageMediaDice", value: 1 },
-              }),
-            },
-          ],
-        })
-      );
-
-      await sdk.sendDice("12345", "dice", 99);
-      const invocationArg = mockGramJsClient.invoke.mock.calls[0][0];
-      expect(invocationArg.replyTo).toBeDefined();
-    });
-
-    it("throws when dice value cannot be extracted", async () => {
-      mockGramJsClient.invoke.mockResolvedValue(new Api.Updates({ updates: [] }));
-
-      await expect(sdk.sendDice("12345", "dice")).rejects.toMatchObject({
-        code: "OPERATION_FAILED",
-      });
-    });
-
-    it("throws when result className is unexpected", async () => {
-      mockGramJsClient.invoke.mockResolvedValue({
-        className: "UpdateShort",
-      });
-
-      await expect(sdk.sendDice("12345", "dice")).rejects.toMatchObject({
-        code: "OPERATION_FAILED",
-      });
+      const result = await sdk.sendDice("-10012345", "🎯");
+      expect(mockBridge.sendDice).toHaveBeenCalledWith("-10012345", "🎯");
+      expect(result).toEqual({ value: 0, messageId: 88 });
     });
 
     it("throws BRIDGE_NOT_CONNECTED when bridge unavailable", async () => {
@@ -360,7 +299,7 @@ describe("createTelegramSDK — core", () => {
   describe("getRawClient()", () => {
     it("returns GramJS client when bridge is available", () => {
       const result = sdk.getRawClient();
-      expect(result).toBe(mockGramJsClient);
+      expect(result).toBe(mockBridgeClient);
     });
 
     it("returns null when bridge is unavailable", () => {

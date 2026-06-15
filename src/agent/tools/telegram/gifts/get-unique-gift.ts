@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -28,17 +30,24 @@ export const telegramGetUniqueGiftExecutor: ToolExecutor<GetUniqueGiftParams> = 
 ): Promise<ToolResult> => {
   try {
     const { slug } = params;
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const result: any = await gramJsClient.invoke(new Api.payments.GetUniqueStarGift({ slug }));
+    const result = await gramJsClient.invoke(new Api.payments.GetUniqueStarGift({ slug }));
 
     const gift = result.gift;
 
     const users = result.users || [];
-    const ownerUserId = gift.ownerId?.userId?.toString();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const ownerUser = users.find((u: any) => u.id?.toString() === ownerUserId);
+    const ownerUserId =
+      gift.className === "StarGiftUnique" && gift.ownerId && "userId" in gift.ownerId
+        ? gift.ownerId.userId?.toString()
+        : undefined;
+    const ownerUser = users.find(
+      (u: any) => u.className === "User" && u.id?.toString() === ownerUserId
+    );
+
+    if (gift.className !== "StarGiftUnique") {
+      return { success: false, error: "Gift is not a unique collectible" };
+    }
 
     log.info(`get_unique_gift: slug=${slug} title=${gift.title}`);
 
@@ -54,40 +63,50 @@ export const telegramGetUniqueGiftExecutor: ToolExecutor<GetUniqueGiftParams> = 
           id: ownerUserId,
           name: gift.ownerName || undefined,
           address: gift.ownerAddress || undefined,
-          username: ownerUser?.username || undefined,
-          firstName: ownerUser?.firstName || undefined,
-          lastName: ownerUser?.lastName || undefined,
+          username:
+            ownerUser && ownerUser.className === "User"
+              ? ownerUser.username || undefined
+              : undefined,
+          firstName:
+            ownerUser && ownerUser.className === "User"
+              ? ownerUser.firstName || undefined
+              : undefined,
+          lastName:
+            ownerUser && ownerUser.className === "User"
+              ? ownerUser.lastName || undefined
+              : undefined,
         },
         giftAddress: gift.giftAddress || undefined,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
         attributes: (gift.attributes || []).map((attr: any) => ({
           type: attr.className?.replace("StarGiftAttribute", "").toLowerCase(),
-          name: attr.name,
-          rarityPercent: attr.rarityPermille ? attr.rarityPermille / 10 : undefined,
+          name: "name" in attr ? attr.name : undefined,
+          rarityPercent:
+            "rarity" in attr && "permille" in attr.rarity
+              ? Number((attr.rarity as Api.StarGiftAttributeRarity).permille) / 10
+              : undefined,
         })),
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
         resellPrices: (gift.resellAmount || []).map((a: any) => ({
           amount: a.amount?.toString(),
-          isTon: !!a.ton,
+          isTon: "ton" in a,
         })),
-        availability: gift.availability
+        availability: gift.availabilityIssued
           ? {
-              total: gift.availability.total,
-              remaining: gift.availability.remaining,
+              total: gift.availabilityTotal,
+              remaining: gift.availabilityTotal - gift.availabilityIssued,
             }
           : undefined,
         nftLink: `t.me/nft/${gift.slug}`,
       },
     };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-  } catch (error: any) {
-    if (error.errorMessage === "STARGIFT_SLUG_INVALID") {
+  } catch (error: unknown) {
+    const errMsg = getErrorMessage(error);
+    if (errMsg.includes("STARGIFT_SLUG_INVALID")) {
       return {
         success: false,
         error: `Invalid NFT slug "${params.slug}". Check the slug from t.me/nft/<slug>.`,
       };
     }
     log.error({ err: error }, "Error getting unique gift");
-    return { success: false, error: getErrorMessage(error) };
+    return { success: false, error: errMsg };
   }
 };

@@ -1,16 +1,15 @@
 import { Hono } from "hono";
-import { serve } from "@hono/node-server";
+import type { ServerType } from "@hono/node-server";
 import { cors } from "hono/cors";
-import { streamSSE } from "hono/streaming";
-import { bodyLimit } from "hono/body-limit";
 import { setCookie, getCookie, deleteCookie } from "hono/cookie";
-import type { Server as HttpServer } from "node:http";
-import { existsSync, readFileSync } from "node:fs";
-import { join, dirname, resolve } from "node:path";
-import { isPathInside } from "./utils/path-safety.js";
-import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import type { WebUIServerDeps } from "./types.js";
 import type { StateChangeEvent } from "../agent/lifecycle.js";
+import { createLifecycleSSE } from "./lifecycle-sse.js";
+import { applySecurityMiddleware, sharedBodyLimit } from "./http-common.js";
+import { findWebDist, createStaticHandler } from "./static-serving.js";
+import { startHonoServer, stopHonoServer } from "../utils/http-server.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("WebUI");
@@ -25,20 +24,13 @@ import { isHashedToken, verifyToken } from "./middleware/token-hash.js";
 import { createCsrfMiddleware } from "./middleware/csrf.js";
 import { isPublicSignedApiIngress } from "./middleware/public-ingress.js";
 import { logInterceptor } from "./log-interceptor.js";
-import { createStatusRoutes } from "./routes/status.js";
-import { createToolsRoutes } from "./routes/tools.js";
-import { createLogsRoutes } from "./routes/logs.js";
-import { createMemoryRoutes } from "./routes/memory.js";
-import { createSoulRoutes } from "./routes/soul.js";
-import { createPluginsRoutes } from "./routes/plugins.js";
-import { createMcpRoutes } from "./routes/mcp.js";
-import { createWorkspaceRoutes } from "./routes/workspace.js";
-import { createTasksRoutes } from "./routes/tasks.js";
-import { createConfigRoutes } from "./routes/config.js";
-import { createMarketplaceRoutes } from "./routes/marketplace.js";
-import { createHooksRoutes } from "./routes/hooks.js";
+import { SHARED_ROUTE_FACTORIES } from "./routes/shared.js";
+import { createAgentRoutes } from "../api/routes/agent.js";
+import { createConversationRoutes } from "./routes/conversations.js";
+import { createWalletRoutes } from "./routes/wallet.js";
+import { readRawConfig, writeRawConfig } from "../config/configurable-keys.js";
+// Fork-specific route factories (not part of SHARED_ROUTE_FACTORIES).
 import { createGroqRoutes } from "./routes/groq.js";
-import { createTonProxyRoutes } from "./routes/ton-proxy.js";
 import { createMtprotoRoutes } from "./routes/mtproto.js";
 import { createNotificationsRoutes } from "./routes/notifications.js";
 import { getNotificationService, notificationBus } from "../services/notifications.js";
@@ -69,30 +61,9 @@ import { createDashboardsRoutes } from "./routes/dashboards.js";
 import { createWidgetGeneratorRoutes } from "./routes/widget-generator.js";
 import { createAgentNetworkIngressRoutes, createNetworkRoutes } from "./routes/network.js";
 
-function findWebDist(): string | null {
-  // Try common locations relative to CWD (where teleton is launched from)
-  const candidates = [
-    resolve("dist/web"), // npm start / teleton start (from project root)
-    resolve("web"), // fallback
-  ];
-  // Also try relative to the compiled file
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  candidates.push(
-    resolve(__dirname, "web"), // dist/web when __dirname = dist/
-    resolve(__dirname, "../dist/web") // when running with tsx from src/
-  );
-
-  for (const candidate of candidates) {
-    if (existsSync(join(candidate, "index.html"))) {
-      return candidate;
-    }
-  }
-  return null;
-}
-
 export class WebUIServer {
   private app: Hono;
-  private server: ReturnType<typeof serve> | null = null;
+  private server: ServerType | null = null;
   private deps: WebUIServerDeps;
   private authToken: string;
   private readonly startupExchangeToken: string;
@@ -195,19 +166,13 @@ export class WebUIServer {
     // Body size limit (defense-in-depth against oversized payloads)
     this.app.use(
       "*",
-      bodyLimit({
-        maxSize: 2 * 1024 * 1024, // 2MB
-        onError: (c) => c.json({ success: false, error: "Request body too large (max 2MB)" }, 413),
-      })
+      sharedBodyLimit((c) =>
+        c.json({ success: false, error: "Request body too large (max 2MB)" }, 413)
+      )
     );
 
     // Security headers for all responses
-    this.app.use("*", async (c, next) => {
-      await next();
-      c.res.headers.set("X-Content-Type-Options", "nosniff");
-      c.res.headers.set("X-Frame-Options", "DENY");
-      c.res.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
-    });
+    applySecurityMiddleware(this.app, { referrerPolicy: "strict-origin-when-cross-origin" });
 
     // Auth for all /api/* routes
     // Accepts: HttpOnly cookie > Bearer header > ?token= query param (fallback)
@@ -293,20 +258,19 @@ export class WebUIServer {
     });
 
     // API routes (all require auth via middleware above)
-    this.app.route("/api/status", createStatusRoutes(this.deps));
-    this.app.route("/api/tools", createToolsRoutes(this.deps));
-    this.app.route("/api/logs", createLogsRoutes(this.deps));
-    this.app.route("/api/memory", createMemoryRoutes(this.deps));
-    this.app.route("/api/soul", createSoulRoutes(this.deps));
-    this.app.route("/api/plugins", createPluginsRoutes(this.deps));
-    this.app.route("/api/mcp", createMcpRoutes(this.deps));
-    this.app.route("/api/workspace", createWorkspaceRoutes(this.deps));
-    this.app.route("/api/tasks", createTasksRoutes(this.deps));
-    this.app.route("/api/config", createConfigRoutes(this.deps));
-    this.app.route("/api/marketplace", createMarketplaceRoutes(this.deps));
-    this.app.route("/api/hooks", createHooksRoutes(this.deps));
+    // Shared route factories (status, tools, logs, memory, soul, plugins, mcp,
+    // workspace, tasks, config, marketplace, hooks, ton-proxy) — kept in sync
+    // with the Management API server via SHARED_ROUTE_FACTORIES.
+    for (const [seg, make] of SHARED_ROUTE_FACTORIES) {
+      this.app.route(`/api/${seg}`, make(this.deps));
+    }
+
+    // Upstream WebUI-specific routes.
+    this.app.route("/api/conversations", createConversationRoutes(this.deps));
+    this.app.route("/api/wallet", createWalletRoutes(this.deps));
+
+    // Fork-specific routes (not part of SHARED_ROUTE_FACTORIES).
     this.app.route("/api/groq", createGroqRoutes(this.deps));
-    this.app.route("/api/ton-proxy", createTonProxyRoutes(this.deps));
     this.app.route("/api/mtproto", createMtprotoRoutes(this.deps));
     this.app.route("/api/notifications", createNotificationsRoutes(this.deps));
     this.app.route("/api/cache", createCacheRoutes(this.deps));
@@ -364,55 +328,96 @@ export class WebUIServer {
       });
     });
 
-    // Agent lifecycle routes
-    this.app.post("/api/agent/start", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      const state = lifecycle.getState();
-      if (state === "running") {
-        return c.json({ state: "running" }, 409);
-      }
-      if (state === "stopping") {
-        return c.json({ error: "Agent is currently stopping, please wait" }, 409);
-      }
-      // Fire-and-forget: start is async, we return immediately
-      lifecycle.start().catch((err: Error) => {
-        log.error({ err }, "Agent start failed");
-      });
-      return c.json({ state: "starting" });
-    });
+    // Agent lifecycle routes (start/stop/status/restart) with WebUI error envelope
+    this.app.route(
+      "/api/agent",
+      createAgentRoutes(this.deps.lifecycle, {
+        errorResponse: (c, status, _title, detail) => c.json({ error: detail }, status as 503),
+      })
+    );
 
-    this.app.post("/api/agent/stop", async (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
-      const state = lifecycle.getState();
-      if (state === "stopped") {
-        return c.json({ state: "stopped" }, 409);
-      }
-      if (state === "starting") {
-        return c.json({ error: "Agent is currently starting, please wait" }, 409);
-      }
-      // Fire-and-forget: stop is async, we return immediately
-      lifecycle.stop().catch((err: Error) => {
-        log.error({ err }, "Agent stop failed");
-      });
-      return c.json({ state: "stopping" });
-    });
+    this.app.get("/api/agent/mode", (c) => {
+      const raw = readRawConfig(this.deps.configPath);
+      const telegram = raw?.telegram || {};
 
-    this.app.get("/api/agent/status", (c) => {
-      const lifecycle = this.deps.lifecycle;
-      if (!lifecycle) {
-        return c.json({ error: "Agent lifecycle not available" }, 503);
-      }
+      const currentMode = telegram.mode || "user";
+      const hasBotToken = !!telegram.bot_token;
+      const hasUserCredentials = !!(telegram.api_id && telegram.api_hash && telegram.phone);
+
       return c.json({
-        state: lifecycle.getState(),
-        uptime: lifecycle.getUptime(),
-        error: lifecycle.getError() ?? null,
+        mode: currentMode,
+        canSwitchToBot: hasBotToken,
+        canSwitchToUser: hasUserCredentials,
       });
+    });
+
+    this.app.post("/api/agent/mode", async (c) => {
+      const lifecycle = this.deps.lifecycle;
+      if (!lifecycle) {
+        return c.json({ error: "Agent lifecycle not available" }, 503);
+      }
+
+      const body = await c.req.json<{
+        mode: "user" | "bot";
+        botToken?: string;
+        userCredentials?: { apiId: number; apiHash: string; phone: string };
+      }>();
+
+      if (body.mode !== "user" && body.mode !== "bot") {
+        return c.json({ error: "Invalid mode" }, 400);
+      }
+
+      const raw = readRawConfig(this.deps.configPath);
+      if (!raw?.telegram) {
+        return c.json({ error: "No telegram config found" }, 400);
+      }
+
+      if (body.mode === "bot") {
+        const token = body.botToken || raw.telegram.bot_token;
+        if (!token) {
+          return c.json({ error: "Bot token required" }, 400);
+        }
+
+        // Validate token via Telegram API
+        if (body.botToken) {
+          try {
+            const resp = await fetch(`https://api.telegram.org/bot${body.botToken}/getMe`);
+            const result = (await resp.json()) as { ok: boolean; description?: string };
+            if (!result.ok) {
+              return c.json(
+                { error: `Invalid bot token: ${result.description || "validation failed"}` },
+                400
+              );
+            }
+          } catch {
+            return c.json({ error: "Failed to validate bot token (network error)" }, 400);
+          }
+          raw.telegram.bot_token = body.botToken;
+        }
+      } else {
+        // Accept new user credentials or use existing ones
+        if (body.userCredentials) {
+          raw.telegram.api_id = body.userCredentials.apiId;
+          raw.telegram.api_hash = body.userCredentials.apiHash;
+          raw.telegram.phone = body.userCredentials.phone;
+        }
+        if (!raw.telegram.api_id || !raw.telegram.api_hash || !raw.telegram.phone) {
+          return c.json({ error: "User credentials (api_id, api_hash, phone) required" }, 400);
+        }
+      }
+
+      raw.telegram.mode = body.mode;
+      writeRawConfig(raw, this.deps.configPath);
+
+      // Fire-and-forget: restart to apply new mode
+      lifecycle
+        .stop()
+        .then(() => lifecycle.start())
+        .catch((err: Error) => {
+          log.error({ err }, "Mode switch restart failed");
+        });
+
+      return c.json({ success: true, mode: body.mode, restarting: true });
     });
 
     this.app.get("/api/agent/events", (c) => {
@@ -421,111 +426,14 @@ export class WebUIServer {
         return c.json({ error: "Agent lifecycle not available" }, 503);
       }
 
-      return streamSSE(c, async (stream) => {
-        let aborted = false;
-
-        // Listen for state changes
-        const onStateChange = (event: StateChangeEvent) => {
-          if (aborted) return;
-          void stream.writeSSE({
-            event: "status",
-            id: String(event.timestamp),
-            data: JSON.stringify({
-              state: event.state,
-              error: event.error ?? null,
-              timestamp: event.timestamp,
-            }),
-          });
-        };
-
-        const detach = () => lifecycle.off("stateChange", onStateChange);
-
-        stream.onAbort(() => {
-          aborted = true;
-          detach();
-        });
-
-        // Push current state immediately on connection
-        const now = Date.now();
-        await stream.writeSSE({
-          event: "status",
-          id: String(now),
-          data: JSON.stringify({
-            state: lifecycle.getState(),
-            error: lifecycle.getError() ?? null,
-            timestamp: now,
-          }),
-          retry: 3000,
-        });
-
-        lifecycle.on("stateChange", onStateChange);
-
-        // Heartbeat loop + keep connection alive
-        while (!aborted) {
-          await stream.sleep(30_000);
-          if (aborted) break;
-          await stream.writeSSE({
-            event: "ping",
-            data: "",
-          });
-        }
-
-        detach();
-      });
+      return createLifecycleSSE(c, lifecycle);
     });
 
-    // Serve static files in production (if built)
+    // Serve static files in production (if built) with SPA fallback
     const webDist = findWebDist();
     if (webDist) {
       log.info(`Serving UI from: ${webDist}`);
-      const indexHtml = readFileSync(join(webDist, "index.html"), "utf-8");
-
-      const mimeTypes: Record<string, string> = {
-        js: "application/javascript",
-        css: "text/css",
-        svg: "image/svg+xml",
-        png: "image/png",
-        jpg: "image/jpeg",
-        jpeg: "image/jpeg",
-        ico: "image/x-icon",
-        json: "application/json",
-        woff2: "font/woff2",
-        woff: "font/woff",
-      };
-
-      // Serve static files (assets, images, etc.) with SPA fallback
-      this.app.get("*", (c) => {
-        const filePath = resolve(join(webDist, c.req.path));
-        // Prevent path traversal — resolved path must stay inside webDist
-        if (!isPathInside(filePath, webDist)) {
-          return c.html(indexHtml);
-        }
-
-        // Try serving the actual file
-        try {
-          const content = readFileSync(filePath);
-          const ext = filePath.split(".").pop() || "";
-          if (mimeTypes[ext]) {
-            // Vite hashes asset filenames (e.g. /assets/index-abc123.js) — safe to cache forever.
-            // All other static files must not be cached so browsers always fetch the latest
-            // version after a rebuild.
-            const immutable = c.req.path.startsWith("/assets/");
-            return c.body(content, 200, {
-              "Content-Type": mimeTypes[ext],
-              "Cache-Control": immutable
-                ? "public, max-age=31536000, immutable"
-                : "no-cache, no-store, must-revalidate",
-            });
-          }
-        } catch {
-          // File not found — fall through to SPA
-        }
-
-        // SPA fallback: serve index.html for all non-file routes (never cache)
-        return c.html(indexHtml, 200, {
-          "Cache-Control": "no-cache, no-store, must-revalidate",
-        });
-      });
+      this.app.get("*", createStaticHandler(webDist, { async: true }));
     } else {
       log.warn(
         "Web UI build not found (dist/web/index.html missing) — run `npm run build:web` to build the frontend"
@@ -566,57 +474,46 @@ export class WebUIServer {
   }
 
   async start(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        // Install log interceptor
-        logInterceptor.install();
+    // Install log interceptor
+    logInterceptor.install();
 
-        // Start HTTP server
-        this.server = serve(
-          {
-            fetch: this.app.fetch,
-            hostname: this.deps.config.host,
-            port: this.deps.config.port,
-          },
-          (info) => {
-            const url = `http://${info.address}:${info.port}`;
+    try {
+      this.server = await startHonoServer({
+        fetch: this.app.fetch,
+        hostname: this.deps.config.host,
+        port: this.deps.config.port,
+        onListen: (info) => {
+          const url = `http://${info.address}:${info.port}`;
 
-            log.info(`WebUI server running`);
-            log.info(`URL:   ${url}/auth/exchange`);
-            if (this.authTokenHash) {
-              log.info(
-                `Startup token: ${maskToken(this.startupExchangeToken)} (one-time browser login)`
-              );
-            } else {
-              log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
-            }
-            log.info(`One-time exchange link printed to stderr below (not logged).`);
-            // Full token intentionally written via raw stderr to bypass the logger
-            // so that it never ends up in journalctl, Docker log drivers, tsx
-            // --log-file, CI artifacts, or `teleton --debug > log.txt`. See AUDIT-C4.
-            process.stderr.write(
-              `\n>>> One-time link: ${url}/auth/exchange?token=${this.startupExchangeToken}\n\n`
+          log.info(`WebUI server running`);
+          log.info(`URL:   ${url}/auth/exchange`);
+          if (this.authTokenHash) {
+            log.info(
+              `Startup token: ${maskToken(this.startupExchangeToken)} (one-time browser login)`
             );
-            resolve();
+          } else {
+            log.info(`Token: ${maskToken(this.authToken)} (use Bearer header for API access)`);
           }
-        );
-      } catch (error) {
-        logInterceptor.uninstall();
-        reject(error);
-      }
-    });
+          log.info(`One-time exchange link printed to stderr below (not logged).`);
+          // Full token intentionally written via raw stderr to bypass the logger
+          // so that it never ends up in journalctl, Docker log drivers, tsx
+          // --log-file, CI artifacts, or `teleton --debug > log.txt`. See AUDIT-C4.
+          process.stderr.write(
+            `\n>>> One-time link: ${url}/auth/exchange?token=${this.startupExchangeToken}\n\n`
+          );
+        },
+      });
+    } catch (error) {
+      logInterceptor.uninstall();
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
     if (this.server) {
-      return new Promise((resolve) => {
-        (this.server as HttpServer).closeAllConnections();
-        this.server?.close(() => {
-          logInterceptor.uninstall();
-          log.info("WebUI server stopped");
-          resolve();
-        });
-      });
+      await stopHonoServer(this.server);
+      logInterceptor.uninstall();
+      log.info("WebUI server stopped");
     }
   }
 

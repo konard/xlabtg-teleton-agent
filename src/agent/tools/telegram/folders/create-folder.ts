@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -84,7 +86,7 @@ export const telegramCreateFolderExecutor: ToolExecutor<CreateFolderParams> = as
     } = params;
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Get existing filters to determine next ID
     // GetDialogFilters returns messages.DialogFilters { filters: [] } (not a plain array)
@@ -100,7 +102,7 @@ export const telegramCreateFolderExecutor: ToolExecutor<CreateFolderParams> = as
     const newId = usedIds.length > 0 ? Math.max(...usedIds) + 1 : 2;
 
     // Create new folder (using any to bypass strict type checking)
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+
     const filterData: any = {
       id: newId,
       title: new Api.TextWithEntities({ text: title, entities: [] }),

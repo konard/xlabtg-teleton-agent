@@ -4,6 +4,7 @@ import { Api } from "telegram";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { toLong } from "../../../../utils/gramjs-bigint.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -52,7 +53,7 @@ export const telegramGetRepliesExecutor: ToolExecutor<GetRepliesParams> = async 
     const { chatId, messageId, limit = 50 } = params;
 
     // Get the underlying GramJS client
-    const client = context.bridge.getClient().getClient();
+    const client = getClient(context.bridge);
 
     // Resolve the peer (chat entity)
     const peer = await client.getInputEntity(chatId);

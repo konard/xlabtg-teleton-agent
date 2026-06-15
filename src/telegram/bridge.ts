@@ -1,5 +1,13 @@
 import { TelegramUserClient, type TelegramClientConfig } from "./client.js";
 import { Api } from "telegram";
+import type {
+  ITelegramBridge,
+  SentMessage,
+  BotInfo,
+  ChatInfo,
+  ReplyContext,
+} from "./bridge-interface.js";
+import { randomLong } from "../utils/gramjs-bigint.js";
 import type { NewMessageEvent } from "telegram/events/NewMessage.js";
 import { createLogger } from "../utils/logger.js";
 import {
@@ -82,7 +90,7 @@ export interface SendMessageOptions {
   inlineKeyboard?: InlineButton[][];
 }
 
-export class TelegramBridge {
+export class TelegramBridge implements ITelegramBridge {
   protected client: TelegramUserClient;
   protected ownUserId?: bigint;
   protected ownUsername?: string;
@@ -177,10 +185,11 @@ export class TelegramBridge {
 
   async sendMessage(
     options: SendMessageOptions & { _rawPeer?: Api.TypePeer }
-  ): Promise<Api.Message> {
+  ): Promise<SentMessage> {
     try {
       const peer = options._rawPeer || this.getPeer(options.chatId) || options.chatId;
 
+      let msg: Api.Message;
       if (options.inlineKeyboard && options.inlineKeyboard.length > 0) {
         const buttons = new Api.ReplyInlineMarkup({
           rows: options.inlineKeyboard.map(
@@ -198,17 +207,19 @@ export class TelegramBridge {
         });
 
         const gramJsClient = this.client.getClient();
-        return await gramJsClient.sendMessage(peer, {
+        msg = await gramJsClient.sendMessage(peer, {
           message: options.text,
           replyTo: options.replyToId,
           buttons,
         });
+      } else {
+        msg = await this.client.sendMessage(peer, {
+          message: options.text,
+          replyTo: options.replyToId,
+        });
       }
 
-      return await this.client.sendMessage(peer, {
-        message: options.text,
-        replyTo: options.replyToId,
-      });
+      return { id: msg.id, date: msg.date, chatId: options.chatId };
     } catch (error) {
       log.error({ err: error }, "Error sending message");
       throw error;
@@ -220,7 +231,7 @@ export class TelegramBridge {
     messageId: number;
     text: string;
     inlineKeyboard?: InlineButton[][];
-  }): Promise<Api.Message> {
+  }): Promise<SentMessage> {
     try {
       const peer = this.getPeer(options.chatId) || options.chatId;
 
@@ -257,11 +268,16 @@ export class TelegramBridge {
           (u) => u.className === "UpdateEditMessage" || u.className === "UpdateEditChannelMessage"
         );
         if (messageUpdate && "message" in messageUpdate) {
-          return messageUpdate.message as Api.Message;
+          const msg = messageUpdate.message as Api.Message;
+          return { id: msg.id, date: msg.date, chatId: options.chatId };
         }
       }
 
-      return result as unknown as Api.Message;
+      return {
+        id: options.messageId,
+        date: Math.floor(Date.now() / 1000),
+        chatId: options.chatId,
+      };
     } catch (error) {
       log.error({ err: error }, "Error editing message");
       throw error;
@@ -641,17 +657,16 @@ export class TelegramBridge {
     };
   }
 
-  async fetchReplyContext(
-    rawMsg: Api.Message
-  ): Promise<{ text?: string; senderName?: string; isAgent?: boolean } | undefined> {
+  async fetchReplyContext(rawMsg: unknown): Promise<ReplyContext | null> {
     try {
+      const msg = rawMsg as Api.Message;
       const replyMsg = await Promise.race([
-        rawMsg.getReplyMessage(),
+        msg.getReplyMessage(),
         new Promise<undefined>((resolve) =>
           setTimeout(() => resolve(undefined), TELEGRAM_SENDER_RESOLVE_TIMEOUT_MS)
         ),
       ]);
-      if (!replyMsg) return undefined;
+      if (!replyMsg) return null;
 
       let senderName: string | undefined;
       try {
@@ -681,9 +696,203 @@ export class TelegramBridge {
         isAgent,
       };
     } catch (err) {
-      log.debug({ err, msgId: rawMsg.id }, "Could not fetch reply context");
-      return undefined;
+      log.debug({ err }, "Could not fetch reply context");
+      return null;
     }
+  }
+
+  getMode(): "user" | "bot" {
+    return "user";
+  }
+
+  /** User mode redelivers messages on reconnect, so the handler must dedup via the offset store. */
+  requiresOffsetDedup(): boolean {
+    return true;
+  }
+
+  async getMe(): Promise<BotInfo | undefined> {
+    const me = this.client.getMe();
+    if (!me) return undefined;
+    return {
+      id: Number(me.id),
+      username: me.username,
+      firstName: me.firstName ?? "Unknown",
+      isBot: me.isBot,
+    };
+  }
+
+  async deleteMessage(chatId: string, messageId: number): Promise<boolean> {
+    try {
+      const gramJsClient = this.client.getClient();
+      const isChannel = chatId.startsWith("-100");
+
+      if (isChannel) {
+        const channel = await gramJsClient.getEntity(chatId);
+        await gramJsClient.invoke(
+          new Api.channels.DeleteMessages({
+            channel,
+            id: [messageId],
+          })
+        );
+      } else {
+        await gramJsClient.invoke(
+          new Api.messages.DeleteMessages({
+            id: [messageId],
+            revoke: true,
+          })
+        );
+      }
+      return true;
+    } catch (error) {
+      log.error({ err: error }, "Error deleting message");
+      return false;
+    }
+  }
+
+  async forwardMessage(
+    fromChatId: string,
+    toChatId: string,
+    messageId: number
+  ): Promise<SentMessage> {
+    try {
+      const gramJsClient = this.client.getClient();
+      const result = await gramJsClient.invoke(
+        new Api.messages.ForwardMessages({
+          fromPeer: fromChatId,
+          toPeer: toChatId,
+          id: [messageId],
+          randomId: [randomLong()],
+        })
+      );
+
+      let fwdMsg: Api.Message | undefined;
+      if (result instanceof Api.Updates || result instanceof Api.UpdatesCombined) {
+        for (const update of result.updates) {
+          if (
+            update instanceof Api.UpdateNewMessage ||
+            update instanceof Api.UpdateNewChannelMessage
+          ) {
+            if (update.message instanceof Api.Message) {
+              fwdMsg = update.message;
+              break;
+            }
+          }
+        }
+      }
+
+      if (fwdMsg) {
+        return { id: fwdMsg.id, date: fwdMsg.date, chatId: toChatId };
+      }
+      return { id: 0, date: Math.floor(Date.now() / 1000), chatId: toChatId };
+    } catch (error) {
+      log.error({ err: error }, "Error forwarding message");
+      throw error;
+    }
+  }
+
+  async sendPhoto(
+    chatId: string,
+    photo: string | Buffer,
+    caption?: string,
+    replyToId?: number
+  ): Promise<SentMessage> {
+    try {
+      const gramJsClient = this.client.getClient();
+      const result = await gramJsClient.sendFile(chatId, {
+        file: photo,
+        caption,
+        replyTo: replyToId,
+      });
+      return { id: result.id, date: result.date, chatId };
+    } catch (error) {
+      log.error({ err: error }, "Error sending photo");
+      throw error;
+    }
+  }
+
+  async pinMessage(chatId: string, messageId: number): Promise<boolean> {
+    try {
+      const gramJsClient = this.client.getClient();
+      await gramJsClient.invoke(
+        new Api.messages.UpdatePinnedMessage({
+          peer: chatId,
+          id: messageId,
+        })
+      );
+      return true;
+    } catch (error) {
+      log.error({ err: error }, "Error pinning message");
+      return false;
+    }
+  }
+
+  async sendDice(chatId: string, emoji?: string): Promise<SentMessage> {
+    try {
+      const gramJsClient = this.client.getClient();
+      const result = await gramJsClient.invoke(
+        new Api.messages.SendMedia({
+          peer: chatId,
+          media: new Api.InputMediaDice({ emoticon: emoji ?? "🎲" }),
+          message: "",
+          randomId: randomLong(),
+        })
+      );
+
+      if (result instanceof Api.Updates || result instanceof Api.UpdatesCombined) {
+        for (const update of result.updates) {
+          if (
+            update instanceof Api.UpdateNewMessage ||
+            update instanceof Api.UpdateNewChannelMessage
+          ) {
+            const msg = update.message;
+            if (msg instanceof Api.Message) {
+              return { id: msg.id, date: msg.date, chatId };
+            }
+          }
+        }
+      }
+
+      return { id: 0, date: Math.floor(Date.now() / 1000), chatId };
+    } catch (error) {
+      log.error({ err: error }, "Error sending dice");
+      throw error;
+    }
+  }
+
+  async getChatInfo(chatId: string): Promise<ChatInfo> {
+    const gramJsClient = this.client.getClient();
+    const entity = await gramJsClient.getEntity(chatId);
+
+    if (entity instanceof Api.User) {
+      return {
+        id: chatId,
+        title: [entity.firstName, entity.lastName].filter(Boolean).join(" ") || undefined,
+        type: "private",
+        username: entity.username,
+      };
+    }
+
+    if (entity instanceof Api.Channel) {
+      const isSupergroup = entity.megagroup ?? false;
+      return {
+        id: chatId,
+        title: entity.title,
+        type: isSupergroup ? "supergroup" : "channel",
+        memberCount: entity.participantsCount ?? undefined,
+        username: entity.username,
+      };
+    }
+
+    if (entity instanceof Api.Chat) {
+      return {
+        id: chatId,
+        title: entity.title,
+        type: "group",
+        memberCount: entity.participantsCount ?? undefined,
+      };
+    }
+
+    return { id: chatId, type: "private" };
   }
 
   getClient(): TelegramUserClient {

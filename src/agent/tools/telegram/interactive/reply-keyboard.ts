@@ -3,6 +3,7 @@ import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -90,7 +91,7 @@ export const telegramReplyKeyboardExecutor: ToolExecutor<ReplyKeyboardParams> = 
     }
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Create reply keyboard markup
     const keyboard = new Api.ReplyKeyboardMarkup({
@@ -106,8 +107,7 @@ export const telegramReplyKeyboardExecutor: ToolExecutor<ReplyKeyboardParams> = 
     });
 
     // Send message with keyboard
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
-    const result: any = await gramJsClient.sendMessage(chatId, {
+    const result = await gramJsClient.sendMessage(chatId, {
       message: text,
       replyTo: replyToId,
       buttons: keyboard, // GramJS uses 'buttons' instead of 'replyMarkup'

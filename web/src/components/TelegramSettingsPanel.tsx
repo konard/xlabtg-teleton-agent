@@ -1,8 +1,17 @@
-import { Select } from './Select';
+import { PillTabs } from './PillTabs';
 import { EditableField } from './EditableField';
 import { InfoTip } from './InfoTip';
 import { ArrayInput } from './ArrayInput';
 import type { ConfigKeyData } from '../lib/api';
+
+// Global "who does the agent respond to" policy — same All/List/Admin/Off
+// vocabulary as per-tool access levels, but persisted as the policy enum.
+export const POLICY_OPTIONS = [
+  { value: 'open', label: 'All' },
+  { value: 'allowlist', label: 'List' },
+  { value: 'admin-only', label: 'Admin' },
+  { value: 'disabled', label: 'Off' },
+];
 
 interface TelegramSettingsPanelProps {
   getLocal: (key: string) => string;
@@ -80,13 +89,13 @@ export function TelegramSettingsPanel({
               label="Owner ID"
               description="Primary admin Telegram user ID (auto-added to Admin IDs)"
               configKey="telegram.owner_id"
-              type="number"
+              type="text"
               value={getLocal('telegram.owner_id')}
               serverValue={getServer('telegram.owner_id')}
               onChange={(v) => setLocal('telegram.owner_id', v)}
               onSave={(v) => saveConfig('telegram.owner_id', v)}
               onCancel={() => cancelLocal('telegram.owner_id')}
-              min={1}
+              placeholder="123456789"
             />
           </div>
         )}
@@ -97,37 +106,85 @@ export function TelegramSettingsPanel({
             <label>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 DM Policy
-                <InfoTip text="Who can message the bot in private" />
+                <InfoTip text="Controls who can DM the agent. 'Open' = anyone, 'Allow Users' = only IDs in the allow list below, 'Admin Only' = only admins." />
               </span>
             </label>
-            <Select
+            <PillTabs
               value={getLocal('telegram.dm_policy')}
-              options={['admin-only', 'allowlist', 'open', 'disabled']}
-              labels={['Admin Only', 'Allow Users', 'Open', 'Disabled']}
+              options={POLICY_OPTIONS}
               onChange={(v) => saveConfig('telegram.dm_policy', v)}
+              ariaLabel="DM policy"
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
             <label>
               <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 Group Policy
-                <InfoTip text="Which groups the bot can respond in" />
+                <InfoTip text="Controls which group chats the agent responds in. 'Open' = all groups, 'Allow Groups' = only IDs in the allow list, 'Admin Only' = only admin-owned groups." />
               </span>
             </label>
-            <Select
+            <PillTabs
               value={getLocal('telegram.group_policy')}
-              options={['admin-only', 'allowlist', 'open', 'disabled']}
-              labels={['Admin Only', 'Allow Groups', 'Open', 'Disabled']}
+              options={POLICY_OPTIONS}
               onChange={(v) => saveConfig('telegram.group_policy', v)}
+              ariaLabel="Group policy"
             />
           </div>
         </div>
 
+        {/* ── Access Control — who 'List' / 'Admin' resolve to ── */}
+        {onArraySave && (
+          <div style={{ display: 'grid', gap: '14px' }}>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Admin IDs
+                  <InfoTip text="Telegram user IDs with full control: can use all tools, bypass restrictions, and manage the agent. Backs the 'Admin' option." />
+                </span>
+              </label>
+              <ArrayInput
+                value={getArrayValue(getLocal('telegram.admin_ids'))}
+                onChange={(values) => onArraySave('telegram.admin_ids', values)}
+                validate={(v) => (/^\d+$/.test(v) ? null : 'Must be a number')}
+                placeholder="Enter ID..."
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Allowed Users
+                  <InfoTip text="Telegram user IDs allowed when DM Policy (or a tool) is set to 'List'." />
+                </span>
+              </label>
+              <ArrayInput
+                value={getArrayValue(getLocal('telegram.allow_from'))}
+                onChange={(values) => onArraySave('telegram.allow_from', values)}
+                validate={(v) => (/^\d+$/.test(v) ? null : 'Must be a number')}
+                placeholder="Enter ID..."
+              />
+            </div>
+            <div className="form-group" style={{ marginBottom: 0 }}>
+              <label>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  Allowed Groups
+                  <InfoTip text="Group/channel IDs allowed when Group Policy is set to 'List'." />
+                </span>
+              </label>
+              <ArrayInput
+                value={getArrayValue(getLocal('telegram.group_allow_from'))}
+                onChange={(values) => onArraySave('telegram.group_allow_from', values)}
+                validate={(v) => (/^\d+$/.test(v) ? null : 'Must be a number')}
+                placeholder="Enter ID..."
+              />
+            </div>
+          </div>
+        )}
+
         {/* ── Behavior (toggles, immediate-save) ────────────── */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <label style={{ fontSize: '13px', color: 'var(--text)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} htmlFor="require-mention">
+          <label style={{ fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} htmlFor="require-mention">
             Require Mention
-            <InfoTip text="Require @mention in groups to respond" />
+            <InfoTip text="When on, the agent ignores group messages unless it's @mentioned. Keeps it quiet in busy chats." />
           </label>
           <label className="toggle">
             <input
@@ -142,9 +199,9 @@ export function TelegramSettingsPanel({
         </div>
         {extended && (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <label style={{ fontSize: '13px', color: 'var(--text)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} htmlFor="typing-sim">
+            <label style={{ fontSize: '13px', color: 'var(--text-primary)', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }} htmlFor="typing-sim">
               Typing Simulation
-              <InfoTip text="Simulate typing indicator before sending replies" />
+              <InfoTip text="Shows a 'typing...' bubble in the chat before the agent replies, like a real person." />
             </label>
             <label className="toggle">
               <input
@@ -185,6 +242,8 @@ export function TelegramSettingsPanel({
                 onSave={(v) => saveConfig('telegram.debounce_ms', v)}
                 onCancel={() => cancelLocal('telegram.debounce_ms')}
                 min={0}
+                step={100}
+                inline
               />
               <EditableField
                 label="Max Message Length"
@@ -197,71 +256,15 @@ export function TelegramSettingsPanel({
                 onSave={(v) => saveConfig('telegram.max_message_length', v)}
                 onCancel={() => cancelLocal('telegram.max_message_length')}
                 min={1}
-              />
-              <EditableField
-                label="Agent Channel"
-                description="Channel username for auto-publishing"
-                configKey="telegram.agent_channel"
-                value={getLocal('telegram.agent_channel')}
-                serverValue={getServer('telegram.agent_channel')}
-                onChange={(v) => setLocal('telegram.agent_channel', v)}
-                onSave={(v) => saveConfig('telegram.agent_channel', v)}
-                onCancel={() => cancelLocal('telegram.agent_channel')}
+                step={100}
+                inline
               />
             </div>
-
-            {/* ── Access Control (ArrayInput) ───────────────────── */}
-            {onArraySave && (
-              <div style={{ display: 'grid', gap: '16px' }}>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Admin IDs
-                      <InfoTip text="Admin user IDs with elevated access" />
-                    </span>
-                  </label>
-                  <ArrayInput
-                    value={getArrayValue(getLocal('telegram.admin_ids'))}
-                    onChange={(values) => onArraySave('telegram.admin_ids', values)}
-                    validate={(v) => /^\d+$/.test(v) ? null : 'Must be a number'}
-                    placeholder="Enter ID..."
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Allowed Users
-                      <InfoTip text="User IDs allowed for DM access" />
-                    </span>
-                  </label>
-                  <ArrayInput
-                    value={getArrayValue(getLocal('telegram.allow_from'))}
-                    onChange={(values) => onArraySave('telegram.allow_from', values)}
-                    validate={(v) => /^\d+$/.test(v) ? null : 'Must be a number'}
-                    placeholder="Enter ID..."
-                  />
-                </div>
-                <div className="form-group" style={{ marginBottom: 0 }}>
-                  <label>
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                      Allowed Groups
-                      <InfoTip text="Group IDs allowed for group access" />
-                    </span>
-                  </label>
-                  <ArrayInput
-                    value={getArrayValue(getLocal('telegram.group_allow_from'))}
-                    onChange={(values) => onArraySave('telegram.group_allow_from', values)}
-                    validate={(v) => /^\d+$/.test(v) ? null : 'Must be a number'}
-                    placeholder="Enter ID..."
-                  />
-                </div>
-              </div>
-            )}
 
             {/* ── Rate Limits (EditableField, restart badge) ────── */}
             <div style={{ display: 'grid', gap: '12px' }}>
               <EditableField
-                label="Rate Limit -- Messages/sec"
+                label="Rate Limit · Messages/sec"
                 description="Rate limit: messages per second (requires restart)"
                 configKey="telegram.rate_limit_messages_per_second"
                 type="number"
@@ -273,9 +276,10 @@ export function TelegramSettingsPanel({
                 hotReload="restart"
                 min={0}
                 step={0.1}
+                inline
               />
               <EditableField
-                label="Rate Limit -- Groups/min"
+                label="Rate Limit · Groups/min"
                 description="Rate limit: groups per minute (requires restart)"
                 configKey="telegram.rate_limit_groups_per_minute"
                 type="number"
@@ -286,6 +290,7 @@ export function TelegramSettingsPanel({
                 onCancel={() => cancelLocal('telegram.rate_limit_groups_per_minute')}
                 hotReload="restart"
                 min={1}
+                inline
               />
             </div>
       </div>
@@ -306,7 +311,7 @@ export function TelegramSettingsPanel({
   return (
     <>
       {telegramTitle}
-      <div className="card">{telegramCore}</div>
+      {telegramCore}
     </>
   );
 }

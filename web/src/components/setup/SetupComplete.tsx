@@ -48,7 +48,7 @@ export function SetupComplete() {
       {launchError && (
         <div style={{ marginTop: '20px' }}>
           <div className="alert error">{launchError}</div>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '13px', marginTop: '8px' }}>
+          <p style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
             Start manually:
           </p>
           <code className="code-block" style={{ marginTop: '8px' }}>

@@ -190,8 +190,8 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
           `Embedding cache eviction: removed ${toDelete} entries (${count} total)`
         );
       }
-    } catch (err) {
-      CachedEmbeddingProvider.log.warn({ err }, "Embedding cache eviction error");
+    } catch (error) {
+      CachedEmbeddingProvider.log.warn({ err: error }, "Embedding cache eviction error");
     }
   }
 }

@@ -76,7 +76,7 @@ export interface SimpleToolDef {
     context: any
   ) => Promise<{ success: boolean; data?: unknown; error?: string }>;
   /* eslint-enable @typescript-eslint/no-explicit-any */
-  scope?: "always" | "dm-only" | "group-only" | "admin-only";
+  scope?: "always" | "dm-only" | "group-only" | "admin-only" | "open" | "allowlist" | "disabled";
   category?: "data-bearing" | "action";
 }
 

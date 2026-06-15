@@ -48,3 +48,5 @@ playwright-report/
 playwright/.cache/
 blob-report/
 
+# Claude Code session logs
+.claude-session/

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "$schema": "https://unpkg.com/knip@6/schema.json",
   "workspaces": {
     ".": {
       "entry": [
@@ -14,7 +14,7 @@
         "src/api/**/*.ts"
       ],
       "project": ["src/**/*.ts"],
-      "ignore": ["src/**/__tests__/**", "src/telegram/media-utils.ts"]
+      "ignore": ["src/**/__tests__/**"]
     },
     "packages/sdk": {
       "entry": ["src/index.ts"],
@@ -25,6 +25,7 @@
   "ignoreDependencies": [
     "pino-pretty",
     "lottie-react",
+    "tinybench",
     "@teleton-agent/sdk",
     "@grammyjs/types",
     "better-sqlite3"

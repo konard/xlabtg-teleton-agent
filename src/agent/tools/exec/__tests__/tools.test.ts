@@ -37,7 +37,7 @@ function makeExecConfig(overrides?: Partial<ExecConfig>): ExecConfig {
 
 function makeContext(overrides?: Partial<ToolContext>): ToolContext {
   return {
-    bridge: {} as any,
+    bridge: { getMode: () => "user" } as any,
     db: new Database(":memory:"),
     chatId: "123",
     senderId: 42,

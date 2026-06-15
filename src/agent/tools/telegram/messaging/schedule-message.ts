@@ -5,6 +5,7 @@ import { randomLong } from "../../../../utils/gramjs-bigint.js";
 import { TELEGRAM_MAX_MESSAGE_LENGTH } from "../../../../constants/limits.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -96,7 +97,7 @@ export const telegramScheduleMessageExecutor: ToolExecutor<ScheduleMessageParams
     }
 
     // Get underlying GramJS client
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Get chat entity
     const entity = await gramJsClient.getEntity(chatId);

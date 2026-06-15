@@ -61,19 +61,20 @@ describe("ToolRegistry", () => {
     registry = new ToolRegistry();
     db = new Database(":memory:");
 
-    // Create tool_config table for database tests
+    // Create tool_config table for database tests (post-1.19 shape).
     db.exec(`
       CREATE TABLE IF NOT EXISTS tool_config (
         tool_name TEXT PRIMARY KEY,
         enabled INTEGER NOT NULL DEFAULT 1,
         scope TEXT,
-        updated_at INTEGER NOT NULL,
+        scope_level TEXT NOT NULL DEFAULT 'all',
+        updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
         updated_by INTEGER
       )
     `);
 
     mockContext = {
-      bridge: {} as any,
+      bridge: { getMode: () => "user" } as any,
       db,
       chatId: "test-chat",
       senderId: 12345,
@@ -293,94 +294,60 @@ describe("ToolRegistry", () => {
       expect(registry.getModuleTools("non_existent")).toEqual([]);
     });
 
-    it("should return tools with correct scope", () => {
-      registry.register(createMockTool("telegram_send"), createMockExecutor(), "always");
-      registry.register(createMockTool("telegram_wallet"), createMockExecutor(), "dm-only");
-      registry.register(createMockTool("telegram_kick"), createMockExecutor(), "group-only");
+    it("should return tools with derived scope", () => {
+      registry.register(createMockTool("telegram_send"), createMockExecutor(), "open");
+      registry.register(createMockTool("telegram_wallet"), createMockExecutor(), "admin-only");
+      registry.register(createMockTool("telegram_kick"), createMockExecutor(), "allowlist");
 
       const tools = registry.getModuleTools("telegram");
       expect(tools).toHaveLength(3);
       expect(tools).toEqual([
-        { name: "telegram_kick", scope: "group-only" },
-        { name: "telegram_send", scope: "always" },
-        { name: "telegram_wallet", scope: "dm-only" },
+        { name: "telegram_kick", scope: "allowlist" },
+        { name: "telegram_send", scope: "open" },
+        { name: "telegram_wallet", scope: "admin-only" },
       ]);
     });
   });
 
-  // ---------- Scope filtering ----------
+  // ---------- Access-level filtering ----------
 
   describe("getForContext()", () => {
     beforeEach(() => {
-      registry.register(createMockTool("always_tool"), createMockExecutor(), "always");
-      registry.register(createMockTool("dm_only_tool"), createMockExecutor(), "dm-only");
-      registry.register(createMockTool("group_only_tool"), createMockExecutor(), "group-only");
+      registry.register(createMockTool("open_tool"), createMockExecutor(), "open");
       registry.register(createMockTool("admin_only_tool"), createMockExecutor(), "admin-only");
+      registry.register(createMockTool("disabled_tool"), createMockExecutor(), "disabled");
     });
 
-    it("should filter dm-only tools in group context", () => {
-      const tools = registry.getForContext(true, null);
-      const names = tools.map((t) => t.name);
+    it("should exclude admin-only tools for non-admin users", () => {
+      const names = registry.getForContext(false, null, undefined, false).map((t) => t.name);
 
-      expect(names).toContain("always_tool");
-      expect(names).toContain("group_only_tool");
-      expect(names).not.toContain("dm_only_tool");
-    });
-
-    it("should filter group-only tools in DM context", () => {
-      const tools = registry.getForContext(false, null);
-      const names = tools.map((t) => t.name);
-
-      expect(names).toContain("always_tool");
-      expect(names).toContain("dm_only_tool");
-      expect(names).not.toContain("group_only_tool");
-    });
-
-    it("should filter admin-only tools for non-admin users", () => {
-      const tools = registry.getForContext(false, null, undefined, false);
-      const names = tools.map((t) => t.name);
-
+      expect(names).toContain("open_tool");
       expect(names).not.toContain("admin_only_tool");
+      expect(names).not.toContain("disabled_tool");
     });
 
     it("should include admin-only tools for admin users", () => {
-      const tools = registry.getForContext(false, null, undefined, true);
-      const names = tools.map((t) => t.name);
+      const names = registry.getForContext(false, null, undefined, true).map((t) => t.name);
 
       expect(names).toContain("admin_only_tool");
+      expect(names).not.toContain("disabled_tool");
+    });
+
+    it("should apply the same access regardless of DM vs group context", () => {
+      const dm = registry
+        .getForContext(false, null, undefined, true)
+        .map((t) => t.name)
+        .sort();
+      const group = registry
+        .getForContext(true, null, undefined, true)
+        .map((t) => t.name)
+        .sort();
+      expect(dm).toEqual(group);
     });
 
     it("should truncate to tool limit when exceeded", () => {
-      const tools = registry.getForContext(false, 2);
-      expect(tools.length).toBe(2);
-    });
-
-    it("should not truncate when under tool limit", () => {
-      const tools = registry.getForContext(false, 100);
-      expect(tools.length).toBe(2); // always, dm-only (admin-only filtered out because isAdmin=undefined)
-    });
-  });
-
-  describe("getForProvider()", () => {
-    beforeEach(() => {
-      registry.register(createMockTool("tool1"), createMockExecutor());
-      registry.register(createMockTool("tool2"), createMockExecutor());
-      registry.register(createMockTool("tool3"), createMockExecutor());
-    });
-
-    it("should return all tools when limit is null", () => {
-      const tools = registry.getForProvider(null);
-      expect(tools.length).toBe(3);
-    });
-
-    it("should return all tools when under limit", () => {
-      const tools = registry.getForProvider(10);
-      expect(tools.length).toBe(3);
-    });
-
-    it("should truncate when exceeding limit", () => {
-      const tools = registry.getForProvider(2);
-      expect(tools.length).toBe(2);
+      const tools = registry.getForContext(false, 1, undefined, true);
+      expect(tools.length).toBe(1);
     });
   });
 
@@ -421,39 +388,38 @@ describe("ToolRegistry", () => {
       expect(result.error).toBe("Unknown tool: non_existent");
     });
 
-    it("should enforce dm-only scope in group context", async () => {
-      const tool = createMockTool("dm_tool");
-      registry.register(tool, createMockExecutor(), "dm-only");
+    it("should deny a disabled tool", async () => {
+      const tool = createMockTool("off_tool");
+      registry.register(tool, createMockExecutor(), "disabled");
 
       const toolCall: ToolCall = {
         type: "toolCall",
         id: "call-1",
-        name: "dm_tool",
-        arguments: { message: "test" },
-      };
-
-      const groupContext = { ...mockContext, isGroup: true };
-      const result = await registry.execute(toolCall, groupContext);
-
-      expect(result.success).toBe(false);
-      expect(result.error).toContain("not available in group chats");
-    });
-
-    it("should enforce group-only scope in DM context", async () => {
-      const tool = createMockTool("group_tool");
-      registry.register(tool, createMockExecutor(), "group-only");
-
-      const toolCall: ToolCall = {
-        type: "toolCall",
-        id: "call-1",
-        name: "group_tool",
+        name: "off_tool",
         arguments: { message: "test" },
       };
 
       const result = await registry.execute(toolCall, mockContext);
 
       expect(result.success).toBe(false);
-      expect(result.error).toContain("only available in group chats");
+      expect(result.error).toContain("currently disabled");
+    });
+
+    it("should allow an open tool regardless of context", async () => {
+      const tool = createMockTool("open_tool");
+      registry.register(tool, createMockExecutor({ success: true }), "open");
+
+      const toolCall: ToolCall = {
+        type: "toolCall",
+        id: "call-1",
+        name: "open_tool",
+        arguments: { message: "test" },
+      };
+
+      const groupContext = { ...mockContext, isGroup: true };
+      const result = await registry.execute(toolCall, groupContext);
+
+      expect(result.success).toBe(true);
     });
 
     it("should enforce admin-only scope for non-admin", async () => {
@@ -579,23 +545,22 @@ describe("ToolRegistry", () => {
       const tool = createMockTool("test_tool");
       registry.register(tool, createMockExecutor());
 
-      // Insert directly into database
+      // Insert directly into database (scope_level is the source of truth).
       db.prepare(
-        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-         VALUES (?, ?, ?, unixepoch(), NULL)`
-      ).run("test_tool", 0, "admin-only");
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("test_tool", 1, "admin-only", "admin");
 
       // Load from DB (this uses the actual loadAllToolConfigs from tool-config.ts)
       registry.loadConfigFromDB(db);
 
       const config = registry.getToolConfig("test_tool");
-      expect(config?.enabled).toBe(false);
-      expect(config?.scope).toBe("admin-only");
+      expect(config).toEqual({ level: "admin" });
     });
 
     it("should seed missing tools with defaults", () => {
       const tool = createMockTool("new_tool");
-      registry.register(tool, createMockExecutor(), "dm-only");
+      registry.register(tool, createMockExecutor(), "admin-only");
 
       // Load from DB - should seed the missing tool
       registry.loadConfigFromDB(db);
@@ -605,8 +570,7 @@ describe("ToolRegistry", () => {
         .get("new_tool") as any;
 
       expect(row).toBeDefined();
-      expect(row.enabled).toBe(1);
-      expect(row.scope).toBe("dm-only");
+      expect(row.scope_level).toBe("admin");
     });
   });
 
@@ -618,14 +582,14 @@ describe("ToolRegistry", () => {
       expect(registry.isToolEnabled("test_tool")).toBe(true);
     });
 
-    it("should return false when tool is disabled in config", () => {
+    it("should return false when tool level is off", () => {
       const tool = createMockTool("test_tool");
       registry.register(tool, createMockExecutor());
 
       db.prepare(
-        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-         VALUES (?, ?, ?, unixepoch(), NULL)`
-      ).run("test_tool", 0, "always");
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("test_tool", 0, "disabled", "off");
 
       registry.loadConfigFromDB(db);
 
@@ -634,7 +598,7 @@ describe("ToolRegistry", () => {
   });
 
   describe("setToolEnabled()", () => {
-    it("should enable/disable tool and persist to DB", () => {
+    it("should disable tool (level off) and persist to DB", () => {
       const tool = createMockTool("test_tool");
       registry.register(tool, createMockExecutor());
       registry.loadConfigFromDB(db);
@@ -643,10 +607,10 @@ describe("ToolRegistry", () => {
       expect(result).toBe(true);
 
       const row = db
-        .prepare("SELECT enabled FROM tool_config WHERE tool_name = ?")
+        .prepare("SELECT scope_level FROM tool_config WHERE tool_name = ?")
         .get("test_tool") as any;
 
-      expect(row.enabled).toBe(0);
+      expect(row.scope_level).toBe("off");
       expect(registry.isToolEnabled("test_tool")).toBe(false);
     });
 
@@ -665,8 +629,27 @@ describe("ToolRegistry", () => {
     });
   });
 
-  describe("updateToolScope()", () => {
-    it("should update tool scope and persist to DB", () => {
+  describe("updateToolLevel()", () => {
+    it("should update the access level and persist to DB", () => {
+      const tool = createMockTool("test_tool");
+      registry.register(tool, createMockExecutor());
+      registry.loadConfigFromDB(db);
+
+      const result = registry.updateToolLevel("test_tool", "admin", 12345);
+      expect(result).toBe(true);
+
+      expect(registry.getToolConfig("test_tool")).toEqual({ level: "admin" });
+    });
+
+    it("should return false for non-existent tool", () => {
+      registry.loadConfigFromDB(db);
+      const result = registry.updateToolLevel("non_existent", "admin");
+      expect(result).toBe(false);
+    });
+  });
+
+  describe("updateToolScope() (legacy adapter)", () => {
+    it("should map a legacy scope onto a level", () => {
       const tool = createMockTool("test_tool");
       registry.register(tool, createMockExecutor(), "always");
       registry.loadConfigFromDB(db);
@@ -674,14 +657,7 @@ describe("ToolRegistry", () => {
       const result = registry.updateToolScope("test_tool", "admin-only", 12345);
       expect(result).toBe(true);
 
-      const config = registry.getToolConfig("test_tool");
-      expect(config?.scope).toBe("admin-only");
-    });
-
-    it("should return false for non-existent tool", () => {
-      registry.loadConfigFromDB(db);
-      const result = registry.updateToolScope("non_existent", "admin-only");
-      expect(result).toBe(false);
+      expect(registry.getToolConfig("test_tool")).toEqual({ level: "admin" });
     });
   });
 
@@ -690,15 +666,12 @@ describe("ToolRegistry", () => {
       expect(registry.getToolConfig("non_existent")).toBeNull();
     });
 
-    it("should return default config when DB not loaded", () => {
+    it("should return default level when DB not loaded", () => {
       const tool = createMockTool("test_tool");
-      registry.register(tool, createMockExecutor(), "dm-only");
+      registry.register(tool, createMockExecutor(), "admin-only");
 
       const config = registry.getToolConfig("test_tool");
-      expect(config).toEqual({
-        enabled: true,
-        scope: "dm-only",
-      });
+      expect(config).toEqual({ level: "admin" });
     });
 
     it("should return DB config when available", () => {
@@ -706,15 +679,14 @@ describe("ToolRegistry", () => {
       registry.register(tool, createMockExecutor(), "always");
 
       db.prepare(
-        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-         VALUES (?, ?, ?, unixepoch(), NULL)`
-      ).run("test_tool", 0, "admin-only");
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("test_tool", 1, "admin-only", "admin");
 
       registry.loadConfigFromDB(db);
 
       const config = registry.getToolConfig("test_tool");
-      expect(config?.enabled).toBe(false);
-      expect(config?.scope).toBe("admin-only");
+      expect(config).toEqual({ level: "admin" });
     });
   });
 
@@ -861,7 +833,7 @@ describe("ToolRegistry", () => {
         {
           tool: createMockTool("plugin_tool"),
           executor: createMockExecutor(),
-          scope: "dm-only" as ToolScope,
+          scope: "admin-only" as ToolScope,
         },
       ];
 
@@ -869,7 +841,7 @@ describe("ToolRegistry", () => {
 
       expect(registry.has("plugin_tool")).toBe(true);
       const moduleTools = registry.getModuleTools("test-plugin");
-      expect(moduleTools[0].scope).toBe("dm-only");
+      expect(moduleTools[0].scope).toBe("admin-only");
     });
   });
 
@@ -924,14 +896,14 @@ describe("ToolRegistry", () => {
       expect(modules).toContain("complex");
     });
 
-    it("should handle execution when disabled tools are filtered", async () => {
+    it("should handle execution when off tools are filtered", async () => {
       const tool = createMockTool("test_tool");
       registry.register(tool, createMockExecutor());
 
       db.prepare(
-        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-         VALUES (?, ?, ?, unixepoch(), NULL)`
-      ).run("test_tool", 0, "always");
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("test_tool", 0, "disabled", "off");
 
       registry.loadConfigFromDB(db);
 
@@ -948,14 +920,14 @@ describe("ToolRegistry", () => {
       expect(result.error).toContain("currently disabled");
     });
 
-    it("should exclude disabled tools from getForContext", () => {
+    it("should exclude off tools from getForContext", () => {
       const tool = createMockTool("test_tool");
       registry.register(tool, createMockExecutor());
 
       db.prepare(
-        `INSERT INTO tool_config (tool_name, enabled, scope, updated_at, updated_by)
-         VALUES (?, ?, ?, unixepoch(), NULL)`
-      ).run("test_tool", 0, "always");
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("test_tool", 0, "disabled", "off");
 
       registry.loadConfigFromDB(db);
 

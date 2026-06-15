@@ -1,5 +1,5 @@
 import type { TSchema } from "@sinclair/typebox";
-import type { TelegramBridge } from "../../telegram/bridge.js";
+import type { ITelegramBridge } from "../../telegram/bridge-interface.js";
 import type Database from "better-sqlite3";
 import type { Config } from "../../config/schema.js";
 import type { EmbeddingProvider } from "../../memory/embeddings/provider.js";
@@ -16,7 +16,7 @@ export interface SemanticMemoryContext {
  */
 export interface ToolContext {
   /** Telegram bridge for sending messages, reactions, etc. */
-  bridge: TelegramBridge;
+  bridge: ITelegramBridge;
   /** Database instance for storage */
   db: Database.Database;
   /** Current chat ID where the tool is being executed */
@@ -50,12 +50,38 @@ export type ToolCategory = "data-bearing" | "action";
 
 /**
  * Tool scope for context-based filtering.
- * - "always": included in both DMs and groups (default)
+ * - "open": included in both DMs and groups (default, canonical form)
+ * - "always": legacy alias for "open" (backward compat)
  * - "dm-only": excluded from group chats (financial, private tools)
  * - "group-only": excluded from DMs (moderation tools)
  * - "admin-only": restricted to admin users only
+ * - "allowlist": restricted to allow_from user IDs (admins bypass)
+ * - "disabled": tool completely hidden from all contexts
  */
-export type ToolScope = "always" | "dm-only" | "group-only" | "admin-only";
+export type ToolScope =
+  | "open"
+  | "always"
+  | "dm-only"
+  | "group-only"
+  | "admin-only"
+  | "allowlist"
+  | "disabled";
+
+/**
+ * Telegram execution mode a tool supports.
+ * - "user": userbot only — relies on an MTProto capability the Bot API lacks
+ * - "bot": Bot API only — relies on a capability exclusive to bots
+ * - "both": works identically in either mode
+ *
+ * Mandatory on every built-in tool: the compiler refuses an undeclared tool.
+ */
+export type ToolMode = "user" | "bot" | "both";
+
+/**
+ * The two runtime bridge modes a registry can operate in. A tool's "both" is a
+ * declaration, not a runtime mode — the registry itself is always user or bot.
+ */
+export type RuntimeMode = Exclude<ToolMode, "both">;
 
 /**
  * Tool definition compatible with pi-ai
@@ -85,6 +111,14 @@ export type ToolExecutor<TParams = unknown> = (
 export interface RegisteredTool {
   tool: Tool;
   executor: ToolExecutor;
+  /** Declared non-trivial scope (undefined for the default always/open). */
+  scope?: ToolScope;
+  /** Telegram mode this tool runs in. */
+  mode: ToolMode;
+  /** Module this tool belongs to (name prefix for built-ins, plugin name otherwise). */
+  module: string;
+  /** Toolset tags (e.g. "core", "finance"). */
+  tags?: string[];
 }
 
 /**
@@ -96,6 +130,10 @@ export interface ToolEntry {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tool executors accept varied param shapes
   executor: ToolExecutor<any>;
   scope?: ToolScope;
+  /** Telegram mode(s) this tool runs in. Mandatory — every tool must declare it. */
+  mode: ToolMode;
+  /** Toolset tags for profile-based filtering (e.g. "core", "finance", "social") */
+  tags?: string[];
 }
 
 /**
@@ -116,6 +154,8 @@ export interface PluginModule {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any -- tool executors accept varied param shapes
     executor: ToolExecutor<any>;
     scope?: ToolScope;
+    /** Telegram mode(s) this module tool runs in. Defaults to "both" when omitted. */
+    mode?: ToolMode;
   }>;
   /** Start background jobs (polling, timers, etc.) */
   start?(context: PluginContext): Promise<void>;
@@ -127,7 +167,7 @@ export interface PluginModule {
  * Context provided to plugin modules during start()
  */
 export interface PluginContext {
-  bridge: TelegramBridge;
+  bridge: ITelegramBridge;
   db: Database.Database;
   config: Config;
   /** Plugin-specific config from config.yaml plugins section (external plugins only) */

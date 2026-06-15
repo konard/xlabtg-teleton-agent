@@ -1,18 +1,36 @@
-import type { TelegramBridge } from "../telegram/bridge.js";
-import { Api } from "telegram";
-import { randomLong } from "../utils/gramjs-bigint.js";
+import type { ITelegramBridge } from "../telegram/bridge-interface.js";
+import { isUserBridge } from "../telegram/bridge-guards.js";
 import type { TelegramSDK, TelegramUser, SimpleMessage, PluginLogger } from "@teleton-agent/sdk";
 import { PluginSDKError } from "@teleton-agent/sdk";
+import { getErrorMessage } from "../utils/errors.js";
 import { requireBridge as requireBridgeUtil } from "./telegram-utils.js";
 import { createTelegramMessagesSDK } from "./telegram-messages.js";
 import { createTelegramSocialSDK } from "./telegram-social.js";
 
-export function createTelegramSDK(bridge: TelegramBridge, log: PluginLogger): TelegramSDK {
+export function createTelegramSDK(
+  bridge: ITelegramBridge,
+  log: PluginLogger,
+  mode?: "user" | "bot"
+): TelegramSDK {
+  const telegramMode = mode ?? bridge.getMode();
+
   function requireBridge(): void {
     requireBridgeUtil(bridge);
   }
 
+  function requireUserMode(methodName: string): void {
+    if (telegramMode === "bot") {
+      throw new PluginSDKError(
+        `sdk.telegram.${methodName}() requires user mode`,
+        "OPERATION_FAILED"
+      );
+    }
+  }
+
   return {
+    getMode() {
+      return telegramMode;
+    },
     async sendMessage(chatId, text, opts) {
       requireBridge();
       try {
@@ -23,10 +41,10 @@ export function createTelegramSDK(bridge: TelegramBridge, log: PluginLogger): Te
           inlineKeyboard: opts?.inlineKeyboard,
         });
         return msg.id;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -42,60 +60,24 @@ export function createTelegramSDK(bridge: TelegramBridge, log: PluginLogger): Te
           inlineKeyboard: opts?.inlineKeyboard,
         });
         return typeof msg?.id === "number" ? msg.id : messageId;
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to edit message: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to edit message: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
-    async sendDice(chatId, emoticon, replyToId) {
+    async sendDice(chatId, emoticon, _replyToId) {
       requireBridge();
       try {
-        const gramJsClient = bridge.getClient().getClient();
-
-        const result = await gramJsClient.invoke(
-          new Api.messages.SendMedia({
-            peer: chatId,
-            media: new Api.InputMediaDice({ emoticon }),
-            message: "",
-            randomId: randomLong(),
-            replyTo: replyToId
-              ? new Api.InputReplyToMessage({ replyToMsgId: replyToId })
-              : undefined,
-          })
-        );
-
-        let value: number | undefined;
-        let messageId: number | undefined;
-
-        if (result instanceof Api.Updates || result instanceof Api.UpdatesCombined) {
-          for (const update of result.updates) {
-            if (
-              update.className === "UpdateNewMessage" ||
-              update.className === "UpdateNewChannelMessage"
-            ) {
-              const msg = update.message;
-              if (msg instanceof Api.Message && msg.media?.className === "MessageMediaDice") {
-                value = (msg.media as Api.MessageMediaDice).value;
-                messageId = msg.id;
-                break;
-              }
-            }
-          }
-        }
-
-        if (value === undefined || messageId === undefined) {
-          throw new Error("Could not extract dice value from Telegram response");
-        }
-
-        return { value, messageId };
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+        const sent = await bridge.sendDice(chatId, emoticon);
+        return { value: 0, messageId: sent.id };
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send dice: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send dice: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
@@ -105,16 +87,17 @@ export function createTelegramSDK(bridge: TelegramBridge, log: PluginLogger): Te
       requireBridge();
       try {
         await bridge.sendReaction(chatId, messageId, emoji);
-      } catch (err) {
-        if (err instanceof PluginSDKError) throw err;
+      } catch (error) {
+        if (error instanceof PluginSDKError) throw error;
         throw new PluginSDKError(
-          `Failed to send reaction: ${err instanceof Error ? err.message : String(err)}`,
+          `Failed to send reaction: ${getErrorMessage(error)}`,
           "OPERATION_FAILED"
         );
       }
     },
 
     async getMessages(chatId, limit): Promise<SimpleMessage[]> {
+      requireUserMode("getMessages");
       requireBridge();
       try {
         const messages = await bridge.getMessages(chatId, limit ?? 50);
@@ -125,15 +108,17 @@ export function createTelegramSDK(bridge: TelegramBridge, log: PluginLogger): Te
           senderUsername: m.senderUsername,
           timestamp: m.timestamp,
         }));
-      } catch (err) {
-        log.error("telegram.getMessages() failed:", err);
+      } catch (error) {
+        log.error("telegram.getMessages() failed:", error);
         return [];
       }
     },
 
     getMe(): TelegramUser | null {
+      requireUserMode("getMe");
       try {
-        const me = bridge.getClient()?.getMe?.();
+        if (!isUserBridge(bridge)) return null;
+        const me = bridge.getClient().getMe();
         if (!me) return null;
         return {
           id: Number(me.id),
@@ -151,17 +136,18 @@ export function createTelegramSDK(bridge: TelegramBridge, log: PluginLogger): Te
     },
 
     getRawClient(): unknown | null {
+      requireUserMode("getRawClient");
       log.warn("getRawClient() called — this bypasses SDK sandbox guarantees");
       if (!bridge.isAvailable()) return null;
       try {
-        return bridge.getClient().getClient();
+        return isUserBridge(bridge) ? bridge.getClient() : null;
       } catch {
         return null;
       }
     },
 
     // Spread extended methods from sub-modules
-    ...createTelegramMessagesSDK(bridge, log),
-    ...createTelegramSocialSDK(bridge, log),
+    ...createTelegramMessagesSDK(bridge, log, telegramMode),
+    ...createTelegramSocialSDK(bridge, log, telegramMode),
   };
 }

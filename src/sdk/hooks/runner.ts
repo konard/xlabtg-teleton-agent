@@ -67,13 +67,13 @@ export function createHookRunner(registry: HookRegistry, opts: HookRunnerOptions
             label,
             opts.logger
           );
-        } catch (err) {
+        } catch (error) {
           if (catchErrors) {
             opts.logger.error(
-              `Hook error [${label}]: ${getErrorMessage(err)} (after ${Date.now() - t0}ms)`
+              `Hook error [${label}]: ${getErrorMessage(error)} (after ${Date.now() - t0}ms)`
             );
           } else {
-            throw err;
+            throw error;
           }
         }
 
@@ -111,13 +111,13 @@ export function createHookRunner(registry: HookRegistry, opts: HookRunnerOptions
               label,
               opts.logger
             );
-          } catch (err) {
+          } catch (error) {
             if (catchErrors) {
               opts.logger.error(
-                `Hook error [${label}]: ${getErrorMessage(err)} (after ${Date.now() - t0}ms)`
+                `Hook error [${label}]: ${getErrorMessage(error)} (after ${Date.now() - t0}ms)`
               );
             } else {
-              throw err;
+              throw error;
             }
           }
         })

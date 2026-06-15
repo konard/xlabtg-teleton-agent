@@ -1,12 +1,14 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import { loadWallet, getKeyPair, getCachedTonClient } from "../../../ton/wallet-service.js";
-import { WalletContractV5R1, toNano, internal, beginCell } from "@ton/ton";
-import { Address, SendMode } from "@ton/core";
+import { loadWallet, getCachedTonClient } from "../../../ton/wallet-service.js";
+import { toNano, internal, beginCell } from "@ton/ton";
+import { Address } from "@ton/core";
 import { tonapiFetch } from "../../../constants/api-endpoints.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 import { withTxLock } from "../../../ton/tx-lock.js";
+import { openWallet } from "../../../ton/wallet-open.js";
+import { sendWalletTx, tonExplorerTxUrl } from "../../../ton/confirm.js";
 
 const log = createLogger("Tools");
 
@@ -96,22 +98,14 @@ export const dnsUnlinkExecutor: ToolExecutor<DnsUnlinkParams> = async (
       };
     }
 
-    const keyPair = await getKeyPair();
-    if (!keyPair) {
+    const client = await getCachedTonClient();
+    const opened = await openWallet(client);
+    if (!opened) {
       return { success: false, error: "Wallet key derivation failed." };
     }
+    const { keyPair, contract } = opened;
 
-    const wallet = WalletContractV5R1.create({
-      workchain: 0,
-      publicKey: keyPair.publicKey,
-    });
-
-    const client = await getCachedTonClient();
-    const contract = client.open(wallet);
-
-    await withTxLock(async () => {
-      const seqno = await contract.getSeqno();
-
+    const sent = await withTxLock(async () => {
       // Build change_dns_record message body WITHOUT value cell (triggers deletion)
       // Contract checks: if (slice_refs() > 0) set record, else delete record
       const body = beginCell()
@@ -121,11 +115,8 @@ export const dnsUnlinkExecutor: ToolExecutor<DnsUnlinkParams> = async (
         // NO storeRef() - absence of value cell triggers deletion
         .endCell();
 
-      // Send transaction to NFT address
-      await contract.sendTransfer({
-        seqno,
+      return sendWalletTx(client, contract, {
         secretKey: keyPair.secretKey,
-        sendMode: SendMode.PAY_GAS_SEPARATELY,
         messages: [
           internal({
             to: Address.parse(nftAddress),
@@ -137,13 +128,18 @@ export const dnsUnlinkExecutor: ToolExecutor<DnsUnlinkParams> = async (
       });
     });
 
+    if (!sent) {
+      return { success: false, error: "DNS update failed or could not be confirmed on-chain." };
+    }
+
     return {
       success: true,
       data: {
         domain: fullDomain,
         nftAddress,
         from: walletData.address,
-        message: `Unlinked wallet from ${fullDomain}\n  NFT: ${nftAddress}\n  Transaction sent (changes apply in a few seconds)`,
+        txHash: sent.hash,
+        message: `Unlinked wallet from ${fullDomain} — confirmed on-chain\n  NFT: ${nftAddress}\n  tx ${sent.hash}\n  ${tonExplorerTxUrl(sent.hash)}`,
       },
     };
   } catch (error) {

@@ -1,8 +1,9 @@
 import { useState } from 'react';
 import { setup, BotValidation } from '../../lib/api';
-import { Select } from '../Select';
+import { Stepper } from '../Stepper';
 import { PasswordInput } from './PasswordInput';
 import type { StepProps } from '../../pages/Setup';
+import { errMsg } from '../../lib/utils';
 
 export function ConfigStep({ data, onChange }: StepProps) {
   const [botLoading, setBotLoading] = useState(false);
@@ -28,7 +29,7 @@ export function ConfigStep({ data, onChange }: StepProps) {
         setBotError(result.error || 'Invalid bot token');
       }
     } catch (err) {
-      setBotError(err instanceof Error ? err.message : String(err));
+      setBotError(errMsg(err));
     } finally {
       setBotLoading(false);
     }
@@ -55,15 +56,19 @@ export function ConfigStep({ data, onChange }: StepProps) {
     <div className="step-content">
       <h2 className="step-title">Configuration</h2>
       <p className="step-description">
-        Configure your agent's behavior policies. Defaults are pre-filled — adjust what you need.
+        Configure your agent's behavior policies. Defaults are pre-filled, adjust what you need.
       </p>
 
       <div className="form-group">
         <label>Admin User ID</label>
         <input
-          type="number"
+          type="text"
+          inputMode="numeric"
           value={data.userId || ''}
-          onChange={(e) => onChange({ ...data, userId: parseInt(e.target.value) || 0 })}
+          onChange={(e) => {
+            const v = e.target.value.replace(/\D/g, '');
+            onChange({ ...data, userId: parseInt(v) || 0 });
+          }}
           placeholder="123456789"
           className="w-full"
         />
@@ -75,31 +80,39 @@ export function ConfigStep({ data, onChange }: StepProps) {
 
       <div className="form-group">
         <label>DM Policy</label>
-        <Select
-          value={data.dmPolicy}
-          options={policyOptions}
-          labels={policyLabels}
-          onChange={(v) => onChange({ ...data, dmPolicy: v })}
-          style={{ width: '100%' }}
-        />
+        <div className="pill-bar" style={{ display: 'flex', width: '100%', marginBottom: 0 }}>
+          {policyOptions.map((opt, i) => (
+            <button
+              key={opt}
+              type="button"
+              className={data.dmPolicy === opt ? 'active' : ''}
+              style={{ flex: 1 }}
+              onClick={() => onChange({ ...data, dmPolicy: opt })}
+            >{policyLabels[i]}</button>
+          ))}
+        </div>
         <div className="helper-text">{dmPolicyHelp[data.dmPolicy] || ''}</div>
       </div>
 
       <div className="form-group">
         <label>Group Policy</label>
-        <Select
-          value={data.groupPolicy}
-          options={policyOptions}
-          labels={policyLabels}
-          onChange={(v) => onChange({ ...data, groupPolicy: v })}
-          style={{ width: '100%' }}
-        />
+        <div className="pill-bar" style={{ display: 'flex', width: '100%', marginBottom: 0 }}>
+          {policyOptions.map((opt, i) => (
+            <button
+              key={opt}
+              type="button"
+              className={data.groupPolicy === opt ? 'active' : ''}
+              style={{ flex: 1 }}
+              onClick={() => onChange({ ...data, groupPolicy: opt })}
+            >{policyLabels[i]}</button>
+          ))}
+        </div>
         <div className="helper-text">{groupPolicyHelp[data.groupPolicy] || ''}</div>
       </div>
 
       <div className="form-group">
         <div className="card-toggle">
-          <span style={{ fontSize: '13px', fontWeight: 500 }}>Require @mention in groups</span>
+          <span>Require @mention in groups</span>
           <label className="toggle">
             <input
               type="checkbox"
@@ -116,43 +129,43 @@ export function ConfigStep({ data, onChange }: StepProps) {
       </div>
 
       <div className="form-group">
-        <label>Max Agentic Iterations</label>
-        <input
-          type="number"
-          value={data.maxIterations}
-          onChange={(e) => onChange({ ...data, maxIterations: parseInt(e.target.value) || 1 })}
-          min={1}
-          max={50}
-          className="w-full"
-        />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <label style={{ margin: 0 }}>Max Agentic Iterations</label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-primary)', minWidth: 20, textAlign: 'center' }}>
+              {data.maxIterations}
+            </span>
+            <Stepper
+              value={data.maxIterations}
+              onChange={(v) => onChange({ ...data, maxIterations: v })}
+              min={1}
+              max={50}
+            />
+          </div>
+        </div>
         <div className="helper-text">
           Maximum tool-call loops per message (1-50). Higher values allow more complex tasks.
         </div>
       </div>
 
-      {/* ── Coding Agent ── */}
-      <h3 style={{ fontSize: '14px', fontWeight: 600, marginTop: '24px', marginBottom: '12px' }}>
-        Coding Agent
-      </h3>
-
-      <div className="form-group">
-        <label>System Execution</label>
-        <Select
-          value={data.execMode}
-          options={['off', 'yolo']}
-          labels={{ off: 'Disabled', yolo: 'YOLO Mode' }}
-          onChange={(v) => onChange({ ...data, execMode: v as 'off' | 'yolo' })}
-          style={{ width: '100%' }}
-        />
-        <div className="helper-text">
-          {data.execMode === 'yolo'
-            ? '⚠️ Gives the agent full system access. STRONGLY RECOMMENDED to use a dedicated VPS.'
-            : 'No system execution capability.'}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 'var(--space-2xl)', marginBottom: 'var(--space-lg)' }}>
+        <h3 className="step-subtitle" style={{ margin: 0 }}>Coding Agent</h3>
+        <div className="pill-bar" style={{ marginBottom: 0 }}>
+          <button
+            type="button"
+            className={data.execMode === 'off' ? 'active' : ''}
+            onClick={() => onChange({ ...data, execMode: 'off' })}
+          >Off</button>
+          <button
+            type="button"
+            className={data.execMode === 'yolo' ? 'active' : ''}
+            onClick={() => onChange({ ...data, execMode: 'yolo' })}
+          >On</button>
         </div>
       </div>
 
       {/* ── Optional Integrations ── */}
-      <h3 style={{ fontSize: '14px', fontWeight: 600, marginTop: '24px', marginBottom: '12px' }}>
+      <h3 className="step-subtitle">
         Optional API Keys
       </h3>
 
@@ -161,7 +174,9 @@ export function ConfigStep({ data, onChange }: StepProps) {
         <div className="module-item">
           <div style={{ marginBottom: '8px' }}>
             <strong style={{ fontSize: 'var(--font-md)' }}>Bot Token</strong>
-            <span className="module-desc" style={{ marginLeft: '8px' }}>(recommended)</span>
+            <span className="module-desc" style={{ marginLeft: '8px' }}>
+              ({data.telegramMode === 'bot' ? 'required' : 'recommended'})
+            </span>
           </div>
           <p style={{ fontSize: 'var(--font-sm)', margin: '0 0 8px' }}>
             Inline buttons and deals module.
@@ -217,7 +232,7 @@ export function ConfigStep({ data, onChange }: StepProps) {
             <span className="module-desc" style={{ marginLeft: '8px' }}>(recommended)</span>
           </div>
           <p style={{ fontSize: 'var(--font-sm)', margin: '0 0 8px' }}>
-            Blockchain data — jettons, NFTs, prices, transaction history. Free key: 5 req/s (vs 1).
+            Blockchain data - jettons, NFTs, prices, transaction history. Free key: 5 req/s (vs 1).
           </p>
           <PasswordInput
             value={data.tonapiKey}
@@ -237,7 +252,7 @@ export function ConfigStep({ data, onChange }: StepProps) {
             <span className="module-desc" style={{ marginLeft: '8px' }}>(optional)</span>
           </div>
           <p style={{ fontSize: 'var(--font-sm)', margin: '0 0 8px' }}>
-            Blockchain RPC — send transactions, check balances. Dedicated endpoint (vs ORBS fallback).
+            Blockchain RPC - send transactions, check balances. Dedicated endpoint (vs ORBS fallback).
           </p>
           <PasswordInput
             value={data.toncenterKey}

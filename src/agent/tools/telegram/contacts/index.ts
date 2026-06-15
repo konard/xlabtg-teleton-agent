@@ -12,9 +12,36 @@ export { telegramGetUserInfoTool, telegramGetUserInfoExecutor };
 export { telegramCheckUsernameTool, telegramCheckUsernameExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramBlockUserTool, executor: telegramBlockUserExecutor, scope: "dm-only" },
-  { tool: telegramGetBlockedTool, executor: telegramGetBlockedExecutor, scope: "dm-only" },
-  { tool: telegramGetCommonChatsTool, executor: telegramGetCommonChatsExecutor },
-  { tool: telegramGetUserInfoTool, executor: telegramGetUserInfoExecutor },
-  { tool: telegramCheckUsernameTool, executor: telegramCheckUsernameExecutor },
+  {
+    tool: telegramBlockUserTool,
+    executor: telegramBlockUserExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramGetBlockedTool,
+    executor: telegramGetBlockedExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramGetCommonChatsTool,
+    executor: telegramGetCommonChatsExecutor,
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramGetUserInfoTool,
+    executor: telegramGetUserInfoExecutor,
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramCheckUsernameTool,
+    executor: telegramCheckUsernameExecutor,
+    mode: "user",
+    tags: ["social"],
+  },
 ];

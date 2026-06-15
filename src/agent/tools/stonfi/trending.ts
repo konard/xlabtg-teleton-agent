@@ -6,12 +6,39 @@ import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 
 const log = createLogger("Tools");
+
+interface StonfiAsset {
+  symbol?: string;
+  display_name?: string;
+  contract_address: string;
+  dex_price_usd?: string;
+  third_party_price_usd?: string;
+  popularity_index?: number;
+  blacklisted?: boolean;
+  deprecated?: boolean;
+  community?: boolean;
+  kind?: string;
+  tags?: string[];
+}
+
+interface TrendingJetton {
+  rank: number;
+  symbol: string;
+  name: string;
+  address: string;
+  priceUSD: string | null;
+  verified: boolean;
+  popularityScore: number | undefined;
+  tags: string[];
+}
+
 interface JettonTrendingParams {
   limit?: number;
 }
 export const stonfiTrendingTool: Tool = {
   name: "stonfi_trending",
-  description: "Get trending jettons ranked by popularity on STON.fi.",
+  description:
+    "List trending TON jetton tokens ranked by STON.fi popularity index. Returns symbol, price, and contract address. NOT for general crypto market trends — these are TON ecosystem tokens only.",
   category: "data-bearing",
   parameters: Type.Object({
     limit: Type.Optional(
@@ -48,19 +75,18 @@ export const stonfiTrendingExecutor: ToolExecutor<JettonTrendingParams> = async 
 
     // Filter and sort by popularity
     const trending = assets
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-      .filter((a: any) => {
+      .filter((a: StonfiAsset) => {
         // Skip blacklisted, deprecated, and native TON
         if (a.blacklisted || a.deprecated || a.kind === "Ton") return false;
         // Must have some popularity
         if (!a.popularity_index || a.popularity_index <= 0) return false;
         return true;
       })
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-      .sort((a: any, b: any) => (b.popularity_index || 0) - (a.popularity_index || 0))
+      .sort(
+        (a: StonfiAsset, b: StonfiAsset) => (b.popularity_index || 0) - (a.popularity_index || 0)
+      )
       .slice(0, limit)
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-      .map((a: any, index: number) => ({
+      .map((a: StonfiAsset, index: number) => ({
         rank: index + 1,
         symbol: a.symbol || "UNKNOWN",
         name: a.display_name || "Unknown",
@@ -72,8 +98,7 @@ export const stonfiTrendingExecutor: ToolExecutor<JettonTrendingParams> = async 
       }));
 
     let message = `🔥 Top ${trending.length} Trending Jettons:\n\n`;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- DEX API response is untyped
-    trending.forEach((t: any) => {
+    trending.forEach((t: TrendingJetton) => {
       const verifiedIcon = t.verified ? "✅" : "";
       const price = t.priceUSD ? `$${parseFloat(t.priceUSD).toFixed(4)}` : "N/A";
       message += `#${t.rank} ${verifiedIcon} ${t.symbol} - ${t.name}\n`;

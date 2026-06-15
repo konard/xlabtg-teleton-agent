@@ -232,6 +232,11 @@ export function getProviderMetadata(provider: SupportedProvider): ProviderMetada
   return meta;
 }
 
+export const SUPPORTED_PROVIDER_IDS = Object.keys(PROVIDER_REGISTRY) as [
+  SupportedProvider,
+  ...SupportedProvider[],
+];
+
 export function getSupportedProviders(): ProviderMetadata[] {
   return Object.values(PROVIDER_REGISTRY);
 }

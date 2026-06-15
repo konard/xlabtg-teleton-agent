@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
@@ -53,7 +55,7 @@ export const telegramGetUserInfoExecutor: ToolExecutor<GetUserInfoParams> = asyn
       };
     }
 
-    const gramJsClient = context.bridge.getClient().getClient();
+    const gramJsClient = getClient(context.bridge);
 
     // Resolve the user entity
     let entity: Api.User;
@@ -104,7 +106,7 @@ export const telegramGetUserInfoExecutor: ToolExecutor<GetUserInfoParams> = asyn
     }
 
     // Build response
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+
     const userInfo: Record<string, any> = {
       id: entity.id.toString(),
       username: entity.username || null,
@@ -138,7 +140,7 @@ export const telegramGetUserInfoExecutor: ToolExecutor<GetUserInfoParams> = asyn
       userInfo.voiceMessagesForbidden = full.voiceMessagesForbidden || false;
     }
 
-    log.info(`👤 get_user_info: ${userInfo.fullName || userInfo.username || userInfo.id}`);
+    log.info(`get_user_info: ${userInfo.fullName || userInfo.username || userInfo.id}`);
 
     return {
       success: true,

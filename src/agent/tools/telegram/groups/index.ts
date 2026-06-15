@@ -29,11 +29,51 @@ export { telegramCreateGroupTool, telegramCreateGroupExecutor };
 export { telegramSetChatPhotoTool, telegramSetChatPhotoExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramGetMeTool, executor: telegramGetMeExecutor },
-  { tool: telegramGetParticipantsTool, executor: telegramGetParticipantsExecutor },
-  { tool: telegramKickUserTool, executor: telegramKickUserExecutor, scope: "group-only" },
-  { tool: telegramBanUserTool, executor: telegramBanUserExecutor, scope: "group-only" },
-  { tool: telegramUnbanUserTool, executor: telegramUnbanUserExecutor, scope: "group-only" },
-  { tool: telegramCreateGroupTool, executor: telegramCreateGroupExecutor, scope: "dm-only" },
-  { tool: telegramSetChatPhotoTool, executor: telegramSetChatPhotoExecutor, scope: "group-only" },
+  {
+    tool: telegramGetMeTool,
+    executor: telegramGetMeExecutor,
+    mode: "both",
+    tags: ["social"],
+  },
+  {
+    tool: telegramGetParticipantsTool,
+    executor: telegramGetParticipantsExecutor,
+    mode: "user",
+    tags: ["social"],
+  },
+  {
+    tool: telegramKickUserTool,
+    executor: telegramKickUserExecutor,
+    scope: "group-only",
+    mode: "user",
+    tags: ["admin"],
+  },
+  {
+    tool: telegramBanUserTool,
+    executor: telegramBanUserExecutor,
+    scope: "group-only",
+    mode: "user",
+    tags: ["admin"],
+  },
+  {
+    tool: telegramUnbanUserTool,
+    executor: telegramUnbanUserExecutor,
+    scope: "group-only",
+    mode: "user",
+    tags: ["admin"],
+  },
+  {
+    tool: telegramCreateGroupTool,
+    executor: telegramCreateGroupExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["admin"],
+  },
+  {
+    tool: telegramSetChatPhotoTool,
+    executor: telegramSetChatPhotoExecutor,
+    scope: "group-only",
+    mode: "user",
+    tags: ["admin"],
+  },
 ];

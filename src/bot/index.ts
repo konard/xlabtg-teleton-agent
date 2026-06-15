@@ -4,8 +4,8 @@
  */
 
 import { Bot, type MiddlewareFn, type Context } from "grammy";
-import { Api } from "telegram";
 import type Database from "better-sqlite3";
+import { getGramJSErrorMessage, getGrammyErrorDescription } from "../utils/errors.js";
 import type { BotConfig, DealContext } from "./types.js";
 import { DEAL_VERIFICATION_WINDOW_SECONDS } from "../constants/limits.js";
 import { decodeCallback } from "./types.js";
@@ -28,11 +28,15 @@ import {
 } from "./services/message-builder.js";
 import {
   toGrammyKeyboard,
-  toTLMarkup,
   hasStyledButtons,
+  stripCustomEmoji,
   type StyledButtonDef,
-} from "./services/styled-keyboard.js";
-import { parseHtml, stripCustomEmoji } from "./services/html-parser.js";
+} from "../sdk/formatting.js";
+import {
+  answerInlineQueryStyled,
+  editInlineViaGramJS,
+  editInlineViaGramJSStrict,
+} from "./services/inline-transport.js";
 import { GramJSBotClient } from "./gramjs-bot.js";
 import { createBotApiProxyAgent } from "../telegram/bot-api-proxy.js";
 import { getWalletAddress } from "../ton/wallet-service.js";
@@ -105,7 +109,7 @@ export class DealBot {
       const queryId = ctx.inlineQuery.id;
       const userId = ctx.from.id;
 
-      log.info(`🔍 [Bot] Inline query from ${userId}: "${query}"`);
+      log.info(`[Bot] Inline query from ${userId}: "${query}"`);
 
       const dealId = query;
 
@@ -159,7 +163,15 @@ export class DealBot {
 
       if (this.gramjsBot?.isConnected() && hasStyledButtons(buttons)) {
         try {
-          await this.answerInlineQueryStyled(queryId, dealId, deal, text, buttons);
+          await answerInlineQueryStyled({
+            gramjsBot: this.gramjsBot,
+            queryId,
+            resultId: dealId,
+            title: `📋 Deal #${dealId}`,
+            description: this.formatShortDescription(deal),
+            html: text,
+            buttons,
+          });
           return;
         } catch (error) {
           log.warn({ err: error }, "[Bot] GramJS styled answer failed, falling back to Grammy");
@@ -206,10 +218,15 @@ export class DealBot {
           let edited = false;
           if (this.gramjsBot?.isConnected()) {
             try {
-              await this.editViaGramJS(inlineMessageId, text, buttons);
+              await editInlineViaGramJSStrict({
+                gramjsBot: this.gramjsBot,
+                inlineMessageId,
+                html: text,
+                buttons,
+              });
               edited = true;
             } catch (error: unknown) {
-              const errMsg = (error as Record<string, unknown>)?.errorMessage;
+              const errMsg = getGramJSErrorMessage(error);
               log.warn(
                 { err: error },
                 `[Bot] chosen_inline_result GramJS edit failed: ${errMsg || error}`
@@ -226,7 +243,7 @@ export class DealBot {
                 reply_markup: keyboard,
               });
             } catch (error: unknown) {
-              const errDesc = (error as Record<string, unknown>)?.description;
+              const errDesc = getGrammyErrorDescription(error);
               log.error(
                 { err: error },
                 `[Bot] chosen_inline_result Grammy fallback failed: ${errDesc || error}`
@@ -247,7 +264,7 @@ export class DealBot {
       const userId = ctx.from.id;
       const { action, dealId } = data;
 
-      log.info(`🔘 [Bot] Callback from ${userId}: ${action} on deal ${dealId}`);
+      log.info(`[Bot] Callback from ${userId}: ${action} on deal ${dealId}`);
 
       const inlineMsgId = ctx.callbackQuery.inline_message_id;
       if (inlineMsgId) {
@@ -304,43 +321,6 @@ export class DealBot {
     });
   }
 
-  /**
-   * Answer inline query via GramJS with styled buttons.
-   * Custom emojis stripped (SetInlineBotResults doesn't support them).
-   */
-  private async answerInlineQueryStyled(
-    queryId: string,
-    dealId: string,
-    deal: DealContext,
-    htmlText: string,
-    buttons: StyledButtonDef[][]
-  ): Promise<void> {
-    if (!this.gramjsBot) throw new Error("GramJS bot not available");
-
-    const strippedHtml = stripCustomEmoji(htmlText);
-    const { text: plainText, entities } = parseHtml(strippedHtml);
-    const markup = hasStyledButtons(buttons) ? toTLMarkup(buttons) : undefined;
-
-    await this.gramjsBot.answerInlineQuery({
-      queryId,
-      results: [
-        new Api.InputBotInlineResult({
-          id: dealId,
-          type: "article",
-          title: `📋 Deal #${dealId}`,
-          description: this.formatShortDescription(deal),
-          sendMessage: new Api.InputBotInlineMessageText({
-            message: plainText,
-            entities: entities.length > 0 ? entities : undefined,
-            noWebpage: true,
-            replyMarkup: markup,
-          }),
-        }),
-      ],
-      cacheTime: 0,
-    });
-  }
-
   private async handleAccept(ctx: Context, deal: DealContext): Promise<void> {
     if (deal.status !== "proposed") {
       await ctx.answerCallbackQuery({ text: "Already processed" });
@@ -357,7 +337,7 @@ export class DealBot {
     await this.editInlineMessage(ctx, text, buttons);
     await ctx.answerCallbackQuery({ text: "✅ Deal accepted!" });
 
-    log.info(`✅ [Bot] Deal ${deal.dealId} accepted by ${deal.userId}`);
+    log.info(`[Bot] Deal ${deal.dealId} accepted by ${deal.userId}`);
   }
 
   private async handleDecline(ctx: Context, deal: DealContext): Promise<void> {
@@ -374,7 +354,7 @@ export class DealBot {
     await this.editInlineMessage(ctx, text, buttons);
     await ctx.answerCallbackQuery({ text: "❌ Deal declined" });
 
-    log.info(`❌ [Bot] Deal ${deal.dealId} declined by ${deal.userId}`);
+    log.info(`[Bot] Deal ${deal.dealId} declined by ${deal.userId}`);
   }
 
   private async handleSent(ctx: Context, deal: DealContext): Promise<void> {
@@ -391,7 +371,7 @@ export class DealBot {
     await this.editInlineMessage(ctx, text, buttons);
     await ctx.answerCallbackQuery({ text: "⏳ Verifying..." });
 
-    log.info(`📤 [Bot] Deal ${deal.dealId} payment claimed by ${deal.userId}`);
+    log.info(`[Bot] Deal ${deal.dealId} payment claimed by ${deal.userId}`);
   }
 
   private async handleCopyAddress(ctx: Context): Promise<void> {
@@ -435,14 +415,17 @@ export class DealBot {
 
     if (this.gramjsBot?.isConnected()) {
       try {
-        await this.editViaGramJS(inlineMsgId, text, buttons);
+        await editInlineViaGramJS({
+          gramjsBot: this.gramjsBot,
+          inlineMessageId: inlineMsgId,
+          html: text,
+          buttons,
+        });
         return;
       } catch (error: unknown) {
-        const errMsg = (error as Record<string, unknown>)?.errorMessage;
-        if (errMsg === "MESSAGE_NOT_MODIFIED") return;
         log.warn(
           { err: error },
-          `[Bot] GramJS edit failed, falling back to Grammy: ${errMsg || error}`
+          `[Bot] GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
         );
       }
     }
@@ -455,7 +438,7 @@ export class DealBot {
         reply_markup: keyboard,
       });
     } catch (error: unknown) {
-      const desc = (error as Record<string, string>)?.description;
+      const desc = getGrammyErrorDescription(error);
       if (desc?.includes("message is not modified")) return;
       log.error({ err: error }, "[Bot] Failed to edit inline message");
     }
@@ -468,14 +451,17 @@ export class DealBot {
   ): Promise<void> {
     if (this.gramjsBot?.isConnected() && buttons) {
       try {
-        await this.editViaGramJS(inlineMessageId, text, buttons);
+        await editInlineViaGramJS({
+          gramjsBot: this.gramjsBot,
+          inlineMessageId,
+          html: text,
+          buttons,
+        });
         return;
       } catch (error: unknown) {
-        const errMsg = (error as Record<string, unknown>)?.errorMessage;
-        if (errMsg === "MESSAGE_NOT_MODIFIED") return;
         log.warn(
           { err: error },
-          `[Bot] GramJS edit failed, falling back to Grammy: ${errMsg || error}`
+          `[Bot] GramJS edit failed, falling back to Grammy: ${getGramJSErrorMessage(error) || error}`
         );
       }
     }
@@ -490,24 +476,6 @@ export class DealBot {
     } catch (error) {
       log.error({ err: error }, "[Bot] Failed to edit message by inline ID");
     }
-  }
-
-  private async editViaGramJS(
-    inlineMessageId: string,
-    htmlText: string,
-    buttons: StyledButtonDef[][]
-  ): Promise<void> {
-    if (!this.gramjsBot) throw new Error("GramJS bot not available");
-
-    const { text: plainText, entities } = parseHtml(htmlText);
-    const markup = hasStyledButtons(buttons) ? toTLMarkup(buttons) : undefined;
-
-    await this.gramjsBot.editInlineMessageByStringId({
-      inlineMessageId,
-      text: plainText,
-      entities: entities.length > 0 ? entities : undefined,
-      replyMarkup: markup,
-    });
   }
 
   private formatShortDescription(deal: DealContext): string {
@@ -526,7 +494,7 @@ export class DealBot {
    * Start the bot (non-blocking - long polling runs in background)
    */
   async start(): Promise<void> {
-    log.info(`🤖 [Bot] Starting @${this.config.username}...`);
+    log.info(`[Bot] Starting @${this.config.username}...`);
 
     // bot.start() will run bot.init() itself if needed; launching polling in the
     // background prevents a blocked Bot API path (api.telegram.org unreachable)
@@ -536,7 +504,7 @@ export class DealBot {
 
     this.bot
       .start({
-        onStart: () => log.info(`🤖 [Bot] @${this.config.username} polling started`),
+        onStart: () => log.info(`[Bot] @${this.config.username} polling started`),
       })
       .catch((err) => {
         // bot.stop() aborts the polling loop's pending delay, surfacing here as

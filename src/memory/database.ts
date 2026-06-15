@@ -47,8 +47,8 @@ export class MemoryDatabase {
     });
     try {
       chmodSync(config.path, 0o600);
-    } catch (err) {
-      log.warn({ err, path: config.path }, "Failed to set DB file permissions to 0o600");
+    } catch (error) {
+      log.warn({ err: error, path: config.path }, "Failed to set DB file permissions to 0o600");
     }
 
     this.db.pragma("journal_mode = WAL");
@@ -65,8 +65,8 @@ export class MemoryDatabase {
     let currentVersion: string | null = null;
     try {
       currentVersion = getSchemaVersion(this.db);
-    } catch (err) {
-      log.warn({ err }, "Could not read schema version, assuming fresh database");
+    } catch (error) {
+      log.warn({ err: error }, "Could not read schema version, assuming fresh database");
       currentVersion = null;
     }
 
@@ -128,22 +128,6 @@ export class MemoryDatabase {
 
   transaction<T>(fn: () => T): T {
     return this.db.transaction(fn)();
-  }
-
-  async asyncTransaction<T>(fn: () => Promise<T>): Promise<T> {
-    const beginTrans = this.db.prepare("BEGIN");
-    const commitTrans = this.db.prepare("COMMIT");
-    const rollbackTrans = this.db.prepare("ROLLBACK");
-
-    beginTrans.run();
-    try {
-      const result = await fn();
-      commitTrans.run();
-      return result;
-    } catch (error) {
-      rollbackTrans.run();
-      throw error;
-    }
   }
 
   getStats(): {

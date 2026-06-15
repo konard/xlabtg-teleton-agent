@@ -4,5 +4,11 @@ import type { ToolEntry } from "../../types.js";
 export { telegramSendStoryTool, telegramSendStoryExecutor };
 
 export const tools: ToolEntry[] = [
-  { tool: telegramSendStoryTool, executor: telegramSendStoryExecutor, scope: "dm-only" },
+  {
+    tool: telegramSendStoryTool,
+    executor: telegramSendStoryExecutor,
+    scope: "dm-only",
+    mode: "user",
+    tags: ["social"],
+  },
 ];

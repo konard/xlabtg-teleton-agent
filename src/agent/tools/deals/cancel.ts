@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../types.js";
-import type { Deal } from "../../../deals/types.js";
+import { loadDealForActor } from "./load-deal.js";
 import { getErrorMessage } from "../../../utils/errors.js";
 import { createLogger } from "../../../utils/logger.js";
 
@@ -27,26 +27,13 @@ export const dealCancelExecutor: ToolExecutor<DealCancelParams> = async (
   try {
     const { dealId, reason } = params;
 
-    // Load deal from database
-    const deal = context.db.prepare(`SELECT * FROM deals WHERE id = ?`).get(dealId) as
-      | Deal
-      | undefined;
-
-    if (!deal) {
-      return {
-        success: false,
-        error: `Deal #${dealId} not found`,
-      };
-    }
-
-    // User-scoping: only deal owner or admins can cancel
+    // Load deal + enforce owner/admin access
     const adminIds = context.config?.telegram.admin_ids ?? [];
-    if (context.senderId !== deal.user_telegram_id && !adminIds.includes(context.senderId)) {
-      return {
-        success: false,
-        error: `⛔ You can only cancel your own deals.`,
-      };
+    const loaded = loadDealForActor(context.db, dealId, context.senderId, adminIds, "cancel");
+    if (!loaded.ok) {
+      return { success: false, error: loaded.error };
     }
+    const deal = loaded.deal;
 
     // Check if deal can be cancelled
     const cancellableStatuses = ["proposed", "accepted"];
