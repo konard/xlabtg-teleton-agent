@@ -157,6 +157,29 @@ async function createRuntime(config = makeConfig()) {
 }
 
 describe("AgentRuntime retry backoff", () => {
+  it("passes the caller abort signal to chatWithContext", async () => {
+    const runtime = await createRuntime();
+    const controller = new AbortController();
+    chatWithContextMock.mockResolvedValueOnce(assistantResponse("ok"));
+
+    await expect(
+      runtime.processMessage({
+        chatId: "1001",
+        userMessage: "hello",
+        userName: "Owner",
+        signal: controller.signal,
+      })
+    ).resolves.toMatchObject({
+      content: "ok",
+      toolCalls: [],
+    });
+
+    expect(chatWithContextMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ signal: controller.signal })
+    );
+  });
+
   it("does not count a rate-limit retry against max_agentic_iterations", async () => {
     vi.useFakeTimers();
     const runtime = await createRuntime();

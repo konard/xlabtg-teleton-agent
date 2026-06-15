@@ -891,6 +891,7 @@ export class AgentRuntime {
             sessionId: session.sessionId,
             persistTranscript: true,
             tools,
+            signal,
           });
           recordLlmRequest(
             provider,
