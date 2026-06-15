@@ -80,7 +80,9 @@ export async function sendTon(params: SendTonParams): Promise<SendTonResult | nu
     try {
       const sent = await sendWalletTx(client, contract, {
         secretKey: keyPair.secretKey,
-        messages: [internal({ to: recipientAddress, value: toNano(amount), body: comment, bounce })],
+        messages: [
+          internal({ to: recipientAddress, value: toNano(amount), body: comment, bounce }),
+        ],
       });
 
       if (!sent) {

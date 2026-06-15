@@ -1,13 +1,6 @@
 import { Hono, type Context } from "hono";
 import type { ContentfulStatusCode } from "hono/utils/http-status";
-import {
-  mkdirSync,
-  rmSync,
-  renameSync,
-  readdirSync,
-  statSync,
-  existsSync,
-} from "node:fs";
+import { mkdirSync, rmSync, renameSync, readdirSync, statSync, existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { join, relative } from "node:path";
 import type { WebUIServerDeps, APIResponse } from "../types.js";
