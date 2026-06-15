@@ -1104,7 +1104,7 @@ function repairAutonomousTaskChildForeignKeys(db: Database.Database): number {
   return tablesToRepair.length;
 }
 
-export const CURRENT_SCHEMA_VERSION = "1.38.0";
+export const CURRENT_SCHEMA_VERSION = "1.39.0";
 
 export function runMigrations(db: Database.Database): void {
   const currentVersion = getSchemaVersion(db);
@@ -2309,6 +2309,81 @@ export function runMigrations(db: Database.Database): void {
       log.info("Migration 1.38.0 complete: pending remote vector deletion queue created");
     } catch (error) {
       log.error({ err: error }, "Migration 1.38.0 failed");
+      throw error;
+    }
+  }
+
+  if (!currentVersion || versionLessThan(currentVersion, "1.39.0")) {
+    // Restores the tool_config schema the fork-sync (PRs #625/#630) dropped: the
+    // runtime (tool-config.ts / ToolRegistry) reads and writes a `scope_level`
+    // column and stores levelToScope() values ('open', 'allowlist', 'disabled')
+    // that the original narrow `scope` CHECK never allowed. Without this the
+    // agent crashes on startup with "no such column: scope_level" (issue #631).
+    log.info(
+      "Running migration 1.39.0: Add tool_config.scope_level and widen scope CHECK constraint"
+    );
+    try {
+      const toolConfigExists = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tool_config'")
+        .get();
+
+      if (toolConfigExists) {
+        const columns = db.prepare(`PRAGMA table_info(tool_config)`).all() as Array<{
+          name: string;
+        }>;
+        const hasScopeLevel = columns.some((col) => col.name === "scope_level");
+        // Preserve an already-present scope_level (DBs created by the original
+        // upstream code) so we never clobber explicit access levels; otherwise
+        // derive it from the legacy enabled/scope columns.
+        const scopeLevelExpr = hasScopeLevel
+          ? "scope_level"
+          : `CASE
+               WHEN enabled = 0 THEN 'off'
+               WHEN scope = 'admin-only' THEN 'admin'
+               WHEN scope = 'allowlist' THEN 'allowlist'
+               WHEN scope = 'disabled' THEN 'off'
+               ELSE 'all'
+             END`;
+
+        // SQLite cannot ALTER a CHECK constraint in place, so rebuild the table.
+        db.transaction(() => {
+          db.exec(`
+            CREATE TABLE tool_config_new (
+              tool_name TEXT PRIMARY KEY,
+              enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+              scope TEXT CHECK(scope IN ('always', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled')),
+              scope_level TEXT NOT NULL DEFAULT 'all' CHECK(scope_level IN ('all', 'allowlist', 'admin', 'off')),
+              updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+              updated_by INTEGER
+            );
+          `);
+          db.exec(`
+            INSERT INTO tool_config_new (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+            SELECT tool_name, enabled, scope, ${scopeLevelExpr}, updated_at, updated_by
+            FROM tool_config;
+          `);
+          db.exec(`DROP TABLE tool_config;`);
+          db.exec(`ALTER TABLE tool_config_new RENAME TO tool_config;`);
+        })();
+      } else {
+        // Defensive: tool_config should already exist from migration 1.10.0, but
+        // create it with the full schema if a database somehow lacks it.
+        db.exec(`
+          CREATE TABLE IF NOT EXISTS tool_config (
+            tool_name TEXT PRIMARY KEY,
+            enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0, 1)),
+            scope TEXT CHECK(scope IN ('always', 'open', 'dm-only', 'group-only', 'admin-only', 'allowlist', 'disabled')),
+            scope_level TEXT NOT NULL DEFAULT 'all' CHECK(scope_level IN ('all', 'allowlist', 'admin', 'off')),
+            updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+            updated_by INTEGER
+          );
+        `);
+      }
+      log.info(
+        "Migration 1.39.0 complete: tool_config.scope_level restored and scope CHECK widened"
+      );
+    } catch (error) {
+      log.error({ err: error }, "Migration 1.39.0 failed");
       throw error;
     }
   }
