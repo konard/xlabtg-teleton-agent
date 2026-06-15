@@ -1,5 +1,4 @@
 import type { Config } from "../config/schema.js";
-import type { ITelegramBridge } from "../telegram/bridge-interface.js";
 import {
   MAX_TOOL_RESULT_SIZE,
   COMPACTION_MAX_MESSAGES,
@@ -24,14 +23,13 @@ import {
 import { TELEGRAM_SEND_TOOLS } from "../constants/tools.js";
 import {
   chatWithContext,
-  streamWithContext,
   loadContextFromTranscript,
   getProviderModel,
   getEffectiveApiKey,
   type ChatResponse,
 } from "./client.js";
 import { getProviderMetadata, type SupportedProvider } from "../config/providers.js";
-import { buildSystemPrompt, captureMemorySnapshot, clearMemorySnapshot } from "../soul/loader.js";
+import { buildSystemPrompt } from "../soul/loader.js";
 import {
   getDatabase,
   MemoryGraphQuery,
@@ -92,7 +90,6 @@ import {
   LoopStallDetector,
   sleepWithAbort,
 } from "./runtime-utils.js";
-import { isBotBridge } from "../telegram/bridge-guards.js";
 import { truncateToolResult } from "./tool-result-truncator.js";
 import { accumulateTokenUsage } from "./token-usage.js";
 import { getMetrics } from "../services/metrics.js";
@@ -209,8 +206,6 @@ export interface ProcessMessageOptions {
    * of running detached after the caller has already given up on the result.
    */
   signal?: AbortSignal;
-  isGuest?: boolean;
-  streamToChat?: { chatId: string; bridge: ITelegramBridge; mode: "all" | "replace" | "off" };
 }
 
 export interface AgentResponse {
@@ -219,7 +214,6 @@ export interface AgentResponse {
     name: string;
     input: Record<string, unknown>;
   }>;
-  streamed?: boolean;
 }
 
 /**
@@ -294,10 +288,6 @@ export class AgentRuntime {
     this.soul = soul ?? "";
     this.toolRegistry = toolRegistry ?? null;
 
-    if (this.toolRegistry && config.telegram?.allow_from?.length) {
-      this.toolRegistry.setAllowFrom(config.telegram.allow_from);
-    }
-
     const provider = (config.agent.provider || "anthropic") as SupportedProvider;
     const compactionOverride = config.agent.compaction;
     try {
@@ -369,7 +359,6 @@ export class AgentRuntime {
   ): void {
     this.embedder = embedder;
     this.semanticVectorStore = semanticVectorStore;
-    this.toolRegistry?.setEmbedder(embedder);
     const db = getDatabase().getDb();
     this.contextBuilder = new ContextBuilder(db, embedder, vectorEnabled, semanticVectorStore, {
       ...this.config.temporal_context.weighting,
@@ -507,7 +496,6 @@ export class AgentRuntime {
         }
 
         session = resetSessionWithPolicy(chatId);
-        clearMemorySnapshot(); // New session will capture a fresh snapshot
       }
 
       let context: Context = loadContextFromTranscript(session.sessionId);
@@ -516,10 +504,6 @@ export class AgentRuntime {
         log.info(`📖 Loading existing session: ${session.sessionId}`);
       } else {
         log.info(`🆕 Starting new session: ${session.sessionId}`);
-        // Capture a frozen memory snapshot for this session's lifetime.
-        // Subsequent writes update the disk file but NOT the system prompt,
-        // preserving the Anthropic prefix cache across all turns.
-        captureMemorySnapshot();
         publishRuntimeEvent("session.started", {
           sessionId: session.sessionId,
           chatId,
@@ -720,7 +704,6 @@ export class AgentRuntime {
         memoryFlushWarning: needsMemoryFlush,
         isHeartbeat,
         agentModel: this.config.agent.model,
-        telegramMode: this.config.telegram.mode,
       });
 
       // Hook: prompt:after — observing, analytics on prompt size
@@ -760,7 +743,6 @@ export class AgentRuntime {
         session = getSession(chatId)!;
         context = loadContextFromTranscript(session.sessionId);
         context.messages.push(userMsg);
-        captureMemorySnapshot(); // Refresh snapshot for the new compacted session
       }
 
       appendToTranscript(session.sessionId, userMsg);
@@ -779,21 +761,15 @@ export class AgentRuntime {
         });
       }
 
-      let tools =
+      const tools =
         (await this.selectTools({
           effectiveMessage,
           effectiveIsGroup,
           chatId,
           isAdmin,
-          senderId: toolContext?.senderId,
           queryEmbedding,
           providerMeta,
         })) ?? [];
-
-      // Guests may read but not send: strip Telegram send tools from their tool set.
-      if (opts.isGuest) {
-        tools = tools.filter((t) => !TELEGRAM_SEND_TOOLS.has(t.name));
-      }
       const toolSelectionEventId = this.recordAuditEvent(
         "agent.decision",
         {
@@ -821,8 +797,6 @@ export class AgentRuntime {
       let emptyResponseRetries = 0;
       const EMPTY_RESPONSE_MAX_RETRIES = 3;
       let finalResponse: ChatResponse | null = null;
-      let wasStreamed = false;
-      let streamAccumulatedText = ""; // For "all" mode: concatenate text across iterations
       const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
       const allToolExecResults: Array<{
         toolName: string;
@@ -892,7 +866,6 @@ export class AgentRuntime {
         }
 
         let response: ChatResponse;
-        let streamed = false;
         const llmRequestEventId = this.recordAuditEvent(
           "llm.request",
           {
@@ -912,17 +885,13 @@ export class AgentRuntime {
         let llmResponseEventId: string | null = null;
         const llmStartTime = Date.now();
         try {
-          const iterationResult = await this.streamIteration(
-            opts,
-            maskedContext,
-            effectiveSystemPrompt,
-            session.sessionId,
+          response = await chatWithContext(this.config.agent, {
+            systemPrompt: effectiveSystemPrompt,
+            context: maskedContext,
+            sessionId: session.sessionId,
+            persistTranscript: true,
             tools,
-            streamAccumulatedText
-          );
-          response = iterationResult.response;
-          streamed = iterationResult.streamed;
-          streamAccumulatedText = iterationResult.streamAccumulatedText;
+          });
           recordLlmRequest(
             provider,
             this.config.agent.model,
@@ -1166,7 +1135,6 @@ export class AgentRuntime {
           }
           log.info(`🔄 ${iteration}/${maxIterations} → done`);
           finalResponse = response;
-          wasStreamed = streamed;
           break;
         }
 
@@ -1180,7 +1148,6 @@ export class AgentRuntime {
         if (signal?.aborted) {
           log.info(`🛑 Aborted before executing ${toolCalls.length} tool call(s) — stopping loop`);
           finalResponse = response;
-          wasStreamed = streamed;
           break;
         }
 
@@ -1318,7 +1285,7 @@ export class AgentRuntime {
                 }
               );
               try {
-                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- registry checked above
+                // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- registry checked at line 687
                 const result = await this.toolRegistry!.execute(
                   { ...plan.block, arguments: plan.params },
                   fullContext
@@ -1510,38 +1477,6 @@ export class AgentRuntime {
         // Await all observing hooks concurrently
         await Promise.allSettled(observingHookPromises);
 
-        // Mid-loop tool injection: when tool_search returns discoveries, inject schemas
-        // into the live tools[] so the LLM can call them in the next iteration. Runs
-        // whenever tools exist (ToolSearch mode AND the RAG hybrid escape hatch); it's a
-        // no-op unless a tool_search call actually returned results.
-        {
-          let injected = 0;
-          for (let i = 0; i < toolPlans.length; i++) {
-            const plan = toolPlans[i];
-            const exec = execResults[i];
-            if (
-              plan.block.name === "tool_search" &&
-              exec.result.success &&
-              exec.result.data &&
-              typeof exec.result.data === "object" &&
-              "tools" in exec.result.data
-            ) {
-              const discovered = (exec.result.data as { tools: PiAiTool[] }).tools;
-              if (Array.isArray(discovered)) {
-                for (const t of discovered) {
-                  if (t?.name && !tools.some((existing) => existing.name === t.name)) {
-                    tools.push(t);
-                    injected++;
-                  }
-                }
-              }
-            }
-          }
-          if (injected > 0) {
-            log.info(`ToolSearch: injected ${injected} tool(s) mid-loop (total: ${tools.length})`);
-          }
-        }
-
         if (
           iterationRecoveries.length > 0 &&
           this.config.self_correction.tool_recovery_enabled &&
@@ -1572,14 +1507,12 @@ export class AgentRuntime {
             `🔁 Loop stall detected: identical tool call(s) [${iterSignatures.join(", ")}] repeated ${LOOP_STALL_CONSECUTIVE_THRESHOLD} times consecutively — breaking early`
           );
           finalResponse = response;
-          wasStreamed = streamed;
           break;
         }
 
         if (iteration === maxIterations) {
           log.info(`⚠️ Max iterations reached (${maxIterations})`);
           finalResponse = response;
-          wasStreamed = streamed;
         }
       }
 
@@ -1714,19 +1647,6 @@ export class AgentRuntime {
         await this.hookRunner.runObservingHook("response:after", responseAfterEvent);
       }
 
-      // Finalize streaming draft — clear bubble, send final message only if no send tool was used
-      if (wasStreamed && opts.streamToChat) {
-        const bridge = opts.streamToChat.bridge;
-        if (isBotBridge(bridge)) {
-          if (usedTelegramSendTool) {
-            // Agent already sent via tool — just clear the draft bubble
-            await bridge.clearDraft(opts.streamToChat.chatId);
-          } else {
-            await bridge.finalizeDraft(opts.streamToChat.chatId, content);
-          }
-        }
-      }
-
       // Record overall request metric for the Analytics performance dashboard
       getAnalytics()?.recordRequestMetric({
         durationMs: Date.now() - processStartTime,
@@ -1788,7 +1708,6 @@ export class AgentRuntime {
       return {
         content,
         toolCalls: totalToolCalls,
-        streamed: wasStreamed,
       };
     } catch (error) {
       // Record failed request metric
@@ -1810,92 +1729,6 @@ export class AgentRuntime {
       });
       throw error;
     }
-  }
-
-  /**
-   * Run a single LLM iteration, streaming the draft to a bot bridge when enabled.
-   * Encapsulates the reset/stream/clear-draft + "all"-mode prefix bookkeeping.
-   * `streamAccumulatedText` is threaded in and out so the loop keeps cross-iteration
-   * text for "all" mode. Returns whether the response was produced via the stream path.
-   */
-  private async streamIteration(
-    opts: ProcessMessageOptions,
-    maskedContext: Context,
-    systemPrompt: string,
-    sessionId: string,
-    tools: PiAiTool[] | undefined,
-    streamAccumulatedText: string
-  ): Promise<{ response: ChatResponse; streamed: boolean; streamAccumulatedText: string }> {
-    const streamMode = opts.streamToChat?.mode;
-    const shouldStream =
-      opts.streamToChat?.bridge.streamResponse && streamMode !== undefined && streamMode !== "off";
-
-    if (!shouldStream) {
-      const response = await chatWithContext(this.config.agent, {
-        systemPrompt,
-        context: maskedContext,
-        sessionId,
-        persistTranscript: true,
-        tools,
-      });
-      return { response, streamed: false, streamAccumulatedText };
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
-    const bridge = opts.streamToChat!.bridge;
-    if (!isBotBridge(bridge)) {
-      const response = await chatWithContext(this.config.agent, {
-        systemPrompt,
-        context: maskedContext,
-        sessionId,
-        persistTranscript: true,
-        tools,
-      });
-      return { response, streamed: true, streamAccumulatedText };
-    }
-
-    if (streamMode === "replace") {
-      // Reset draft for each iteration (new draft bubble)
-      // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream
-      bridge.resetDraft(opts.streamToChat!.chatId);
-      streamAccumulatedText = "";
-    }
-
-    const { textStream, result } = streamWithContext(this.config.agent, {
-      systemPrompt,
-      context: maskedContext,
-      sessionId,
-      persistTranscript: true,
-      tools,
-    });
-
-    // "all" mode: prepend accumulated text from previous iterations
-    const prefix = streamMode === "all" ? streamAccumulatedText : "";
-    async function* prefixedStream(): AsyncIterable<string> {
-      let first = true;
-      for await (const chunk of textStream) {
-        if (first && prefix) {
-          yield prefix + chunk;
-          first = false;
-        } else {
-          yield chunk;
-        }
-      }
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream check
-    const draftText = await bridge.streamDraft(opts.streamToChat!.chatId, prefixedStream());
-    if (streamMode === "all") {
-      if (draftText.length === 0 && streamAccumulatedText.length > 0) {
-        // LLM produced only tool calls — clear the stale draft bubble
-        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion -- guarded by shouldStream
-        await bridge.clearDraft(opts.streamToChat!.chatId);
-      }
-      streamAccumulatedText = draftText + "\n\n";
-    }
-
-    const response = await result;
-    return { response, streamed: true, streamAccumulatedText };
   }
 
   private async maybeSelfCorrectResponse(opts: {
@@ -2472,19 +2305,11 @@ export class AgentRuntime {
     effectiveIsGroup: boolean;
     chatId: string;
     isAdmin: boolean;
-    senderId: number | undefined;
     queryEmbedding: number[] | undefined;
     providerMeta: ReturnType<typeof getProviderMetadata>;
   }): Promise<PiAiTool[] | undefined> {
-    const {
-      effectiveMessage,
-      effectiveIsGroup,
-      chatId,
-      isAdmin,
-      senderId,
-      queryEmbedding,
-      providerMeta,
-    } = opts;
+    const { effectiveMessage, effectiveIsGroup, chatId, isAdmin, queryEmbedding, providerMeta } =
+      opts;
 
     if (!this.toolRegistry) return undefined;
 
@@ -2497,16 +2322,6 @@ export class AgentRuntime {
         providerMeta.toolLimit === null && this.config.tool_rag?.skip_unlimited_providers !== false
       );
 
-    if (this.config.tool_search?.enabled) {
-      // ToolSearch mode: always start with core tools only.
-      // The LLM discovers additional tools on demand via the tool_search meta-tool.
-      const tools = this.toolRegistry.getCoreTools(effectiveIsGroup, chatId, isAdmin, senderId);
-      log.info(
-        `ToolSearch: ${tools.length} core tools (${this.toolRegistry.count} total available)`
-      );
-      return tools;
-    }
-
     if (useRAG && queryEmbedding) {
       const tools = await this.toolRegistry.getForContextWithRAG(
         effectiveMessage,
@@ -2514,15 +2329,8 @@ export class AgentRuntime {
         effectiveIsGroup,
         providerMeta.toolLimit,
         chatId,
-        isAdmin,
-        senderId
+        isAdmin
       );
-      // Hybrid: always offer the tool_search escape hatch so the agent can discover
-      // tools the RAG pre-selection missed (the mid-loop injection handles results).
-      const searchTool = this.toolRegistry.getAll().find((t) => t.name === "tool_search");
-      if (searchTool && !tools.some((t) => t.name === "tool_search")) {
-        tools.push(searchTool);
-      }
       log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
       return tools;
     }
@@ -2531,8 +2339,7 @@ export class AgentRuntime {
       effectiveIsGroup,
       providerMeta.toolLimit,
       chatId,
-      isAdmin,
-      senderId
+      isAdmin
     );
   }
 
@@ -2565,7 +2372,7 @@ export class AgentRuntime {
 
     resetSession(chatId);
 
-    log.info(`Cleared history for chat ${chatId}`);
+    log.info(`🗑️  Cleared history for chat ${chatId}`);
   }
 
   getConfig(): Config {
@@ -2598,7 +2405,7 @@ export class AgentRuntime {
     maxTokens?: number;
   }): void {
     this.compactionManager.updateConfig(config);
-    log.info({ config: this.compactionManager.getConfig() }, `Compaction config updated`);
+    log.info({ config: this.compactionManager.getConfig() }, `🗜️  Compaction config updated`);
   }
 
   getCompactionConfig() {

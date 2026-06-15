@@ -1,6 +1,8 @@
 import {
   complete,
-  stream,
+  getModel,
+  type Model,
+  type Api,
   type Context,
   type AssistantMessage,
   type Message,
@@ -9,37 +11,20 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AgentConfig } from "../config/schema.js";
 import { appendToTranscript, readTranscript } from "../session/transcript.js";
-import type { SupportedProvider } from "../config/providers.js";
+import { getProviderMetadata, type SupportedProvider } from "../config/providers.js";
 import { sanitizeToolsForGemini } from "./schema-sanitizer.js";
 import { createLogger } from "../utils/logger.js";
-import { getCodexApiKey, refreshCodexApiKey } from "../providers/codex-credentials.js";
-import { getProviderModel } from "../providers/model-resolver.js";
-
-// Model resolution + provider model registration live in the neutral providers/
-// layer so non-agent consumers (e.g. memory) can resolve models without importing
-// from agent/. Re-exported here for backward compatibility with existing importers.
-export {
-  registerCocoonModels,
-  registerLocalModels,
-  getProviderModel,
-  getUtilityModel,
-} from "../providers/model-resolver.js";
+import { fetchWithTimeout } from "../utils/fetch.js";
+import {
+  getClaudeCodeApiKey,
+  refreshClaudeCodeApiKey,
+} from "../providers/claude-code-credentials.js";
+import { LLM_REQUEST_TIMEOUT_MS } from "../constants/timeouts.js";
 
 const log = createLogger("LLM");
 
-/** 401/Unauthorized detection for the one-shot credential-refresh retry. */
-function isUnauthorizedError(errorMessage?: string): boolean {
-  if (!errorMessage) return false;
-  return errorMessage.includes("401") || errorMessage.toLowerCase().includes("unauthorized");
-}
-
-/** Providers whose credentials can be refreshed once on a 401, then the call retried. */
-const RETRY_401_PROVIDERS: { provider: string; refresh: () => Promise<string | null> }[] = [
-  { provider: "codex", refresh: refreshCodexApiKey },
-];
-
 export function isOAuthToken(apiKey: string, provider?: string): boolean {
-  if (provider && provider !== "anthropic") return false;
+  if (provider && provider !== "anthropic" && provider !== "claude-code") return false;
   return apiKey.startsWith("sk-ant-oat01-");
 }
 
@@ -47,8 +32,341 @@ export function isOAuthToken(apiKey: string, provider?: string): boolean {
 export function getEffectiveApiKey(provider: string, rawKey: string): string {
   if (provider === "local") return "local";
   if (provider === "cocoon") return "";
-  if (provider === "codex") return getCodexApiKey(rawKey);
+  if (provider === "claude-code") return getClaudeCodeApiKey(rawKey);
   return rawKey;
+}
+
+const modelCache = new Map<string, Model<Api>>();
+
+const COCOON_MODELS: Record<string, Model<"openai-completions">> = {};
+
+/** Register models discovered from a running Cocoon client */
+export async function registerCocoonModels(httpPort: number): Promise<string[]> {
+  try {
+    const res = await fetch(`http://localhost:${httpPort}/v1/models`);
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      data?: { id?: string; name?: string }[];
+      models?: { id?: string; name?: string }[];
+    };
+    const models = body.data || body.models || [];
+    if (!Array.isArray(models)) return [];
+    const ids: string[] = [];
+    for (const m of models) {
+      const id = m.id || m.name || String(m);
+      COCOON_MODELS[id] = {
+        id,
+        name: id,
+        api: "openai-completions",
+        provider: "cocoon",
+        baseUrl: `http://localhost:${httpPort}/v1`,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 4096,
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+        },
+      };
+      ids.push(id);
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+const NVIDIA_TEXT_ONLY_MODELS = new Set(["z-ai/glm-5.1"]);
+
+export function supportsNativeToolCalling(provider: SupportedProvider, modelId: string): boolean {
+  if (provider === "nvidia" && NVIDIA_TEXT_ONLY_MODELS.has(modelId.toLowerCase())) {
+    return false;
+  }
+  return true;
+}
+
+interface TextOnlyMessageSegment {
+  role: "user" | "assistant";
+  text: string;
+  timestamp: number;
+}
+
+function stringifyToolArguments(args: Record<string, unknown>): string {
+  try {
+    return JSON.stringify(args);
+  } catch {
+    return "{}";
+  }
+}
+
+function userMessageToText(message: Extract<Message, { role: "user" }>): string {
+  if (typeof message.content === "string") return message.content;
+
+  return message.content
+    .map((block) => (block.type === "text" ? block.text : "[Image omitted]"))
+    .filter(Boolean)
+    .join("\n");
+}
+
+function assistantMessageToText(message: AssistantMessage): string {
+  const parts: string[] = [];
+  for (const block of message.content) {
+    if (block.type === "text" && block.text.trim()) {
+      parts.push(block.text);
+    } else if (block.type === "toolCall") {
+      parts.push(
+        `[Assistant requested tool: ${block.name} ${stringifyToolArguments(block.arguments)}]`
+      );
+    }
+  }
+  return parts.join("\n\n");
+}
+
+function toolResultMessageToText(message: Extract<Message, { role: "toolResult" }>): string {
+  const body = message.content
+    .map((block) => (block.type === "text" ? block.text : "[Image omitted]"))
+    .filter(Boolean)
+    .join("\n");
+  const status = message.isError ? "ERROR" : "OK";
+  return `[Tool result: ${message.toolName} - ${status}]\n${body}`;
+}
+
+function pushTextOnlySegment(
+  segments: TextOnlyMessageSegment[],
+  role: TextOnlyMessageSegment["role"],
+  text: string,
+  timestamp: number
+): void {
+  const trimmed = text.trim();
+  if (!trimmed) return;
+
+  const previous = segments[segments.length - 1];
+  if (previous?.role === role) {
+    previous.text += `\n\n${trimmed}`;
+    previous.timestamp = timestamp;
+    return;
+  }
+
+  segments.push({ role, text: trimmed, timestamp });
+}
+
+function textOnlyAssistantMessage(
+  segment: TextOnlyMessageSegment,
+  model: Model<Api>
+): AssistantMessage {
+  return {
+    role: "assistant",
+    content: [{ type: "text", text: segment.text }],
+    api: model.api,
+    provider: model.provider,
+    model: model.id,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    stopReason: "stop",
+    timestamp: segment.timestamp,
+  };
+}
+
+function normalizeTextOnlyContext(context: Context, model: Model<Api>): Context {
+  const segments: TextOnlyMessageSegment[] = [];
+
+  // NVIDIA GLM-5.1 rejects native tool payloads, including old tool history.
+  for (const message of context.messages) {
+    if (message.role === "user") {
+      pushTextOnlySegment(segments, "user", userMessageToText(message), message.timestamp);
+    } else if (message.role === "assistant") {
+      pushTextOnlySegment(
+        segments,
+        "assistant",
+        assistantMessageToText(message),
+        message.timestamp
+      );
+    } else if (message.role === "toolResult") {
+      pushTextOnlySegment(segments, "user", toolResultMessageToText(message), message.timestamp);
+    }
+  }
+
+  return {
+    ...context,
+    tools: undefined,
+    messages: segments.map((segment) =>
+      segment.role === "user"
+        ? { role: "user", content: segment.text, timestamp: segment.timestamp }
+        : textOnlyAssistantMessage(segment, model)
+    ),
+  };
+}
+
+/** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
+function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
+  const isTextOnlyModel = NVIDIA_TEXT_ONLY_MODELS.has(modelId.toLowerCase());
+  return {
+    id: modelId,
+    name: modelId,
+    api: "openai-completions",
+    provider: "nvidia",
+    baseUrl: NVIDIA_BASE_URL,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 4096,
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      supportsStrictMode: false,
+      maxTokensField: "max_tokens",
+      ...(isTextOnlyModel ? { supportsUsageInStreaming: false } : {}),
+    },
+  };
+}
+
+const LOCAL_MODELS: Record<string, Model<"openai-completions">> = {};
+
+/** Register models discovered from a local OpenAI-compatible server */
+export async function registerLocalModels(baseUrl: string): Promise<string[]> {
+  try {
+    const parsed = new URL(baseUrl);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      log.warn(`Local LLM base_url must use http or https (got ${parsed.protocol})`);
+      return [];
+    }
+    const url = baseUrl.replace(/\/+$/, "");
+    const res = await fetchWithTimeout(`${url}/models`, { timeoutMs: 10_000 });
+    if (!res.ok) return [];
+    const body = (await res.json()) as {
+      data?: { id?: string; name?: string }[];
+      models?: { id?: string; name?: string }[];
+    };
+    const rawModels = body.data || body.models || [];
+    if (!Array.isArray(rawModels)) return [];
+    const models = rawModels.slice(0, 500);
+    const ids: string[] = [];
+    for (const m of models) {
+      const id = m.id || m.name || String(m);
+      LOCAL_MODELS[id] = {
+        id,
+        name: id,
+        api: "openai-completions",
+        provider: "local",
+        baseUrl: url,
+        reasoning: false,
+        input: ["text"],
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+        contextWindow: 128000,
+        maxTokens: 4096,
+        compat: {
+          supportsStore: false,
+          supportsDeveloperRole: false,
+          supportsReasoningEffort: false,
+          supportsStrictMode: false,
+          maxTokensField: "max_tokens",
+        },
+      };
+      ids.push(id);
+    }
+    return ids;
+  } catch {
+    return [];
+  }
+}
+
+/** Moonshot backward-compat: old model IDs → kimi-coding IDs */
+const MOONSHOT_MODEL_ALIASES: Record<string, string> = {
+  "kimi-k2.5": "k2p5",
+};
+
+export function getProviderModel(provider: SupportedProvider, modelId: string): Model<Api> {
+  const cacheKey = `${provider}:${modelId}`;
+  const cached = modelCache.get(cacheKey);
+  if (cached) return cached;
+
+  const meta = getProviderMetadata(provider);
+
+  if (meta.piAiProvider === "cocoon") {
+    let model = COCOON_MODELS[modelId];
+    if (!model) {
+      model = Object.values(COCOON_MODELS)[0];
+      if (model) log.warn(`Cocoon model "${modelId}" not found, using "${model.id}"`);
+    }
+    if (model) {
+      modelCache.set(cacheKey, model);
+      return model;
+    }
+    throw new Error("No Cocoon models available. Is the cocoon client running?");
+  }
+
+  if (meta.piAiProvider === "local") {
+    let model = LOCAL_MODELS[modelId];
+    if (!model) {
+      model = Object.values(LOCAL_MODELS)[0];
+      if (model) log.warn(`Local model "${modelId}" not found, using "${model.id}"`);
+    }
+    if (model) {
+      modelCache.set(cacheKey, model);
+      return model;
+    }
+    throw new Error("No local models available. Is the LLM server running?");
+  }
+
+  if (meta.piAiProvider === "nvidia") {
+    const model = buildNvidiaModel(modelId);
+    modelCache.set(cacheKey, model);
+    return model;
+  }
+
+  // Moonshot backward-compat: remap old model IDs to kimi-coding IDs
+  if (provider === "moonshot" && MOONSHOT_MODEL_ALIASES[modelId]) {
+    modelId = MOONSHOT_MODEL_ALIASES[modelId];
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- getModel requires literal provider+model types; dynamic strings need casts
+    const model = getModel(meta.piAiProvider as any, modelId as any);
+    if (!model) {
+      throw new Error(`getModel returned undefined for ${provider}/${modelId}`);
+    }
+    modelCache.set(cacheKey, model);
+    return model;
+  } catch {
+    log.warn(`Model ${modelId} not found for ${provider}, falling back to ${meta.defaultModel}`);
+    const fallbackKey = `${provider}:${meta.defaultModel}`;
+    const fallbackCached = modelCache.get(fallbackKey);
+    if (fallbackCached) return fallbackCached;
+
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same as above: dynamic strings
+      const model = getModel(meta.piAiProvider as any, meta.defaultModel as any);
+      if (!model) {
+        throw new Error(
+          `Fallback model ${meta.defaultModel} also returned undefined for ${provider}`
+        );
+      }
+      modelCache.set(fallbackKey, model);
+      return model;
+    } catch {
+      throw new Error(
+        `Could not find model ${modelId} or fallback ${meta.defaultModel} for ${provider}`
+      );
+    }
+  }
+}
+
+export function getUtilityModel(provider: SupportedProvider, overrideModel?: string): Model<Api> {
+  const meta = getProviderMetadata(provider);
+  const modelId = overrideModel || meta.utilityModel;
+  return getProviderModel(provider, modelId);
 }
 
 export interface ChatOptions {
@@ -67,39 +385,6 @@ export interface ChatResponse {
   context: Context;
 }
 
-const THINK_RE = /<think>[\s\S]*?<\/think>/g;
-
-/**
- * Shared post-processing for both complete() and stream() responses: strip
- * <think> blocks (Cocoon, Mistral, etc.), persist the transcript, extract the
- * text content, and append the response to the context.
- */
-function finalizeResponse(
-  response: AssistantMessage,
-  context: Context,
-  options: ChatOptions
-): ChatResponse {
-  for (const block of response.content) {
-    if (block.type === "text" && block.text.includes("<think>")) {
-      block.text = block.text.replace(THINK_RE, "").trim();
-    }
-  }
-
-  if (options.persistTranscript && options.sessionId) {
-    appendToTranscript(options.sessionId, response);
-  }
-
-  const textContent = response.content.find((block) => block.type === "text");
-  const text = textContent?.type === "text" ? textContent.text : "";
-
-  const updatedContext: Context = {
-    ...context,
-    messages: [...context.messages, response],
-  };
-
-  return { message: response, text, context: updatedContext };
-}
-
 export async function chatWithContext(
   config: AgentConfig,
   options: ChatOptions
@@ -110,6 +395,12 @@ export async function chatWithContext(
 
   let tools =
     provider === "google" && options.tools ? sanitizeToolsForGemini(options.tools) : options.tools;
+  if (tools?.length && !supportsNativeToolCalling(provider, config.model)) {
+    log.warn(
+      `Native tool calling disabled for ${provider}/${config.model}; sending text-only chat request`
+    );
+    tools = undefined;
+  }
 
   // Cocoon: disable thinking mode + inject tools into system prompt
   let systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
@@ -129,31 +420,40 @@ export async function chatWithContext(
     systemPrompt,
     tools,
   };
+  const requestContext = supportsNativeToolCalling(provider, config.model)
+    ? context
+    : normalizeTextOnlyContext(context, model);
 
   const temperature = options.temperature ?? config.temperature;
 
   const completeOptions: Record<string, unknown> = {
     apiKey: getEffectiveApiKey(provider, config.api_key),
     maxTokens: options.maxTokens ?? config.max_tokens,
-    ...(provider !== "codex" && { temperature }),
+    temperature,
     sessionId: options.sessionId,
     cacheRetention: "long",
+    signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
   };
   if (isCocoon) {
     const { stripCocoonPayload } = await import("../cocoon/tool-adapter.js");
     completeOptions.onPayload = stripCocoonPayload;
   }
 
-  let response = await complete(model, context, completeOptions as ProviderStreamOptions);
+  let response = await complete(model, requestContext, completeOptions as ProviderStreamOptions);
 
-  // Refreshable providers: retry once on 401/Unauthorized by refreshing credentials
-  const retry401 = RETRY_401_PROVIDERS.find((e) => e.provider === provider);
-  if (retry401 && response.stopReason === "error" && isUnauthorizedError(response.errorMessage)) {
-    log.warn(`${provider} token rejected (401), refreshing credentials and retrying...`);
-    const refreshedKey = await retry401.refresh();
+  // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials
+  // Use precise patterns to avoid false positives from upstream bodies that happen to contain "401"
+  if (
+    provider === "claude-code" &&
+    response.stopReason === "error" &&
+    response.errorMessage &&
+    (/\b401\b/.test(response.errorMessage) || /\bunauthorized\b/i.test(response.errorMessage))
+  ) {
+    log.warn("Claude Code token rejected (401), refreshing credentials and retrying...");
+    const refreshedKey = await refreshClaudeCodeApiKey();
     if (refreshedKey) {
       completeOptions.apiKey = refreshedKey;
-      response = await complete(model, context, completeOptions as ProviderStreamOptions);
+      response = await complete(model, requestContext, completeOptions as ProviderStreamOptions);
     }
   }
 
@@ -175,61 +475,31 @@ export async function chatWithContext(
     }
   }
 
-  return finalizeResponse(response, context, options);
-}
-
-export interface StreamResult {
-  textStream: AsyncIterable<string>;
-  result: Promise<ChatResponse>;
-}
-
-export function streamWithContext(config: AgentConfig, options: ChatOptions): StreamResult {
-  const provider = (config.provider || "anthropic") as SupportedProvider;
-  const model = getProviderModel(provider, config.model);
-
-  const tools =
-    provider === "google" && options.tools ? sanitizeToolsForGemini(options.tools) : options.tools;
-
-  const systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
-
-  const context: Context = {
-    ...options.context,
-    systemPrompt,
-    tools,
-  };
-
-  const temperature = options.temperature ?? config.temperature;
-
-  const streamOptions: Record<string, unknown> = {
-    apiKey: getEffectiveApiKey(provider, config.api_key),
-    maxTokens: options.maxTokens ?? config.max_tokens,
-    ...(provider !== "codex" && { temperature }),
-    sessionId: options.sessionId,
-    cacheRetention: "long",
-  };
-
-  const eventStream = stream(model, context, streamOptions as ProviderStreamOptions);
-
-  // Transform event stream into a simple text delta async iterable
-  async function* textDeltas(): AsyncIterable<string> {
-    for await (const event of eventStream) {
-      if (event.type === "text_delta" && event.delta) {
-        yield event.delta;
-      }
-      // Stop yielding text when tool calls start — the response needs full processing
-      if (event.type === "toolcall_start") {
-        return;
-      }
+  // Strip <think> blocks from all providers (Cocoon, Mistral, etc.)
+  const thinkRe = /<think>[\s\S]*?<\/think>/g;
+  for (const block of response.content) {
+    if (block.type === "text" && block.text.includes("<think>")) {
+      block.text = block.text.replace(thinkRe, "").trim();
     }
   }
 
-  // Result promise: wait for the stream to complete and build ChatResponse
-  const resultPromise = (async (): Promise<ChatResponse> => {
-    const response = await eventStream.result();
-    return finalizeResponse(response, context, options);
-  })();
+  if (options.persistTranscript && options.sessionId) {
+    appendToTranscript(options.sessionId, response);
+  }
 
-  return { textStream: textDeltas(), result: resultPromise };
+  const textContent = response.content.find((block) => block.type === "text");
+  const text = textContent?.type === "text" ? textContent.text : "";
+
+  const updatedContext: Context = {
+    ...context,
+    messages: [...context.messages, response],
+  };
+
+  return {
+    message: response,
+    text,
+    context: updatedContext,
+  };
 }
 
 export function loadContextFromTranscript(sessionId: string, systemPrompt?: string): Context {
@@ -249,4 +519,8 @@ export function loadContextFromTranscript(sessionId: string, systemPrompt?: stri
     systemPrompt,
     messages: deduped,
   };
+}
+
+export function createClient(_config: AgentConfig): null {
+  return null;
 }

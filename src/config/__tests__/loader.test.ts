@@ -387,7 +387,7 @@ describe("Config Loader", () => {
       const config = loadConfig(TEST_CONFIG_PATH);
 
       // Agent defaults
-      expect(config.agent.model).toBe("claude-haiku-4-5-20251001");
+      expect(config.agent.model).toBe("claude-opus-4-6");
       expect(config.agent.max_tokens).toBe(4096);
       expect(config.agent.temperature).toBe(0.7);
       expect(config.agent.max_agentic_iterations).toBe(5);
@@ -453,7 +453,7 @@ describe("Config Loader", () => {
       const config = loadConfig(TEST_CONFIG_PATH);
 
       expect(config.agent.provider).toBe("openai");
-      expect(config.agent.model).toBe("gpt-5.5");
+      expect(config.agent.model).toBe("gpt-5.4");
     });
 
     it("should not override explicit model for non-anthropic providers", () => {
@@ -999,7 +999,7 @@ telegram:
       expect(config.webui.enabled).toBe(true);
 
       // Provider auto-model
-      expect(config.agent.model).toBe("gpt-5.5");
+      expect(config.agent.model).toBe("gpt-5.4");
 
       // Path expansion
       expect(config.telegram.session_path).toBe(join(homedir(), "custom"));

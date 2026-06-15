@@ -992,7 +992,6 @@ ${blue}  ┌──────────────────────�
             userName: msg.senderFirstName,
             senderUsername: msg.senderUsername,
             isGroup: true,
-            isGuest: true,
             timestamp: msg.timestamp.getTime(),
             messageId: msg.id,
             toolContext: {

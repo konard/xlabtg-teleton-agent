@@ -477,15 +477,6 @@ export class MessageHandler {
           const effectiveText = transcriptionText
             ? `🎤 (voice): ${transcriptionText}${message.text ? `\n${message.text}` : ""}`
             : message.text;
-          const streamMode = this.fullConfig?.telegram?.stream_mode ?? "all";
-          const streamToChat =
-            this.bridge.streamResponse && streamMode !== "off"
-              ? {
-                  chatId: message.chatId,
-                  bridge: this.bridge,
-                  mode: streamMode as "all" | "replace" | "off",
-                }
-              : undefined;
 
           const response = await this.agent.processMessage({
             chatId: message.chatId,
@@ -501,7 +492,6 @@ export class MessageHandler {
             mediaType: message.mediaType,
             messageId: message.id,
             replyContext,
-            streamToChat,
           });
 
           // 8. Handle response based on whether tools were used
@@ -513,8 +503,6 @@ export class MessageHandler {
 
           if (isSilentReply(response.content)) {
             log.debug("Silent reply suppressed");
-          } else if (response.streamed) {
-            log.debug("Response already streamed to chat");
           } else if (
             !telegramSendCalled &&
             response.content &&

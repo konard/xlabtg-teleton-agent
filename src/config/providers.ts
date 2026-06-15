@@ -1,7 +1,6 @@
 export type SupportedProvider =
   | "anthropic"
   | "claude-code"
-  | "codex"
   | "openai"
   | "google"
   | "xai"
@@ -31,30 +30,6 @@ export interface ProviderMetadata {
 }
 
 const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
-  codex: {
-    id: "codex",
-    displayName: "Codex (Auto)",
-    envVar: "OPENAI_API_KEY",
-    keyPrefix: null,
-    keyHint: "Auto-detected from Codex CLI",
-    consoleUrl: "https://platform.openai.com/",
-    defaultModel: "gpt-5.5",
-    utilityModel: "gpt-5.4-mini",
-    toolLimit: 128,
-    piAiProvider: "openai-codex",
-  },
-  zai: {
-    id: "zai",
-    displayName: "ZAI (Zhipu)",
-    envVar: "ZAI_API_KEY",
-    keyPrefix: null,
-    keyHint: "...",
-    consoleUrl: "https://z.ai/manage-apikey/apikey-list",
-    defaultModel: "glm-5.1",
-    utilityModel: "glm-5-turbo",
-    toolLimit: 128,
-    piAiProvider: "zai",
-  },
   anthropic: {
     id: "anthropic",
     displayName: "Anthropic (Claude)",
@@ -62,7 +37,7 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: "sk-ant-",
     keyHint: "sk-ant-api03-...",
     consoleUrl: "https://console.anthropic.com/",
-    defaultModel: "claude-haiku-4-5-20251001",
+    defaultModel: "claude-opus-4-6",
     utilityModel: "claude-haiku-4-5-20251001",
     toolLimit: null,
     piAiProvider: "anthropic",
@@ -74,19 +49,19 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: "sk-ant-",
     keyHint: "Auto-detected from Claude Code",
     consoleUrl: "https://console.anthropic.com/",
-    defaultModel: "claude-haiku-4-5-20251001",
+    defaultModel: "claude-opus-4-6",
     utilityModel: "claude-haiku-4-5-20251001",
     toolLimit: null,
     piAiProvider: "anthropic",
   },
   openai: {
     id: "openai",
-    displayName: "OpenAI (GPT-5.5)",
+    displayName: "OpenAI (GPT-5.4)",
     envVar: "OPENAI_API_KEY",
     keyPrefix: "sk-",
     keyHint: "sk-proj-...",
     consoleUrl: "https://platform.openai.com/api-keys",
-    defaultModel: "gpt-5.5",
+    defaultModel: "gpt-5.4",
     utilityModel: "gpt-4o-mini",
     toolLimit: 128,
     piAiProvider: "openai",
@@ -99,7 +74,7 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyHint: "AIza...",
     consoleUrl: "https://aistudio.google.com/apikey",
     defaultModel: "gemini-2.5-flash",
-    utilityModel: "gemini-2.5-flash-lite",
+    utilityModel: "gemini-2.0-flash-lite",
     toolLimit: 128,
     piAiProvider: "google",
   },
@@ -110,8 +85,8 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: "xai-",
     keyHint: "xai-...",
     consoleUrl: "https://console.x.ai/",
-    defaultModel: "grok-4.3",
-    utilityModel: "grok-4.20-0309-non-reasoning",
+    defaultModel: "grok-3",
+    utilityModel: "grok-3-mini-fast",
     toolLimit: 128,
     piAiProvider: "xai",
   },
@@ -122,7 +97,7 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: "gsk_",
     keyHint: "gsk_...",
     consoleUrl: "https://console.groq.com/keys",
-    defaultModel: "meta-llama/llama-4-maverick-17b-128e-instruct",
+    defaultModel: "llama-3.3-70b-versatile",
     utilityModel: "llama-3.1-8b-instant",
     toolLimit: 128,
     piAiProvider: "groq",
@@ -141,13 +116,13 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
   },
   moonshot: {
     id: "moonshot",
-    displayName: "Moonshot (Kimi)",
+    displayName: "Moonshot (Kimi K2.5)",
     envVar: "MOONSHOT_API_KEY",
     keyPrefix: "sk-",
     keyHint: "sk-...",
     consoleUrl: "https://platform.moonshot.ai/",
-    defaultModel: "kimi-for-coding",
-    utilityModel: "kimi-for-coding",
+    defaultModel: "k2p5",
+    utilityModel: "k2p5",
     toolLimit: 128,
     piAiProvider: "kimi-coding",
   },
@@ -158,7 +133,7 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: null,
     keyHint: "...",
     consoleUrl: "https://console.mistral.ai/api-keys",
-    defaultModel: "devstral-2512",
+    defaultModel: "devstral-small-2507",
     utilityModel: "ministral-8b-latest",
     toolLimit: 128,
     piAiProvider: "mistral",
@@ -175,6 +150,18 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     toolLimit: 128,
     piAiProvider: "cerebras",
   },
+  zai: {
+    id: "zai",
+    displayName: "ZAI (Zhipu)",
+    envVar: "ZAI_API_KEY",
+    keyPrefix: null,
+    keyHint: "...",
+    consoleUrl: "https://z.ai/manage-apikey/apikey-list",
+    defaultModel: "glm-4.7",
+    utilityModel: "glm-4.7-flash",
+    toolLimit: 128,
+    piAiProvider: "zai",
+  },
   minimax: {
     id: "minimax",
     displayName: "MiniMax",
@@ -182,8 +169,8 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: null,
     keyHint: "Save your key — shown only once!",
     consoleUrl: "https://platform.minimax.io/",
-    defaultModel: "MiniMax-M2.7",
-    utilityModel: "MiniMax-M2.7",
+    defaultModel: "MiniMax-M2.5",
+    utilityModel: "MiniMax-M2",
     toolLimit: 128,
     piAiProvider: "minimax",
   },
@@ -194,7 +181,7 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     keyPrefix: "hf_",
     keyHint: "hf_...",
     consoleUrl: "https://huggingface.co/settings/tokens",
-    defaultModel: "deepseek-ai/DeepSeek-V4-Pro",
+    defaultModel: "deepseek-ai/DeepSeek-V3.2",
     utilityModel: "Qwen/Qwen3-Next-80B-A3B-Instruct",
     toolLimit: 128,
     piAiProvider: "huggingface",
@@ -245,29 +232,19 @@ export function getProviderMetadata(provider: SupportedProvider): ProviderMetada
   return meta;
 }
 
-export function getSupportedProviders(): ProviderMetadata[] {
-  return Object.values(PROVIDER_REGISTRY);
-}
-
-/**
- * Provider ids as a non-empty tuple, derived from the single registry so the
- * Zod `agent.provider` enum stays in sync with PROVIDER_REGISTRY (no 3rd copy).
- */
 export const SUPPORTED_PROVIDER_IDS = Object.keys(PROVIDER_REGISTRY) as [
   SupportedProvider,
   ...SupportedProvider[],
 ];
 
+export function getSupportedProviders(): ProviderMetadata[] {
+  return Object.values(PROVIDER_REGISTRY);
+}
+
 export function validateApiKeyFormat(provider: SupportedProvider, key: string): string | undefined {
   const meta = PROVIDER_REGISTRY[provider];
   if (!meta) return `Unknown provider: ${provider}`;
-  if (
-    provider === "cocoon" ||
-    provider === "local" ||
-    provider === "codex" ||
-    provider === "claude-code"
-  )
-    return undefined; // No API key needed (claude-code/codex auto-detect)
+  if (provider === "cocoon" || provider === "local" || provider === "claude-code") return undefined; // No API key needed (claude-code auto-detects)
   if (!key || key.trim().length === 0) return "API key is required";
   if (meta.keyPrefix && !key.startsWith(meta.keyPrefix)) {
     return `Invalid format (should start with ${meta.keyPrefix})`;

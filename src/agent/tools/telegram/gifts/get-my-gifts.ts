@@ -1,44 +1,32 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
-import { getClient } from "../../../../sdk/telegram-utils.js";
 
 const log = createLogger("Tools");
 
 /**
- * Gift catalog cache entry
- */
-interface CatalogEntry {
-  limited: boolean;
-  soldOut: boolean;
-  emoji: string | null;
-  availabilityTotal?: number;
-  availabilityRemains?: number;
-}
-
-/**
  * Gift catalog cache (module-level, shared across calls)
  */
-let giftCatalogCache: { map: Map<string, CatalogEntry>; hash: number; expiresAt: number } | null =
-  null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+let giftCatalogCache: { map: Map<string, any>; hash: number; expiresAt: number } | null = null;
 const CATALOG_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Extract emoji from sticker document
  */
-function extractEmoji(sticker: Api.TypeDocument): string | null {
-  if (!("attributes" in sticker)) return null;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+function extractEmoji(sticker: any): string | null {
+  if (!sticker?.attributes) return null;
 
   const attr = sticker.attributes.find(
-    (a) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    (a: any) =>
       a.className === "DocumentAttributeSticker" || a.className === "DocumentAttributeCustomEmoji"
   );
 
-  if (!attr) return null;
-  return "alt" in attr ? (attr.alt as string) || null : null;
+  return attr?.alt || null;
 }
 
 /**
@@ -51,32 +39,6 @@ interface GetMyGiftsParams {
   excludeUnsaved?: boolean;
   excludeSaved?: boolean;
   sortByValue?: boolean;
-}
-
-/**
- * Compact gift summary returned by this tool
- */
-interface CompactGift {
-  date: number;
-  isLimited: boolean;
-  isCollectible: boolean;
-  stars?: string;
-  emoji: string | null;
-  msgId?: number;
-  savedId?: string;
-  transferStars: string | null;
-  collectibleId?: string;
-  title?: string;
-  num?: number;
-  slug?: string;
-  nftLink?: string;
-  model?: { name: string; rarityPercent: string | null } | null;
-  pattern?: { name: string; rarityPercent: string | null } | null;
-  backdrop?: { name: string; rarityPercent: string | null } | null;
-  canUpgrade?: boolean;
-  upgradeStars?: string;
-  availabilityRemains?: number;
-  availabilityTotal?: number;
 }
 
 /**
@@ -126,21 +88,6 @@ export const telegramGetMyGiftsTool: Tool = {
 };
 
 /**
- * Extract attribute summary (name + rarity %)
- */
-function extractAttrSummary(
-  attr: Api.TypeStarGiftAttribute | undefined
-): { name: string; rarityPercent: string | null } | null {
-  if (!attr || !("name" in attr) || !("rarity" in attr)) return null;
-  const rarity = attr.rarity;
-  const permille = "permille" in rarity ? (rarity as Api.StarGiftAttributeRarity).permille : null;
-  return {
-    name: attr.name,
-    rarityPercent: permille ? (Number(permille) / 10).toFixed(1) + "%" : null,
-  };
-}
-
-/**
  * Executor for telegram_get_my_gifts tool
  */
 export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async (
@@ -156,7 +103,7 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
       excludeSaved,
       sortByValue = false,
     } = params;
-    const gramJsClient = getClient(context.bridge);
+    const gramJsClient = context.bridge.getClient().getClient();
 
     const targetUserId = viewSender ? context.senderId.toString() : userId;
 
@@ -164,17 +111,20 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
       ? await gramJsClient.getEntity(targetUserId)
       : new Api.InputPeerSelf();
 
-    let catalogMap: Map<string, CatalogEntry>;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    let catalogMap: Map<string, any>;
     if (giftCatalogCache && Date.now() < giftCatalogCache.expiresAt) {
       catalogMap = giftCatalogCache.map;
     } else {
       const prevHash = giftCatalogCache?.hash ?? 0;
-      const catalog = await gramJsClient.invoke(new Api.payments.GetStarGifts({ hash: prevHash }));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+      const catalog: any = await gramJsClient.invoke(
+        new Api.payments.GetStarGifts({ hash: prevHash })
+      );
 
-      if (catalog.className === "payments.StarGifts" && catalog.gifts.length > 0) {
+      if (catalog.gifts && catalog.gifts.length > 0) {
         catalogMap = new Map();
         for (const catalogGift of catalog.gifts) {
-          if (catalogGift.className !== "StarGift") continue;
           const id = catalogGift.id?.toString();
           if (id) {
             catalogMap.set(id, {
@@ -195,16 +145,14 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
         catalogMap = giftCatalogCache?.map ?? new Map();
         giftCatalogCache = {
           map: catalogMap,
-          hash:
-            catalog.className === "payments.StarGifts"
-              ? (catalog.hash ?? 0)
-              : (giftCatalogCache?.hash ?? 0),
+          hash: catalog.hash ?? giftCatalogCache?.hash ?? 0,
           expiresAt: Date.now() + CATALOG_CACHE_TTL_MS,
         };
       }
     }
 
-    const result = await gramJsClient.invoke(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const result: any = await gramJsClient.invoke(
       new Api.payments.GetSavedStarGifts({
         peer,
         offset: "",
@@ -215,20 +163,52 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
       })
     );
 
-    const gifts: CompactGift[] = (result.gifts || []).map((savedGift: any) => {
+    // Build a lookup of users included in the response so we can resolve the
+    // sender (fromId) into a usable id/username for buyer-matching downstream.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const usersById = new Map<string, any>();
+    for (const u of result.users || []) {
+      const uid = u.id?.toString();
+      if (uid) usersById.set(uid, u);
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const gifts = (result.gifts || []).map((savedGift: any) => {
       const gift = savedGift.gift;
-      const isCollectible = gift.className === "StarGiftUnique";
+      const isCollectible = gift?.className === "StarGiftUnique";
+
+      // Resolve the gift sender. savedGift.fromId is a Peer (PeerUser for a
+      // user-sent gift); normalize it to a plain string id used for matching.
+      const fromUserId =
+        savedGift.fromId?.userId?.toString() ?? savedGift.fromId?.channelId?.toString() ?? null;
+      const fromUser = fromUserId ? usersById.get(fromUserId) : undefined;
+      const fromUsername = fromUser?.username ?? null;
 
       const lookupId = isCollectible ? gift.giftId?.toString() : gift.id?.toString();
       const catalogInfo = catalogMap.get(lookupId);
 
       const isLimited = isCollectible || catalogInfo?.limited === true;
 
-      const compactGift: CompactGift = {
-        date: savedGift.date,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+      const extractAttrSummary = (attr: any) =>
+        attr
+          ? {
+              name: attr.name,
+              rarityPercent: attr.rarityPermille
+                ? (attr.rarityPermille / 10).toFixed(1) + "%"
+                : null,
+            }
+          : null;
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+      const compactGift: Record<string, any> = {
+        date: savedGift.date, // Telegram epoch seconds
+        fromId: fromUserId,
+        fromUsername,
+        sender: fromUserId ? { id: fromUserId, username: fromUsername } : null,
         isLimited,
         isCollectible,
-        stars: isCollectible ? undefined : (gift as Api.StarGift).stars?.toString(),
+        stars: gift?.stars?.toString(),
         emoji: catalogInfo?.emoji || null,
         msgId: savedGift.msgId,
         savedId: savedGift.savedId?.toString(),
@@ -241,41 +221,43 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
         compactGift.num = gift.num;
         compactGift.slug = gift.slug;
         compactGift.nftLink = `t.me/nft/${gift.slug}`;
-        const modelAttr = gift.attributes.find(
-          (a: any): a is Api.StarGiftAttributeModel => a.className === "StarGiftAttributeModel"
+        const modelAttr = gift.attributes?.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+          (a: any) => a.className === "StarGiftAttributeModel"
         );
-        const patternAttr = gift.attributes.find(
-          (a: any): a is Api.StarGiftAttributePattern => a.className === "StarGiftAttributePattern"
+        const patternAttr = gift.attributes?.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+          (a: any) => a.className === "StarGiftAttributePattern"
         );
-        const backdropAttr = gift.attributes.find(
-          (a: any): a is Api.StarGiftAttributeBackdrop =>
-            a.className === "StarGiftAttributeBackdrop"
+        const backdropAttr = gift.attributes?.find(
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+          (a: any) => a.className === "StarGiftAttributeBackdrop"
         );
         compactGift.model = extractAttrSummary(modelAttr);
         compactGift.pattern = extractAttrSummary(patternAttr);
         compactGift.backdrop = extractAttrSummary(backdropAttr);
       } else {
-        const regularGift = gift as Api.StarGift;
         compactGift.canUpgrade = savedGift.canUpgrade || false;
         if (savedGift.canUpgrade) {
-          compactGift.upgradeStars = regularGift.upgradeStars?.toString();
+          compactGift.upgradeStars = gift?.upgradeStars?.toString();
         }
       }
 
       if (isLimited && !isCollectible) {
-        const regularGift = gift as Api.StarGift;
         compactGift.availabilityRemains =
-          catalogInfo?.availabilityRemains || regularGift.availabilityRemains;
-        compactGift.availabilityTotal =
-          catalogInfo?.availabilityTotal || regularGift.availabilityTotal;
+          catalogInfo?.availabilityRemains || gift?.availabilityRemains;
+        compactGift.availabilityTotal = catalogInfo?.availabilityTotal || gift?.availabilityTotal;
       }
 
       return compactGift;
     });
 
-    const limited = gifts.filter((g) => g.isLimited);
-    const unlimited = gifts.filter((g) => !g.isLimited);
-    const collectibles = gifts.filter((g) => g.isCollectible);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const limited = gifts.filter((g: any) => g.isLimited);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const unlimited = gifts.filter((g: any) => !g.isLimited);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+    const collectibles = gifts.filter((g: any) => g.isCollectible);
 
     const viewingLabel = viewSender ? `sender (${context.senderId})` : userId || "self";
     log.info(
@@ -292,7 +274,8 @@ export const telegramGetMyGiftsExecutor: ToolExecutor<GetMyGiftsParams> = async 
           limited: limited.length,
           unlimited: unlimited.length,
           collectibles: collectibles.length,
-          canUpgrade: gifts.filter((g) => g.canUpgrade).length,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any -- GramJS API response is untyped
+          canUpgrade: gifts.filter((g: any) => g.canUpgrade).length,
         },
         totalCount: result.count,
       },
