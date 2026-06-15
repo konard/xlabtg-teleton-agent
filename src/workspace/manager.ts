@@ -1,12 +1,13 @@
 // src/workspace/manager.ts
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { TELETON_ROOT, WORKSPACE_ROOT, WORKSPACE_PATHS } from "./paths.js";
 import { createLogger } from "../utils/logger.js";
 
 const log = createLogger("Workspace");
+const PRIVATE_DIR_MODE = 0o700;
 
 // Resolve package root by walking up from current file until we find package.json
 function findPackageRoot(): string {
@@ -18,6 +19,13 @@ function findPackageRoot(): string {
   return process.cwd();
 }
 const TEMPLATES_DIR = join(findPackageRoot(), "src", "templates");
+
+function ensurePrivateDirectory(dirPath: string): boolean {
+  const created = !existsSync(dirPath);
+  mkdirSync(dirPath, { recursive: true, mode: PRIVATE_DIR_MODE });
+  chmodSync(dirPath, PRIVATE_DIR_MODE);
+  return created;
+}
 
 export interface WorkspaceConfig {
   workspaceDir?: string;
@@ -55,14 +63,12 @@ export async function ensureWorkspace(config?: WorkspaceConfig): Promise<Workspa
   const silent = config?.silent ?? false;
 
   // Create base teleton directory
-  if (!existsSync(TELETON_ROOT)) {
-    mkdirSync(TELETON_ROOT, { recursive: true });
+  if (ensurePrivateDirectory(TELETON_ROOT)) {
     if (!silent) log.info(`Created Teleton root at ${TELETON_ROOT}`);
   }
 
   // Create workspace directory
-  if (!existsSync(WORKSPACE_ROOT)) {
-    mkdirSync(WORKSPACE_ROOT, { recursive: true });
+  if (ensurePrivateDirectory(WORKSPACE_ROOT)) {
     if (!silent) log.info(`Created workspace at ${WORKSPACE_ROOT}`);
   }
 
@@ -76,9 +82,7 @@ export async function ensureWorkspace(config?: WorkspaceConfig): Promise<Workspa
   ];
 
   for (const dir of directories) {
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
+    ensurePrivateDirectory(dir);
   }
 
   // Define file paths
