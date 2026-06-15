@@ -35,6 +35,7 @@ describe("IntegrationAuthManager — WORK4-003 regression", () => {
   });
 
   afterEach(() => {
+    vi.unstubAllGlobals();
     db.close();
     if (originalEnv !== undefined) {
       process.env.TELETON_INTEGRATIONS_KEY = originalEnv;
