@@ -12,6 +12,36 @@ const log = createLogger("Config");
 const DEFAULT_CONFIG_PATH = join(TELETON_ROOT, "config.yaml");
 const NORMAL_DEFAULT_CONFIG_PATH = join(homedir(), ".teleton", "config.yaml");
 
+/**
+ * Turn a Zod validation error into a human-readable, actionable message.
+ *
+ * The raw `ZodError.message` is a JSON dump of the issue array which is hard to
+ * read in a terminal (see issue #628 — users only saw a wall of JSON and the
+ * agent silently exited). This formats each issue as `path: message` and appends
+ * a hint pointing at the offending config file and `teleton setup`.
+ */
+export function formatConfigIssues(error: {
+  issues: Array<{ path: PropertyKey[]; message: string }>;
+}): string {
+  return error.issues
+    .map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.map(String).join(".") : "(root)";
+      return `  • ${path}: ${issue.message}`;
+    })
+    .join("\n");
+}
+
+export function formatConfigError(
+  error: { issues: Array<{ path: PropertyKey[]; message: string }> },
+  configPath?: string
+): string {
+  const where = configPath ? ` in ${configPath}` : "";
+  return (
+    `Invalid config${where}:\n${formatConfigIssues(error)}\n\n` +
+    "Fix the field(s) above, or run 'teleton setup' to (re)create the configuration."
+  );
+}
+
 export function parseEnvPort(name: string, value: string): number {
   const port = parseInt(value, 10);
   if (isNaN(port) || String(port) !== value.trim()) {
@@ -108,7 +138,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
 
   const result = ConfigSchema.safeParse(raw);
   if (!result.success) {
-    throw new Error(`Invalid config: ${result.error.message}`);
+    throw new Error(formatConfigError(result.error, fullPath));
   }
 
   const config = result.data;
@@ -239,7 +269,7 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
 export function saveConfig(config: Config, configPath: string = DEFAULT_CONFIG_PATH): void {
   const result = ConfigSchema.safeParse(config);
   if (!result.success) {
-    throw new Error(`Refusing to save invalid config: ${result.error.message}`);
+    throw new Error(`Refusing to save invalid config:\n${formatConfigIssues(result.error)}`);
   }
 
   const fullPath = expandPath(configPath);

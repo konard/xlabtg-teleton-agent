@@ -96,6 +96,38 @@ describe("archive (tar.gz) round-trip", () => {
       expect(parsed[i].data.equals(entries[i].data)).toBe(true);
     }
   });
+
+  it("handles long file names (> 100 bytes in UTF-8) via GNU LongLink", () => {
+    // This reproduces the exact failure reported in issue #628: a workspace
+    // path with Cyrillic characters whose UTF-8 byte length exceeds 100 bytes.
+    const longName = "workspace/Alpha/blog/content/posts/как-зарегистрироваться-в-свой-в-альфе.md";
+    expect(Buffer.byteLength(longName, "utf-8")).toBeGreaterThan(100);
+
+    const entries = [
+      { name: "manifest.json", data: Buffer.from('{"x":1}') },
+      { name: longName, data: Buffer.from("# content") },
+    ];
+    const archive = createTarGz(entries);
+    const parsed = parseTarGz(archive);
+
+    expect(parsed.map((e) => e.name)).toEqual(entries.map((e) => e.name));
+    expect(parsed[1].data.toString()).toBe("# content");
+  });
+
+  it("handles multiple long-named entries in the same archive", () => {
+    const names = [
+      "workspace/Alpha/blog/content/posts/как-зарегистрироваться-в-свой-в-альфе.md",
+      "workspace/Alpha/blog/content/pages/очень-длинное-название-страницы-с-кириллицей.md",
+      "short.txt",
+    ];
+    const entries = names.map((name) => ({ name, data: Buffer.from(name) }));
+    const parsed = parseTarGz(createTarGz(entries));
+
+    expect(parsed.map((e) => e.name)).toEqual(names);
+    for (let i = 0; i < entries.length; i++) {
+      expect(parsed[i].data.equals(entries[i].data)).toBe(true);
+    }
+  });
 });
 
 describe("compareVersions", () => {

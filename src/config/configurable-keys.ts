@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { parse, stringify } from "yaml";
-import { expandPath } from "./loader.js";
+import { expandPath, formatConfigIssues } from "./loader.js";
 import { ConfigSchema, DMPolicy, GroupPolicy, ExecMode, ExecScope } from "./schema.js";
 import { getSupportedProviders } from "./providers.js";
 
@@ -1343,7 +1343,7 @@ export function writeRawConfig(raw: Record<string, any>, configPath: string): vo
   delete clone.market;
   const result = ConfigSchema.safeParse(clone);
   if (!result.success) {
-    throw new Error(`Refusing to save invalid config: ${result.error.message}`);
+    throw new Error(`Refusing to save invalid config:\n${formatConfigIssues(result.error)}`);
   }
 
   raw.meta = raw.meta ?? {};
