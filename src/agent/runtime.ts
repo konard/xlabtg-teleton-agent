@@ -2124,6 +2124,7 @@ export class AgentRuntime {
         getDatabase().getDb(),
         this.config.temporal_context
       );
+      service.analyzeAndStorePatterns();
       const snapshot = service.getCurrentTemporalContext({
         time: opts.timestamp,
         sessionIndex: opts.sessionIndex,

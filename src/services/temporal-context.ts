@@ -841,7 +841,6 @@ export class TemporalContextService {
       limit?: number;
     } = {}
   ): TemporalContextSnapshot {
-    this.analyzeAndStorePatterns();
     const metadata = deriveTemporalMetadata({
       timestamp: input.time,
       timezone: this.timezone,

@@ -3834,6 +3834,48 @@
         ]
       }
     },
+    "/v1/context/patterns/analyze": {
+      "post": {
+        "tags": [
+          "Temporal Context"
+        ],
+        "summary": "Create / invoke /v1/context/patterns/analyze",
+        "operationId": "post_v1_context_patterns_analyze",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/context/temporal": {
       "get": {
         "tags": [
@@ -3841,6 +3883,48 @@
         ],
         "summary": "Get /v1/context/temporal",
         "operationId": "get_v1_context_temporal",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthorized"
+          },
+          "403": {
+            "$ref": "#/components/responses/Forbidden"
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          },
+          "503": {
+            "$ref": "#/components/responses/ServiceUnavailable"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/context/temporal/sync": {
+      "post": {
+        "tags": [
+          "Temporal Context"
+        ],
+        "summary": "Create / invoke /v1/context/temporal/sync",
+        "operationId": "post_v1_context_temporal_sync",
         "responses": {
           "200": {
             "description": "Successful response",
