@@ -27,19 +27,22 @@ function createLimiter(windowMs: number, limit: number): MiddlewareHandler {
 /** Global rate limit: 60 requests/minute */
 export const globalRateLimit: MiddlewareHandler = createLimiter(60_000, 60);
 
+const mutatingLimiter = createLimiter(60_000, 10);
+const readLimiter = createLimiter(60_000, 300);
+
 /** Mutating rate limit: 10 requests/minute for POST/PUT/DELETE */
-export const mutatingRateLimit: MiddlewareHandler = async (c, next) => {
+export const mutatingRateLimit: MiddlewareHandler = (c, next) => {
   const method = c.req.method;
   if (method === "GET" || method === "HEAD" || method === "OPTIONS") {
     return next();
   }
-  return createLimiter(60_000, 10)(c, next);
+  return mutatingLimiter(c, next);
 };
 
 /** Read rate limit: 300 requests/minute for GET */
-export const readRateLimit: MiddlewareHandler = async (c, next) => {
+export const readRateLimit: MiddlewareHandler = (c, next) => {
   if (c.req.method !== "GET") {
     return next();
   }
-  return createLimiter(60_000, 300)(c, next);
+  return readLimiter(c, next);
 };
