@@ -57,6 +57,16 @@ vi.mock("../paths.js", async () => {
       document: 50 * 1024 * 1024,
       total_workspace: 500 * 1024 * 1024,
     },
+    PROTECTED_WORKSPACE_FILES: [
+      "SOUL.md",
+      "STRATEGY.md",
+      "SECURITY.md",
+      "MEMORY.md",
+      "IDENTITY.md",
+      "USER.md",
+    ],
+    IMMUTABLE_FILES: ["SOUL.md", "STRATEGY.md", "SECURITY.md"],
+    MEMORY_SCAN_FILES: ["MEMORY.md", "HEARTBEAT.md", "USER.md", "IDENTITY.md"],
   };
 });
 

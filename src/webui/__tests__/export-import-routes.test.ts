@@ -29,6 +29,7 @@ vi.mock("../../workspace/paths.js", () => ({
   WORKSPACE_PATHS: {},
   ALLOWED_EXTENSIONS: {},
   MAX_FILE_SIZES: {},
+  IMMUTABLE_FILES: ["SOUL.md", "STRATEGY.md", "SECURITY.md"],
 }));
 
 vi.mock("../../soul/loader.js", () => ({
