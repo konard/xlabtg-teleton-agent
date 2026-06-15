@@ -8,9 +8,10 @@ interface SelectProps {
   onChange: (value: string) => void;
   style?: React.CSSProperties;
   disabled?: boolean;
+  ariaLabel?: string;
 }
 
-export function Select({ value, options, labels, onChange, style, disabled }: SelectProps) {
+export function Select({ value, options, labels, onChange, style, disabled, ariaLabel }: SelectProps) {
   const [open, setOpen] = useState(false);
   const [focusIdx, setFocusIdx] = useState(-1);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number; width: number } | null>(null);
@@ -99,6 +100,7 @@ export function Select({ value, options, labels, onChange, style, disabled }: Se
   }, [open, focusIdx, options, onChange]);
 
   const menuId = `select-menu-${idRef.current}`;
+  const selectedLabel = labels ? labels[options.indexOf(value)] ?? value : value;
 
   return (
     <div ref={ref} className="custom-select" style={style}>
@@ -111,8 +113,9 @@ export function Select({ value, options, labels, onChange, style, disabled }: Se
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
+        aria-label={(ariaLabel ?? selectedLabel) || 'Select option'}
       >
-        <span>{labels ? labels[options.indexOf(value)] ?? value : value}</span>
+        <span>{selectedLabel}</span>
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
           <path d="M6 9l6 6 6-6" />
         </svg>

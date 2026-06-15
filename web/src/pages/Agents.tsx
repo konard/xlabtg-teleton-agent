@@ -320,7 +320,11 @@ function FormFields({
           value={form.name}
           onChange={(e) => setForm((current) => ({ ...current, name: e.target.value }))}
         />
-        <select value={form.type} onChange={(e) => applyArchetype(e.target.value)}>
+        <select
+          aria-label="Agent archetype"
+          value={form.type}
+          onChange={(e) => applyArchetype(e.target.value)}
+        >
           <option value="CustomAgent">Custom agent</option>
           {archetypes.map((archetype) => (
             <option key={archetype.type} value={archetype.type}>
@@ -337,6 +341,7 @@ function FormFields({
           />
         )}
         <select
+          aria-label="Agent mode"
           value={form.mode}
           disabled={!showCloneSource}
           onChange={(e) =>
@@ -350,6 +355,7 @@ function FormFields({
           <option value="bot">Bot mode</option>
         </select>
         <select
+          aria-label="Memory policy"
           value={form.memoryPolicy}
           onChange={(e) =>
             setForm((current) => ({

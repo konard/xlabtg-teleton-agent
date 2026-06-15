@@ -863,6 +863,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
       <div className="dashboard-toolbar">
         <select
           className="dashboard-profile-select"
+          aria-label="Dashboard"
           value={selectedDashboard?.id ?? ""}
           onChange={(event) => {
             setSelectedDashboardId(event.target.value);
@@ -900,6 +901,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
             </button>
             <select
               className="dashboard-template-select"
+              aria-label="Create dashboard from template"
               value=""
               disabled={saving}
               onChange={(event) => createFromTemplate(event.target.value)}
@@ -913,6 +915,7 @@ function InnerGrid(props: DashboardGridProps & { width: number }) {
             </select>
             <select
               className="dashboard-template-select"
+              aria-label="Add widget"
               value=""
               disabled={saving || !selectedDashboard}
               onChange={(event) => {

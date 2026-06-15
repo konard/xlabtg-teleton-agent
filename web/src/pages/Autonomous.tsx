@@ -900,6 +900,7 @@ export function Autonomous() {
               onClick={toggleAutonomous}
               role="switch"
               aria-checked={autonomousEnabled}
+              aria-label="Autonomous mode"
               tabIndex={0}
               onKeyDown={(e) => {
                 if (e.key === " " || e.key === "Enter") {

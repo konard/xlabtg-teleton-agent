@@ -26,6 +26,8 @@ const OBJECT_RESPONSES: Record<string, unknown> = {
     platform: "linux",
   },
   "/agent/status": { state: "stopped", uptime: 0, error: null },
+  "/agents": { agents: [] },
+  "/agents/archetypes": { archetypes: [] },
   "/memory/stats": { knowledge: 0, sessions: 0, messages: 0, chats: 0 },
   "/tools/rag": {
     enabled: false,
@@ -79,6 +81,15 @@ async function fulfilJson(route: Route, body: unknown): Promise<void> {
   });
 }
 
+async function fulfilEventStream(route: Route): Promise<void> {
+  await route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    headers: { "Cache-Control": "no-cache", Connection: "keep-alive" },
+    body: "",
+  });
+}
+
 /**
  * Install request interception so the WebUI renders against mock data.
  * Call before navigating.
@@ -98,12 +109,7 @@ export async function mockBackend(page: Page): Promise<void> {
   // Log stream (EventSource) — return an empty, immediately-closing stream so
   // the page doesn't hang waiting for events.
   await page.route("**/api/logs/stream", (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: "text/event-stream",
-      headers: { "Cache-Control": "no-cache", Connection: "keep-alive" },
-      body: "",
-    }),
+    fulfilEventStream(route),
   );
 
   // Everything else under /api.
@@ -111,6 +117,14 @@ export async function mockBackend(page: Page): Promise<void> {
     const url = new URL(route.request().url());
     const path = url.pathname.replace(/^\/api/, "");
     const method = route.request().method();
+    if (
+      path === "/logs/stream" ||
+      path === "/notifications/stream" ||
+      path === "/agent/events" ||
+      path === "/events/stream"
+    ) {
+      return fulfilEventStream(route);
+    }
     if (method !== "GET") {
       // Mutations succeed with an empty success envelope.
       return fulfilJson(route, { success: true, data: {} });

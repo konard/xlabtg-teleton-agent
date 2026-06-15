@@ -215,14 +215,14 @@ export function Memory() {
               onClick={syncVectorMemory}
               disabled={syncLoading}
               title="Synchronize memory files with vector memory"
-              style={{ padding: "4px 12px", fontSize: "12px", opacity: syncLoading ? 0.5 : 0.7 }}
+              style={{ padding: "4px 12px", fontSize: "12px", opacity: syncLoading ? 0.5 : 1 }}
             >
               {syncLoading ? "Syncing..." : "Sync Vector"}
             </button>
             <button
               onClick={loadSources}
               disabled={loading}
-              style={{ padding: "4px 12px", fontSize: "12px", opacity: 0.7 }}
+              style={{ padding: "4px 12px", fontSize: "12px" }}
             >
               {loading ? "Loading..." : "Refresh"}
             </button>

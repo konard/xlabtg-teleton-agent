@@ -368,6 +368,7 @@ export function Soul() {
   const [activeTab, setActiveTab] = useState<string>(SOUL_FILES[0]);
   const [content, setContent] = useState('');
   const [savedContent, setSavedContent] = useState('');
+  const [contentFile, setContentFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
@@ -386,8 +387,37 @@ export function Soul() {
 
   // Auto-save draft ref
   const autoSaveRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const loadRequestRef = useRef(0);
+  const activeTabRef = useRef(activeTab);
+  const contentRef = useRef(content);
+  const savedContentRef = useRef(savedContent);
+  const contentFileRef = useRef<string | null>(contentFile);
+  const loadingRef = useRef(loading);
+  const savingRef = useRef(saving);
 
-  const dirty = content !== savedContent;
+  activeTabRef.current = activeTab;
+  contentRef.current = content;
+  savedContentRef.current = savedContent;
+  contentFileRef.current = contentFile;
+  loadingRef.current = loading;
+  savingRef.current = saving;
+
+  const dirty = contentFile === activeTab && content !== savedContent;
+  const canSave = dirty && !loading && !saving;
+
+  const setEditorBuffer = useCallback((filename: string | null, nextContent: string, nextSavedContent: string) => {
+    contentFileRef.current = filename;
+    contentRef.current = nextContent;
+    savedContentRef.current = nextSavedContent;
+    setContentFile(filename);
+    setContent(nextContent);
+    setSavedContent(nextSavedContent);
+  }, []);
+
+  const handleContentChange = useCallback((nextContent: string) => {
+    contentRef.current = nextContent;
+    setContent(nextContent);
+  }, []);
 
   const handleViewMode = (mode: ViewMode) => {
     setViewMode(mode);
@@ -410,10 +440,15 @@ export function Soul() {
   }, []);
 
   const loadFile = useCallback(async (filename: string) => {
+    const requestId = ++loadRequestRef.current;
+    loadingRef.current = true;
     setLoading(true);
     setMessage(null);
+    setEditorBuffer(null, '', '');
     try {
       const res = await api.getSoulFile(filename);
+      if (loadRequestRef.current !== requestId) return;
+
       const serverContent = res.data.content;
 
       // Check for a newer draft in localStorage
@@ -428,9 +463,9 @@ export function Soul() {
               variant: "warning",
               confirmText: "Restore",
             });
+            if (loadRequestRef.current !== requestId) return;
             if (restore) {
-              setContent(draft.content);
-              setSavedContent(serverContent);
+              setEditorBuffer(filename, draft.content, serverContent);
               return;
             } else {
               clearDraft(filename);
@@ -443,49 +478,85 @@ export function Soul() {
         // Ignore draft errors
       }
 
-      setContent(serverContent);
-      setSavedContent(serverContent);
+      setEditorBuffer(filename, serverContent, serverContent);
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      if (loadRequestRef.current === requestId) {
+        setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      }
     } finally {
-      setLoading(false);
+      if (loadRequestRef.current === requestId) {
+        loadingRef.current = false;
+        setLoading(false);
+      }
     }
-  }, [clearDraft]);
+  }, [clearDraft, confirm, setEditorBuffer]);
 
   const saveFile = useCallback(async () => {
+    const filename = activeTabRef.current;
+    const bufferFile = contentFileRef.current;
+    const contentToSave = contentRef.current;
+    const savedContentSnapshot = savedContentRef.current;
+    if (
+      savingRef.current ||
+      loadingRef.current ||
+      bufferFile !== filename ||
+      contentToSave === savedContentSnapshot
+    ) {
+      return;
+    }
+
+    savingRef.current = true;
     setSaving(true);
     setMessage(null);
     try {
-      const res = await api.updateSoulFile(activeTab, content);
-      setSavedContent(content);
-      clearDraft(activeTab);
-      setMessage({ type: 'success', text: res.data.message });
-      toast.success(res.data.message ?? 'File saved successfully');
+      const res = await api.updateSoulFile(filename, contentToSave);
+      clearDraft(filename);
+      if (activeTabRef.current === filename && contentFileRef.current === filename) {
+        savedContentRef.current = contentToSave;
+        setSavedContent(contentToSave);
+        setMessage({ type: 'success', text: res.data.message });
+        toast.success(res.data.message ?? 'File saved successfully');
+      }
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
-      toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      if (activeTabRef.current === filename && contentFileRef.current === filename) {
+        setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+        toast.error(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-  }, [activeTab, content, clearDraft]);
+  }, [clearDraft]);
 
   const handleSaveVersion = useCallback(async (comment: string) => {
+    const filename = activeTabRef.current;
+    const bufferFile = contentFileRef.current;
+    const contentToSave = contentRef.current;
+    if (loadingRef.current || bufferFile !== filename) {
+      setShowSaveVersionDialog(false);
+      return;
+    }
+
     setShowSaveVersionDialog(false);
     setSavingVersion(true);
     setMessage(null);
     try {
-      await api.saveSoulVersion(activeTab, content, comment || undefined);
-      setMessage({ type: 'success', text: 'Version saved' });
+      await api.saveSoulVersion(filename, contentToSave, comment || undefined);
+      if (activeTabRef.current === filename && contentFileRef.current === filename) {
+        setMessage({ type: 'success', text: 'Version saved' });
+      }
     } catch (err) {
-      setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      if (activeTabRef.current === filename && contentFileRef.current === filename) {
+        setMessage({ type: 'error', text: err instanceof Error ? err.message : String(err) });
+      }
     } finally {
       setSavingVersion(false);
     }
-  }, [activeTab, content]);
+  }, []);
 
   // Ctrl+S / Cmd+S to save
   useKeyboardShortcuts([
-    { key: 's', ctrl: true, handler: () => { if (dirty && !saving) void saveFile(); } },
+    { key: 's', ctrl: true, handler: () => { if (canSave) void saveFile(); } },
   ]);
 
   // Warn before leaving with unsaved changes
@@ -502,20 +573,32 @@ export function Soul() {
     if (autoSaveRef.current) clearInterval(autoSaveRef.current);
 
     autoSaveRef.current = setInterval(() => {
-      if (dirty) {
-        saveDraft(activeTab, content);
+      const filename = activeTabRef.current;
+      const draftContent = contentRef.current;
+      if (
+        !loadingRef.current &&
+        contentFileRef.current === filename &&
+        draftContent !== savedContentRef.current
+      ) {
+        saveDraft(filename, draftContent);
       }
     }, AUTO_SAVE_INTERVAL_MS);
 
     return () => {
       if (autoSaveRef.current) clearInterval(autoSaveRef.current);
     };
-  }, [dirty, activeTab, content, saveDraft]);
+  }, [saveDraft]);
 
   // Confirm before switching tabs with unsaved changes
   const handleTabSwitch = async (file: string) => {
     if (file === activeTab) return;
     if (dirty && !(await confirm({ title: "Discard changes?", description: "You have unsaved changes.", variant: "warning", confirmText: "Discard" }))) return;
+    loadRequestRef.current += 1;
+    activeTabRef.current = file;
+    loadingRef.current = true;
+    setLoading(true);
+    setMessage(null);
+    setEditorBuffer(null, '', '');
     setActiveTab(file);
     setShowVersionHistory(false);
   };
@@ -527,8 +610,8 @@ export function Soul() {
   const editor = (
     <MarkdownEditor
       value={content}
-      onChange={setContent}
-      onSave={() => { if (dirty && !saving) void saveFile(); }}
+      onChange={handleContentChange}
+      onSave={() => { if (canSave) void saveFile(); }}
       placeholder={`Edit ${activeTab}...`}
     />
   );
@@ -569,7 +652,7 @@ export function Soul() {
 
           <TemplateSelector
             activeFile={activeTab}
-            onLoad={setContent}
+            onLoad={handleContentChange}
             hasUnsavedChanges={dirty}
           />
 
@@ -598,13 +681,13 @@ export function Soul() {
             )}
 
             <div style={{ marginTop: '8px', display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-              <button onClick={() => void saveFile()} disabled={saving || !dirty} title="Save (Ctrl+S)">
+              <button onClick={() => void saveFile()} disabled={!canSave} title="Save (Ctrl+S)">
                 {saving ? 'Saving...' : 'Save'}
               </button>
 
               <button
                 onClick={() => setShowSaveVersionDialog(true)}
-                disabled={savingVersion}
+                disabled={savingVersion || loading || contentFile !== activeTab}
                 title="Save a named snapshot to version history"
               >
                 {savingVersion ? 'Saving...' : 'Save Version'}
@@ -642,7 +725,7 @@ export function Soul() {
       {showVersionHistory && (
         <VersionHistory
           filename={activeTab}
-          onRestore={(restoredContent) => setContent(restoredContent)}
+          onRestore={handleContentChange}
           onDiff={(versionContent, label) => setDiffState({ versionContent, label })}
           onClose={() => setShowVersionHistory(false)}
         />
