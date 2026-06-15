@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   api,
   type CorrectionLogEntry,
@@ -6,6 +6,7 @@ import {
   type SessionListItem,
   type SessionMessage,
 } from "../lib/api";
+import { runLatestRequest } from "../lib/latestRequest";
 import { useConfirm } from "../components/ConfirmDialog";
 import { useTranslation } from "react-i18next";
 
@@ -613,23 +614,32 @@ export function Sessions() {
   const [searchQuery, setSearchQuery] = useState("");
   const [chatTypeFilter, setChatTypeFilter] = useState("");
   const [selected, setSelected] = useState<SessionListItem | null>(null);
+  const sessionsRequestRef = useRef(0);
 
   const loadSessions = useCallback(async (p: number, q?: string, ct?: string) => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await api.listSessions(p, limit, {
-        q: q || undefined,
-        chatType: ct || undefined,
-      });
-      setSessions(res.data.sessions);
-      setTotal(res.data.total);
-      setPage(p);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
+    await runLatestRequest(
+      sessionsRequestRef,
+      () =>
+        api.listSessions(p, limit, {
+          q: q || undefined,
+          chatType: ct || undefined,
+        }),
+      {
+        onSuccess: (res) => {
+          setSessions(res.data.sessions);
+          setTotal(res.data.total);
+          setPage(p);
+        },
+        onError: (err) => {
+          setError(err instanceof Error ? err.message : String(err));
+        },
+        onFinally: () => {
+          setLoading(false);
+        },
+      }
+    );
   }, []);
 
   useEffect(() => {
