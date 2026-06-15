@@ -5,13 +5,21 @@ import { renameSync, existsSync } from "fs";
 import { dirname } from "path";
 import { mkdirSync } from "fs";
 import type { Tool, ToolExecutor } from "../types.js";
-import { validatePath } from "../../../workspace/index.js";
+import {
+  validatePath,
+  PROTECTED_WORKSPACE_FILES,
+  IMMUTABLE_FILES,
+} from "../../../workspace/index.js";
 import { withToolErrors } from "../wrap.js";
 
 interface WorkspaceRenameParams {
   from: string;
   to: string;
   overwrite?: boolean;
+}
+
+function isProtectedOrImmutableWorkspaceFile(filename: string): boolean {
+  return PROTECTED_WORKSPACE_FILES.includes(filename) || IMMUTABLE_FILES.includes(filename);
 }
 
 export const workspaceRenameTool: Tool = {
@@ -48,8 +56,26 @@ export const workspaceRenameExecutor: ToolExecutor<WorkspaceRenameParams> =
       };
     }
 
+    if (PROTECTED_WORKSPACE_FILES.includes(validatedFrom.filename)) {
+      return {
+        success: false,
+        error:
+          `Cannot rename protected file: ${validatedFrom.filename}. ` +
+          `This file is essential for the agent's operation.`,
+      };
+    }
+
     // Validate destination path (may not exist yet)
     const validatedTo = validatePath(to, true);
+
+    if (isProtectedOrImmutableWorkspaceFile(validatedTo.filename)) {
+      return {
+        success: false,
+        error:
+          `Cannot overwrite protected or immutable file: ${validatedTo.filename}. ` +
+          `This file is controlled by the owner and cannot be replaced through rename.`,
+      };
+    }
 
     // Check if destination already exists
     if (validatedTo.exists && !overwrite) {
