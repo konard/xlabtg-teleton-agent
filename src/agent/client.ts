@@ -264,6 +264,7 @@ export interface ChatOptions {
   temperature?: number;
   persistTranscript?: boolean;
   tools?: Tool[];
+  signal?: AbortSignal;
 }
 
 export interface ChatResponse {
@@ -307,13 +308,16 @@ export async function chatWithContext(
     options.temperature ?? config.temperature
   );
 
+  const requestTimeoutSignal = AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS);
   const completeOptions: Record<string, unknown> = {
     apiKey: getEffectiveApiKey(provider, config.api_key),
     maxTokens: options.maxTokens ?? config.max_tokens,
     temperature,
     sessionId: options.sessionId,
     cacheRetention: provider === "nvidia" ? NVIDIA_CACHE_RETENTION : DEFAULT_CACHE_RETENTION,
-    signal: AbortSignal.timeout(LLM_REQUEST_TIMEOUT_MS),
+    signal: options.signal
+      ? AbortSignal.any([options.signal, requestTimeoutSignal])
+      : requestTimeoutSignal,
   };
   if (isCocoon) {
     const { stripCocoonPayload } = await import("../cocoon/tool-adapter.js");
