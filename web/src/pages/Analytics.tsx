@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import {
   LineChart,
   Line,
@@ -30,6 +30,7 @@ import {
   type TemporalPattern,
   type TemporalTimelineEntry,
 } from "../lib/api";
+import { runLatestRequest } from "../lib/latestRequest";
 import { useTranslation } from "react-i18next";
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -190,22 +191,27 @@ function UsageSection() {
   const [toolData, setToolData] = useState<ToolUsageEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [tokRes, toolRes] = await Promise.all([
-        api.getAnalyticsUsage(period),
-        api.getAnalyticsTools(period),
-      ]);
-      setTokenData(tokRes.data ?? []);
-      setToolData(toolRes.data ?? []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load usage data");
-    } finally {
-      setLoading(false);
-    }
+    await runLatestRequest(
+      requestRef,
+      () => Promise.all([api.getAnalyticsUsage(period), api.getAnalyticsTools(period)]),
+      {
+        onSuccess: ([tokRes, toolRes]) => {
+          setTokenData(tokRes.data ?? []);
+          setToolData(toolRes.data ?? []);
+        },
+        onError: (e) => {
+          setError(e instanceof Error ? e.message : "Failed to load usage data");
+        },
+        onFinally: () => {
+          setLoading(false);
+        },
+      }
+    );
   }, [period]);
 
   useEffect(() => {
@@ -447,24 +453,33 @@ function AnomalySection() {
   const [stats, setStats] = useState<AnomalyStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [eventRes, baselineRes, statsRes] = await Promise.all([
-        api.getAnomalies({ period }),
-        api.getAnomalyBaselines(),
-        api.getAnomalyStats(period),
-      ]);
-      setEvents(eventRes.data ?? []);
-      setBaselines(baselineRes.data ?? []);
-      setStats(statsRes.data ?? null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load anomaly data");
-    } finally {
-      setLoading(false);
-    }
+    await runLatestRequest(
+      requestRef,
+      () =>
+        Promise.all([
+          api.getAnomalies({ period }),
+          api.getAnomalyBaselines(),
+          api.getAnomalyStats(period),
+        ]),
+      {
+        onSuccess: ([eventRes, baselineRes, statsRes]) => {
+          setEvents(eventRes.data ?? []);
+          setBaselines(baselineRes.data ?? []);
+          setStats(statsRes.data ?? null);
+        },
+        onError: (e) => {
+          setError(e instanceof Error ? e.message : "Failed to load anomaly data");
+        },
+        onFinally: () => {
+          setLoading(false);
+        },
+      }
+    );
   }, [period]);
 
   useEffect(() => {
@@ -732,18 +747,22 @@ function HeatmapSection() {
   const [data, setData] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await api.getAnalyticsHeatmap(period);
-      setData(res.data ?? []);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load heatmap");
-    } finally {
-      setLoading(false);
-    }
+    await runLatestRequest(requestRef, () => api.getAnalyticsHeatmap(period), {
+      onSuccess: (res) => {
+        setData(res.data ?? []);
+      },
+      onError: (e) => {
+        setError(e instanceof Error ? e.message : "Failed to load heatmap");
+      },
+      onFinally: () => {
+        setLoading(false);
+      },
+    });
   }, [period]);
 
   useEffect(() => {
@@ -1129,18 +1148,22 @@ function PerformanceSection() {
   const [data, setData] = useState<AnalyticsPerformanceData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const res = await api.getAnalyticsPerformance(period);
-      setData(res.data ?? null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load performance data");
-    } finally {
-      setLoading(false);
-    }
+    await runLatestRequest(requestRef, () => api.getAnalyticsPerformance(period), {
+      onSuccess: (res) => {
+        setData(res.data ?? null);
+      },
+      onError: (e) => {
+        setError(e instanceof Error ? e.message : "Failed to load performance data");
+      },
+      onFinally: () => {
+        setLoading(false);
+      },
+    });
   }, [period]);
 
   useEffect(() => {
@@ -1297,25 +1320,30 @@ function CostSection() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const requestRef = useRef(0);
 
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    try {
-      const [costRes, budgetRes] = await Promise.all([
-        api.getAnalyticsCost(period),
-        api.getAnalyticsBudget(),
-      ]);
-      setCostData(costRes.data ?? null);
-      setBudget(budgetRes.data ?? null);
-      if (budgetRes.data?.monthly_limit_usd != null) {
-        setLimitInput(String(budgetRes.data.monthly_limit_usd));
+    await runLatestRequest(
+      requestRef,
+      () => Promise.all([api.getAnalyticsCost(period), api.getAnalyticsBudget()]),
+      {
+        onSuccess: ([costRes, budgetRes]) => {
+          setCostData(costRes.data ?? null);
+          setBudget(budgetRes.data ?? null);
+          if (budgetRes.data?.monthly_limit_usd != null) {
+            setLimitInput(String(budgetRes.data.monthly_limit_usd));
+          }
+        },
+        onError: (e) => {
+          setError(e instanceof Error ? e.message : "Failed to load cost data");
+        },
+        onFinally: () => {
+          setLoading(false);
+        },
       }
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load cost data");
-    } finally {
-      setLoading(false);
-    }
+    );
   }, [period]);
 
   useEffect(() => {
