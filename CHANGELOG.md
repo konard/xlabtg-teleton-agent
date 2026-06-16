@@ -12,6 +12,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.46](https://github.com/xlabtg/teleton-agent/compare/v0.8.45...v0.8.46) (2026-06-16)
+
+
+### Bug Fixes
+
+* **web:** устранить конфликты типов веб-интерфейса после синхронизации форка ([35760a5](https://github.com/xlabtg/teleton-agent/commit/35760a583c902836d2222a66d4ae9d51e5b05c61))
+* **web:** устранить поломку веб-интерфейса после синхронизации форка + проверка типов в CI ([f7f12a9](https://github.com/xlabtg/teleton-agent/commit/f7f12a99955fc84bdcf4dec7c231935c52b3ee2c))
+
+
+### Documentation
+
+* **web:** добавить скриншоты проверки интерфейса (light/dark) для issue [#542](https://github.com/xlabtg/teleton-agent/issues/542) ([da1693b](https://github.com/xlabtg/teleton-agent/commit/da1693b139355af5868f381c6d931d7fb39ddb57))
+
 ## [0.8.45](https://github.com/xlabtg/teleton-agent/compare/v0.8.44...v0.8.45) (2026-06-15)
 
 
