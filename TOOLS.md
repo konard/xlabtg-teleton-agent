@@ -1,4 +1,4 @@
-# Tools — 133 total
+# Tools — 137 total
 
 ## Telegram — Messaging (13)
 
@@ -139,12 +139,16 @@
 | `telegram_send_gift_offer` | Send a buy offer on a unique NFT gift |
 | `telegram_resolve_gift_offer` | Accept or decline a gift offer |
 
-## Telegram — Stories & Tasks (2)
+## Telegram — Stories & Tasks (6)
 
 | Tool | Description |
 |------|-------------|
 | `telegram_send_story` | Post a disappearing story |
 | `telegram_create_scheduled_task` | Schedule a task for future execution |
+| `telegram_list_tasks` | List scheduled tasks, optionally filtered by status |
+| `telegram_get_task` | Get a scheduled task's full details by UUID |
+| `telegram_cancel_task` | Cancel a pending or in-progress scheduled task |
+| `telegram_update_task` | Update a pending task's schedule, priority, or payload |
 
 ## Telegram — Bot (1)
 
