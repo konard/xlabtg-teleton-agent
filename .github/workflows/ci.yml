@@ -52,6 +52,13 @@ jobs:
       - name: Install WebUI dependencies
         run: cd web && npm ci
 
+      # `vite build` transpiles via esbuild and performs NO type checking, so
+      # type errors in web/src/** would otherwise escape CI entirely. Run the
+      # TypeScript compiler in --noEmit mode against the WebUI to catch them
+      # before the build (fast-fail) on every push and pull request.
+      - name: Type check WebUI
+        run: cd web && npm run typecheck
+
       - name: Check i18n translation parity
         run: cd web && npm run check:i18n
 
