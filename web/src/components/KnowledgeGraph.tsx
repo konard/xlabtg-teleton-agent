@@ -3,7 +3,6 @@ import {
   api,
   MemoryGraphData,
   MemoryGraphEdge,
-  MemoryGraphNode,
   MemoryGraphNodeType,
 } from "../lib/api";
 

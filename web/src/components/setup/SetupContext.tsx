@@ -26,6 +26,7 @@ export interface WizardData {
   phone: string;
   userId: number;
   mode: 'quick' | 'advanced';
+  telegramMode: 'user' | 'bot';
   model: string;
   customModel: string;
   dmPolicy: string;
@@ -70,6 +71,7 @@ const DEFAULTS: WizardData = {
   phone: '',
   userId: 0,
   mode: 'quick',
+  telegramMode: 'user',
   model: '',
   customModel: '',
   dmPolicy: 'admin-only',

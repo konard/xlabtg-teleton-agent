@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { api, StatusData, MemoryStats, ToolRagStatus, ConfigKeyData } from '../lib/api';
 import { errMsg } from '../lib/utils';
 
@@ -17,6 +17,8 @@ export function useConfigState() {
   const [configKeys, setConfigKeys] = useState<ConfigKeyData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [saveSuccess, setSaveSuccess] = useState<string | null>(null);
+  const successTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [modelOptions, setModelOptions] = useState<Array<{ value: string; name: string }>>([]);
 
   // Provider switch gating state
@@ -64,12 +66,27 @@ export function useConfigState() {
     setLocalInputs((prev) => ({ ...prev, [key]: serverInputs[key] ?? '' }));
   };
 
+  // Transient success banner (auto-clears). Shared by Dashboard and Config panels.
+  const showSuccess = useCallback((msg: string) => {
+    setSaveSuccess(msg);
+    if (successTimer.current) clearTimeout(successTimer.current);
+    successTimer.current = setTimeout(() => setSaveSuccess(null), 3000);
+  }, []);
+
+  useEffect(
+    () => () => {
+      if (successTimer.current) clearTimeout(successTimer.current);
+    },
+    []
+  );
+
   const saveConfig = async (key: string, value: string) => {
     if (!value.trim()) return; // never send empty values
     try {
       setError(null);
       await api.setConfigKey(key, value.trim());
       await loadData();
+      showSuccess('Saved');
     } catch (err) {
       setError(errMsg(err));
     }
@@ -163,7 +180,7 @@ export function useConfigState() {
   };
 
   return {
-    loading, error, setError, status, stats, toolRag, configKeys,
+    loading, error, setError, saveSuccess, showSuccess, status, stats, toolRag, configKeys,
     localInputs, getLocal, getServer, setLocal, cancelLocal, saveConfig, saveToolRag,
     modelOptions, pendingProvider, pendingMeta, pendingApiKey, setPendingApiKey,
     pendingValidating, pendingError, setPendingError,

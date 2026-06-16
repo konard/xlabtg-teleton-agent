@@ -901,6 +901,9 @@ export interface WalletTransaction {
 
 export type ToolAccessLevel = 'all' | 'allowlist' | 'admin' | 'off';
 
+/** Per-tool context scope: in which chats a tool may run. */
+export type ToolScope = 'always' | 'dm-only' | 'group-only' | 'admin-only';
+
 export interface ToolInfo {
   name: string;
   description: string;
@@ -1137,7 +1140,7 @@ export interface ToolDetails {
   description: string;
   module: string | null;
   category: string | null;
-  scope: "always" | "dm-only" | "group-only" | "admin-only";
+  scope: ToolScope;
   enabled: boolean;
   parameters: unknown;
   stats: ToolUsageStats;
@@ -2119,6 +2122,8 @@ export interface AutonomousParsedGoal {
 interface APIResponse<T> {
   success: boolean;
   data: T;
+  /** Present (typically with success=false) when the response envelope reports an error. */
+  error?: string;
 }
 
 // ── Health Check types ──────────────────────────────────────────────
@@ -2850,7 +2855,7 @@ export const api = {
     toolName: string,
     config: {
       enabled?: boolean;
-      scope?: "always" | "dm-only" | "group-only" | "admin-only";
+      scope?: ToolScope;
       level?: ToolAccessLevel;
     }
   ) {
