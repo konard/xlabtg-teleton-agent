@@ -21,6 +21,32 @@ export interface TaskSchedulerOptions {
 }
 
 /**
+ * Decide when (or whether) a recurring task should run next.
+ *
+ * Pure scheduling-decision helper shared by the agent's recurrence rescheduler.
+ * Keeping the math here — instead of inline next to the Telegram side effects in
+ * `src/index.ts` — makes the two rules that govern recurrence directly testable:
+ *
+ * 1. A task only recurs while it has a positive `recurrenceInterval`.
+ * 2. Recurrence stops once the next run would fall after `recurrenceUntil`.
+ *
+ * @returns the next `scheduledFor` Date, or `null` when the task should not
+ *          recur (no/invalid interval, or `recurrenceUntil` has elapsed).
+ */
+export function computeNextRecurrence(
+  task: Pick<Task, "recurrenceInterval" | "recurrenceUntil">,
+  now: Date = new Date()
+): Date | null {
+  if (!task.recurrenceInterval || task.recurrenceInterval <= 0) return null;
+
+  const nextRunAt = Math.floor(now.getTime() / 1000) + task.recurrenceInterval;
+  const until = task.recurrenceUntil ? Math.floor(task.recurrenceUntil.getTime() / 1000) : null;
+  if (until !== null && nextRunAt > until) return null;
+
+  return new Date(nextRunAt * 1000);
+}
+
+/**
  * DB-backed dispatcher for scheduled and recurring tasks.
  *
  * Mirrors {@link WorkflowScheduler}: a 60-second tick loop queries the `tasks`
