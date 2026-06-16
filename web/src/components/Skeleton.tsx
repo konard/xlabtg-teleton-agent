@@ -55,6 +55,21 @@ export function SkeletonTable({ rows = 5, cols = 4 }: { rows?: number; cols?: nu
   );
 }
 
+export function SkeletonRows({ rows = 5, height = 44 }: { rows?: number; height?: number }) {
+  return (
+    <div className="skeleton-group" aria-busy="true" aria-live="polite">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton
+          key={i}
+          height={height}
+          borderRadius="var(--radius-md)"
+          style={{ marginBottom: i < rows - 1 ? '8px' : 0 }}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function PageLoader() {
   return (
     <div className="page-loader" role="status" aria-label="Loading">

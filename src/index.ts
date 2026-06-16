@@ -1601,21 +1601,18 @@ ${blue}  ┌──────────────────────�
     try {
       const { Api } = await import("telegram");
       const { randomLong } = await import("./utils/gramjs-bigint.js");
+      const { computeNextRecurrence } = await import("./services/task-scheduler.js");
 
-      const nextRunAt = Math.floor(Date.now() / 1000) + completedTask.recurrenceInterval;
-
-      // Stop recurring if recurrenceUntil has passed
-      const until = completedTask.recurrenceUntil
-        ? Math.floor(completedTask.recurrenceUntil.getTime() / 1000)
-        : null;
-      if (until !== null && nextRunAt > until) {
+      // Stop recurring if recurrenceUntil has passed (or interval is invalid)
+      const nextRunDate = computeNextRecurrence(completedTask);
+      if (!nextRunDate) {
         log.info(
           `⏹️ Recurrence for task "${completedTask.description}" has ended (recurrenceUntil passed)`
         );
         return;
       }
 
-      const nextRunDate = new Date(nextRunAt * 1000);
+      const nextRunAt = Math.floor(nextRunDate.getTime() / 1000);
 
       const newTask = taskStore.createTask({
         description: completedTask.description,

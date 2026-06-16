@@ -1,4 +1,4 @@
-import { ToolInfo, ToolUsageStats } from '../lib/api';
+import { ToolInfo, ToolScope, ToolUsageStats } from '../lib/api';
 import { CostBadge } from './CostBadge';
 import { SpeedDot } from './SpeedDot';
 
@@ -6,7 +6,7 @@ interface ToolRowProps {
   tool: ToolInfo;
   updating: string | null;
   onToggle: (name: string, enabled: boolean) => void;
-  onScope: (name: string, scope: ToolInfo['scope']) => void;
+  onScope: (name: string, scope: ToolScope) => void;
   onInfo?: (name: string) => void;
   search?: string;
   selected?: boolean;
@@ -127,7 +127,7 @@ export function ToolRow({ tool, updating, onToggle, onScope, onInfo, search, sel
         <input
           type="checkbox"
           checked={tool.enabled}
-          onChange={() => onToggle(tool.name, tool.enabled)}
+          onChange={() => onToggle(tool.name, tool.enabled ?? false)}
           disabled={updating === tool.name}
         />
         <span className="toggle-track" />

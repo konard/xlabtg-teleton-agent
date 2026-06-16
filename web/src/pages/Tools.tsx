@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, ToolInfo, ModuleInfo, ToolUsageStats } from '../lib/api';
+import { api, ToolInfo, ToolScope, ModuleInfo, ToolUsageStats } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { ToolDetailsModal } from '../components/ToolDetailsModal';
 import { BulkActionBar } from '../components/BulkActionBar';
@@ -75,7 +75,7 @@ export function Tools() {
     }
   };
 
-  const updateScope = async (toolName: string, newScope: ToolInfo['scope']) => {
+  const updateScope = async (toolName: string, newScope: ToolScope) => {
     setUpdating(toolName);
     try {
       await api.updateToolConfig(toolName, { scope: newScope });
@@ -103,7 +103,7 @@ export function Tools() {
     }
   };
 
-  const bulkScope = async (module: ModuleInfo, scope: ToolInfo['scope']) => {
+  const bulkScope = async (module: ModuleInfo, scope: ToolScope) => {
     setUpdating(module.name);
     try {
       for (const tool of module.tools) {
@@ -197,7 +197,7 @@ export function Tools() {
     }
   };
 
-  const bulkSetScope = async (scope: ToolInfo['scope']) => {
+  const bulkSetScope = async (scope: ToolScope) => {
     setBulkBusy(true);
     try {
       for (const name of selectedTools) {
@@ -254,7 +254,7 @@ export function Tools() {
     setBulkBusy(true);
     try {
       const text = await file.text();
-      const config = JSON.parse(text) as { name: string; enabled: boolean; scope: ToolInfo['scope'] }[];
+      const config = JSON.parse(text) as { name: string; enabled: boolean; scope: ToolScope }[];
       if (!Array.isArray(config)) throw new Error('Invalid config format: expected an array');
       for (const entry of config) {
         if (typeof entry.name !== 'string') continue;
@@ -529,7 +529,7 @@ export function Tools() {
                             value={commonScope}
                             options={['', 'always', 'dm-only', 'group-only', 'admin-only']}
                             labels={[mixedScope ? 'Mixed' : 'Scope', 'All', 'DM only', 'Group only', 'Admin only']}
-                            onChange={(v) => v && bulkScope(module, v as ToolInfo['scope'])}
+                            onChange={(v) => v && bulkScope(module, v as ToolScope)}
                             style={{ minWidth: '100px' }}
                           />
                           <label className="toggle">

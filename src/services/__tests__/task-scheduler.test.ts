@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import Database from "better-sqlite3";
 import { ensureSchema } from "../../memory/schema.js";
 import { TaskStore, getTaskStore } from "../../memory/agent/tasks.js";
-import { TaskScheduler } from "../task-scheduler.js";
+import { TaskScheduler, computeNextRecurrence } from "../task-scheduler.js";
 
 vi.mock("../../utils/logger.js", () => ({
   createLogger: vi.fn(() => ({
@@ -77,6 +77,44 @@ describe("TaskStore claim + due-task queries", () => {
 
     const result = store.getDueTasks(Math.floor(past.getTime() / 1000) + 1);
     expect(result.map((t) => t.id)).toEqual([high.id, low.id]);
+  });
+});
+
+describe("computeNextRecurrence()", () => {
+  const now = new Date("2026-01-01T00:00:00Z");
+
+  it("returns null when there is no recurrence interval", () => {
+    expect(computeNextRecurrence({}, now)).toBeNull();
+  });
+
+  it("returns null for a zero or negative interval", () => {
+    expect(computeNextRecurrence({ recurrenceInterval: 0 }, now)).toBeNull();
+    expect(computeNextRecurrence({ recurrenceInterval: -60 }, now)).toBeNull();
+  });
+
+  it("schedules the next run `interval` seconds from now when no boundary is set", () => {
+    const next = computeNextRecurrence({ recurrenceInterval: 60 }, now);
+    expect(next).toEqual(new Date(now.getTime() + 60_000));
+  });
+
+  it("schedules the next run when it falls at or before recurrenceUntil", () => {
+    const until = new Date(now.getTime() + 120_000);
+    const next = computeNextRecurrence({ recurrenceInterval: 60, recurrenceUntil: until }, now);
+    expect(next).toEqual(new Date(now.getTime() + 60_000));
+  });
+
+  it("stops recurring when the next run would fall after recurrenceUntil", () => {
+    const until = new Date(now.getTime() + 30_000);
+    expect(
+      computeNextRecurrence({ recurrenceInterval: 60, recurrenceUntil: until }, now)
+    ).toBeNull();
+  });
+
+  it("stops recurring when recurrenceUntil is already in the past", () => {
+    const until = new Date(now.getTime() - 60_000);
+    expect(
+      computeNextRecurrence({ recurrenceInterval: 60, recurrenceUntil: until }, now)
+    ).toBeNull();
   });
 });
 

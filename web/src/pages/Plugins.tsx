@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { api, ToolInfo, ModuleInfo, PluginManifest, MarketplacePlugin, MarketplaceSource, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
+import { api, ToolScope, ModuleInfo, PluginManifest, MarketplacePlugin, MarketplaceSource, PluginSecretsInfo, SecretDeclaration } from '../lib/api';
 import { ToolRow } from '../components/ToolRow';
 import { Select } from '../components/Select';
 import { useConfirm } from '../components/ConfirmDialog';
@@ -392,7 +392,7 @@ export function Plugins() {
     }
   };
 
-  const updateScope = async (toolName: string, newScope: ToolInfo['scope']) => {
+  const updateScope = async (toolName: string, newScope: ToolScope) => {
     setUpdating(toolName);
     try {
       await api.updateToolConfig(toolName, { scope: newScope });
@@ -420,7 +420,7 @@ export function Plugins() {
     }
   };
 
-  const bulkScope = async (module: ModuleInfo, scope: ToolInfo['scope']) => {
+  const bulkScope = async (module: ModuleInfo, scope: ToolScope) => {
     setUpdating(module.name);
     try {
       for (const tool of module.tools) {
@@ -1093,7 +1093,7 @@ export function Plugins() {
                                   value={commonScope}
                                   options={['', 'always', 'dm-only', 'group-only', 'admin-only']}
                                   labels={[mixedScope ? 'Mixed' : 'Scope', 'All', 'DM only', 'Group only', 'Admin only']}
-                                  onChange={(v) => v && bulkScope(module, v as ToolInfo['scope'])}
+                                  onChange={(v) => v && bulkScope(module, v as ToolScope)}
                                   style={{ minWidth: '100px' }}
                                 />
                                 <label className="toggle">

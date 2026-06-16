@@ -382,9 +382,11 @@ function UsageSection() {
                   cy="50%"
                   outerRadius={80}
                   label={({ name, percent }) => {
-                    if (percent <= 0.05) return "";
-                    const shortName = name.length > 12 ? `${name.slice(0, 11)}…` : name;
-                    return `${shortName} ${(percent * 100).toFixed(0)}%`;
+                    const p = percent ?? 0;
+                    const n = String(name ?? "");
+                    if (p <= 0.05) return "";
+                    const shortName = n.length > 12 ? `${n.slice(0, 11)}…` : n;
+                    return `${shortName} ${(p * 100).toFixed(0)}%`;
                   }}
                   labelLine={false}
                 >
@@ -392,7 +394,7 @@ function UsageSection() {
                     <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => [v.toLocaleString(), "Calls"]} />
+                <Tooltip formatter={(v) => [Number(v).toLocaleString(), "Calls"]} />
               </PieChart>
             </ResponsiveContainer>
           )}
@@ -433,7 +435,7 @@ function UsageSection() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" />
                 <XAxis dataKey="time" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-                <Tooltip formatter={(v: number) => [fmtCost(v), "Cost"]} />
+                <Tooltip formatter={(v) => [fmtCost(Number(v)), "Cost"]} />
                 <Line type="monotone" dataKey="cost" stroke="#10b981" dot={false} name="Cost ($)" />
               </LineChart>
             </ResponsiveContainer>
@@ -727,7 +729,7 @@ function AnomalySection() {
                   height={58}
                 />
                 <YAxis tick={{ fontSize: 10 }} />
-                <Tooltip formatter={(v: number) => fmtNumber(v)} />
+                <Tooltip formatter={(v) => fmtNumber(Number(v))} />
                 <Legend />
                 <Bar dataKey="expectedMax" fill="#94a3b8" name="Expected max" />
                 <Bar dataKey="current" fill="#2563eb" name="Current" />
@@ -1252,7 +1254,7 @@ function PerformanceSection() {
                   cy="50%"
                   innerRadius={50}
                   outerRadius={80}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={({ name, percent }) => `${name ?? ""} ${((percent ?? 0) * 100).toFixed(0)}%`}
                 >
                   <Cell fill="#10b981" />
                   <Cell fill="#ef4444" />
@@ -1519,7 +1521,7 @@ function CostSection() {
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--separator)" />
                 <XAxis dataKey="dateLabel" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `$${v.toFixed(3)}`} />
-                <Tooltip formatter={(v: number) => [fmtCost(v), "Cost"]} />
+                <Tooltip formatter={(v) => [fmtCost(Number(v)), "Cost"]} />
                 <Bar dataKey="cost_usd" fill="#2563eb" name="Cost ($)" />
               </BarChart>
             </ResponsiveContainer>
@@ -1571,7 +1573,7 @@ function CostSection() {
                   width={110}
                   tickFormatter={(v: string) => (v.length > 16 ? `${v.slice(0, 15)}…` : v)}
                 />
-                <Tooltip formatter={(v: number) => [v.toLocaleString(), "Calls"]} />
+                <Tooltip formatter={(v) => [Number(v).toLocaleString(), "Calls"]} />
                 <Bar dataKey="count" fill="#2563eb" name="Calls" radius={[0, 4, 4, 0]} />
               </BarChart>
             </ResponsiveContainer>

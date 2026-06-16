@@ -58,9 +58,7 @@ const SESSION_KEYS = [
 ];
 
 function HeartbeatTab({ config }: { config: ReturnType<typeof useConfigState> }) {
-  const selfConfigurable =
-    config.getLocal('heartbeat.self_configurable') === 'true' ||
-    config.getLocal('heartbeat.self_configurable') === true;
+  const selfConfigurable = config.getLocal('heartbeat.self_configurable') === 'true';
 
   const [promptDraft, setPromptDraft] = useState<string | null>(null);
   const [promptSaving, setPromptSaving] = useState(false);
@@ -125,10 +123,7 @@ function HeartbeatTab({ config }: { config: ReturnType<typeof useConfigState> })
               <label className="toggle" style={{ margin: 0 }}>
                 <input
                   type="checkbox"
-                  checked={
-                    config.getLocal('heartbeat.enabled') === 'true' ||
-                    config.getLocal('heartbeat.enabled') === true
-                  }
+                  checked={config.getLocal('heartbeat.enabled') === 'true'}
                   onChange={async (e) => {
                     await config.saveConfig('heartbeat.enabled', String(e.target.checked));
                   }}

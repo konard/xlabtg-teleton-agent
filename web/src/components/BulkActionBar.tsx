@@ -1,4 +1,4 @@
-import { ToolInfo } from '../lib/api';
+import { ToolScope } from '../lib/api';
 import { Select } from './Select';
 
 interface BulkActionBarProps {
@@ -8,7 +8,7 @@ interface BulkActionBarProps {
   onDeselectAll: () => void;
   onEnableSelected: () => void;
   onDisableSelected: () => void;
-  onSetScope: (scope: ToolInfo['scope']) => void;
+  onSetScope: (scope: ToolScope) => void;
   onDisableUnused: () => void;
   onExport: () => void;
   onImport: () => void;
@@ -28,7 +28,7 @@ export function BulkActionBar({
   onImport,
   busy,
 }: BulkActionBarProps): JSX.Element {
-  const scopeOptions: ToolInfo['scope'][] = ['always', 'dm-only', 'group-only', 'admin-only'];
+  const scopeOptions: ToolScope[] = ['always', 'dm-only', 'group-only', 'admin-only'];
   const scopeLabels = ['Set Scope…', 'All', 'DM only', 'Group only', 'Admin only'];
 
   return (
@@ -91,7 +91,7 @@ export function BulkActionBar({
             value=""
             options={['', ...scopeOptions]}
             labels={scopeLabels}
-            onChange={(v) => { if (v && !busy) onSetScope(v as ToolInfo['scope']); }}
+            onChange={(v) => { if (v && !busy) onSetScope(v as ToolScope); }}
             style={{ minWidth: '110px', opacity: busy ? 0.5 : 1, pointerEvents: busy ? 'none' : undefined }}
           />
         </>
