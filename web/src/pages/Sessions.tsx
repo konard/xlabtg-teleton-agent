@@ -402,9 +402,9 @@ function SessionDetail({
           api.getSessionCorrections(session.sessionId),
           api.getFeedback({ session: session.sessionId, limit: 500 }),
         ]);
-        setMessages(res.data.messages);
-        setTotal(res.data.total);
-        setCorrections(correctionRes.data.corrections);
+        setMessages(res.data?.messages ?? []);
+        setTotal(res.data?.total ?? 0);
+        setCorrections(correctionRes.data?.corrections ?? []);
         const nextFeedbackByMessage: Record<string, FeedbackRecord> = {};
         for (const record of feedbackRes.data?.feedback ?? []) {
           if (record.messageId && !nextFeedbackByMessage[record.messageId]) {
