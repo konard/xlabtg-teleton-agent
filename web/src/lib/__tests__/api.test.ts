@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../api";
 
@@ -38,5 +38,73 @@ describe("web API client CSRF handling", () => {
         }),
       })
     );
+  });
+});
+
+describe("SSE helpers error callbacks", () => {
+  let fakeEventSource: {
+    addEventListener: ReturnType<typeof vi.fn>;
+    close: ReturnType<typeof vi.fn>;
+    onerror: ((e: Event) => void) | null;
+    emitError: () => void;
+  };
+
+  beforeEach(() => {
+    fakeEventSource = {
+      addEventListener: vi.fn(),
+      close: vi.fn(),
+      onerror: null,
+      emitError() {
+        this.onerror?.(new Event("error"));
+      },
+    };
+    // Use a regular function so `new EventSourceMock()` works as a constructor
+    const EventSourceMock = vi.fn(function () {
+      return fakeEventSource;
+    });
+    vi.stubGlobal("EventSource", EventSourceMock);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("invokes the onError callback when the connectNotifications SSE connection fails", () => {
+    const onError = vi.fn();
+    const stop = api.connectNotifications(() => {}, onError);
+    fakeEventSource.emitError();
+    expect(onError).toHaveBeenCalledOnce();
+    stop();
+    expect(fakeEventSource.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not throw when connectNotifications has no onError callback", () => {
+    const stop = api.connectNotifications(() => {});
+    expect(() => fakeEventSource.emitError()).not.toThrow();
+    stop();
+  });
+
+  it("invokes the onError callback when the connectEvents SSE connection fails", () => {
+    const onError = vi.fn();
+    const stop = api.connectEvents(() => {}, onError);
+    fakeEventSource.emitError();
+    expect(onError).toHaveBeenCalledOnce();
+    stop();
+    expect(fakeEventSource.close).toHaveBeenCalledOnce();
+  });
+
+  it("does not throw when connectEvents has no onError callback", () => {
+    const stop = api.connectEvents(() => {});
+    expect(() => fakeEventSource.emitError()).not.toThrow();
+    stop();
+  });
+
+  it("invokes the onError callback when the connectLogs SSE connection fails", () => {
+    const onError = vi.fn();
+    const stop = api.connectLogs(() => {}, onError);
+    fakeEventSource.emitError();
+    expect(onError).toHaveBeenCalledOnce();
+    stop();
+    expect(fakeEventSource.close).toHaveBeenCalledOnce();
   });
 });
