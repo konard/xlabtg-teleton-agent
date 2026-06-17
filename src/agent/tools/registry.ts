@@ -437,7 +437,12 @@ export class ToolRegistry {
   ): number {
     const names: string[] = [];
     for (const { tool, executor, scope, mode } of tools) {
-      if (this.tools.has(tool.name)) continue;
+      if (this.tools.has(tool.name)) {
+        log.warn(
+          `Plugin "${pluginName}" tool "${tool.name}" collides with an existing tool — skipped`
+        );
+        continue;
+      }
       this.insertTool(tool.name, {
         tool,
         executor,

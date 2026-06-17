@@ -7,7 +7,20 @@ import type { Tool, ToolExecutor, ToolContext, ToolScope } from "../types.js";
 import type { ToolCall } from "@mariozechner/pi-ai";
 import { PolicyEngine } from "../../../services/policy-engine.js";
 
+const { mockLogger } = vi.hoisted(() => ({
+  mockLogger: {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  },
+}));
+
 // Mock modules
+vi.mock("../../../utils/logger.js", () => ({
+  createLogger: () => mockLogger,
+}));
+
 vi.mock("@mariozechner/pi-ai", () => ({
   validateToolCall: vi.fn((tools, toolCall) => toolCall.arguments),
 }));
@@ -748,6 +761,24 @@ describe("ToolRegistry", () => {
 
       const count = registry.registerPluginTools("test-plugin", pluginTools);
       expect(count).toBe(0);
+    });
+
+    it("should warn when a plugin tool name collides with an existing tool", () => {
+      const tool = createMockTool("collision_tool");
+      registry.register(tool, createMockExecutor());
+
+      const pluginTools = [
+        {
+          tool,
+          executor: createMockExecutor(),
+          scope: "always" as ToolScope,
+        },
+      ];
+
+      registry.registerPluginTools("test-plugin", pluginTools);
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("collision_tool"));
+      expect(mockLogger.warn).toHaveBeenCalledWith(expect.stringContaining("test-plugin"));
     });
 
     it("should set module name to plugin name", () => {
