@@ -3432,7 +3432,10 @@ export const api = {
     return fetchAPI<APIResponse<{ message: string }>>(`/notifications/${id}`, { method: "DELETE" });
   },
 
-  connectNotifications(onCount: (count: number) => void) {
+  connectNotifications(
+    onCount: (count: number) => void,
+    onError?: (error: Event) => void
+  ) {
     const url = `${API_BASE}/notifications/stream`;
     const eventSource = new EventSource(url);
 
@@ -3444,6 +3447,10 @@ export const api = {
         // ignore parse errors
       }
     });
+
+    eventSource.onerror = (error) => {
+      onError?.(error);
+    };
 
     return () => eventSource.close();
   },
@@ -4124,7 +4131,10 @@ export const api = {
     return fetchAPI<APIResponse<EventLogEntry>>(`/events/${id}/replay`, { method: "POST" });
   },
 
-  connectEvents(onEvent: (event: EventLogEntry) => void) {
+  connectEvents(
+    onEvent: (event: EventLogEntry) => void,
+    onError?: (error: Event) => void
+  ) {
     const eventSource = new EventSource(`${API_BASE}/events/stream`);
     eventSource.addEventListener("event", (message) => {
       try {
@@ -4133,6 +4143,9 @@ export const api = {
         // ignore parse errors
       }
     });
+    eventSource.onerror = (error) => {
+      onError?.(error);
+    };
     return () => eventSource.close();
   },
 
