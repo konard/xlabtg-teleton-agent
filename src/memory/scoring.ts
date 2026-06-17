@@ -1,5 +1,5 @@
 import type Database from "better-sqlite3";
-import { SECONDS_PER_DAY } from "../constants/limits.js";
+import { MAX_BOOST_AMOUNT, SECONDS_PER_DAY } from "../constants/limits.js";
 
 export interface MemoryScoringWeights {
   recency: number;
@@ -148,6 +148,11 @@ function uniqueIds(memoryIds: string[]): string[] {
   return [...new Set(memoryIds.map((id) => id.trim()).filter(Boolean))];
 }
 
+function clampBoostAmount(amount: number): number {
+  if (!Number.isFinite(amount)) return 1;
+  return Math.min(MAX_BOOST_AMOUNT, Math.max(1, Math.floor(amount)));
+}
+
 export class MemoryScorer {
   private weights: MemoryScoringWeights;
   private halfLifeDays: number;
@@ -165,7 +170,7 @@ export class MemoryScorer {
     if (ids.length === 0) return;
 
     this.ensureScoreRows(ids);
-    const increment = Math.max(1, Math.floor(amount));
+    const increment = clampBoostAmount(amount);
     const update = this.db.prepare(
       `
       UPDATE memory_scores
@@ -190,7 +195,7 @@ export class MemoryScorer {
     if (ids.length === 0) return;
 
     this.ensureScoreRows(ids);
-    const increment = Math.max(1, Math.floor(amount));
+    const increment = clampBoostAmount(amount);
     const update = this.db.prepare(
       `
       UPDATE memory_scores

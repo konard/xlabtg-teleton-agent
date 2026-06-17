@@ -8,6 +8,7 @@ import type {
   APIResponse,
 } from "../types.js";
 import { getErrorMessage } from "../../utils/errors.js";
+import { MAX_BOOST_AMOUNT } from "../../constants/limits.js";
 import { MemoryGraphStore } from "../../memory/graph-store.js";
 import { MemoryGraphQuery } from "../../memory/graph-query.js";
 import { HybridSearch } from "../../memory/search/hybrid.js";
@@ -249,8 +250,17 @@ export function createMemoryRoutes(deps: WebUIServerDeps) {
         return c.json(response, 400);
       }
 
+      const rawAmount = body.amount ?? 1;
+      if (!Number.isFinite(rawAmount) || rawAmount < 1) {
+        const response: APIResponse = {
+          success: false,
+          error: `amount must be a finite number >= 1 (max ${MAX_BOOST_AMOUNT})`,
+        };
+        return c.json(response, 400);
+      }
+
       const memoryScorer = scorer();
-      memoryScorer.boostImpact(ids, body.amount ?? 1);
+      memoryScorer.boostImpact(ids, rawAmount);
       const data = ids.map((id) => memoryScorer.getScore(id)).filter(Boolean);
       const response: APIResponse<typeof data> = {
         success: true,
