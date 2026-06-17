@@ -12,6 +12,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.47](https://github.com/xlabtg/teleton-agent/compare/v0.8.46...v0.8.47) (2026-06-17)
+
+
+### Features
+
+* **tasks:** register task management tools so the agent can query/manage scheduled tasks ([a5f5e8e](https://github.com/xlabtg/teleton-agent/commit/a5f5e8e73f23c3d4be49af3b03d64c78189991d6)), closes [#653](https://github.com/xlabtg/teleton-agent/issues/653)
+* **tasks:** зарегистрировать инструменты управления задачами агента (query/cancel/update по UUID) ([225e2b0](https://github.com/xlabtg/teleton-agent/commit/225e2b0a35d696aff0ff05cdc89e9e3ff60cf35c))
+
+
+### Bug Fixes
+
+* **deps:** обновить hono до 4.12.25 для устранения уязвимости GHSA-88fw-hqm2-52qc ([771a51d](https://github.com/xlabtg/teleton-agent/commit/771a51da712695c18a21f541e95711de4c38baf6))
+* **memory:** ограничить amount в boostImpact/recordAccess значением MAX_BOOST_AMOUNT ([2997d43](https://github.com/xlabtg/teleton-agent/commit/2997d43ce16981a85407f1abf496cc60c4e8ed84))
+* **memory:** ограничить amount в boostImpact/recordAccess значением MAX_BOOST_AMOUNT ([8bbc573](https://github.com/xlabtg/teleton-agent/commit/8bbc573c83863e8d7e7e4fcfbdfcd065a11e4eeb)), closes [#620](https://github.com/xlabtg/teleton-agent/issues/620)
+* **registry:** логировать предупреждение при коллизии имён в registerPluginTools ([#623](https://github.com/xlabtg/teleton-agent/issues/623)) ([94258fc](https://github.com/xlabtg/teleton-agent/commit/94258fcf4215b97970d4f7c41ffd2f94faabbc9e))
+* **registry:** логировать предупреждение при коллизии имён в registerPluginTools (issue [#623](https://github.com/xlabtg/teleton-agent/issues/623)) ([1bf6173](https://github.com/xlabtg/teleton-agent/commit/1bf6173c5e0de6ae9baadfff7d508f7b63813b8c))
+* **sessions:** защита от краша при malformed 2xx ответе (issue [#621](https://github.com/xlabtg/teleton-agent/issues/621)) ([2d8d140](https://github.com/xlabtg/teleton-agent/commit/2d8d140628992f23e50ffe92cda0ad5ab3a12a54))
+* **sessions:** защита от краша при malformed 2xx ответе (issue [#621](https://github.com/xlabtg/teleton-agent/issues/621)) ([554338c](https://github.com/xlabtg/teleton-agent/commit/554338c288cbf24da5d6c63b0d50c09bde4bbf4b))
+* **sse:** добавить onError callback в connectNotifications и connectEvents ([e691556](https://github.com/xlabtg/teleton-agent/commit/e691556dac794fb8060873cbd132a02802fd1af5))
+* **sse:** добавить onError callback в connectNotifications и connectEvents (issue [#622](https://github.com/xlabtg/teleton-agent/issues/622)) ([742cb46](https://github.com/xlabtg/teleton-agent/commit/742cb46c81ab7171e1c878980c8e7ab286a8a010))
+
 ## [0.8.46](https://github.com/xlabtg/teleton-agent/compare/v0.8.45...v0.8.46) (2026-06-16)
 
 
