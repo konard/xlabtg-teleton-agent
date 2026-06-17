@@ -92,6 +92,10 @@ export const TOOL_RAG_KEYWORD_WEIGHT = 0.4;
 /** Age (in days) after which old transcripts and sessions are pruned at startup */
 export const SESSION_PRUNE_DAYS = 30;
 
+// ─── Memory Scoring ─────────────────────────────────────────────
+/** Maximum allowed value for boostImpact / recordAccess amount parameter */
+export const MAX_BOOST_AMOUNT = 100;
+
 // ─── Telegram Bridge ────────────────────────────────────────────
 /** Default number of messages to fetch when no limit is specified */
 export const DEFAULT_GET_MESSAGES_LIMIT = 50;
