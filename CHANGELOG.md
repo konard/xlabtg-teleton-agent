@@ -12,6 +12,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.48](https://github.com/xlabtg/teleton-agent/compare/v0.8.47...v0.8.48) (2026-06-18)
+
+
+### Bug Fixes
+
+* **deps:** обновить undici для security audit ([1a7a9e8](https://github.com/xlabtg/teleton-agent/commit/1a7a9e8a8187f230073fc57e7128602210572eaf))
+* **setup:** восстановить подтверждение рисков в установщике ([752a70b](https://github.com/xlabtg/teleton-agent/commit/752a70b47238c6c9f23221af73e6751afdae0b1b))
+* **setup:** восстановить согласие на первом шаге ([65221bd](https://github.com/xlabtg/teleton-agent/commit/65221bd017d82de40d309be75058cd528ee8beb7))
+* **setup:** запускать агента после веб-настройки ([0e872b6](https://github.com/xlabtg/teleton-agent/commit/0e872b6a210d807a5b091ec538dcf3e2dbb26395))
+* **setup:** запускать агента после веб-настройки ([eb3f50a](https://github.com/xlabtg/teleton-agent/commit/eb3f50a72d3a2a6c10a53216770406dcdaa415f3))
+* доработать обработку CodeQL SARIF ([bfbd013](https://github.com/xlabtg/teleton-agent/commit/bfbd0133f8852f74982beac3c0faec9e45d8272f))
+* закрыть оставшиеся предупреждения безопасности ([aa2d981](https://github.com/xlabtg/teleton-agent/commit/aa2d9814914e5ec0e84392761c6c4cd9cf079140))
+* устранить предупреждения CodeQL ([503e1a2](https://github.com/xlabtg/teleton-agent/commit/503e1a270950b56af4f3c6b765a7e65d9734bddc))
+
 ## [0.8.47](https://github.com/xlabtg/teleton-agent/compare/v0.8.46...v0.8.47) (2026-06-17)
 
 
