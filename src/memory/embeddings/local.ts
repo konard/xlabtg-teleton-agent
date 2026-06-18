@@ -18,12 +18,19 @@ env.cacheDir = modelCacheDir;
 
 /** Minimum valid file sizes — detects truncated/corrupt cache from FileCache.put() bug */
 const MIN_FILE_SIZES: Record<string, number> = { "onnx/model.onnx": 1_000_000 };
+const MODEL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*(\/[A-Za-z0-9][A-Za-z0-9._-]*)?$/;
 
 function isCacheFileValid(filePath: string, fileName: string): boolean {
   try {
     return statSync(filePath).size >= (MIN_FILE_SIZES[fileName] ?? 1);
   } catch {
     return false;
+  }
+}
+
+function validateModelId(model: string): void {
+  if (!MODEL_ID_PATTERN.test(model)) {
+    throw new Error(`Invalid local embedding model id: ${model}`);
   }
 }
 
@@ -39,6 +46,7 @@ function isCacheFileValid(filePath: string, fileName: string): boolean {
  * uses atomic write-then-rename (prevents partial files on crash).
  */
 async function ensureModelCached(model: string): Promise<void> {
+  validateModelId(model);
   const files = ["config.json", "tokenizer_config.json", "tokenizer.json", "onnx/model.onnx"];
   const baseUrl = `https://huggingface.co/${model}/resolve/main`;
 
@@ -62,9 +70,14 @@ async function ensureModelCached(model: string): Promise<void> {
       throw new Error(`Failed to download ${model}/${file}: ${res.status} ${res.statusText}`);
     }
     const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.byteLength < (MIN_FILE_SIZES[file] ?? 1)) {
+      throw new Error(`Downloaded ${model}/${file} is too small (${buffer.byteLength} bytes)`);
+    }
 
     // Atomic write: tmp → rename (crash-safe, no partial files)
     const tmpPath = localPath + ".tmp";
+
+    // codeql[js/http-to-file-access] Model files are fetched from the fixed HuggingFace host for a validated model id and checked by minimum size before caching.
     writeFileSync(tmpPath, buffer, { mode: 0o600 });
     renameSync(tmpPath, localPath);
   }

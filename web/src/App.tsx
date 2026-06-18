@@ -35,22 +35,18 @@ import { checkAuth, login } from "./lib/api";
 import { logStore } from "./lib/log-store";
 
 function App() {
-  // Setup route bypasses auth entirely
-  if (window.location.pathname.startsWith("/setup")) {
-    return (
-      <BrowserRouter>
-        <ErrorBoundary>
-          <Routes>
-            <Route path="/setup" element={<SetupLayout />}>
-              <Route index element={<Setup />} />
-            </Route>
-          </Routes>
-        </ErrorBoundary>
-      </BrowserRouter>
-    );
-  }
-
-  return <AuthenticatedApp />;
+  return (
+    <BrowserRouter>
+      <ErrorBoundary>
+        <Routes>
+          <Route path="/setup" element={<SetupLayout />}>
+            <Route index element={<Setup />} />
+          </Route>
+          <Route path="/*" element={<AuthenticatedApp />} />
+        </Routes>
+      </ErrorBoundary>
+    </BrowserRouter>
+  );
 }
 
 function AuthenticatedApp() {
@@ -146,41 +142,37 @@ function AuthenticatedApp() {
   }
 
   return (
-    <BrowserRouter>
-      <ErrorBoundary>
-        <ConfirmDialogProvider>
-          <Routes>
-            <Route path="/" element={<Layout />}>
-              <Route index element={<Dashboard />} />
-              <Route path="agents" element={<Agents />} />
-              <Route path="tools" element={<Tools />} />
-              <Route path="plugins" element={<Plugins />} />
-              <Route path="soul" element={<Soul />} />
-              <Route path="memory" element={<Memory />} />
-              <Route path="workspace" element={<Workspace />} />
-              <Route path="tasks" element={<Tasks />} />
-              <Route path="workflows" element={<Workflows />} />
-              <Route path="pipelines" element={<Pipelines />} />
-              <Route path="events" element={<Events />} />
-              <Route path="mcp" element={<Mcp />} />
-              <Route path="integrations" element={<Integrations />} />
-              <Route path="network" element={<Network />} />
-              <Route path="config" element={<Config />} />
-              <Route path="hooks" element={<Hooks />} />
-              <Route path="sessions" element={<Sessions />} />
-              <Route path="analytics" element={<Analytics />} />
-              <Route path="feedback" element={<Feedback />} />
-              <Route path="security" element={<Security />} />
-              <Route path="self-improve" element={<SelfImprove />} />
-              <Route path="autonomous" element={<Autonomous />} />
-              <Route path="*" element={<Navigate to="/" replace />} />
-            </Route>
-          </Routes>
-          <CommandPalette />
-          <ToastContainer />
-        </ConfirmDialogProvider>
-      </ErrorBoundary>
-    </BrowserRouter>
+    <ConfirmDialogProvider>
+      <Routes>
+        <Route path="/" element={<Layout />}>
+          <Route index element={<Dashboard />} />
+          <Route path="agents" element={<Agents />} />
+          <Route path="tools" element={<Tools />} />
+          <Route path="plugins" element={<Plugins />} />
+          <Route path="soul" element={<Soul />} />
+          <Route path="memory" element={<Memory />} />
+          <Route path="workspace" element={<Workspace />} />
+          <Route path="tasks" element={<Tasks />} />
+          <Route path="workflows" element={<Workflows />} />
+          <Route path="pipelines" element={<Pipelines />} />
+          <Route path="events" element={<Events />} />
+          <Route path="mcp" element={<Mcp />} />
+          <Route path="integrations" element={<Integrations />} />
+          <Route path="network" element={<Network />} />
+          <Route path="config" element={<Config />} />
+          <Route path="hooks" element={<Hooks />} />
+          <Route path="sessions" element={<Sessions />} />
+          <Route path="analytics" element={<Analytics />} />
+          <Route path="feedback" element={<Feedback />} />
+          <Route path="security" element={<Security />} />
+          <Route path="self-improve" element={<SelfImprove />} />
+          <Route path="autonomous" element={<Autonomous />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+      <CommandPalette />
+      <ToastContainer />
+    </ConfirmDialogProvider>
   );
 }
 

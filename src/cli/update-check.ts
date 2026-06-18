@@ -10,6 +10,7 @@ const NPM_REGISTRY_URL = "https://registry.npmjs.org/teleton/latest";
 const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const FETCH_TIMEOUT_MS = 5_000;
 const PROMPT_TIMEOUT_MS = 10_000;
+const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 
 interface UpdateCache {
   lastCheck: number;
@@ -68,6 +69,8 @@ function readCache(): UpdateCache | undefined {
 function writeCache(cache: UpdateCache): void {
   const dir = join(homedir(), ".teleton");
   if (!existsSync(dir)) return; // dir created by setup — skip if absent
+
+  // codeql[js/http-to-file-access] The cached latestVersion is accepted only after semver validation from the fixed npm registry endpoint.
   writeFileSync(getCachePath(), JSON.stringify(cache), { mode: 0o600 });
 }
 
@@ -77,7 +80,9 @@ async function fetchLatestVersion(): Promise<string | undefined> {
   });
   if (!res.ok) return undefined;
   const data = (await res.json()) as { version?: string };
-  return data.version;
+  return typeof data.version === "string" && SEMVER_PATTERN.test(data.version)
+    ? data.version
+    : undefined;
 }
 
 function printBanner(current: string, latest: string): void {

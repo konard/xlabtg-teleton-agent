@@ -1,19 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { join } from "path";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { randomBytes } from "crypto";
 
 // ── Test fixtures ───────────────────────────────────────────────────────
 
-const TEST_DIR = join(tmpdir(), `claude-retry-test-${randomBytes(8).toString("hex")}`);
-const CREDS_FILE = join(TEST_DIR, ".credentials.json");
+let TEST_DIR = "";
+let CREDS_FILE = "";
 
 function validCredentials(token = "sk-ant-oat01-test-token") {
   return {
     claudeAiOauth: {
       accessToken: token,
-      refreshToken: "sk-ant-ort01-refresh",
+      refreshToken: "sk-ant-ort01-refresh1",
       expiresAt: Date.now() + 3_600_000,
       scopes: ["user:inference"],
     },
@@ -45,7 +44,8 @@ function setEnv(key: string, value: string) {
 }
 
 beforeEach(() => {
-  mkdirSync(TEST_DIR, { recursive: true });
+  TEST_DIR = mkdtempSync(join(tmpdir(), "claude-retry-test-"));
+  CREDS_FILE = join(TEST_DIR, ".credentials.json");
   setEnv("CLAUDE_CONFIG_DIR", TEST_DIR);
   vi.clearAllMocks();
 });

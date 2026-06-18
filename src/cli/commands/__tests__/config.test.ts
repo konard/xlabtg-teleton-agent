@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { tmpdir } from "os";
 import { join } from "path";
-import { writeFileSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
 
 // ── Module mocks ────────────────────────────────────────────────────────
 
@@ -56,10 +56,14 @@ import { configCommand } from "../config.js";
 // ── Helpers ─────────────────────────────────────────────────────────────
 
 function makeConfig() {
-  const path = join(tmpdir(), `teleton-test-config-${Date.now()}-${Math.random()}.yaml`);
+  const dir = mkdtempSync(join(tmpdir(), "teleton-test-config-"));
+  tempDirs.add(dir);
+  const path = join(dir, "config.yaml");
   writeFileSync(path, "# placeholder", { encoding: "utf-8", mode: 0o600 });
   return path;
 }
+
+const tempDirs = new Set<string>();
 
 // ── Tests ───────────────────────────────────────────────────────────────
 
@@ -79,6 +83,10 @@ describe("config set — sensitive key protection (issue #315)", () => {
 
   afterEach(() => {
     process.argv = origArgv;
+    for (const dir of tempDirs) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    tempDirs.clear();
     vi.restoreAllMocks();
   });
 
@@ -121,7 +129,9 @@ describe("config set — sensitive key protection (issue #315)", () => {
   // Acceptance criterion: --value-file is accepted for sensitive key
   it("accepts --value-file for sensitive key (agent.api_key)", async () => {
     const configPath = makeConfig();
-    const valueFile = join(tmpdir(), `secret-${Date.now()}.txt`);
+    const valueDir = mkdtempSync(join(tmpdir(), "teleton-secret-"));
+    tempDirs.add(valueDir);
+    const valueFile = join(valueDir, "secret.txt");
     const secretValue = "sk-ant-from-file-1234567890";
     writeFileSync(valueFile, secretValue, "utf-8");
 

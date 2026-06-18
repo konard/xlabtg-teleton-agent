@@ -1,5 +1,5 @@
-import { describe, it, expect, beforeEach, afterEach, afterAll } from "vitest";
-import { existsSync, mkdirSync, writeFileSync, unlinkSync, rmdirSync } from "fs";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync, rmSync, unlinkSync } from "fs";
 import { dirname, join } from "path";
 import { tmpdir, homedir } from "os";
 import {
@@ -14,8 +14,8 @@ import pkg from "../../../package.json" with { type: "json" };
 
 // ─── Test Fixtures ─────────────────────────────────────────────────────────────
 
-const TEST_DIR = join(tmpdir(), "teleton-config-test");
-const TEST_CONFIG_PATH = join(TEST_DIR, "test-config.yaml");
+let TEST_DIR = "";
+let TEST_CONFIG_PATH = "";
 
 // Minimal valid config
 const MINIMAL_CONFIG = `
@@ -196,26 +196,14 @@ telegram:
 
 function writeTestConfig(content: string, path: string = TEST_CONFIG_PATH): void {
   const dir = dirname(path);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  mkdirSync(dir, { recursive: true });
   writeFileSync(path, content, "utf-8");
 }
 
 function cleanupTestFiles(): void {
   try {
-    if (existsSync(TEST_CONFIG_PATH)) {
-      unlinkSync(TEST_CONFIG_PATH);
-    }
     if (existsSync(TEST_DIR)) {
-      const files = require("fs").readdirSync(TEST_DIR);
-      files.forEach((file: string) => {
-        const filePath = join(TEST_DIR, file);
-        if (existsSync(filePath)) {
-          unlinkSync(filePath);
-        }
-      });
-      rmdirSync(TEST_DIR);
+      rmSync(TEST_DIR, { recursive: true, force: true });
     }
   } catch (error) {
     // Ignore cleanup errors
@@ -229,6 +217,9 @@ describe("Config Loader", () => {
   const originalEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
+    TEST_DIR = mkdtempSync(join(tmpdir(), "teleton-config-test-"));
+    TEST_CONFIG_PATH = join(TEST_DIR, "test-config.yaml");
+
     // Save original env vars
     originalEnv.TELETON_API_KEY = process.env.TELETON_API_KEY;
     originalEnv.TELETON_TG_API_ID = process.env.TELETON_TG_API_ID;
@@ -265,9 +256,6 @@ describe("Config Loader", () => {
         process.env[key] = originalEnv[key];
       }
     });
-  });
-
-  afterAll(() => {
     cleanupTestFiles();
   });
 

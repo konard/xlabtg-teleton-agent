@@ -12,11 +12,11 @@
  * implementation on it, and writes the resulting OGG/Opus next to it. If you
  * have `ffprobe` installed you can verify the output with:
  *
- *   ffprobe -v error -show_streams /tmp/teleton-issue-465.ogg
+ *   ffprobe -v error -show_streams /tmp/teleton-issue-465-<id>/voice.ogg
  *
  * (ffprobe is only used to *verify* — the conversion itself does not need it.)
  */
-import { writeFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -52,7 +52,8 @@ function makeSineWav({ sampleRate = 24000, durationSec = 1, freq = 440 } = {}) {
 const wav = makeSineWav({ sampleRate: 24000, durationSec: 1, freq: 440 });
 const ogg = wavToOggOpus(wav);
 
-const outPath = join(tmpdir(), "teleton-issue-465.ogg");
+const outDir = mkdtempSync(join(tmpdir(), "teleton-issue-465-"));
+const outPath = join(outDir, "voice.ogg");
 writeFileSync(outPath, ogg);
 
 console.log(`WAV input:  ${wav.length} bytes (24 kHz mono, 1 s, 440 Hz sine)`);

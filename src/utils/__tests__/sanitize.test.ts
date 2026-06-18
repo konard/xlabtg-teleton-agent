@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { sanitizeForPrompt, sanitizeForContext } from "../sanitize.js";
+import { sanitizeForPrompt, sanitizeForContext, sanitizeTaskDescription } from "../sanitize.js";
 
 describe("sanitizeForPrompt", () => {
   describe("happy paths - valid input passes through", () => {
@@ -268,6 +268,13 @@ describe("sanitizeForPrompt", () => {
     it("should handle malformed tags", () => {
       const input = "Text <incomplete";
       expect(sanitizeForPrompt(input)).toBe("Text <incomplete");
+    });
+
+    it("should remove fragmented nested script tags", () => {
+      const input = "<scrip<script>t>alert(1)</scrip<script>t>";
+      const result = sanitizeForPrompt(input);
+      expect(result).toBe("alert(1)");
+      expect(result).not.toMatch(/<\/?script/i);
     });
   });
 
@@ -618,6 +625,13 @@ describe("sanitizeForContext", () => {
       const input = "<outer>\n  <inner>Text</inner>\n</outer>";
       expect(sanitizeForContext(input)).toBe("Text");
     });
+
+    it("should remove fragmented nested script tags across context sanitization", () => {
+      const input = "<scrip<script>t>alert(1)</scrip<script>t>";
+      const result = sanitizeForContext(input);
+      expect(result).toBe("alert(1)");
+      expect(result).not.toMatch(/<\/?script/i);
+    });
   });
 
   describe("triple backtick handling", () => {
@@ -803,5 +817,14 @@ describe("sanitizeForContext", () => {
       expect(sanitizeForContext(input)).toBe("``code``");
       expect(sanitizeForPrompt(input)).toBe("`code`");
     });
+  });
+});
+
+describe("sanitizeTaskDescription", () => {
+  it("should remove fragmented nested script tags", () => {
+    const input = "<scrip<script>t>alert(1)</scrip<script>t>";
+    const result = sanitizeTaskDescription(input);
+    expect(result).toBe("alert(1)");
+    expect(result).not.toMatch(/<\/?script/i);
   });
 });

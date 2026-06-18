@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHmac } from "node:crypto";
 
 export type CacheResourceType = "tools" | "prompts" | "embeddings" | "api_responses";
 
@@ -92,7 +92,10 @@ function stableStringify(value: unknown): string {
 }
 
 function hash(value: string): string {
-  return createHash("sha256").update(value).digest("hex").slice(0, 24);
+  return createHmac("sha256", "teleton-resource-cache-key-v1")
+    .update(value)
+    .digest("hex")
+    .slice(0, 24);
 }
 
 function estimateSizeBytes(value: unknown): number {

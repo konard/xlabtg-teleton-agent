@@ -9,16 +9,15 @@
  */
 
 import { spawn } from "child_process";
-import { writeFileSync, mkdirSync, existsSync, unlinkSync, readFileSync } from "fs";
+import { writeFileSync, existsSync, unlinkSync, readFileSync } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
-import { randomUUID } from "crypto";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import { fetchWithTimeout } from "../utils/fetch.js";
 import { TTS_TIMEOUT_MS } from "../constants/timeouts.js";
 import { OPENAI_TTS_URL, ELEVENLABS_TTS_URL } from "../constants/api-endpoints.js";
 import { groqSpeak } from "../providers/groq/GroqTTSProvider.js";
 import { wavToOggOpus } from "../utils/audio.js";
+import { createPrivateTempPath } from "../utils/private-temp.js";
 
 export type TTSProvider = "piper" | "edge" | "openai" | "elevenlabs" | "groq";
 
@@ -64,6 +63,26 @@ const DEFAULT_VOICES: Record<TTSProvider, string> = {
   elevenlabs: "21m00Tcm4TlvDq8ikWAM", // Rachel
   groq: "autumn", // Groq Orpheus default
 };
+
+const MAX_TTS_AUDIO_BYTES = 20 * 1024 * 1024;
+
+function assertAudioBuffer(buffer: Buffer, provider: TTSProvider): void {
+  if (buffer.byteLength === 0) {
+    throw new Error(`${provider} TTS returned an empty audio response`);
+  }
+  if (buffer.byteLength > MAX_TTS_AUDIO_BYTES) {
+    throw new Error(
+      `${provider} TTS response is too large: ${buffer.byteLength} bytes exceeds ${MAX_TTS_AUDIO_BYTES}`
+    );
+  }
+}
+
+function writeTtsAudioFile(path: string, buffer: Buffer, provider: TTSProvider): void {
+  assertAudioBuffer(buffer, provider);
+
+  // codeql[js/http-to-file-access] TTS providers intentionally return audio bytes; size is capped before persisting to a private temp path.
+  writeFileSync(path, buffer);
+}
 
 // Popular Edge TTS voices
 export const EDGE_VOICES: Record<string, string> = {
@@ -145,14 +164,8 @@ export async function generateSpeech(options: TTSOptions): Promise<TTSResult> {
  * Converts WAV to OGG/Opus for Telegram voice messages
  */
 async function generatePiperTTS(text: string, voice: string): Promise<TTSResult> {
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
-
-  const id = randomUUID();
-  const wavPath = join(tempDir, `${id}.wav`);
-  const oggPath = join(tempDir, `${id}.ogg`);
+  const wavPath = createPrivateTempPath("tts", "wav");
+  const oggPath = createPrivateTempPath("tts", "ogg");
 
   // Resolve voice shorthand to model file
   const modelFile = PIPER_VOICES[voice.toLowerCase()] ?? voice;
@@ -193,7 +206,14 @@ async function generatePiperTTS(text: string, voice: string): Promise<TTSResult>
     });
 
     proc.on("close", (code) => {
-      if (code === 0 && existsSync(wavPath)) {
+      try {
+        readFileSync(wavPath);
+      } catch {
+        reject(new Error(`Piper TTS did not create output file (code ${code}): ${stderr}`));
+        return;
+      }
+
+      if (code === 0) {
         resolve();
       } else {
         reject(new Error(`Piper TTS failed (code ${code}): ${stderr}`));
@@ -237,12 +257,7 @@ async function generateEdgeTTS(
   rate?: string,
   pitch?: string
 ): Promise<TTSResult> {
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
-
-  const outputPath = join(tempDir, `${randomUUID()}.mp3`);
+  const outputPath = createPrivateTempPath("tts", "mp3");
 
   // Build edge-tts command
   const args = ["--text", text, "--voice", voice, "--write-media", outputPath];
@@ -291,12 +306,7 @@ async function generateOpenAITTS(text: string, voice: string): Promise<TTSResult
     throw new Error("OPENAI_API_KEY not set. Use Edge TTS (free) or set API key.");
   }
 
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
-
-  const outputPath = join(tempDir, `${randomUUID()}.mp3`);
+  const outputPath = createPrivateTempPath("tts", "mp3");
 
   const response = await fetchWithTimeout(OPENAI_TTS_URL, {
     method: "POST",
@@ -319,7 +329,7 @@ async function generateOpenAITTS(text: string, voice: string): Promise<TTSResult
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
-  writeFileSync(outputPath, buffer);
+  writeTtsAudioFile(outputPath, buffer, "openai");
 
   return {
     filePath: outputPath,
@@ -337,12 +347,7 @@ async function generateElevenLabsTTS(text: string, voiceId: string): Promise<TTS
     throw new Error("ELEVENLABS_API_KEY not set. Use Edge TTS (free) or set API key.");
   }
 
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
-
-  const outputPath = join(tempDir, `${randomUUID()}.mp3`);
+  const outputPath = createPrivateTempPath("tts", "mp3");
 
   const response = await fetchWithTimeout(`${ELEVENLABS_TTS_URL}/${voiceId}`, {
     method: "POST",
@@ -367,7 +372,7 @@ async function generateElevenLabsTTS(text: string, voiceId: string): Promise<TTS
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
-  writeFileSync(outputPath, buffer);
+  writeTtsAudioFile(outputPath, buffer, "elevenlabs");
 
   return {
     filePath: outputPath,
@@ -392,12 +397,7 @@ async function generateGroqTTS(
   // Groq Orpheus only supports WAV output. Telegram voice notes require OGG/Opus,
   // so we always request WAV from Groq and transcode it before returning.
   const resolvedFormat = "wav";
-  const tempDir = join(tmpdir(), "teleton-tts");
-  if (!existsSync(tempDir)) {
-    mkdirSync(tempDir, { recursive: true });
-  }
-
-  const outputPath = join(tempDir, `${randomUUID()}.${resolvedFormat}`);
+  const outputPath = createPrivateTempPath("tts", resolvedFormat);
 
   const audioBuffer = await groqSpeak(text, {
     apiKey,
@@ -406,15 +406,15 @@ async function generateGroqTTS(
     responseFormat: resolvedFormat,
   });
 
-  writeFileSync(outputPath, audioBuffer);
+  writeTtsAudioFile(outputPath, audioBuffer, "groq");
 
   // Telegram requires OGG/Opus for proper voice message rendering.
   // We transcode in-process via a WASM Opus encoder so deployments don't need
   // a system ffmpeg install (see src/utils/audio.ts).
-  const oggPath = join(tempDir, `${randomUUID()}.ogg`);
+  const oggPath = createPrivateTempPath("tts", "ogg");
   try {
     const oggBuffer = wavToOggOpus(audioBuffer);
-    writeFileSync(oggPath, oggBuffer);
+    writeTtsAudioFile(oggPath, oggBuffer, "groq");
   } catch (error) {
     try {
       unlinkSync(outputPath);

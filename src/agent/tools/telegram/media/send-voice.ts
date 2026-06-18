@@ -8,10 +8,7 @@
 
 import { Type } from "@sinclair/typebox";
 import { Api } from "telegram";
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-import { randomUUID } from "crypto";
+import { readFileSync, unlinkSync, writeFileSync } from "fs";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import {
   generateSpeech,
@@ -25,6 +22,7 @@ import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
 import { getClient } from "../../../../sdk/telegram-utils.js";
+import { createPrivateTempPath } from "../../../../utils/private-temp.js";
 
 const log = createLogger("Tools");
 
@@ -165,9 +163,7 @@ export const telegramSendVoiceExecutor: ToolExecutor<SendVoiceParams> = async (
       try {
         const buffer = readFileSync(audioPath);
         if (isWavBuffer(buffer)) {
-          const tempDir = join(tmpdir(), "teleton-tts");
-          if (!existsSync(tempDir)) mkdirSync(tempDir, { recursive: true });
-          const oggPath = join(tempDir, `${randomUUID()}.ogg`);
+          const oggPath = createPrivateTempPath("tts", "ogg");
           const oggBuffer = wavToOggOpus(buffer);
           writeFileSync(oggPath, oggBuffer);
           audioPath = oggPath;

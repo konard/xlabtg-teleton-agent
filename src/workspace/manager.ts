@@ -1,6 +1,6 @@
 // src/workspace/manager.ts
 
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from "fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 import { TELETON_ROOT, WORKSPACE_ROOT, WORKSPACE_PATHS } from "./paths.js";
@@ -131,12 +131,21 @@ async function bootstrapTemplates(workspace: Workspace, silent = false): Promise
   ];
 
   for (const template of templates) {
-    if (!existsSync(template.path)) {
-      const templateSource = join(TEMPLATES_DIR, template.name);
-      if (existsSync(templateSource)) {
-        copyFileSync(templateSource, template.path);
+    const templateSource = join(TEMPLATES_DIR, template.name);
+    try {
+      const content = readFileSync(templateSource, "utf-8");
+      try {
+        writeFileSync(template.path, content, {
+          encoding: "utf-8",
+          mode: 0o600,
+          flag: "wx",
+        });
         if (!silent) log.info(`Created ${template.name}`);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       }
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
 }
@@ -153,22 +162,24 @@ export function isNewWorkspace(workspace: Workspace): boolean {
  */
 export function loadTemplate(name: string): string {
   const templatePath = join(TEMPLATES_DIR, name);
-  if (!existsSync(templatePath)) {
+  try {
+    return readFileSync(templatePath, "utf-8");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     throw new Error(`Template ${name} not found at ${templatePath}`);
   }
-  return readFileSync(templatePath, "utf-8");
 }
 
 /**
  * Write file only if it doesn't exist
  */
 export function writeFileIfMissing(path: string, content: string): void {
-  if (!existsSync(path)) {
-    const dir = dirname(path);
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
-    writeFileSync(path, content, "utf-8");
+  const dir = dirname(path);
+  mkdirSync(dir, { recursive: true });
+  try {
+    writeFileSync(path, content, { encoding: "utf-8", flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
 }
 

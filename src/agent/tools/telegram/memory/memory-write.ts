@@ -1,6 +1,6 @@
 import { Type } from "@sinclair/typebox";
 import type { Tool, ToolContext, ToolExecutor, ToolResult } from "../../types.js";
-import { appendFileSync, readFileSync, writeFileSync, existsSync, mkdirSync } from "fs";
+import { appendFileSync, readFileSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { WORKSPACE_PATHS, WORKSPACE_ROOT } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
@@ -19,8 +19,11 @@ const MEMORY_SOFT_LIMIT = 80;
  * Count lines in MEMORY.md (returns 0 if file doesn't exist)
  */
 function getMemoryLineCount(): number {
-  if (!existsSync(MEMORY_FILE)) return 0;
-  return readFileSync(MEMORY_FILE, "utf-8").split("\n").length;
+  try {
+    return readFileSync(MEMORY_FILE, "utf-8").split("\n").length;
+  } catch {
+    return 0;
+  }
 }
 
 /**
@@ -61,8 +64,18 @@ export const memoryWriteTool: Tool = {
  * Ensure memory directory exists
  */
 function ensureMemoryDir(): void {
-  if (!existsSync(MEMORY_DIR)) {
-    mkdirSync(MEMORY_DIR, { recursive: true });
+  mkdirSync(MEMORY_DIR, { recursive: true });
+}
+
+function writeFileIfMissing(filePath: string, content: string): void {
+  try {
+    writeFileSync(filePath, content, {
+      encoding: "utf-8",
+      mode: 0o600,
+      flag: "wx",
+    });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
 }
 
@@ -146,13 +159,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
       entry += `${content}\n`;
       entry += `\n_Added: ${now.toISOString()}_\n`;
 
-      // Append to MEMORY.md
-      if (!existsSync(MEMORY_FILE)) {
-        writeFileSync(MEMORY_FILE, "# MEMORY.md - Persistent Memory\n\n", {
-          encoding: "utf-8",
-          mode: 0o600,
-        });
-      }
+      writeFileIfMissing(MEMORY_FILE, "# MEMORY.md - Persistent Memory\n\n");
       appendFileSync(MEMORY_FILE, entry, "utf-8");
 
       log.info(`📝 Memory written to MEMORY.md${section ? ` (section: ${section})` : ""}`);
@@ -181,11 +188,7 @@ export const memoryWriteExecutor: ToolExecutor<MemoryWriteParams> = async (
       // Write to daily log
       const logPath = getDailyLogPath();
 
-      // Create header if file doesn't exist
-      if (!existsSync(logPath)) {
-        const header = `# Daily Log - ${formatDate(now)}\n\n`;
-        writeFileSync(logPath, header, { encoding: "utf-8", mode: 0o600 });
-      }
+      writeFileIfMissing(logPath, `# Daily Log - ${formatDate(now)}\n\n`);
 
       let entry = `## ${timestamp}`;
       if (section) {

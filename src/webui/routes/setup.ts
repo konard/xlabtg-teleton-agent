@@ -188,13 +188,17 @@ export function createSetupRoutes(options?: { keyHash?: string }): Hono {
       });
 
       // Replace agent name placeholder in IDENTITY.md
-      if (body.agentName?.trim() && existsSync(workspace.identityPath)) {
-        const identity = readFileSync(workspace.identityPath, "utf-8");
-        const updated = identity.replace(
-          "[Your name - pick one or ask your human]",
-          body.agentName.trim()
-        );
-        writeFileSync(workspace.identityPath, updated, "utf-8");
+      if (body.agentName?.trim()) {
+        try {
+          const identity = readFileSync(workspace.identityPath, "utf-8");
+          const updated = identity.replace(
+            "[Your name - pick one or ask your human]",
+            body.agentName.trim()
+          );
+          writeFileSync(workspace.identityPath, updated, "utf-8");
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+        }
       }
 
       return c.json({

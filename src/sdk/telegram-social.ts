@@ -910,7 +910,7 @@ export function createTelegramSocialSDK(
       return userOp("sendStory", "send story", async ({ client, Api }) => {
         const { helpers } = await import("telegram");
         const { CustomFile } = await import("telegram/client/uploads.js");
-        const { readFileSync, statSync } = await import("fs");
+        const { readFileSync } = await import("fs");
         const { basename } = await import("path");
 
         const { resolve, normalize } = await import("path");
@@ -937,8 +937,8 @@ export function createTelegramSocialSDK(
         }
 
         const fileName = basename(filePath);
-        const fileSize = statSync(filePath).size;
         const fileBuffer = readFileSync(filePath);
+        const fileSize = fileBuffer.byteLength;
         const isVideo = filePath.toLowerCase().match(/\.(mp4|mov|avi|webm|mkv|m4v)$/);
 
         const customFile = new CustomFile(fileName, fileSize, filePath, fileBuffer);

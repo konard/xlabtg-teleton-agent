@@ -14,7 +14,11 @@ import type { StyledButtonDef, DealMessage } from "../../sdk/formatting.js";
  * Escape HTML special characters
  */
 function esc(text: string): string {
-  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 }
 
 /** Custom emoji for animated hourglass (only one kept as premium) */
@@ -29,7 +33,7 @@ function formatAsset(type: "ton" | "gift", tonAmount?: number, giftSlug?: string
     return `<b>${tonAmount} TON</b>`;
   }
   if (type === "gift" && giftSlug) {
-    return `<a href="https://t.me/nft/${esc(giftSlug)}">${esc(giftSlug)}</a>`;
+    return `<a href="https://t.me/nft/${encodeURIComponent(giftSlug)}">${esc(giftSlug)}</a>`;
   }
   return "???";
 }

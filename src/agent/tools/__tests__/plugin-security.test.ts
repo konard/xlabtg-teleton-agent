@@ -20,7 +20,7 @@
  */
 
 import { describe, it, expect, vi, afterEach, beforeEach } from "vitest";
-import { writeFileSync, mkdirSync, rmSync, chmodSync } from "fs";
+import { writeFileSync, mkdirSync, mkdtempSync, rmSync, chmodSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { createHash } from "crypto";
@@ -36,9 +36,11 @@ import {
 // are safe to reference inside vi.mock() factories.
 
 const { SECURITY_PLUGINS_DIR, mockWatchFn, mockLogger } = vi.hoisted(() => {
+  const { mkdtempSync } = require("node:fs") as typeof import("node:fs");
+  const { tmpdir } = require("node:os") as typeof import("node:os");
+  const { join } = require("node:path") as typeof import("node:path");
   return {
-    // Use a fixed path under /tmp so no runtime imports are needed here
-    SECURITY_PLUGINS_DIR: `/tmp/teleton-security-test-${process.pid}`,
+    SECURITY_PLUGINS_DIR: mkdtempSync(join(tmpdir(), "teleton-security-test-")),
     mockWatchFn: vi.fn(() => ({ on: vi.fn() })),
     mockLogger: {
       info: vi.fn(),
@@ -79,9 +81,7 @@ function sha256(content: string): string {
 }
 
 function tmpDir(suffix: string): string {
-  const d = join(tmpdir(), `teleton-sec-${suffix}-${process.pid}`);
-  mkdirSync(d, { recursive: true });
-  return d;
+  return mkdtempSync(join(tmpdir(), `teleton-sec-${suffix}-`));
 }
 
 const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");

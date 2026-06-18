@@ -42,13 +42,13 @@ export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> =
     // Validate the path
     const validated = validateReadPath(path);
 
-    // Check file size
+    const buffer = readFileSync(validated.absolutePath);
     const stats = lstatSync(validated.absolutePath);
 
-    if (stats.size > maxSize) {
+    if (buffer.byteLength > maxSize) {
       return {
         success: false,
-        error: `File too large: ${stats.size} bytes exceeds limit of ${maxSize} bytes`,
+        error: `File too large: ${buffer.byteLength} bytes exceeds limit of ${maxSize} bytes`,
       };
     }
 
@@ -63,7 +63,7 @@ export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> =
           path: validated.relativePath,
           type: "binary",
           extension: validated.extension,
-          size: stats.size,
+          size: buffer.byteLength,
           modified: stats.mtime.toISOString(),
           message:
             "Binary file - use encoding='base64' to read content, or this is media that can be sent directly",
@@ -71,11 +71,7 @@ export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> =
       };
     }
 
-    // Read the file
-    const content = readFileSync(
-      validated.absolutePath,
-      encoding === "base64" ? "base64" : "utf-8"
-    );
+    const content = buffer.toString(encoding === "base64" ? "base64" : "utf-8");
 
     return {
       success: true,
@@ -83,7 +79,7 @@ export const workspaceReadExecutor: ToolExecutor<WorkspaceReadParams> =
         path: validated.relativePath,
         content,
         encoding,
-        size: stats.size,
+        size: buffer.byteLength,
         modified: stats.mtime.toISOString(),
       },
     };

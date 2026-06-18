@@ -8,8 +8,8 @@
  * Tokens are cached in memory and re-read only on expiration or forced refresh.
  */
 
-import { readFileSync, writeFileSync, existsSync } from "fs";
-import { execSync } from "child_process";
+import { readFileSync, writeFileSync } from "fs";
+import { spawnSync } from "child_process";
 import { homedir } from "os";
 import { join } from "path";
 import { createLogger } from "../utils/logger.js";
@@ -21,6 +21,8 @@ const log = createLogger("ClaudeCodeCreds");
 const OAUTH_TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
 const OAUTH_CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e";
 const OAUTH_SCOPES = "user:profile user:inference user:sessions:claude_code user:mcp_servers";
+const ACCESS_TOKEN_PATTERN = /^sk-ant-oat01-[A-Za-z0-9_-]{8,}$/;
+const REFRESH_TOKEN_PATTERN = /^sk-ant-ort01-[A-Za-z0-9_-]{8,}$/;
 
 // ── Types ──────────────────────────────────────────────────────────────
 
@@ -49,15 +51,23 @@ function getCredentialsFilePath(): string {
   return join(getClaudeConfigDir(), ".credentials.json");
 }
 
+function isClaudeAccessToken(value: unknown): value is string {
+  return typeof value === "string" && ACCESS_TOKEN_PATTERN.test(value);
+}
+
+function isClaudeRefreshToken(value: unknown): value is string {
+  return typeof value === "string" && REFRESH_TOKEN_PATTERN.test(value);
+}
+
 /** Read credentials from ~/.claude/.credentials.json */
 function readCredentialsFile(): ClaudeOAuthCredentials | null {
   const filePath = getCredentialsFilePath();
-  if (!existsSync(filePath)) return null;
 
   try {
     const raw = readFileSync(filePath, "utf-8");
     return JSON.parse(raw) as ClaudeOAuthCredentials;
   } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === "ENOENT") return null;
     log.warn({ err: e, path: filePath }, "Failed to parse Claude Code credentials file");
     return null;
   }
@@ -70,10 +80,12 @@ function readKeychainCredentials(): ClaudeOAuthCredentials | null {
 
   for (const service of serviceNames) {
     try {
-      const raw = execSync(`security find-generic-password -s "${service}" -w`, {
+      const result = spawnSync("security", ["find-generic-password", "-s", service, "-w"], {
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
-      }).trim();
+      });
+      if (result.status !== 0 || result.error) continue;
+      const raw = result.stdout.trim();
       return JSON.parse(raw) as ClaudeOAuthCredentials;
     } catch {
       // Not found under this service name, try next
@@ -156,7 +168,13 @@ export function getClaudeCodeApiKey(fallbackKey?: string): string {
  * On success, persists the new credentials to disk and returns the new access token.
  */
 async function performOAuthRefresh(refreshToken: string): Promise<string | null> {
+  if (!isClaudeRefreshToken(refreshToken)) {
+    log.warn("OAuth token refresh skipped: invalid refresh token format");
+    return null;
+  }
+
   try {
+    // codeql[js/file-access-to-http] OAuth refresh is sent only after validating the local Claude refresh token format.
     const res = await fetch(OAUTH_TOKEN_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -179,20 +197,31 @@ async function performOAuthRefresh(refreshToken: string): Promise<string | null>
       expires_in?: number;
     };
 
-    if (!data.access_token || !data.expires_in) {
+    const expiresIn = data.expires_in;
+    if (
+      !isClaudeAccessToken(data.access_token) ||
+      typeof expiresIn !== "number" ||
+      !Number.isFinite(expiresIn) ||
+      expiresIn <= 0
+    ) {
       log.warn("OAuth token refresh: unexpected response shape");
       return null;
     }
 
-    const newExpiresAt = Date.now() + data.expires_in * 1000;
-    const newRefreshToken = data.refresh_token ?? refreshToken;
+    const newExpiresAt = Date.now() + expiresIn * 1000;
+    const newRefreshToken = isClaudeRefreshToken(data.refresh_token)
+      ? data.refresh_token
+      : refreshToken;
 
     // Persist updated credentials to disk
     const filePath = getCredentialsFilePath();
     try {
-      const existing = existsSync(filePath)
-        ? (JSON.parse(readFileSync(filePath, "utf-8")) as ClaudeOAuthCredentials)
-        : {};
+      let existing: ClaudeOAuthCredentials = {};
+      try {
+        existing = JSON.parse(readFileSync(filePath, "utf-8")) as ClaudeOAuthCredentials;
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+      }
       const updated: ClaudeOAuthCredentials = {
         ...existing,
         claudeAiOauth: {
@@ -202,6 +231,8 @@ async function performOAuthRefresh(refreshToken: string): Promise<string | null>
           expiresAt: newExpiresAt,
         },
       };
+
+      // codeql[js/http-to-file-access] Claude OAuth refresh responses are format-validated before updating the local Claude credentials file.
       writeFileSync(filePath, JSON.stringify(updated, null, 2), { mode: 0o600 });
     } catch (e) {
       log.warn({ err: e }, "Failed to persist refreshed OAuth credentials to disk");

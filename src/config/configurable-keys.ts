@@ -1283,8 +1283,18 @@ function parsePath(path: string): string[] {
 }
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- generic config traversal requires any for dynamic dot-notation paths */
+const PROTOTYPE_POLLUTION_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+
+function assertSafePathParts(parts: string[]): void {
+  const unsafe = parts.find((part) => PROTOTYPE_POLLUTION_KEYS.has(part));
+  if (unsafe) {
+    throw new Error(`Unsafe config path segment: ${unsafe}`);
+  }
+}
+
 export function getNestedValue(obj: Record<string, any>, path: string): unknown {
   const parts = parsePath(path);
+  assertSafePathParts(parts);
   let current: any = obj;
   for (const part of parts) {
     if (current == null || typeof current !== "object") return undefined;
@@ -1296,6 +1306,7 @@ export function getNestedValue(obj: Record<string, any>, path: string): unknown 
 
 export function setNestedValue(obj: Record<string, any>, path: string, value: unknown): void {
   const parts = parsePath(path);
+  assertSafePathParts(parts);
   let current: any = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const key = parts[i];
@@ -1309,6 +1320,7 @@ export function setNestedValue(obj: Record<string, any>, path: string, value: un
 
 export function deleteNestedValue(obj: Record<string, any>, path: string): void {
   const parts = parsePath(path);
+  assertSafePathParts(parts);
   let current: any = obj;
   for (let i = 0; i < parts.length - 1; i++) {
     const key = parts[i];

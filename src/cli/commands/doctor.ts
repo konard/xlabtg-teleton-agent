@@ -168,14 +168,10 @@ async function checkApiKey(workspaceDir: string): Promise<CheckResult> {
       };
     }
 
-    // Mask the key for display
-    const maskLen = Math.min(4, Math.max(0, apiKey.length - 4));
-    const masked = apiKey.substring(0, maskLen) + "****" + apiKey.substring(apiKey.length - 4);
-
     return {
       name: `${meta.displayName} API key`,
       status: "ok",
-      message: masked,
+      message: "Configured",
     };
   } catch {
     return {

@@ -262,10 +262,10 @@ export function stripCustomEmoji(html: string): string {
 
 function unescapeHtml(text: string): string {
   return text
-    .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"');
+    .replace(/&quot;/g, '"')
+    .replace(/&amp;/g, "&");
 }
 
 // ── Glob compilation ─────────────────────────────────────────────────────────

@@ -546,7 +546,7 @@ HTTPS Management API for remote agent administration. See the full [Management A
 |-----|------|---------|-------------|
 | `api.enabled` | `boolean` | `false` | Enable the HTTPS Management API server. |
 | `api.port` | `number` | `7778` | HTTPS server port (1-65535). |
-| `api.key_hash` | `string` | `""` | SHA-256 hash of the API key. Auto-generated on first start — do not set manually. |
+| `api.key_hash` | `string` | `""` | scrypt hash of the API key. Auto-generated on first start — do not set manually. |
 | `api.allowed_ips` | `string[]` | `[]` | IP whitelist. Empty array allows all authenticated requests. |
 
 ### Example

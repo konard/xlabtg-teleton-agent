@@ -1,7 +1,8 @@
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { readRawConfig, setNestedValue, writeRawConfig } from "../../config/configurable-keys.js";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { ensureTlsCert } from "../../api/tls.js";
+import { hashApiKey } from "../../utils/crypto-tokens.js";
 
 /**
  * Generate a new Management API key, hash it, and persist the hash to config.
@@ -9,7 +10,7 @@ import { ensureTlsCert } from "../../api/tls.js";
  */
 export async function apiRotateKeyCommand(options: { config: string }): Promise<void> {
   const key = "tltn_" + randomBytes(32).toString("base64url");
-  const hash = createHash("sha256").update(key).digest("hex");
+  const hash = hashApiKey(key);
 
   const raw = readRawConfig(options.config);
   setNestedValue(raw, "api.key_hash", hash);

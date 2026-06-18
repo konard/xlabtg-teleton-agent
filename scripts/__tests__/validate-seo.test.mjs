@@ -130,6 +130,11 @@ test('validateRobots rejects a sitemap host mismatch', () => {
   assert.equal(validateRobots(txt).valid, false)
 })
 
+test('validateRobots rejects lookalike sitemap origins', () => {
+  const txt = 'User-agent: *\nDisallow: /api/\nDisallow: /setup\nDisallow: /login\nSitemap: https://teletonagent.dev.evil/sitemap.xml'
+  assert.equal(validateRobots(txt).valid, false)
+})
+
 test('validateRobots requires the private console to be disallowed', () => {
   const txt = 'User-agent: *\nAllow: /\nSitemap: https://teletonagent.dev/sitemap.xml'
   const r = validateRobots(txt)
@@ -168,6 +173,15 @@ test('extractLocs returns trimmed URLs', () => {
 
 test('validateAll fails when the sitemap has no loc on the canonical host', () => {
   const sitemap = '<urlset><url><loc>https://other.example/</loc></url></urlset>'
+  const robots = 'User-agent: *\nDisallow: /api/\nDisallow: /setup\nDisallow: /login\nSitemap: https://teletonagent.dev/sitemap.xml'
+  const consoleHtml = '<meta name="robots" content="noindex, nofollow" /><meta name="description" content="x" />'
+  const r = validateAll({ sitemap, robots, consoleHtml })
+  assert.equal(r.valid, false)
+  assert.ok(r.results.find((x) => x.name === 'host consistency' && !x.valid))
+})
+
+test('validateAll rejects lookalike sitemap loc origins', () => {
+  const sitemap = '<urlset><url><loc>https://teletonagent.dev.evil/</loc></url></urlset>'
   const robots = 'User-agent: *\nDisallow: /api/\nDisallow: /setup\nDisallow: /login\nSitemap: https://teletonagent.dev/sitemap.xml'
   const consoleHtml = '<meta name="robots" content="noindex, nofollow" /><meta name="description" content="x" />'
   const r = validateAll({ sitemap, robots, consoleHtml })

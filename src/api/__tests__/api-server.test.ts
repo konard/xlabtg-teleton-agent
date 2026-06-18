@@ -47,11 +47,12 @@ import { createApiLogsRoutes } from "../routes/logs.js";
 import { createApiMemoryRoutes } from "../routes/memory.js";
 import { createDepsAdapter } from "../deps.js";
 import { renderMetrics } from "../../services/prometheus.js";
+import { hashApiKey } from "../../utils/crypto-tokens.js";
 
 // ── Constants ────────────────────────────────────────────────────────
 
 const TEST_KEY = "tltn_test1234567890abcdefghijklmnopqrstuv";
-const TEST_KEY_HASH = createHash("sha256").update(TEST_KEY).digest("hex");
+const TEST_KEY_HASH = hashApiKey(TEST_KEY);
 const WRONG_KEY = "tltn_wrongkey1234567890abcdefghijklmnop";
 
 // ── Test app builder ─────────────────────────────────────────────────
@@ -360,12 +361,12 @@ describe("Management API", () => {
 
     // Test 4
     it("uses timingSafeEqual for API key comparison", () => {
-      const keyHash = createHash("sha256").update(TEST_KEY).digest("hex");
+      const keyHash = hashApiKey(TEST_KEY);
       const storedBuf = Buffer.from(TEST_KEY_HASH, "hex");
       const providedBuf = Buffer.from(keyHash, "hex");
       expect(timingSafeEqual(storedBuf, providedBuf)).toBe(true);
 
-      const wrongHash = createHash("sha256").update(WRONG_KEY).digest("hex");
+      const wrongHash = hashApiKey(WRONG_KEY);
       const wrongBuf = Buffer.from(wrongHash, "hex");
       expect(timingSafeEqual(storedBuf, wrongBuf)).toBe(false);
     });

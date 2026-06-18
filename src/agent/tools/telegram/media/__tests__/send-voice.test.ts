@@ -43,8 +43,9 @@ vi.mock("telegram", () => ({
 }));
 
 import { telegramSendVoiceExecutor } from "../send-voice.js";
+import { ensurePrivateTempDir } from "../../../../../utils/private-temp.js";
 
-const TTS_TEMP_DIR = join(tmpdir(), "teleton-tts");
+const TTS_TEMP_DIR = ensurePrivateTempDir("tts");
 
 /** Build a minimal valid PCM WAV buffer with the RIFF/WAVE header. */
 function buildWavBuffer(payload: Buffer = Buffer.from([0, 0, 0, 0])): Buffer {

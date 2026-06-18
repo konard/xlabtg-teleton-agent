@@ -5,13 +5,14 @@ import { streamSSE } from "hono/streaming";
 import { serve, type ServerType } from "@hono/node-server";
 import type { HttpBindings } from "@hono/node-server";
 import { createServer as createHttpsServer } from "node:https";
-import { randomBytes, createHash } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import type { Server as HttpServer } from "node:http";
 
 import { HTTPException } from "hono/http-exception";
 import { existsSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { createLogger } from "../utils/logger.js";
+import { hashApiKey } from "../utils/crypto-tokens.js";
 import { TELETON_ROOT } from "../workspace/paths.js";
 import { ensureTlsCert, type TlsCert } from "./tls.js";
 import type { ApiServerDeps } from "./deps.js";
@@ -85,11 +86,6 @@ const KEY_PREFIX = "tltn_";
 /** Generate a new API key with tltn_ prefix */
 function generateApiKey(): string {
   return KEY_PREFIX + randomBytes(32).toString("base64url");
-}
-
-/** Hash an API key with SHA-256 */
-function hashApiKey(key: string): string {
-  return createHash("sha256").update(key).digest("hex");
 }
 
 /** Check setup completeness by probing key files */
@@ -569,9 +565,7 @@ export class ApiServer {
             (this.server as HttpServer).maxConnections = 20;
             log.info(`Management API server running on https://${bindHost}:${info.port}`);
             if (this.apiKey) {
-              log.info(
-                `API key: ${KEY_PREFIX}${this.apiKey.slice(KEY_PREFIX.length, KEY_PREFIX.length + 4)}...`
-              );
+              log.info("Generated a new Management API key for setup");
             }
             log.info(`TLS fingerprint: ${tls.fingerprint.slice(0, 16)}...`);
             resolve();
