@@ -80,8 +80,9 @@ function assertAudioBuffer(buffer: Buffer, provider: TTSProvider): void {
 function writeTtsAudioFile(path: string, buffer: Buffer, provider: TTSProvider): void {
   assertAudioBuffer(buffer, provider);
 
-  // codeql[js/http-to-file-access] TTS providers intentionally return audio bytes; size is capped before persisting to a private temp path.
-  writeFileSync(path, buffer);
+  // TTS providers intentionally return audio bytes; size is capped before persisting to a private temp path.
+  // codeql[js/http-to-file-access]
+  writeFileSync(path, buffer, { mode: 0o600, flag: "wx" });
 }
 
 // Popular Edge TTS voices

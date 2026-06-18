@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHmac, scryptSync } from "node:crypto";
 
 export type CacheResourceType = "tools" | "prompts" | "embeddings" | "api_responses";
 
@@ -76,6 +76,20 @@ const DEFAULT_CACHE_CONFIG: ResourceCacheConfig = {
 };
 
 const RESOURCE_TYPES: CacheResourceType[] = ["tools", "prompts", "embeddings", "api_responses"];
+const CACHE_KEY_HMAC_KEY = "teleton-resource-cache-key-v1";
+const CACHE_KEY_SECRET_SALT = "teleton-resource-cache-secret-v1";
+const SENSITIVE_CACHE_KEY_NAMES = [
+  "apikey",
+  "authorization",
+  "authtoken",
+  "bearer",
+  "cookie",
+  "mnemonic",
+  "password",
+  "secret",
+  "session",
+  "token",
+];
 
 function stableStringify(value: unknown): string {
   if (Array.isArray(value)) {
@@ -91,11 +105,44 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
-function hash(value: string): string {
-  return createHmac("sha256", "teleton-resource-cache-key-v1")
-    .update(value)
-    .digest("hex")
-    .slice(0, 24);
+function isSensitiveCacheKeyName(name: string | undefined): boolean {
+  if (!name) return false;
+  const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return SENSITIVE_CACHE_KEY_NAMES.some((sensitiveName) => normalized.includes(sensitiveName));
+}
+
+function hashSensitiveCacheKeyValue(value: unknown): Record<string, string> {
+  const serialized = stableStringify(value);
+  return {
+    __teletonSecretDigest: scryptSync(serialized, CACHE_KEY_SECRET_SALT, 32, {
+      N: 16_384,
+      r: 8,
+      p: 1,
+    }).toString("hex"),
+  };
+}
+
+function cacheKeyMaterial(value: unknown, keyName?: string): unknown {
+  if (isSensitiveCacheKeyName(keyName)) {
+    return hashSensitiveCacheKeyValue(value);
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => cacheKeyMaterial(item));
+  }
+  if (value && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.keys(obj)
+        .sort()
+        .map((key) => [key, cacheKeyMaterial(obj[key], key)])
+    );
+  }
+  return value;
+}
+
+function digestCacheKey(value: string): string {
+  return createHmac("sha256", CACHE_KEY_HMAC_KEY).update(value).digest("hex").slice(0, 24);
 }
 
 function estimateSizeBytes(value: unknown): number {
@@ -164,7 +211,8 @@ export class ResourceCacheService {
     relevantConfig: unknown = {},
     version?: string | number
   ): string {
-    return `${type}:${hash(stableStringify({ resourceId, relevantConfig, version }))}`;
+    const material = cacheKeyMaterial({ resourceId, relevantConfig, version });
+    return `${type}:${digestCacheKey(stableStringify(material))}`;
   }
 
   async getOrSet<T>(

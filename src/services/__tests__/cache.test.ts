@@ -83,4 +83,20 @@ describe("ResourceCacheService", () => {
     expect(cache.invalidate({ type: "prompts" })).toBe(1);
     expect(cache.getStats().size).toBe(0);
   });
+
+  it("fingerprints sensitive cache key fields without exposing raw values", () => {
+    const cache = new ResourceCacheService();
+    const firstKey = cache.makeKey("api_responses", "https://api.example.test/data", {
+      headers: { Authorization: "Bearer first-secret" },
+    });
+    const secondKey = cache.makeKey("api_responses", "https://api.example.test/data", {
+      headers: { Authorization: "Bearer second-secret" },
+    });
+
+    expect(firstKey).toMatch(/^api_responses:[a-f0-9]{24}$/);
+    expect(secondKey).toMatch(/^api_responses:[a-f0-9]{24}$/);
+    expect(firstKey).not.toBe(secondKey);
+    expect(firstKey).not.toContain("first-secret");
+    expect(secondKey).not.toContain("second-secret");
+  });
 });
