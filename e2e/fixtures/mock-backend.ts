@@ -165,6 +165,9 @@ export async function setupMockBackend(
     }
 
     // ── Auth (not under /api) ──────────────────────────────────────────
+    if (path === "/auth/exchange") {
+      return route.continue();
+    }
     if (path === "/auth/check") {
       return json(route, ok({ authenticated }));
     }
@@ -255,6 +258,9 @@ export async function setupMockBackend(
     }
     if (path === "/api/setup/config/save") {
       return json(route, ok({ path: "/tmp/teleton-workspace/config.yaml" }));
+    }
+    if (path === "/api/setup/launch") {
+      return json(route, ok({ token: "agent-token" }));
     }
 
     // ── Agent status / control ─────────────────────────────────────────

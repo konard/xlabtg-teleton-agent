@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, type ReactNode } from 'react';
-import { setup, SetupConfig } from '../../lib/api';
+import { setup, SetupConfig, SETUP_AGENT_LAUNCH_TIMEOUT_MS } from '../../lib/api';
 
 // ── Step metadata ───────────────────────────────────────────────────
 
@@ -292,7 +292,7 @@ export function SetupProvider({ children }: { children: ReactNode }) {
       }
       const { token } = await setup.launch(nonce);
       // Poll until the agent WebUI is up
-      await setup.pollHealth(30000);
+      await setup.pollHealth(SETUP_AGENT_LAUNCH_TIMEOUT_MS);
       // Redirect to the dashboard with token-based auth
       window.location.href = `/auth/exchange?token=${encodeURIComponent(token)}`;
     } catch (err) {

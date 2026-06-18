@@ -9,7 +9,7 @@ import { setupMockBackend } from "./fixtures/mock-backend";
 test("setup wizard completes end to end", async ({ page }) => {
   await setupMockBackend(page);
 
-  await page.goto("/setup");
+  await page.goto("/setup#nonce=test-nonce");
 
   const next = page.getByRole("button", { name: /^Next:/ });
 
@@ -44,15 +44,22 @@ test("setup wizard completes end to end", async ({ page }) => {
   // exact match: the API Hash placeholder substring-contains "12345678".
   await page.getByPlaceholder("12345678", { exact: true }).fill("12345678");
   await page.getByPlaceholder("abcdef0123456789abcdef0123456789").fill("abcdef0123456789");
+  await page.getByPlaceholder("+33612345678").fill("+33612345678");
+  await expect(next).toBeEnabled();
   await next.click();
 
   // ── Step 6: Connect — start the QR flow; the mock authenticates on poll. ──
   await expect(page.getByRole("heading", { name: "Connect your Agent to Telegram" })).toBeVisible();
+  const launchRequest = page.waitForRequest(
+    (request) => request.method() === "POST" && request.url().endsWith("/api/setup/launch")
+  );
   await page.getByRole("button", { name: "Show QR Code" }).click();
   await expect(page.getByText("Waiting for scan...")).toBeVisible();
 
-  // The QR poll (every 5s) authenticates, auto-saves, and shows completion.
+  // The QR poll (every 5s) authenticates, auto-saves, shows completion, and
+  // starts the agent without requiring a manual click or console command.
   await expect(page.getByRole("heading", { name: "Your Agent is ready" })).toBeVisible({
     timeout: 20_000,
   });
+  await launchRequest;
 });

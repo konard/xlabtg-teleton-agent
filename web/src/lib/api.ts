@@ -1,4 +1,8 @@
 const API_BASE = "/api";
+export const SETUP_AGENT_LAUNCH_TIMEOUT_MS = 120_000;
+const SETUP_AGENT_INITIAL_POLL_DELAY_MS = 1_500;
+const SETUP_AGENT_POLL_INTERVAL_MS = 1_000;
+const SETUP_AGENT_POLL_REQUEST_TIMEOUT_MS = 2_000;
 
 // ── Dynamic Dashboard types ──────────────────────────────────────────────────
 
@@ -4609,15 +4613,16 @@ export const setup = {
       headers: { "X-Setup-Nonce": nonce },
     }),
 
-  pollHealth: async (timeoutMs = 30000): Promise<void> => {
+  pollHealth: async (timeoutMs = SETUP_AGENT_LAUNCH_TIMEOUT_MS): Promise<void> => {
     const start = Date.now();
-    const interval = 1000;
     // Wait a beat for the server to restart
-    await new Promise((r) => setTimeout(r, 1500));
+    await new Promise((r) => setTimeout(r, SETUP_AGENT_INITIAL_POLL_DELAY_MS));
 
     while (Date.now() - start < timeoutMs) {
       try {
-        const authRes = await fetch("/auth/check", { signal: AbortSignal.timeout(2000) });
+        const authRes = await fetch("/auth/check", {
+          signal: AbortSignal.timeout(SETUP_AGENT_POLL_REQUEST_TIMEOUT_MS),
+        });
         if (authRes.ok) {
           const json = await authRes.json();
           // The setup server returns { data: { setup: true } } — reject it.
@@ -4627,7 +4632,7 @@ export const setup = {
       } catch {
         // Server not up yet (connection refused, timeout, etc.)
       }
-      await new Promise((r) => setTimeout(r, interval));
+      await new Promise((r) => setTimeout(r, SETUP_AGENT_POLL_INTERVAL_MS));
     }
     throw new Error("Agent did not start within the expected time");
   },
