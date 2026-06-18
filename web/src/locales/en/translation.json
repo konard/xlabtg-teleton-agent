@@ -146,8 +146,11 @@
   },
   "setup": {
     "back": "Back",
+    "finish": "Finish Setup",
     "next": "Next",
     "nextStep": "Next: {{step}}",
+    "riskAccepted": "I understand the risks and accept full responsibility",
+    "saving": "Saving...",
     "steps": {
       "welcome": "Welcome",
       "provider": "Provider",

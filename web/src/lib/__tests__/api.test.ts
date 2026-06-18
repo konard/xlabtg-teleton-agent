@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api } from "../api";
+import { api, setup } from "../api";
 
 describe("web API client CSRF handling", () => {
   afterEach(() => {
@@ -35,6 +35,56 @@ describe("web API client CSRF handling", () => {
         headers: expect.objectContaining({
           "Content-Type": "application/json",
           "X-CSRF-Token": "csrf-token-123",
+        }),
+      })
+    );
+  });
+});
+
+describe("setup API client", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("routes setup status requests through /api/setup", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: { configExists: false } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(setup.getStatus()).resolves.toEqual({ configExists: false });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/setup/status",
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+        }),
+      })
+    );
+  });
+
+  it("sends the setup launch nonce header", async () => {
+    const fetchMock = vi.fn(async () =>
+      new Response(JSON.stringify({ success: true, data: { token: "agent-token" } }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(setup.launch("nonce-123")).resolves.toEqual({ token: "agent-token" });
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/setup/launch",
+      expect.objectContaining({
+        method: "POST",
+        headers: expect.objectContaining({
+          "Content-Type": "application/json",
+          "X-Setup-Nonce": "nonce-123",
         }),
       })
     );

@@ -261,13 +261,13 @@ export class SetupServer {
     this.app.get("*", createStaticHandler(webDist, { async: false }));
   }
 
-  async start(): Promise<void> {
+  async start(openUrl?: string): Promise<void> {
     this.server = await startHonoServer({
       fetch: this.app.fetch,
       hostname: "127.0.0.1",
       port: this.port,
       onListen: () => {
-        const url = `http://localhost:${this.port}/setup`;
+        const url = openUrl ?? `http://localhost:${this.port}/setup`;
         log.info(`Setup wizard: ${url}`);
         autoOpenBrowser(url);
       },

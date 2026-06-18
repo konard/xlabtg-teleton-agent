@@ -162,7 +162,7 @@ ${blue}  ┌──────────────────────�
       `[setup] One-time launch nonce (required for POST /api/setup/launch): ${nonce}\n`
     );
 
-    await server.start();
+    await server.start(url);
 
     process.on("SIGINT", () => {
       void server.stop().then(() => process.exit(0));

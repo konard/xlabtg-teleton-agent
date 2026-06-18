@@ -682,6 +682,7 @@ export interface SetupConfig {
   tavily_api_key?: string;
   webui?: { enabled: boolean };
   api?: { expose_lan?: boolean };
+  capabilities?: { exec?: { mode?: 'off' | 'allowlist' | 'yolo' } };
 }
 
 // ── Response types ──────────────────────────────────────────────────

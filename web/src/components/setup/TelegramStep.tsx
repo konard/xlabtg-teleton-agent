@@ -28,6 +28,12 @@ export function TelegramStep({ data, onChange }: StepProps) {
               <p>The phone number linked to your Telegram account, with country code (e.g. +33612345678).</p>
             </div>
           )}
+          {data.authMode === 'qr' && (
+            <div className="guide-section">
+              <strong>Phone Number</strong>
+              <p>Your account phone is stored in config.yaml; QR login still uses the Telegram app scan.</p>
+            </div>
+          )}
         </div>
       </details>
 
@@ -67,7 +73,7 @@ export function TelegramStep({ data, onChange }: StepProps) {
         }}>
           <button
             type="button"
-            onClick={() => onChange({ ...data, authMode: 'qr', phone: '' })}
+            onClick={() => onChange({ ...data, authMode: 'qr' })}
             style={{
               flex: 1,
               padding: '8px 16px',
@@ -105,21 +111,24 @@ export function TelegramStep({ data, onChange }: StepProps) {
         </div>
       </div>
 
-      {data.authMode === 'phone' && (
-        <div className="form-group">
-          <label>Phone Number</label>
-          <input
-            type="text"
-            value={data.phone}
-            onChange={(e) => onChange({ ...data, phone: e.target.value })}
-            placeholder="+33612345678"
-            className="w-full"
-          />
-          {data.phone.length > 0 && !data.phone.startsWith('+') && (
-            <div className="helper-text">Phone number must start with &quot;+&quot;</div>
-          )}
+      <div className="form-group">
+        <label>Phone Number</label>
+        <input
+          type="text"
+          value={data.phone}
+          onChange={(e) => onChange({ ...data, phone: e.target.value })}
+          placeholder="+33612345678"
+          className="w-full"
+        />
+        {data.phone.length > 0 && !data.phone.startsWith('+') && (
+          <div className="helper-text">Phone number must start with &quot;+&quot;</div>
+        )}
+        <div className="helper-text">
+          {data.authMode === 'qr'
+            ? 'Stored for agent startup. QR login will not send an SMS code.'
+            : 'Used to request the Telegram verification code.'}
         </div>
-      )}
+      </div>
 
     </div>
   );
