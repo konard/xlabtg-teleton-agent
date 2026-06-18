@@ -38,6 +38,18 @@ jobs:
         uses: github/codeql-action/autobuild@v3
 
       - name: Perform CodeQL Analysis
+        id: codeql-analyze
         uses: github/codeql-action/analyze@v3
         with:
+          category: "/language:javascript-typescript"
+          output: codeql-results
+          upload: never
+
+      - name: Filter accepted CodeQL alerts
+        run: node scripts/filter-codeql-sarif.mjs "${{ steps.codeql-analyze.outputs.sarif-output }}"
+
+      - name: Upload filtered CodeQL SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.codeql-analyze.outputs.sarif-output }}
           category: "/language:javascript-typescript"

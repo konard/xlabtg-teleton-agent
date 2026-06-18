@@ -1,4 +1,4 @@
-import { createHmac, scryptSync } from "node:crypto";
+import { scryptSync } from "node:crypto";
 
 export type CacheResourceType = "tools" | "prompts" | "embeddings" | "api_responses";
 
@@ -76,7 +76,7 @@ const DEFAULT_CACHE_CONFIG: ResourceCacheConfig = {
 };
 
 const RESOURCE_TYPES: CacheResourceType[] = ["tools", "prompts", "embeddings", "api_responses"];
-const CACHE_KEY_HMAC_KEY = "teleton-resource-cache-key-v1";
+const CACHE_KEY_DIGEST_SALT = "teleton-resource-cache-key-v1";
 const CACHE_KEY_SECRET_SALT = "teleton-resource-cache-secret-v1";
 const SENSITIVE_CACHE_KEY_NAMES = [
   "apikey",
@@ -142,7 +142,13 @@ function cacheKeyMaterial(value: unknown, keyName?: string): unknown {
 }
 
 function digestCacheKey(value: string): string {
-  return createHmac("sha256", CACHE_KEY_HMAC_KEY).update(value).digest("hex").slice(0, 24);
+  return scryptSync(value, CACHE_KEY_DIGEST_SALT, 32, {
+    N: 16_384,
+    r: 8,
+    p: 1,
+  })
+    .toString("hex")
+    .slice(0, 24);
 }
 
 function estimateSizeBytes(value: unknown): number {
