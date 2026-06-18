@@ -3,14 +3,29 @@ import { setup, SetupConfig } from '../../lib/api';
 
 // ── Step metadata ───────────────────────────────────────────────────
 
-export const STEPS = [
+const ALL_STEPS = [
   { id: 'welcome',  label: 'Welcome' },
   { id: 'provider', label: 'Provider' },
   { id: 'config',   label: 'Config' },
   { id: 'wallet',   label: 'Wallet' },
   { id: 'telegram', label: 'Telegram' },
   { id: 'connect',  label: 'Connect' },
-];
+] as const;
+
+export type StepId = (typeof ALL_STEPS)[number]['id'];
+export type WizardStep = (typeof ALL_STEPS)[number];
+
+const BOT_EXCLUDED_STEPS = new Set<StepId>(['telegram', 'connect']);
+const BOT_STEPS = ALL_STEPS.filter((step) => !BOT_EXCLUDED_STEPS.has(step.id));
+
+export const STEPS: readonly WizardStep[] = ALL_STEPS;
+
+export function getSteps(telegramMode: WizardData['telegramMode']): readonly WizardStep[] {
+  if (telegramMode === 'bot') {
+    return BOT_STEPS;
+  }
+  return ALL_STEPS;
+}
 
 // ── Shared types ────────────────────────────────────────────────────
 
@@ -102,10 +117,12 @@ const DEFAULTS: WizardData = {
 // ── Validation ──────────────────────────────────────────────────────
 
 export function validateStep(step: number, data: WizardData): boolean {
-  switch (step) {
-    case 0:
+  const stepId = getSteps(data.telegramMode)[step]?.id;
+
+  switch (stepId) {
+    case 'welcome':
       return data.riskAccepted;
-    case 1:
+    case 'provider':
       if (!data.provider) return false;
       if (data.provider === 'cocoon') {
         return data.cocoonPort >= 1 && data.cocoonPort <= 65535;
@@ -118,25 +135,25 @@ export function validateStep(step: number, data: WizardData): boolean {
         return true; // credentials auto-detected or fallback handled by ProviderStep
       }
       return data.apiKey.length > 0;
-    case 2: {
+    case 'config': {
       // Config
       if (data.provider !== 'cocoon' && data.provider !== 'local') {
         const modelValue = data.model === '__custom__' ? data.customModel : data.model;
         if (!modelValue) return false;
       }
+      if (data.telegramMode === 'bot' && !data.botToken.trim()) return false;
       return data.userId > 0 && data.maxIterations >= 1 && data.maxIterations <= 50;
     }
-    case 3:
+    case 'wallet':
       // Wallet: if generated/imported, must confirm mnemonic saved
       if (data.walletAction === 'keep') return true;
       if (!data.walletAddress) return false;
       return data.mnemonicSaved;
-    case 4:
-      // Telegram — phone required only for phone auth mode
+    case 'telegram':
+      // User-account config still needs the account phone even when auth uses QR.
       if (data.apiId <= 0 || data.apiHash.length < 10) return false;
-      if (data.authMode === 'phone') return data.phone.startsWith('+');
-      return true;
-    case 5:
+      return data.phone.startsWith('+');
+    case 'connect':
       return data.telegramUser !== null || data.skipConnect;
     default:
       return false;
@@ -180,67 +197,80 @@ export function SetupProvider({ children }: { children: ReactNode }) {
   const [launching, setLaunching] = useState(false);
   const [launchError, setLaunchError] = useState('');
 
-  const canAdvance = validateStep(step, data);
+  const steps = getSteps(data.telegramMode);
+  const currentStepIndex = Math.min(step, steps.length - 1);
+  const canAdvance = validateStep(currentStepIndex, data);
+
+  useEffect(() => {
+    setStep((s) => Math.min(s, getSteps(data.telegramMode).length - 1));
+  }, [data.telegramMode]);
 
   const next = useCallback(() => {
-    if (canAdvance) setStep((s) => Math.min(s + 1, STEPS.length - 1));
-  }, [canAdvance]);
+    if (canAdvance) setStep((s) => Math.min(s + 1, getSteps(data.telegramMode).length - 1));
+  }, [canAdvance, data.telegramMode]);
 
   const prev = useCallback(() => {
     setStep((s) => Math.max(s - 1, 0));
   }, []);
 
+  const buildConfig = useCallback((): SetupConfig => {
+    const resolvedModel =
+      data.model === '__custom__'
+        ? data.customModel
+        : data.model || undefined;
+    const isBotMode = data.telegramMode === 'bot';
+
+    return {
+      agent: {
+        provider: data.provider,
+        ...(data.provider !== 'cocoon' && data.provider !== 'local' && data.apiKey ? { api_key: data.apiKey } : {}),
+        ...(data.provider === 'local' ? { base_url: data.localUrl } : {}),
+        ...(resolvedModel ? { model: resolvedModel } : {}),
+        max_agentic_iterations: data.maxIterations,
+      },
+      telegram: {
+        ...(isBotMode ? { mode: 'bot' as const } : {}),
+        api_id: data.apiId,
+        api_hash: data.apiHash,
+        phone: data.phone,
+        admin_ids: [data.userId],
+        owner_id: data.userId,
+        dm_policy: isBotMode ? 'admin-only' : data.dmPolicy,
+        group_policy: data.groupPolicy,
+        require_mention: isBotMode ? true : data.requireMention,
+        ...(data.botToken ? { bot_token: data.botToken } : {}),
+        ...(data.botUsername ? { bot_username: data.botUsername } : {}),
+      },
+      ...(data.provider === 'cocoon' ? { cocoon: { port: data.cocoonPort } } : {}),
+      deals: {
+        enabled: !!data.botToken,
+        ...(data.customizeThresholds
+          ? { buy_max_floor_percent: data.buyMaxFloor, sell_min_floor_percent: data.sellMinFloor }
+          : {}),
+      },
+      capabilities: {
+        exec: { mode: data.execMode },
+      },
+      ...(data.tonapiKey ? { tonapi_key: data.tonapiKey } : {}),
+      ...(data.toncenterKey ? { toncenter_api_key: data.toncenterKey } : {}),
+      ...(data.tavilyKey ? { tavily_api_key: data.tavilyKey } : {}),
+      webui: { enabled: true },
+      ...(data.exposeLan ? { api: { expose_lan: true } } : {}),
+    };
+  }, [data]);
+
   const handleSave = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
-      const resolvedModel =
-        data.model === '__custom__'
-          ? data.customModel
-          : data.model || undefined;
-
-      const config: SetupConfig = {
-        agent: {
-          provider: data.provider,
-          ...(data.provider !== 'cocoon' && data.provider !== 'local' && data.apiKey ? { api_key: data.apiKey } : {}),
-          ...(data.provider === 'local' ? { base_url: data.localUrl } : {}),
-          ...(resolvedModel ? { model: resolvedModel } : {}),
-          max_agentic_iterations: data.maxIterations,
-        },
-        telegram: {
-          api_id: data.apiId,
-          api_hash: data.apiHash,
-          phone: data.phone,
-          admin_ids: [data.userId],
-          owner_id: data.userId,
-          dm_policy: data.dmPolicy,
-          group_policy: data.groupPolicy,
-          require_mention: data.requireMention,
-          ...(data.botToken ? { bot_token: data.botToken } : {}),
-          ...(data.botUsername ? { bot_username: data.botUsername } : {}),
-        },
-        ...(data.provider === 'cocoon' ? { cocoon: { port: data.cocoonPort } } : {}),
-        deals: {
-          enabled: !!data.botToken,
-          ...(data.customizeThresholds
-            ? { buy_max_floor_percent: data.buyMaxFloor, sell_min_floor_percent: data.sellMinFloor }
-            : {}),
-        },
-        ...(data.tonapiKey ? { tonapi_key: data.tonapiKey } : {}),
-        ...(data.toncenterKey ? { toncenter_api_key: data.toncenterKey } : {}),
-        ...(data.tavilyKey ? { tavily_api_key: data.tavilyKey } : {}),
-        webui: { enabled: true },
-        ...(data.exposeLan ? { api: { expose_lan: true } } : {}),
-      };
-
-      await setup.saveConfig(config);
+      await setup.saveConfig(buildConfig());
       setSaved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [data]);
+  }, [buildConfig]);
 
   const handleLaunch = useCallback(async () => {
     setLaunching(true);
@@ -272,14 +302,35 @@ export function SetupProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  // Auto-save when Telegram connects on the last step
+  // Persist config before Telegram auth, then auto-save when Telegram connects.
+  // Phone-code and QR auth can create the Telegram session before config.yaml exists.
+  const persistedRef = useRef(false);
+  const persistConfig = useCallback(async () => {
+    if (persistedRef.current) return;
+    try {
+      await setup.saveConfig(buildConfig());
+      persistedRef.current = true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [buildConfig]);
+
+  useEffect(() => {
+    const currentStepId = steps[currentStepIndex]?.id;
+    if (currentStepId === 'connect' && data.telegramMode === 'user') {
+      void persistConfig();
+      return;
+    }
+    persistedRef.current = false;
+  }, [currentStepIndex, data.telegramMode, persistConfig, steps]);
+
   const saveRef = useRef(handleSave);
   saveRef.current = handleSave;
   useEffect(() => {
-    if (step === STEPS.length - 1 && data.telegramUser && !saved && !loading) {
+    if (steps[currentStepIndex]?.id === 'connect' && data.telegramUser && !saved && !loading) {
       saveRef.current();
     }
-  }, [step, data.telegramUser, saved, loading]);
+  }, [currentStepIndex, data.telegramUser, loading, saved, steps]);
 
   return (
     <SetupContext.Provider

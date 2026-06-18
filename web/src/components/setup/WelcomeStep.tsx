@@ -89,8 +89,6 @@ export function WelcomeStep({ data, onChange }: StepProps) {
 
       {error && <div className="alert error">{error}</div>}
 
-      {/* Risk checkbox moved to setup-nav bar (Setup.tsx) for inline layout with Next button */}
-
       {loading && <div className="loading">Checking workspace...</div>}
     </div>
   );
