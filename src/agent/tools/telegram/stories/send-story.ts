@@ -2,7 +2,7 @@ import { Type } from "@sinclair/typebox";
 import type { Tool, ToolExecutor, ToolResult } from "../../types.js";
 import { Api, helpers } from "telegram";
 import { CustomFile } from "telegram/client/uploads.js";
-import { readFileSync, statSync } from "fs";
+import { readFileSync } from "fs";
 import { basename } from "path";
 import { validateReadPath, WorkspaceSecurityError } from "../../../../workspace/index.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
@@ -85,8 +85,8 @@ export const telegramSendStoryExecutor: ToolExecutor<SendStoryParams> = async (
     // Read media file
     const filePath = validatedPath.absolutePath;
     const fileName = basename(filePath);
-    const fileSize = statSync(filePath).size;
     const fileBuffer = readFileSync(filePath);
+    const fileSize = fileBuffer.byteLength;
     const isVideo = filePath.toLowerCase().match(/\.(mp4|mov|avi)$/);
 
     // Create CustomFile for upload

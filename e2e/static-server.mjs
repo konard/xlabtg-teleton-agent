@@ -7,7 +7,7 @@
 // via page.route() in the test fixtures, so this server never needs a backend.
 
 import { createServer } from 'node:http';
-import { readFile, stat } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { join, normalize, extname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { dirname } from 'node:path';
@@ -36,8 +36,7 @@ const MIME = {
 
 async function tryFile(path) {
   try {
-    const info = await stat(path);
-    if (info.isFile()) return await readFile(path);
+    return await readFile(path);
   } catch {
     // not found
   }

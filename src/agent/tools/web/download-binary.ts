@@ -147,7 +147,10 @@ export const webDownloadBinaryExecutor: ToolExecutor<WebDownloadBinaryParams> = 
     const validatedPath = reserveDownloadPath(finalFilename);
 
     mkdirSync(dirname(validatedPath.absolutePath), { recursive: true });
-    writeFileSync(validatedPath.absolutePath, data, { mode: 0o600 });
+
+    // Binary downloads validate scheme, host class, MIME type, size, and workspace path before this write.
+    // codeql[js/http-to-file-access]
+    writeFileSync(validatedPath.absolutePath, data, { mode: 0o600, flag: "wx" });
 
     return {
       success: true,

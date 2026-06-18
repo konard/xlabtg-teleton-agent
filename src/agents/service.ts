@@ -1338,16 +1338,27 @@ export class ManagedAgentService {
   private getSecretKey(): Buffer {
     mkdirSync(this.agentsRoot, { recursive: true, mode: 0o700 });
     const keyPath = join(this.agentsRoot, SECRET_KEY_FILENAME);
-    if (existsSync(keyPath)) {
+    try {
       const keyHex = readFileSync(keyPath, "utf-8").trim();
       if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
         throw new Error("Managed agent secret key is invalid");
       }
       return Buffer.from(keyHex, "hex");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
 
     const keyHex = randomBytes(32).toString("hex");
-    writeFileSync(keyPath, `${keyHex}\n`, { encoding: "utf-8", mode: 0o600 });
+    try {
+      writeFileSync(keyPath, `${keyHex}\n`, {
+        encoding: "utf-8",
+        mode: 0o600,
+        flag: "wx",
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      return this.getSecretKey();
+    }
     return Buffer.from(keyHex, "hex");
   }
 

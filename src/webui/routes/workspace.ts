@@ -203,18 +203,16 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
         return c.json(response, 415);
       }
 
-      const stats = statSync(validated.absolutePath);
+      const buffer = await readFile(validated.absolutePath);
 
       // 5MB limit for image preview
-      if (stats.size > 5 * 1024 * 1024) {
+      if (buffer.byteLength > 5 * 1024 * 1024) {
         const response: APIResponse = {
           success: false,
           error: "Image too large for preview (max 5MB)",
         };
         return c.json(response, 413);
       }
-
-      const buffer = await readFile(validated.absolutePath);
 
       const headers: Record<string, string> = {
         "Content-Type": mime,
@@ -244,19 +242,18 @@ export function createWorkspaceRoutes(_deps: WebUIServerDeps) {
       }
 
       const validated = validateReadPath(path);
-      const stats = statSync(validated.absolutePath);
+      const content = await readFile(validated.absolutePath, "utf-8");
+      const size = Buffer.byteLength(content, "utf-8");
 
       // Limit read size to 1MB for safety
-      if (stats.size > 1024 * 1024) {
+      if (size > 1024 * 1024) {
         const response: APIResponse = { success: false, error: "File too large to read (max 1MB)" };
         return c.json(response, 413);
       }
 
-      const content = await readFile(validated.absolutePath, "utf-8");
-
       const response: APIResponse<{ content: string; size: number }> = {
         success: true,
-        data: { content, size: stats.size },
+        data: { content, size },
       };
       return c.json(response);
     } catch (error) {

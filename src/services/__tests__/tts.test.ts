@@ -1,5 +1,4 @@
 import { existsSync, readdirSync, unlinkSync } from "fs";
-import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -17,8 +16,9 @@ vi.mock("../../utils/audio.js", () => ({
 }));
 
 import { generateSpeech } from "../tts.js";
+import { ensurePrivateTempDir } from "../../utils/private-temp.js";
 
-const TTS_TEMP_DIR = join(tmpdir(), "teleton-tts");
+const TTS_TEMP_DIR = ensurePrivateTempDir("tts");
 
 describe("generateSpeech Groq TTS", () => {
   let filesBeforeTest: Set<string>;

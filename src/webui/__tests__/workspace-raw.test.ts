@@ -49,7 +49,6 @@ vi.mock("../../utils/logger.js", () => ({
   })),
 }));
 
-import { statSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { validateReadPath, WorkspaceSecurityError } from "../../workspace/validator.js";
 import { createWorkspaceRoutes } from "../routes/workspace.js";
@@ -74,7 +73,6 @@ describe("GET /workspace/raw", () => {
       extension: ".png",
       filename: "test.png",
     });
-    vi.mocked(statSync).mockReturnValue({ size: 1024 } as any);
     vi.mocked(readFile).mockResolvedValue(buf as any);
 
     const res = await app.request("/workspace/raw?path=test.png");
@@ -95,7 +93,6 @@ describe("GET /workspace/raw", () => {
       extension: ".jpg",
       filename: "photo.jpg",
     });
-    vi.mocked(statSync).mockReturnValue({ size: 1024 } as any);
     vi.mocked(readFile).mockResolvedValue(buf as any);
 
     const res = await app.request("/workspace/raw?path=photo.jpg");
@@ -114,7 +111,6 @@ describe("GET /workspace/raw", () => {
       extension: ".svg",
       filename: "icon.svg",
     });
-    vi.mocked(statSync).mockReturnValue({ size: 256 } as any);
     vi.mocked(readFile).mockResolvedValue(buf as any);
 
     const res = await app.request("/workspace/raw?path=icon.svg");
@@ -180,9 +176,7 @@ describe("GET /workspace/raw", () => {
       extension: ".png",
       filename: "huge.png",
     });
-    vi.mocked(statSync).mockReturnValue({
-      size: 6 * 1024 * 1024,
-    } as any);
+    vi.mocked(readFile).mockResolvedValue(Buffer.alloc(6 * 1024 * 1024) as any);
 
     const res = await app.request("/workspace/raw?path=huge.png");
 

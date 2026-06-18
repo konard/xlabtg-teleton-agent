@@ -48,6 +48,7 @@ export function appendToTranscript(sessionId: string, message: Message | Assista
   const line = JSON.stringify(message) + "\n";
 
   try {
+    // codeql[js/http-to-file-access] Transcripts intentionally persist assistant/tool messages for local session history in a private file.
     appendFileSync(transcriptPath, line, { encoding: "utf-8", mode: 0o600 });
   } catch (error) {
     log.error({ err: error }, `Failed to append to transcript ${sessionId}`);

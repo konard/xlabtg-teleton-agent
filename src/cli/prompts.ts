@@ -151,6 +151,7 @@ export function noteBox(text: string, title: string, color = YELLOW): void {
   const lines = text.split("\n");
   for (const line of lines) {
     const pad = W - stripAnsi(line).length - 2;
+    // codeql[js/clear-text-logging] noteBox renders fixed CLI guidance; callers must not pass raw secrets.
     console.log(`  ${color("│")}  ${line}${" ".repeat(Math.max(0, pad))}${color("│")}`);
   }
 

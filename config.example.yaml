@@ -165,7 +165,7 @@ webui:
 #   host: "127.0.0.1"                 # SECURITY: keep as 127.0.0.1 (localhost only)
 #                                     # Change to "0.0.0.0" ONLY if you need LAN access
 #                                     # and understand the security implications.
-#   # key_hash: "..."                 # SHA-256 of API key (auto-generated if omitted)
+#   # key_hash: "..."                 # scrypt hash of API key (auto-generated if omitted)
 #   allowed_ips: []                   # IP whitelist (empty = all authenticated requests)
 
 # Internal event bus and webhook delivery.

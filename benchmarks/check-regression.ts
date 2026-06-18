@@ -55,12 +55,16 @@ async function main(): Promise<void> {
   let currentPath = current;
   if (!currentPath) {
     // Run the suite in-process and write to a temp results file.
-    const { execSync } = await import("node:child_process");
+    const { spawnSync } = await import("node:child_process");
     currentPath = resolve(here, "results.json");
-    execSync(
-      `node --import tsx ${resolve(here, "run.ts")} --json ${currentPath} --runs ${runs} --quiet`,
+    const result = spawnSync(
+      process.execPath,
+      ["--import", "tsx", resolve(here, "run.ts"), "--json", currentPath, "--runs", String(runs), "--quiet"],
       { stdio: "inherit" }
     );
+    if (result.status !== 0) {
+      throw new Error(`Benchmark suite failed with exit code ${result.status ?? "unknown"}`);
+    }
   }
 
   const baselineReport = loadReport(baseline);

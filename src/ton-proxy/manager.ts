@@ -5,7 +5,7 @@
  * The CLI binary exposes an HTTP proxy on 127.0.0.1:<port> for .ton sites.
  */
 
-import { spawn, execSync, type ChildProcess } from "child_process";
+import { spawn, spawnSync, type ChildProcess } from "child_process";
 import {
   existsSync,
   chmodSync,
@@ -29,6 +29,10 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const MAX_BINARY_BYTES = 50 * 1024 * 1024;
 /** Only allow downloads from the official GitHub domain */
 const ALLOWED_DOWNLOAD_HOST = "objects.githubusercontent.com";
+const RELEASE_TAG_PATTERN = /^v\d+\.\d+\.\d+$/;
+const BINARY_NAME_PATTERN =
+  /^tonutils-proxy-cli-(?:darwin|linux|windows)-(?:amd64|arm64)(?:\.exe)?$/;
+const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 
 const log = createLogger("TonProxy");
 
@@ -85,7 +89,12 @@ export class TonProxyManager {
     }
 
     const expectedDigest = checksumData.binaries[binaryName];
-    if (!expectedDigest) {
+    if (
+      !BINARY_NAME_PATTERN.test(binaryName) ||
+      !RELEASE_TAG_PATTERN.test(checksumData.tag) ||
+      !expectedDigest ||
+      !SHA256_PATTERN.test(expectedDigest)
+    ) {
       throw new Error(
         `No checksum for binary "${binaryName}" in checksums.json. ` +
           `Supported binaries: ${Object.keys(checksumData.binaries).join(", ")}`
@@ -99,6 +108,7 @@ export class TonProxyManager {
     const downloadUrl = `https://github.com/${GITHUB_REPO}/releases/download/${tag}/${binaryName}`;
     log.info(`Downloading ${downloadUrl} (${tag})`);
 
+    // codeql[js/file-access-to-http] The release tag, binary name, and digest come from a bundled manifest and are regex-validated before building this URL.
     const res = await fetch(downloadUrl);
     if (!res.ok || !res.body) {
       throw new Error(`Download failed: ${res.status} ${res.statusText}`);
@@ -127,6 +137,8 @@ export class TonProxyManager {
     try {
       // Stream the body through a byte-counter + hash accumulator into the file
       const body = res.body as unknown as AsyncIterable<Uint8Array>;
+
+      // codeql[js/http-to-file-access] The proxy binary is size-capped during streaming and verified against the pinned SHA-256 digest before chmod.
       await pipeline(
         body,
         async function* (source) {
@@ -196,11 +208,13 @@ export class TonProxyManager {
 
     // Also check if port is in use (belt & suspenders)
     try {
-      const out = execSync(`ss -tlnp 2>/dev/null | grep ':${this.config.port} ' || true`, {
+      const result = spawnSync("ss", ["-tlnp"], {
         encoding: "utf-8",
         timeout: 3000,
       });
-      const pidMatch = out.match(/pid=(\d+)/);
+      const out = result.status === 0 ? result.stdout : "";
+      const portLine = out.split("\n").find((line) => line.includes(`:${this.config.port} `));
+      const pidMatch = portLine?.match(/pid=(\d+)/);
       if (pidMatch) {
         const pid = parseInt(pidMatch[1], 10);
         log.warn(`Port ${this.config.port} occupied by PID ${pid}, killing it`);
@@ -210,7 +224,7 @@ export class TonProxyManager {
           // Already dead
         }
         // Give it a moment to release the port
-        execSync("sleep 0.5");
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 500);
       }
     } catch {
       // ss not available or other error — skip

@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createHash, X509Certificate } from "node:crypto";
 import { generate } from "selfsigned";
@@ -33,7 +33,7 @@ export async function ensureTlsCert(dataDir: string): Promise<TlsCert> {
   const keyPath = join(dataDir, "api-key.pem");
 
   // Try loading existing cert
-  if (existsSync(certPath) && existsSync(keyPath)) {
+  try {
     const cert = readFileSync(certPath, "utf-8");
     const key = readFileSync(keyPath, "utf-8");
 
@@ -43,6 +43,10 @@ export async function ensureTlsCert(dataDir: string): Promise<TlsCert> {
       return { cert, key, fingerprint };
     }
     log.warn("Existing TLS certificate is expired, regenerating");
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      log.warn({ err: error }, "Existing TLS certificate could not be loaded, regenerating");
+    }
   }
 
   // Generate new self-signed cert
@@ -77,7 +81,9 @@ export async function ensureTlsCert(dataDir: string): Promise<TlsCert> {
     ],
   });
 
+  // codeql[js/file-system-race] Existing cert/key reads are only validity checks; expired or missing local TLS material is intentionally regenerated.
   writeFileSync(certPath, pems.cert, { mode: 0o600 });
+  // codeql[js/file-system-race] The private key is written as the paired half of the regenerated local certificate.
   writeFileSync(keyPath, pems.private, { mode: 0o600 });
 
   const fingerprint = computeFingerprint(pems.cert);

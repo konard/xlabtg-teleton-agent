@@ -7,7 +7,7 @@
  */
 
 import { existsSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { WORKSPACE_PATHS } from "../../workspace/paths.js";
 import { adaptPlugin, ensurePluginDeps } from "../../agent/tools/plugin-loader.js";
@@ -32,8 +32,10 @@ const OFFICIAL_LABEL = "Official";
 
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 const PLUGINS_DIR = WORKSPACE_PATHS.PLUGINS_DIR;
+const MAX_PLUGIN_FILE_BYTES = 2 * 1024 * 1024;
 
 const VALID_ID = /^[a-z0-9][a-z0-9-]*$/;
+const TRUSTED_GITHUB_DOWNLOAD_HOSTS = new Set(["raw.githubusercontent.com", "github.com"]);
 
 interface ManifestData {
   name: string;
@@ -85,6 +87,20 @@ function deriveSourceUrls(registryUrl: string): { pluginBaseUrl: string; githubA
   const lastSlash = registryUrl.lastIndexOf("/");
   const pluginBaseUrl = lastSlash > 8 ? registryUrl.slice(0, lastSlash) : registryUrl;
   return { pluginBaseUrl, githubApiBase: "" };
+}
+
+function isPathWithin(parent: string, candidate: string): boolean {
+  const rel = relative(resolve(parent), resolve(candidate));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+function isTrustedGitHubDownloadUrl(rawUrl: string): boolean {
+  try {
+    const url = new URL(rawUrl);
+    return url.protocol === "https:" && TRUSTED_GITHUB_DOWNLOAD_HOSTS.has(url.hostname);
+  } catch {
+    return false;
+  }
 }
 
 export class MarketplaceService {
@@ -567,7 +583,7 @@ export class MarketplaceService {
       }
 
       const target = resolve(localDir, item.name);
-      if (!target.startsWith(resolve(PLUGINS_DIR))) {
+      if (!isPathWithin(PLUGINS_DIR, target)) {
         throw new Error(`Path escape detected: ${target}`);
       }
 
@@ -576,16 +592,17 @@ export class MarketplaceService {
         await this.downloadDir(item.path, target, githubApiBase, depth + 1);
       } else if (item.type === "file" && item.download_url) {
         // Validate download URL is from GitHub
-        const url = new URL(item.download_url);
-        if (
-          !url.hostname.endsWith("githubusercontent.com") &&
-          !url.hostname.endsWith("github.com")
-        ) {
-          throw new Error(`Untrusted download host: ${url.hostname}`);
+        if (!isTrustedGitHubDownloadUrl(item.download_url)) {
+          throw new Error(`Untrusted download URL: ${item.download_url}`);
         }
         const fileRes = await fetch(item.download_url);
         if (!fileRes.ok) throw new Error(`Failed to download ${item.name}: ${fileRes.status}`);
         const content = await fileRes.text();
+        if (Buffer.byteLength(content, "utf-8") > MAX_PLUGIN_FILE_BYTES) {
+          throw new Error(`Plugin file too large: ${item.path}`);
+        }
+
+        // codeql[js/http-to-file-access] Plugin files are fetched only from trusted GitHub hosts and capped before being written under the private plugins dir.
         writeFileSync(target, content, { encoding: "utf-8", mode: 0o600 });
       }
     }

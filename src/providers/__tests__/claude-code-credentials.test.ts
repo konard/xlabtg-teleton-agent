@@ -1,13 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { join } from "path";
-import { mkdirSync, writeFileSync, rmSync } from "fs";
+import { mkdtempSync, writeFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { randomBytes } from "crypto";
 
 // ── Test fixtures ───────────────────────────────────────────────────────
 
-const TEST_DIR = join(tmpdir(), `claude-creds-test-${randomBytes(8).toString("hex")}`);
-const CREDS_FILE = join(TEST_DIR, ".credentials.json");
+let TEST_DIR = "";
+let CREDS_FILE = "";
 
 function validCredentials(overrides: Record<string, unknown> = {}) {
   return {
@@ -41,7 +40,8 @@ function setEnv(key: string, value: string) {
 // ── Setup / Teardown ────────────────────────────────────────────────────
 
 beforeEach(() => {
-  mkdirSync(TEST_DIR, { recursive: true });
+  TEST_DIR = mkdtempSync(join(tmpdir(), "claude-creds-test-"));
+  CREDS_FILE = join(TEST_DIR, ".credentials.json");
   setEnv("CLAUDE_CONFIG_DIR", TEST_DIR);
   // Default: OAuth refresh endpoint returns an error (tests rely on disk fallback)
   vi.stubGlobal(
@@ -146,21 +146,22 @@ describe("claude-code-credentials", () => {
 
   // T8
   it("respects CLAUDE_CONFIG_DIR override", async () => {
-    const customDir = join(tmpdir(), `claude-custom-${randomBytes(4).toString("hex")}`);
-    mkdirSync(customDir, { recursive: true });
-    writeFileSync(
-      join(customDir, ".credentials.json"),
-      JSON.stringify(validCredentials({ accessToken: "sk-ant-oat01-custom-dir" })),
-      "utf-8"
-    );
+    const customDir = mkdtempSync(join(tmpdir(), "claude-custom-"));
+    try {
+      writeFileSync(
+        join(customDir, ".credentials.json"),
+        JSON.stringify(validCredentials({ accessToken: "sk-ant-oat01-custom-dir" })),
+        "utf-8"
+      );
 
-    // Override the env
-    setEnv("CLAUDE_CONFIG_DIR", customDir);
-    const mod = await importModule();
-    const key = mod.getClaudeCodeApiKey();
-    expect(key).toBe("sk-ant-oat01-custom-dir");
-
-    rmSync(customDir, { recursive: true, force: true });
+      // Override the env
+      setEnv("CLAUDE_CONFIG_DIR", customDir);
+      const mod = await importModule();
+      const key = mod.getClaudeCodeApiKey();
+      expect(key).toBe("sk-ant-oat01-custom-dir");
+    } finally {
+      rmSync(customDir, { recursive: true, force: true });
+    }
   });
 
   // T9

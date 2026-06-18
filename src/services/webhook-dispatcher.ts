@@ -7,7 +7,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fetchWebhookUrl, validateWebhookUrl, redactSecrets } from "./alerting.js";
 import { getEventBus, type EventPayload, type TeletonEvent } from "./event-bus.js";
@@ -627,16 +627,27 @@ export class WebhookDispatcher {
 
     mkdirSync(TELETON_ROOT, { recursive: true, mode: 0o700 });
     const keyPath = join(TELETON_ROOT, SECRET_KEY_FILENAME);
-    if (existsSync(keyPath)) {
+    try {
       const keyHex = readFileSync(keyPath, "utf-8").trim();
       if (!/^[0-9a-fA-F]{64}$/.test(keyHex)) {
         throw new Error("Webhook secret key file is invalid");
       }
       return Buffer.from(keyHex, "hex");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
 
     const keyHex = randomBytes(32).toString("hex");
-    writeFileSync(keyPath, `${keyHex}\n`, { encoding: "utf-8", mode: 0o600 });
+    try {
+      writeFileSync(keyPath, `${keyHex}\n`, {
+        encoding: "utf-8",
+        mode: 0o600,
+        flag: "wx",
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+      return this.getSecretKey();
+    }
     return Buffer.from(keyHex, "hex");
   }
 }

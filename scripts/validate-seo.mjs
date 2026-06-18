@@ -29,6 +29,16 @@ const NAME_START = /[A-Za-z_:]/
 const NAME_CHAR = /[A-Za-z0-9_:.-]/
 const ENTITY = /^&(?:amp|lt|gt|quot|apos|#[0-9]+|#x[0-9A-Fa-f]+);/
 
+function hasExpectedOrigin(value, expectedOrigin) {
+  try {
+    const url = new URL(value)
+    const expected = new URL(expectedOrigin)
+    return url.origin === expected.origin
+  } catch {
+    return false
+  }
+}
+
 function checkText(text, errors, where) {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
@@ -295,7 +305,7 @@ export function validateRobots(txt, { host = CANONICAL_HOST } = {}) {
     errors.push('robots.txt is missing a "Sitemap:" directive')
   } else {
     const url = sitemap.split(/:\s*/).slice(1).join(':').trim()
-    if (!url.startsWith(host)) errors.push(`Sitemap directive host mismatch: expected ${host}, got ${url}`)
+    if (!hasExpectedOrigin(url, host)) errors.push(`Sitemap directive host mismatch: expected ${host}, got ${url}`)
     if (!/\/sitemap\.xml$/.test(url)) errors.push(`Sitemap directive should point to /sitemap.xml: ${url}`)
   }
 
@@ -348,7 +358,7 @@ export function validateAll({ sitemap, robots, consoleHtml, host = CANONICAL_HOS
 
   // Host consistency across sitemap + robots.
   const hostErrors = []
-  if (!extractLocs(sitemap).some((l) => l.startsWith(host))) {
+  if (!extractLocs(sitemap).some((l) => hasExpectedOrigin(l, host))) {
     hostErrors.push(`sitemap has no <loc> on the canonical host ${host}`)
   }
   results.push({ name: 'host consistency', valid: hostErrors.length === 0, errors: hostErrors })

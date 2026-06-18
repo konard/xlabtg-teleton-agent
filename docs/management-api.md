@@ -162,7 +162,7 @@ Authorization: Bearer tltn_<base64url-encoded key>
 ### How it works
 
 1. The raw API key is shown **once** at first start (or via `--json-credentials`)
-2. Only the **SHA-256 hash** is persisted in `config.yaml` (`api.key_hash`)
+2. Only the **scrypt hash** is persisted in `config.yaml` (`api.key_hash`)
 3. On each request, the provided key is hashed and compared using `timingSafeEqual` (constant-time, timing-attack resistant)
 
 ### Key rotation
@@ -483,7 +483,7 @@ Every response includes:
 api:
   enabled: true         # Enable the Management API (default: false)
   port: 7778            # HTTPS port (default: 7778)
-  key_hash: ""          # SHA-256 hash of the API key (auto-generated on first start)
+  key_hash: ""          # scrypt hash of the API key (auto-generated on first start)
   allowed_ips: []       # IP whitelist (empty = allow all)
 ```
 

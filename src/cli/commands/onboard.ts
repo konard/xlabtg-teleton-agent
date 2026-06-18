@@ -30,7 +30,7 @@ import {
 } from "../prompts.js";
 
 import { ensureWorkspace, isNewWorkspace } from "../../workspace/manager.js";
-import { writeFileSync, readFileSync, existsSync } from "fs";
+import { writeFileSync, readFileSync } from "fs";
 import { join } from "path";
 import { TELETON_ROOT } from "../../workspace/paths.js";
 import { TelegramUserClient } from "../../telegram/client.js";
@@ -117,6 +117,12 @@ function redraw(currentStep: number): void {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
+}
+
+function maskPhone(phone: string): string {
+  const trimmed = phone.trim();
+  if (trimmed.length <= 4) return "configured";
+  return `${trimmed.slice(0, 2)}***${trimmed.slice(-2)}`;
 }
 
 // Model catalog imported from shared source (see src/config/model-catalog.ts)
@@ -296,10 +302,17 @@ async function runInteractiveOnboarding(
     theme,
   });
 
-  if (agentName && agentName.trim() && existsSync(workspace.identityPath)) {
-    const identity = readFileSync(workspace.identityPath, "utf-8");
-    const updated = identity.replace("[Your name - pick one or ask your human]", agentName.trim());
-    writeFileSync(workspace.identityPath, updated, "utf-8");
+  if (agentName && agentName.trim()) {
+    try {
+      const identity = readFileSync(workspace.identityPath, "utf-8");
+      const updated = identity.replace(
+        "[Your name - pick one or ask your human]",
+        agentName.trim()
+      );
+      writeFileSync(workspace.identityPath, updated, "utf-8");
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
   }
 
   STEPS[0].value = agentName;
@@ -392,14 +405,12 @@ async function runInteractiveOnboarding(
     // Claude Code — auto-detect credentials, fallback to manual key
     let detected = false;
     try {
-      const key = getClaudeCodeApiKey();
+      getClaudeCodeApiKey();
       const valid = isClaudeCodeTokenValid();
       apiKey = ""; // Don't store in config — auto-detected at runtime
       detected = true;
-      const masked = key.length > 16 ? key.slice(0, 12) + "..." + key.slice(-4) : "***";
       noteBox(
         `Credentials auto-detected from Claude Code\n` +
-          `Key: ${masked}\n` +
           `Status: ${valid ? GREEN("valid ✓") : "expired (will refresh on use)"}\n` +
           `Token will auto-refresh when it expires.`,
         "Claude Code",
@@ -437,8 +448,7 @@ async function runInteractiveOnboarding(
     if (detected) {
       STEPS[1].value = `${providerMeta.displayName}  ${DIM("auto-detected ✓")}`;
     } else {
-      const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
-      STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
+      STEPS[1].value = `${providerMeta.displayName}  ${DIM("key configured")}`;
     }
   } else {
     // Standard providers — API key required
@@ -471,8 +481,7 @@ async function runInteractiveOnboarding(
       });
     }
 
-    const maskedKey = apiKey.length > 10 ? apiKey.slice(0, 6) + "..." + apiKey.slice(-4) : "***";
-    STEPS[1].value = `${providerMeta.displayName}  ${DIM(maskedKey)}`;
+    STEPS[1].value = `${providerMeta.displayName}  ${DIM("key configured")}`;
   }
 
   // Model selection (advanced mode only, after provider + API key)
@@ -950,7 +959,7 @@ async function runInteractiveOnboarding(
         },
       });
 
-  STEPS[5].value = phone;
+  STEPS[5].value = maskPhone(phone);
 
   // ════════════════════════════════════════════════════════════════════
   // Step 6: Connect — save config + Telegram auth
@@ -1119,10 +1128,9 @@ async function runInteractiveOnboarding(
       const displayName = `${me?.firstName || ""}${me?.username ? ` (@${me.username})` : ""}`;
       console.log(`  ${GREEN("✓")} ${DIM("Telegram connected as")} ${CYAN(displayName)}\n`);
       STEPS[6].value = `Connected${me?.username ? ` (@${me.username})` : ""}`;
-    } catch (err) {
+    } catch {
       prompter.warn(
-        `Telegram connection failed: ${err instanceof Error ? err.message : String(err)}\n` +
-          "You can authenticate later when running: teleton start"
+        "Telegram connection failed. You can authenticate later when running: teleton start"
       );
       STEPS[6].value = "Auth on first start";
     }

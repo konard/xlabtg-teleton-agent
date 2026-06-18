@@ -19,8 +19,14 @@ export function getDailyLogPath(date: Date = new Date()): string {
 }
 
 function ensureMemoryDir(): void {
-  if (!existsSync(MEMORY_DIR)) {
-    mkdirSync(MEMORY_DIR, { recursive: true });
+  mkdirSync(MEMORY_DIR, { recursive: true });
+}
+
+function appendHeaderIfMissing(filePath: string, header: string): void {
+  try {
+    appendFileSync(filePath, header, { encoding: "utf-8", mode: 0o600, flag: "wx" });
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
   }
 }
 
@@ -31,10 +37,7 @@ export function appendToDailyLog(content: string, date: Date = new Date()): void
     const logPath = getDailyLogPath(date);
     const timestamp = date.toLocaleTimeString("en-US", { hour12: false });
 
-    if (!existsSync(logPath)) {
-      const header = `# Daily Log - ${formatDate(date)}\n\n`;
-      appendFileSync(logPath, header, { encoding: "utf-8", mode: 0o600 });
-    }
+    appendHeaderIfMissing(logPath, `# Daily Log - ${formatDate(date)}\n\n`);
 
     const entry = `## ${timestamp}\n\n${content}\n\n---\n\n`;
     appendFileSync(logPath, entry, "utf-8");
@@ -48,7 +51,6 @@ export function appendToDailyLog(content: string, date: Date = new Date()): void
 export function readDailyLog(date: Date = new Date()): string | null {
   try {
     const logPath = getDailyLogPath(date);
-    if (!existsSync(logPath)) return null;
     return readFileSync(logPath, "utf-8");
   } catch {
     return null;

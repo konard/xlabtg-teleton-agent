@@ -107,9 +107,6 @@ function restoreMaskedProxySecrets(
 
 function readSessionCandidate(path: string): string | undefined {
   try {
-    if (!existsSync(path) || statSync(path).isDirectory()) {
-      return undefined;
-    }
     const sessionString = readFileSync(path, "utf-8").trim();
     return sessionString || undefined;
   } catch {

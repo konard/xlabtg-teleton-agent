@@ -84,19 +84,40 @@ export function migrate(db) {
 /** Convert a GitHub blob URL to its raw equivalent for fetching. */
 function toRawUrl(url) {
   if (!url) return null;
-  // Already raw
-  if (url.includes("raw.githubusercontent.com")) return url;
-  // github.com/user/repo/blob/branch/path → raw.githubusercontent.com/user/repo/branch/path
-  return url
-    .replace("https://github.com/", "https://raw.githubusercontent.com/")
-    .replace("/blob/", "/");
+  const parsed = new URL(url);
+  if (parsed.protocol !== "https:") throw new Error("Guide URL must use HTTPS");
+  if (parsed.hostname === "raw.githubusercontent.com") return parsed.toString();
+  if (parsed.hostname === "github.com") {
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    if (parts.length >= 5 && parts[2] === "blob") {
+      const [owner, repo, , branch, ...pathParts] = parts;
+      const rawPath = [owner, repo, branch, ...pathParts].map(encodeURIComponent).join("/");
+      return `https://raw.githubusercontent.com/${rawPath}`;
+    }
+  }
+  throw new Error("Guide URL must point to a GitHub blob or raw file");
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[\\^$+?.()|[\]{}]/g, "\\$&");
+}
+
+function wildcardToRegExp(pattern) {
+  const source = pattern.includes("*")
+    ? pattern.split("*").map(escapeRegExp).join(".*")
+    : `.*${escapeRegExp(pattern)}.*`;
+  return new RegExp(`^${source}$`);
+}
+
+function matchesExcludedPath(path, patterns) {
+  return patterns.some((pattern) => wildcardToRegExp(String(pattern)).test(path));
 }
 
 /** Fetch the guide content from a URL (supports GitHub blob URLs). */
 async function fetchGuide(url) {
-  const rawUrl = toRawUrl(url);
-  if (!rawUrl) return "";
   try {
+    const rawUrl = toRawUrl(url);
+    if (!rawUrl) return "";
     const res = await fetch(rawUrl);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.text();
@@ -218,7 +239,7 @@ export const tools = (sdk) => [
             (f) =>
               f.type === "blob" &&
               analyzableExts.some((ext) => f.path.endsWith(ext)) &&
-              !excluded.some((ex) => f.path.includes(ex.replace("*", "")))
+              !matchesExcludedPath(f.path, excluded)
           )
           .slice(0, settings.max_files_per_analysis ?? 50);
 

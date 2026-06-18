@@ -20,6 +20,13 @@ function requestUrl(url: string | URL | Request): string {
   return url.url;
 }
 
+function assertHttpFetchTarget(url: string | URL | Request): void {
+  const parsed = new URL(requestUrl(url));
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Unsupported fetch URL scheme: ${parsed.protocol}`);
+  }
+}
+
 function responseFromPayload(payload: CachedResponsePayload): Response {
   return new Response(payload.body, {
     status: payload.status,
@@ -77,10 +84,13 @@ function fetchWithSignal(
   fetchInit: RequestInit,
   timeoutMs: number
 ): Promise<Response> {
+  assertHttpFetchTarget(url);
   if (fetchInit.signal) {
+    // codeql[js/file-access-to-http] fetchWithTimeout only accepts HTTP(S) URLs; callers must validate any file-derived request options before passing them here.
     return fetch(url, fetchInit);
   }
 
+  // codeql[js/file-access-to-http] fetchWithTimeout only accepts HTTP(S) URLs; callers must validate any file-derived request options before passing them here.
   return fetch(url, {
     ...fetchInit,
     signal: AbortSignal.timeout(timeoutMs),
