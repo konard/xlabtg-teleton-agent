@@ -16,8 +16,16 @@ function LottiePlayer() {
   );
 }
 
+let autoLaunchStarted = false;
+
 export function SetupComplete() {
   const { launching, launchError, handleLaunch } = useSetup();
+
+  useEffect(() => {
+    if (autoLaunchStarted) return;
+    autoLaunchStarted = true;
+    void handleLaunch();
+  }, [handleLaunch]);
 
   return (
     <div className="step-content text-center" style={{ paddingTop: '40px' }}>
@@ -27,7 +35,7 @@ export function SetupComplete() {
         Your Agent is ready
       </h2>
       <p style={{ color: 'var(--text-secondary)', fontSize: '14px', marginBottom: '32px' }}>
-        Configuration saved. Start your agent to begin.
+        Configuration saved. Starting your agent...
       </p>
 
       <button
@@ -36,7 +44,15 @@ export function SetupComplete() {
         className="btn-lg"
         style={{ minWidth: '200px' }}
       >
-        {launching ? <><span className="spinner sm" /> Starting...</> : 'Start Agent'}
+        {launching ? (
+          <>
+            <span className="spinner sm" /> Starting...
+          </>
+        ) : launchError ? (
+          'Retry Start Agent'
+        ) : (
+          'Start Agent'
+        )}
       </button>
 
       {launching && (

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { api, setup } from "../api";
+import { api, setup, SETUP_AGENT_LAUNCH_TIMEOUT_MS } from "../api";
 
 describe("web API client CSRF handling", () => {
   afterEach(() => {
@@ -43,6 +43,7 @@ describe("web API client CSRF handling", () => {
 
 describe("setup API client", () => {
   afterEach(() => {
+    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -88,6 +89,38 @@ describe("setup API client", () => {
         }),
       })
     );
+  });
+
+  it("keeps polling long enough for a slow first WebUI handoff", async () => {
+    vi.useFakeTimers();
+
+    let healthChecks = 0;
+    const fetchMock = vi.fn(async () => {
+      healthChecks += 1;
+      const ready = healthChecks >= 31;
+      return new Response(
+        JSON.stringify({
+          success: true,
+          data: ready ? { authenticated: false } : { setup: true },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const poll = setup.pollHealth();
+    await vi.advanceTimersByTimeAsync(35_000);
+
+    await expect(poll).resolves.toBeUndefined();
+    expect(SETUP_AGENT_LAUNCH_TIMEOUT_MS).toBeGreaterThan(30_000);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/auth/check",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(healthChecks).toBeGreaterThanOrEqual(31);
   });
 });
 
