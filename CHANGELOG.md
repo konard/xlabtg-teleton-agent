@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.50](https://github.com/xlabtg/teleton-agent/compare/v0.8.49...v0.8.50) (2026-06-19)
+
+
+### Features
+
+* синхронизировать форк с оригиналом — миграция cocoon → нативный провайдер gocoon ([a89e694](https://github.com/xlabtg/teleton-agent/commit/a89e694f400f0a4ce7e7cdca746030448acca3f0))
+
 ## [0.8.49](https://github.com/xlabtg/teleton-agent/compare/v0.8.48...v0.8.49) (2026-06-19)
 
 
