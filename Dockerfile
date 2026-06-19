@@ -34,11 +34,18 @@ FROM node:20-slim
 
 WORKDIR /app
 
-# Copy package files and install production deps only
+# Copy package files and install production deps only.
+# better-sqlite3 has no usable prebuilt for this image and compiles from source, so the
+# build toolchain is installed, used, then purged in the same layer to keep the image slim.
 COPY package.json package-lock.json ./
-RUN npm pkg delete scripts.prepare \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 make g++ \
+    && npm pkg delete scripts.prepare \
     && npm ci --omit=dev \
-    && npm cache clean --force
+    && npm cache clean --force \
+    && apt-get purge -y python3 make g++ \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy pre-built native module from build stage
 COPY --from=build /app/node_modules/better-sqlite3/build/Release/better_sqlite3.node /app/node_modules/better-sqlite3/build/Release/better_sqlite3.node
