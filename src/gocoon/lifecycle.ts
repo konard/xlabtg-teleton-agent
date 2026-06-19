@@ -7,6 +7,7 @@ import { tonapiFetch } from "../constants/api-endpoints.js";
 import { getCachedTonClient } from "../ton/wallet-service.js";
 import { openWallet } from "../ton/wallet-open.js";
 import { sendWalletTx } from "../ton/confirm.js";
+import { withTxLock } from "../ton/tx-lock.js";
 import { ensureGocoonBinaries } from "./installer.js";
 import {
   channelInfoOnChain,
@@ -384,11 +385,13 @@ async function withdrawAgentWallet(
     emit("withdraw_agent", "skipped", `Agent wallet too low (${balance} nanoTON), skipping`);
     return;
   }
-  const sent = await sendWalletTx(client, opened.contract, {
-    secretKey: opened.keyPair.secretKey,
-    messages: [internal({ to: dest, value: send, bounce: false, body: "withdraw" })],
-    sendMode: SendMode.PAY_GAS_SEPARATELY,
-  });
+  const sent = await withTxLock(() =>
+    sendWalletTx(client, opened.contract, {
+      secretKey: opened.keyPair.secretKey,
+      messages: [internal({ to: dest, value: send, bounce: false, body: "withdraw" })],
+      sendMode: SendMode.PAY_GAS_SEPARATELY,
+    })
+  );
   if (!sent) throw new Error("agent wallet transfer was not confirmed on-chain");
   emit("withdraw_agent", "ok", `Agent wallet withdrawn (${fromNano(send)} TON sent)`);
 }
