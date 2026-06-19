@@ -79,13 +79,6 @@ export function getDeal(db: Database.Database, dealId: string): DealContext | nu
 }
 
 /**
- * Update deal status
- */
-export function updateDealStatus(db: Database.Database, dealId: string, status: DealStatus): void {
-  db.prepare(`UPDATE deals SET status = ? WHERE id = ?`).run(status, dealId);
-}
-
-/**
  * Mark deal as accepted and extend expiry to 5 minutes from now
  */
 export function acceptDeal(db: Database.Database, dealId: string): boolean {
@@ -162,24 +155,6 @@ export function getDealsAwaitingVerification(db: Database.Database): DealContext
       FROM deals
       WHERE status = 'payment_claimed'
       ORDER BY payment_claimed_at ASC
-      LIMIT 10`
-    )
-    .all() as DealRow[];
-
-  return rows.map(rowToDeal);
-}
-
-/**
- * Get verified deals awaiting execution
- */
-export function getDealsAwaitingExecution(db: Database.Database): DealContext[] {
-  const rows = db
-    .prepare(
-      `SELECT
-        ${DEAL_COLUMNS}
-      FROM deals
-      WHERE status = 'verified' AND agent_sent_at IS NULL
-      ORDER BY user_payment_verified_at ASC
       LIMIT 10`
     )
     .all() as DealRow[];

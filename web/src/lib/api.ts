@@ -679,7 +679,7 @@ export interface SetupConfig {
     bot_token?: string;
     bot_username?: string;
   };
-  cocoon?: { port: number };
+  gocoon?: { port: number };
   deals?: { enabled?: boolean; buy_max_floor_percent?: number; sell_min_floor_percent?: number };
   tonapi_key?: string;
   toncenter_api_key?: string;
@@ -2345,6 +2345,62 @@ export async function logout(): Promise<void> {
 export const api = {
   async getStatus() {
     return fetchAPI<APIResponse<StatusData>>("/status");
+  },
+
+  // gocoon: decentralized LLM on TON
+  async gocoonStatus() {
+    return fetchAPI<
+      APIResponse<{
+        installed: boolean;
+        version: string | null;
+        wallet: {
+          fundAddress: string;
+          ownerAddress: string;
+          balanceTon: string;
+          balanceNano: string;
+          funded: boolean;
+          recommendedFundingTon: string;
+        } | null;
+        runner: boolean;
+      }>
+    >("/gocoon/status");
+  },
+  async gocoonInstall() {
+    return fetchAPI<APIResponse<{ version: string }>>("/gocoon/install", { method: "POST" });
+  },
+  async gocoonInit() {
+    return fetchAPI<APIResponse<{ fundAddress: string; recommendedFundingTon: string }>>(
+      "/gocoon/init",
+      { method: "POST" }
+    );
+  },
+  async gocoonTopup(amount: string) {
+    return fetchAPI<APIResponse<{ amount: string }>>("/gocoon/topup", {
+      method: "POST",
+      body: JSON.stringify({ amount }),
+    });
+  },
+  async gocoonWithdrawStart(destination: string) {
+    return fetchAPI<APIResponse<{ started: boolean }>>("/gocoon/withdraw", {
+      method: "POST",
+      body: JSON.stringify({ destination }),
+    });
+  },
+  async gocoonWithdrawStatus() {
+    return fetchAPI<
+      APIResponse<{
+        running: boolean;
+        done: boolean;
+        events: { stage: string; status: string; message: string; at: number }[];
+        error?: string;
+      }>
+    >("/gocoon/withdraw");
+  },
+  async gocoonRunnerStop() {
+    return fetchAPI<APIResponse<{ stopped: boolean }>>("/gocoon/runner/stop", { method: "POST" });
+  },
+  async gocoonReset() {
+    return fetchAPI<APIResponse<{ reset: boolean }>>("/gocoon/reset", { method: "POST" });
   },
 
   async getDashboards() {

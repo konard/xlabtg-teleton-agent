@@ -401,20 +401,20 @@ export function Config() {
             />
           </div>
 
-          {config.getLocal('agent.provider') === 'cocoon' && (
+          {config.getLocal('agent.provider') === 'gocoon' && (
             <>
-              <div className="config-subhead">Cocoon</div>
+              <div className="config-subhead">Gocoon</div>
               <div className="card">
                 <EditableField
-                  label="Proxy Port"
-                  description="Cocoon Network proxy port"
-                  configKey="cocoon.port"
+                  label="Runner Port"
+                  description="gocoon-runner OpenAI-compatible API port"
+                  configKey="gocoon.port"
                   type="text"
-                  value={config.getLocal('cocoon.port')}
-                  serverValue={config.getServer('cocoon.port')}
-                  onChange={(v) => config.setLocal('cocoon.port', v)}
-                  onSave={(v) => config.saveConfig('cocoon.port', v)}
-                  onCancel={() => config.cancelLocal('cocoon.port')}
+                  value={config.getLocal('gocoon.port')}
+                  serverValue={config.getServer('gocoon.port')}
+                  onChange={(v) => config.setLocal('gocoon.port', v)}
+                  onSave={(v) => config.saveConfig('gocoon.port', v)}
+                  onCancel={() => config.cancelLocal('gocoon.port')}
                   min={1}
                   max={65535}
                   placeholder="11434"

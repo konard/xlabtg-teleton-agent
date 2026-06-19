@@ -33,8 +33,3 @@ export function accumulateTokenUsage(usage: {
     );
   }
 }
-
-export function resetTokenUsage() {
-  globalTokenUsage.totalTokens = 0;
-  globalTokenUsage.totalCost = 0;
-}

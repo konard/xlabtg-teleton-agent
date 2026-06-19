@@ -18,8 +18,6 @@ export const DEDUST_GAS = {
   SWAP_TON_TO_JETTON: "0.25",
   // Jetton to any asset swap
   SWAP_JETTON_TO_ANY: "0.3",
-  // Extra gas for multi-hop swaps
-  MULTIHOP_EXTRA: "0.1",
   // Forward gas for jetton transfers
   FORWARD_GAS: "0.2",
 };

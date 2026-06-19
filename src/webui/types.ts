@@ -54,6 +54,8 @@ export interface WebUIServerDeps {
   autonomousManager?: AutonomousTaskManager;
   workflowScheduler?: (() => WorkflowScheduler | null) | WorkflowScheduler;
   agentManager?: ManagedAgentService;
+  /** Stop the supervised gocoon runner + proxy so a withdraw can close the channel. */
+  gocoonControl?: { stopRunner: () => boolean };
 }
 
 // ── Marketplace types ───────────────────────────────────────────────
@@ -150,15 +152,6 @@ export interface ModuleInfo {
   toolCount: number;
   tools: ToolInfo[];
   isPlugin: boolean;
-}
-
-export interface PluginManifest {
-  name: string;
-  version: string;
-  author?: string;
-  description?: string;
-  dependencies?: string[];
-  sdkVersion?: string;
 }
 
 export interface MemorySearchResult {

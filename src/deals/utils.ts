@@ -2,7 +2,6 @@
  * Utility functions for deals system
  */
 
-import type { Deal } from "./types.js";
 import { DEALS_CONFIG } from "./config.js";
 
 /**
@@ -37,13 +36,6 @@ export function formatAsset(
  */
 export function calculateExpiry(): number {
   return Math.floor(Date.now() / 1000) + DEALS_CONFIG.expirySeconds;
-}
-
-/**
- * Check if deal has expired
- */
-export function isDealExpired(deal: Deal): boolean {
-  return deal.expires_at < Math.floor(Date.now() / 1000);
 }
 
 /**

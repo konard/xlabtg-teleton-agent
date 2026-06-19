@@ -99,6 +99,9 @@ function DashboardNav() {
         <Link to="/autonomous" className={isActive("/autonomous") ? "active" : ""}>
           {t("nav.autonomous")}
         </Link>
+        <Link to="/gocoon" className={isActive("/gocoon") ? "active" : ""}>
+          {t("nav.gocoon")}
+        </Link>
         <Link to="/config" className={isActive("/config") ? "active" : ""}>
           {t("nav.config")}
         </Link>

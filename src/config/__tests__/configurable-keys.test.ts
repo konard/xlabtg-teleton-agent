@@ -185,8 +185,8 @@ describe("CONFIGURABLE_KEYS — new scalar entries", () => {
     });
   });
 
-  describe("cocoon.port", () => {
-    const meta = CONFIGURABLE_KEYS["cocoon.port"];
+  describe("gocoon.port", () => {
+    const meta = CONFIGURABLE_KEYS["gocoon.port"];
 
     it("accepts 1-65535", () => {
       expect(meta.validate("10000")).toBeUndefined();

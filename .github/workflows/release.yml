@@ -299,6 +299,10 @@ jobs:
           echo "$LOG" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
 
+      - name: Lowercase image path for the install snippet
+        id: meta
+        run: echo "repo=$(echo '${{ github.repository }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub Release
         if: steps.check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
@@ -317,7 +321,7 @@ jobs:
 
             **Docker:**
             ```bash
-            docker run -it -v ~/.teleton:/data ghcr.io/${{ github.repository }}:latest setup
+            docker run -it -v ~/.teleton:/data ghcr.io/${{ steps.meta.outputs.repo }}:latest setup
             ```
 
             ## Changes

@@ -7,7 +7,6 @@ import type {
   RuntimeMode,
   Tool,
   ToolContext,
-  ToolEntry,
   ToolExecutor,
   ToolMode,
   ToolResult,
@@ -367,7 +366,7 @@ export class ToolRegistry {
 
   /**
    * Legacy single-value scope view (derived from the level). Kept for backward-
-   * compatible callers (getEntry, getModuleTools).
+   * compatible callers (getModuleTools).
    */
   private getEffectiveScope(toolName: string): ToolScope {
     return levelToScope(this.getEffectiveLevel(toolName));
@@ -555,22 +554,6 @@ export class ToolRegistry {
   getToolSchema(name: string): TSchema | null {
     const registered = this.tools.get(name);
     return registered?.tool.parameters ?? null;
-  }
-
-  /**
-   * Return a ToolEntry snapshot for a named tool (scope, mode, tags, executor).
-   * Returns null if the tool is not registered.
-   */
-  getEntry(name: string): ToolEntry | null {
-    const registered = this.tools.get(name);
-    if (!registered) return null;
-    return {
-      tool: registered.tool,
-      executor: registered.executor,
-      scope: this.getEffectiveScope(name),
-      mode: this.tools.get(name)?.mode ?? "both",
-      tags: this.tools.get(name)?.tags,
-    };
   }
 
   /**

@@ -724,7 +724,7 @@ export const McpConfigSchema = _McpObject.default(_McpObject.parse({}));
 const _ToolSearchObject = z.object({
   enabled: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe("Enable ToolSearch mode: core tools + meta-tool replaces RAG pre-selection"),
 });
 export const ToolSearchConfigSchema = _ToolSearchObject.default(_ToolSearchObject.parse({}));
@@ -1047,7 +1047,7 @@ export const ConfigSchema = z.object({
   marketplace: MarketplaceConfigSchema,
   tool_rag: ToolRagConfigSchema,
   cache: CacheConfigSchema,
-  tool_search: ToolSearchConfigSchema.optional(),
+  tool_search: ToolSearchConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
   integrations: IntegrationsConfigSchema,
@@ -1066,17 +1066,21 @@ export const ConfigSchema = z.object({
     .record(z.string(), z.unknown())
     .default({})
     .describe("Per-plugin config (key = plugin name with underscores)"),
-  cocoon: z
+  gocoon: z
     .object({
       port: z
         .number()
         .min(1)
         .max(65535)
         .default(10000)
-        .describe("HTTP port of the cocoon-cli proxy"),
+        .describe("HTTP port of the gocoon-runner OpenAI-compatible API"),
+      auto_start: z
+        .boolean()
+        .optional()
+        .describe("Auto-install and supervise the gocoon-runner on start (default: true)"),
     })
     .optional()
-    .describe("Cocoon Network — expects external cocoon-cli running on this port"),
+    .describe("Gocoon: pure-Go COCOON client (decentralized LLM on TON)"),
   tonapi_key: z
     .string()
     .optional()
@@ -1174,7 +1178,6 @@ export type ToolRagConfig = z.infer<typeof ToolRagConfigSchema>;
 export type CacheConfig = z.infer<typeof CacheConfigSchema>;
 export type ToolSearchConfig = z.infer<typeof ToolSearchConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
-export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
 export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;
 export type ApiConfig = z.infer<typeof _ApiObject>;
 export type EventBusConfig = z.infer<typeof _EventBusObject>;

@@ -1,7 +1,5 @@
 import { api, LogEntry } from './api';
 
-export type { LogEntry };
-
 type Listener = () => void;
 
 const MAX_LOGS = 2000;

@@ -1442,37 +1442,21 @@ export class AgentRuntime {
             log.warn(`⚠️ Tool result too large, truncated to ${resultText.length} chars`);
           }
 
-          if (provider === "cocoon") {
-            const { wrapToolResult } = await import("../cocoon/tool-adapter.js");
-            const cocoonResultMsg: UserMessage = {
-              role: "user",
-              content: [
-                {
-                  type: "text",
-                  text: wrapToolResult(resultText),
-                },
-              ],
-              timestamp: Date.now(),
-            };
-            context.messages.push(cocoonResultMsg);
-            appendToTranscript(session.sessionId, cocoonResultMsg);
-          } else {
-            const toolResultMsg: ToolResultMessage = {
-              role: "toolResult",
-              toolCallId: block.id,
-              toolName: block.name,
-              content: [
-                {
-                  type: "text",
-                  text: resultText,
-                },
-              ],
-              isError: !exec.result.success,
-              timestamp: Date.now(),
-            };
-            context.messages.push(toolResultMsg);
-            appendToTranscript(session.sessionId, toolResultMsg);
-          }
+          const toolResultMsg: ToolResultMessage = {
+            role: "toolResult",
+            toolCallId: block.id,
+            toolName: block.name,
+            content: [
+              {
+                type: "text",
+                text: resultText,
+              },
+            ],
+            isError: !exec.result.success,
+            timestamp: Date.now(),
+          };
+          context.messages.push(toolResultMsg);
+          appendToTranscript(session.sessionId, toolResultMsg);
         }
 
         // Await all observing hooks concurrently

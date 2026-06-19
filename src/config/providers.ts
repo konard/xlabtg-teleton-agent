@@ -13,7 +13,7 @@ export type SupportedProvider =
   | "minimax"
   | "huggingface"
   | "nvidia"
-  | "cocoon"
+  | "gocoon"
   | "local";
 
 export interface ProviderMetadata {
@@ -198,17 +198,17 @@ const PROVIDER_REGISTRY: Record<SupportedProvider, ProviderMetadata> = {
     toolLimit: 128,
     piAiProvider: "nvidia",
   },
-  cocoon: {
-    id: "cocoon",
-    displayName: "Cocoon Network (Decentralized)",
+  gocoon: {
+    id: "gocoon",
+    displayName: "Gocoon (Decentralized, TON)",
     envVar: "",
     keyPrefix: null,
-    keyHint: "No API key needed — pays in TON",
-    consoleUrl: "https://cocoon.network",
+    keyHint: "No API key, pays in TON",
+    consoleUrl: "https://github.com/TONresistor/gocoon",
     defaultModel: "Qwen/Qwen3-32B",
     utilityModel: "Qwen/Qwen3-32B",
     toolLimit: 128,
-    piAiProvider: "cocoon",
+    piAiProvider: "gocoon",
   },
   local: {
     id: "local",
@@ -244,7 +244,7 @@ export function getSupportedProviders(): ProviderMetadata[] {
 export function validateApiKeyFormat(provider: SupportedProvider, key: string): string | undefined {
   const meta = PROVIDER_REGISTRY[provider];
   if (!meta) return `Unknown provider: ${provider}`;
-  if (provider === "cocoon" || provider === "local" || provider === "claude-code") return undefined; // No API key needed (claude-code auto-detects)
+  if (provider === "gocoon" || provider === "local" || provider === "claude-code") return undefined; // No API key needed (claude-code auto-detects)
   if (!key || key.trim().length === 0) return "API key is required";
   if (meta.keyPrefix && !key.startsWith(meta.keyPrefix)) {
     return `Invalid format (should start with ${meta.keyPrefix})`;

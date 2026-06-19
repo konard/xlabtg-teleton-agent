@@ -37,7 +37,7 @@ export function buildIntegratedLoopDeps(deps: IntegrationDeps): LoopDependencies
       const model = getProviderModel(provider, agentConfig.model);
       const apiKey = getEffectiveApiKey(provider, agentConfig.api_key);
 
-      if (!apiKey && provider !== "local" && provider !== "cocoon") {
+      if (!apiKey && provider !== "local" && provider !== "gocoon") {
         throw new Error(
           `No API key configured for provider "${provider}" — autonomous task cannot call the LLM.`
         );

@@ -239,24 +239,6 @@ export function updateSession(
     .get(sessionKey) as SessionRow;
   return rowToSession(updated);
 }
-export function incrementMessageCount(chatId: string): void {
-  const db = getDb();
-  const sessionKey = sessionKeyFor(chatId);
-
-  const result = db
-    .prepare(
-      `UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE chat_id = ?`
-    )
-    .run(Date.now(), sessionKey);
-
-  // If no row existed, create the session first then increment
-  if (result.changes === 0) {
-    getOrCreateSession(chatId);
-    db.prepare(
-      `UPDATE sessions SET message_count = message_count + 1, updated_at = ? WHERE chat_id = ?`
-    ).run(Date.now(), sessionKey);
-  }
-}
 export function getSession(chatId: string): SessionEntry | null {
   const db = getDb();
   const sessionKey = sessionKeyFor(chatId);

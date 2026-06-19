@@ -8,7 +8,7 @@ function wizardData(overrides: Partial<WizardData> = {}): WizardData {
     agentName: "Nova",
     provider: "local",
     apiKey: "",
-    cocoonPort: 11435,
+    gocoonPort: 11435,
     localUrl: "http://localhost:11434/v1",
     apiId: 12345,
     apiHash: "abcdef0123456789",

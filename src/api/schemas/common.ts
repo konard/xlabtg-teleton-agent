@@ -12,14 +12,6 @@ export const ProblemDetailSchema = z.object({
 
 export type ProblemDetail = z.infer<typeof ProblemDetailSchema>;
 
-/** Standard API response envelope */
-export const ApiResponseSchema = <T extends z.ZodType>(dataSchema: T) =>
-  z.object({
-    success: z.boolean(),
-    data: dataSchema.optional(),
-    error: ProblemDetailSchema.optional(),
-  });
-
 /** Create a Problem Detail JSON object */
 export function createProblem(
   status: number,

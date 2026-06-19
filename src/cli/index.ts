@@ -6,6 +6,7 @@ import { configCommand } from "./commands/config.js";
 import { apiRotateKeyCommand, apiFingerprintCommand } from "./commands/api.js";
 import { autonomousCommand } from "./commands/autonomous.js";
 import { backupCommand, restoreCommand } from "./commands/backup.js";
+import { registerGocoonCommand } from "./commands/gocoon.js";
 import {
   configExists,
   getDefaultConfigPath,
@@ -480,6 +481,9 @@ autonomous
       process.exit(1);
     }
   });
+
+// gocoon — decentralized LLM on TON (install, setup, top-up, withdraw)
+registerGocoonCommand(program);
 
 program.action(() => {
   program.help();

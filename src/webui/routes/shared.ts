@@ -14,6 +14,7 @@ import { createConfigRoutes } from "./config.js";
 import { createMarketplaceRoutes } from "./marketplace.js";
 import { createHooksRoutes } from "./hooks.js";
 import { createTonProxyRoutes } from "./ton-proxy.js";
+import { createGocoonRoutes } from "./gocoon.js";
 
 /** A route factory shared by the WebUI and Management API servers. */
 export type RouteFactory = (deps: WebUIServerDeps) => Hono;
@@ -42,4 +43,5 @@ export const SHARED_ROUTE_FACTORIES: ReadonlyArray<[string, RouteFactory]> = [
   ["marketplace", createMarketplaceRoutes],
   ["hooks", createHooksRoutes],
   ["ton-proxy", createTonProxyRoutes],
+  ["gocoon", createGocoonRoutes],
 ];

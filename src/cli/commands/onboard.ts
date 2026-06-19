@@ -56,6 +56,7 @@ import {
   EventBusConfigSchema,
   NetworkConfigSchema,
   WebhooksConfigSchema,
+  ToolSearchConfigSchema,
 } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
 import {
@@ -232,7 +233,7 @@ async function runInteractiveOnboarding(
   let requireMention = true;
   let maxAgenticIterations = "5";
   let execMode: "off" | "allowlist" | "yolo" = "off";
-  let cocoonInstance = 10000;
+  let gocoonInstance = 10000;
 
   // Intro
   console.clear();
@@ -347,14 +348,14 @@ async function runInteractiveOnboarding(
     );
   }
 
-  // API key (or Cocoon / Local setup)
+  // API key (or Gocoon / Local setup)
   let localBaseUrl = "";
-  if (selectedProvider === "cocoon") {
-    // Cocoon Network — no API key, managed externally via cocoon-cli
+  if (selectedProvider === "gocoon") {
+    // Gocoon — no API key, decentralized LLM on TON via the native gocoon runner
     apiKey = "";
 
-    const cocoonPort = await input({
-      message: "Cocoon proxy HTTP port",
+    const gocoonPort = await input({
+      message: "gocoon-runner HTTP port",
       default: "10000",
       theme,
       validate: (value = "") => {
@@ -362,17 +363,18 @@ async function runInteractiveOnboarding(
         return n >= 1 && n <= 65535 ? true : "Must be a port number (1-65535)";
       },
     });
-    cocoonInstance = parseInt(cocoonPort.trim(), 10);
+    gocoonInstance = parseInt(gocoonPort.trim(), 10);
 
     noteBox(
-      "Cocoon Network — Decentralized LLM on TON\n" +
-        "No API key needed. Requires cocoon-cli running externally.\n" +
-        `Teleton will connect to http://localhost:${cocoonInstance}/v1/`,
-      "Cocoon Network",
+      "Gocoon — Decentralized LLM on TON\n" +
+        "No API key needed. The gocoon runner is supervised by Teleton.\n" +
+        "Run `teleton gocoon init` (or use the Gocoon page) to set up and fund the channel.\n" +
+        `Teleton will connect to http://localhost:${gocoonInstance}/v1/`,
+      "Gocoon",
       TON
     );
 
-    STEPS[1].value = `${providerMeta.displayName}  ${DIM(`port ${cocoonInstance}`)}`;
+    STEPS[1].value = `${providerMeta.displayName}  ${DIM(`port ${gocoonInstance}`)}`;
   } else if (selectedProvider === "local") {
     // Local LLM — no API key, needs base URL
     apiKey = "";
@@ -487,7 +489,7 @@ async function runInteractiveOnboarding(
   // Model selection (advanced mode only, after provider + API key)
   selectedModel = providerMeta.defaultModel;
 
-  if (selectedProvider !== "cocoon" && selectedProvider !== "local") {
+  if (selectedProvider !== "gocoon" && selectedProvider !== "local") {
     const providerModels = getModelsForProvider(selectedProvider);
     const modelChoices = [
       ...providerModels,
@@ -1035,6 +1037,7 @@ async function runInteractiveOnboarding(
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({ enabled: !!botToken }),
     cache: CacheConfigSchema.parse({}),
+    tool_search: ToolSearchConfigSchema.parse({}),
     integrations: IntegrationsConfigSchema.parse({}),
     event_bus: EventBusConfigSchema.parse({}),
     webhooks: WebhooksConfigSchema.parse({}),
@@ -1089,7 +1092,7 @@ async function runInteractiveOnboarding(
     },
     plugins: {},
     marketplace: MarketplaceConfigSchema.parse({}),
-    ...(selectedProvider === "cocoon" ? { cocoon: { port: cocoonInstance } } : {}),
+    ...(selectedProvider === "gocoon" ? { gocoon: { port: gocoonInstance } } : {}),
     tonapi_key: tonapiKey,
     toncenter_api_key: toncenterApiKey,
     tavily_api_key: tavilyApiKey,
@@ -1162,7 +1165,7 @@ async function runNonInteractiveOnboarding(
   prompter: ReturnType<typeof createPrompter>
 ): Promise<void> {
   const selectedProvider = options.provider || "anthropic";
-  const needsApiKey = selectedProvider !== "cocoon" && selectedProvider !== "local";
+  const needsApiKey = selectedProvider !== "gocoon" && selectedProvider !== "local";
   if (!options.apiId || !options.apiHash || !options.phone || !options.userId) {
     prompter.error("Non-interactive mode requires: --api-id, --api-hash, --phone, --user-id");
     process.exit(1);
@@ -1251,6 +1254,7 @@ async function runNonInteractiveOnboarding(
     autonomous: AutonomousConfigSchema.parse({}),
     deals: DealsConfigSchema.parse({}),
     cache: CacheConfigSchema.parse({}),
+    tool_search: ToolSearchConfigSchema.parse({}),
     integrations: IntegrationsConfigSchema.parse({}),
     event_bus: EventBusConfigSchema.parse({}),
     webhooks: WebhooksConfigSchema.parse({}),
