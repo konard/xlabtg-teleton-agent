@@ -46,7 +46,7 @@ Current fork version: `0.8.49`. <!-- x-release-please-version -->
 
 This README reflects the `xlabtg/teleton-agent` fork through merged PR [#480](https://github.com/xlabtg/teleton-agent/pull/480) / closed issue [#479](https://github.com/xlabtg/teleton-agent/issues/479). It was refreshed from the closed work history available at issue [#481](https://github.com/xlabtg/teleton-agent/issues/481): 236 closed issues and the 200 most recent merged pull requests as of the latest analyzed run.
 
-The current WebUI ships with 26 WebUI pages and 31 authenticated WebUI API route groups.
+The current WebUI ships with 27 WebUI pages and 31 authenticated WebUI API route groups.
 
 ### Closed-Work Summary
 
@@ -107,7 +107,7 @@ The current WebUI ships with 26 WebUI pages and 31 authenticated WebUI API route
 ## Prerequisites
 
 - **Node.js 20.0.0+** - [Download](https://nodejs.org/)
-- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens), [NVIDIA NIM](https://build.nvidia.com/) — or keyless: Claude Code / Codex (auto-detect), Cocoon (TON), Local (Ollama/vLLM)
+- **LLM API Key** - One of: [Anthropic](https://console.anthropic.com/) (recommended), [OpenAI](https://platform.openai.com/), [Google](https://aistudio.google.com/), [xAI](https://console.x.ai/), [Groq](https://console.groq.com/), [OpenRouter](https://openrouter.ai/), [Moonshot](https://platform.moonshot.ai/), [Mistral](https://console.mistral.ai/), [Cerebras](https://cloud.cerebras.ai/), [ZAI](https://open.bigmodel.cn/), [MiniMax](https://platform.minimaxi.com/), [Hugging Face](https://huggingface.co/settings/tokens), [NVIDIA NIM](https://build.nvidia.com/) — or keyless: Claude Code (auto-detect), Gocoon (TON), Local (Ollama/vLLM)
 - **Telegram Account** - Dedicated account recommended for security
 - **Telegram API Credentials** - From [my.telegram.org/apps](https://my.telegram.org/apps)
 - **Your Telegram User ID** - Message [@userinfobot](https://t.me/userinfobot)
@@ -204,7 +204,7 @@ The `teleton setup` wizard generates a fully configured `~/.teleton/config.yaml`
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | nvidia | cocoon | local
+  provider: "anthropic"              # anthropic | claude-code | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | nvidia | gocoon | local
   api_key: "sk-ant-api03-..."
   model: "claude-opus-4-6"
   utility_model: "claude-haiku-4-5-20251001"  # optional: summarization, compaction, vision
@@ -300,7 +300,7 @@ anomaly_detection:
 <table>
 <tr>
 <td align="center" width="20%"><br><b>Anthropic</b><br>Claude Opus 4.6<br><br></td>
-<td align="center" width="20%"><br><b>Claude Code / Codex</b><br>Auto-detected<br><br></td>
+<td align="center" width="20%"><br><b>Claude Code</b><br>Auto-detected<br><br></td>
 <td align="center" width="20%"><br><b>OpenAI</b><br>GPT-5.4<br><br></td>
 <td align="center" width="20%"><br><b>Google</b><br>Gemini 3.1 / 3<br><br></td>
 <td align="center" width="20%"><br><b>xAI</b><br>Grok 4.1<br><br></td>
@@ -317,7 +317,7 @@ anomaly_detection:
 <td align="center"><br><b>MiniMax</b><br>M2.5<br><br></td>
 <td align="center"><br><b>Hugging Face</b><br>DeepSeek + Qwen<br><br></td>
 <td align="center"><br><b>NVIDIA NIM</b><br>DeepSeek, Llama, Qwen<br><br></td>
-<td align="center"><br><b>Cocoon</b><br>Decentralized (TON)<br><br></td>
+<td align="center"><br><b>Gocoon</b><br>Decentralized (TON)<br><br></td>
 </tr>
 <tr>
 <td align="center"><br><b>Local</b><br>Ollama, vLLM, LM Studio<br><br></td>
@@ -383,7 +383,7 @@ All environment variables override the corresponding `config.yaml` value at star
 
 ## WebUI Dashboard
 
-Optional web dashboard, localhost only, token auth. Start with `teleton start --webui` or `teleton setup --ui`. The current build exposes 26 WebUI pages and 31 authenticated WebUI API route groups.
+Optional web dashboard, localhost only, token auth. Start with `teleton start --webui` or `teleton setup --ui`. The current build exposes 27 WebUI pages and 31 authenticated WebUI API route groups.
 
 <table>
 <tr>
@@ -550,7 +550,7 @@ The SDK provides namespaced access to core services:
 
 | Layer | Technology |
 |-------|------------|
-| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (16 providers: Anthropic, Claude Code, Codex, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, NVIDIA NIM, Cocoon, Local) |
+| LLM | Multi-provider via [pi-ai](https://github.com/mariozechner/pi-ai) (16 providers: Anthropic, Claude Code, OpenAI, Google, xAI, Groq, OpenRouter, Moonshot, Mistral, Cerebras, ZAI, MiniMax, Hugging Face, NVIDIA NIM, Gocoon, Local) |
 | Telegram Userbot | [GramJS](https://gram.js.org/) Layer 223 fork (MTProto) |
 | Inline Bot | [Grammy](https://grammy.dev/) (Bot API, for deals) |
 | Blockchain | [TON SDK](https://github.com/ton-org/ton) (W5R1 wallet) |
@@ -647,7 +647,7 @@ src/
 ├── templates/              # Workspace template files (SOUL.md, etc.)
 └── cli/                    # CLI commands (setup, config, doctor, mcp)
 
-web/                        # React + Vite frontend (23 pages)
+web/                        # React + Vite frontend (27 pages)
 packages/sdk/               # Published @teleton-agent/sdk
 ```
 
@@ -671,7 +671,7 @@ packages/sdk/               # Published @teleton-agent/sdk
 | **WebUI auth** | Auth token hashes, one-time exchange tokens, HttpOnly cookies, and CSRF checks on mutations |
 | **Network ingress** | Ed25519 signatures, recipient checks, allowlist/blocklist enforcement, replay protection, and clock-skew checks |
 | **Pino redaction** | Structured logging with automatic redaction of apiKey, password, secret, token, mnemonic fields |
-| **Tool scoping** | Financial tools DM-only, moderation group-only, admin-only policies, per-chat permissions configurable at runtime |
+| **Tool access control** | Per-tool access level (all, allow-list, admin, off), DM vs group gated by global policies, per-group module permissions, all runtime-configurable |
 
 ### Reporting Vulnerabilities
 

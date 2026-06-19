@@ -1,8 +1,6 @@
 import {
   complete,
-  getModel,
-  type Model,
-  type Api,
+  stream,
   type Context,
   type AssistantMessage,
   type Message,
@@ -11,15 +9,25 @@ import {
 } from "@mariozechner/pi-ai";
 import type { AgentConfig } from "../config/schema.js";
 import { appendToTranscript, readTranscript } from "../session/transcript.js";
-import { getProviderMetadata, type SupportedProvider } from "../config/providers.js";
+import { type SupportedProvider } from "../config/providers.js";
 import { sanitizeToolsForGemini } from "./schema-sanitizer.js";
 import { createLogger } from "../utils/logger.js";
-import { fetchWithTimeout } from "../utils/fetch.js";
 import {
   getClaudeCodeApiKey,
   refreshClaudeCodeApiKey,
 } from "../providers/claude-code-credentials.js";
 import { LLM_REQUEST_TIMEOUT_MS } from "../constants/timeouts.js";
+
+// Model resolution + provider model registration live in the neutral providers/
+// layer so non-agent consumers (e.g. memory) can resolve models without importing
+// from agent/. Re-exported here for backward compatibility with existing importers.
+import { getProviderModel } from "../providers/model-resolver.js";
+export {
+  registerGocoonModels,
+  registerLocalModels,
+  getProviderModel,
+  getUtilityModel,
+} from "../providers/model-resolver.js";
 
 const log = createLogger("LLM");
 
@@ -28,59 +36,16 @@ export function isOAuthToken(apiKey: string, provider?: string): boolean {
   return apiKey.startsWith("sk-ant-oat01-");
 }
 
-/** Resolve the effective API key for a provider (local/cocoon need no real key) */
+/** Resolve the effective API key for a provider (local/gocoon need no real key) */
 export function getEffectiveApiKey(provider: string, rawKey: string): string {
   if (provider === "local") return "local";
-  if (provider === "cocoon") return "";
+  if (provider === "gocoon") return "gocoon";
   if (provider === "claude-code") return getClaudeCodeApiKey(rawKey);
   return rawKey;
 }
 
-const modelCache = new Map<string, Model<Api>>();
-
-const COCOON_MODELS: Record<string, Model<"openai-completions">> = {};
-
-/** Register models discovered from a running Cocoon client */
-export async function registerCocoonModels(httpPort: number): Promise<string[]> {
-  try {
-    const res = await fetch(`http://localhost:${httpPort}/v1/models`);
-    if (!res.ok) return [];
-    const body = (await res.json()) as {
-      data?: { id?: string; name?: string }[];
-      models?: { id?: string; name?: string }[];
-    };
-    const models = body.data || body.models || [];
-    if (!Array.isArray(models)) return [];
-    const ids: string[] = [];
-    for (const m of models) {
-      const id = m.id || m.name || String(m);
-      COCOON_MODELS[id] = {
-        id,
-        name: id,
-        api: "openai-completions",
-        provider: "cocoon",
-        baseUrl: `http://localhost:${httpPort}/v1`,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 4096,
-        compat: {
-          supportsStore: false,
-          supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
-        },
-      };
-      ids.push(id);
-    }
-    return ids;
-  } catch {
-    return [];
-  }
-}
-
-const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
-const NVIDIA_DISABLE_STREAMING_USAGE_MODELS = new Set(["z-ai/glm-5.1"]);
+// NVIDIA NIM rejects long cache retention and clamps temperature to [0, 1]; the
+// rest of the providers keep pi-ai's defaults.
 const NVIDIA_CACHE_RETENTION = "none";
 const DEFAULT_CACHE_RETENTION = "long";
 const NVIDIA_MAX_TEMPERATURE = 1;
@@ -91,169 +56,6 @@ function normalizeProviderTemperature(provider: SupportedProvider, temperature: 
   }
 
   return Math.min(Math.max(temperature, 0), NVIDIA_MAX_TEMPERATURE);
-}
-
-/** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
-function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
-  const disablesStreamingUsage = NVIDIA_DISABLE_STREAMING_USAGE_MODELS.has(modelId.toLowerCase());
-  return {
-    id: modelId,
-    name: modelId,
-    api: "openai-completions",
-    provider: "nvidia",
-    baseUrl: NVIDIA_BASE_URL,
-    reasoning: false,
-    input: ["text"],
-    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 128000,
-    maxTokens: 4096,
-    compat: {
-      supportsStore: false,
-      supportsDeveloperRole: false,
-      supportsReasoningEffort: false,
-      supportsStrictMode: false,
-      supportsLongCacheRetention: false,
-      maxTokensField: "max_tokens",
-      ...(disablesStreamingUsage ? { supportsUsageInStreaming: false } : {}),
-    },
-  };
-}
-
-const LOCAL_MODELS: Record<string, Model<"openai-completions">> = {};
-
-/** Register models discovered from a local OpenAI-compatible server */
-export async function registerLocalModels(baseUrl: string): Promise<string[]> {
-  try {
-    const parsed = new URL(baseUrl);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      log.warn(`Local LLM base_url must use http or https (got ${parsed.protocol})`);
-      return [];
-    }
-    const url = baseUrl.replace(/\/+$/, "");
-    const res = await fetchWithTimeout(`${url}/models`, { timeoutMs: 10_000 });
-    if (!res.ok) return [];
-    const body = (await res.json()) as {
-      data?: { id?: string; name?: string }[];
-      models?: { id?: string; name?: string }[];
-    };
-    const rawModels = body.data || body.models || [];
-    if (!Array.isArray(rawModels)) return [];
-    const models = rawModels.slice(0, 500);
-    const ids: string[] = [];
-    for (const m of models) {
-      const id = m.id || m.name || String(m);
-      LOCAL_MODELS[id] = {
-        id,
-        name: id,
-        api: "openai-completions",
-        provider: "local",
-        baseUrl: url,
-        reasoning: false,
-        input: ["text"],
-        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-        contextWindow: 128000,
-        maxTokens: 4096,
-        compat: {
-          supportsStore: false,
-          supportsDeveloperRole: false,
-          supportsReasoningEffort: false,
-          supportsStrictMode: false,
-          maxTokensField: "max_tokens",
-        },
-      };
-      ids.push(id);
-    }
-    return ids;
-  } catch {
-    return [];
-  }
-}
-
-/** Moonshot backward-compat: old model IDs → kimi-coding IDs */
-const MOONSHOT_MODEL_ALIASES: Record<string, string> = {
-  "kimi-k2.5": "k2p5",
-};
-
-export function getProviderModel(provider: SupportedProvider, modelId: string): Model<Api> {
-  const cacheKey = `${provider}:${modelId}`;
-  const cached = modelCache.get(cacheKey);
-  if (cached) return cached;
-
-  const meta = getProviderMetadata(provider);
-
-  if (meta.piAiProvider === "cocoon") {
-    let model = COCOON_MODELS[modelId];
-    if (!model) {
-      model = Object.values(COCOON_MODELS)[0];
-      if (model) log.warn(`Cocoon model "${modelId}" not found, using "${model.id}"`);
-    }
-    if (model) {
-      modelCache.set(cacheKey, model);
-      return model;
-    }
-    throw new Error("No Cocoon models available. Is the cocoon client running?");
-  }
-
-  if (meta.piAiProvider === "local") {
-    let model = LOCAL_MODELS[modelId];
-    if (!model) {
-      model = Object.values(LOCAL_MODELS)[0];
-      if (model) log.warn(`Local model "${modelId}" not found, using "${model.id}"`);
-    }
-    if (model) {
-      modelCache.set(cacheKey, model);
-      return model;
-    }
-    throw new Error("No local models available. Is the LLM server running?");
-  }
-
-  if (meta.piAiProvider === "nvidia") {
-    const model = buildNvidiaModel(modelId);
-    modelCache.set(cacheKey, model);
-    return model;
-  }
-
-  // Moonshot backward-compat: remap old model IDs to kimi-coding IDs
-  if (provider === "moonshot" && MOONSHOT_MODEL_ALIASES[modelId]) {
-    modelId = MOONSHOT_MODEL_ALIASES[modelId];
-  }
-
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any -- getModel requires literal provider+model types; dynamic strings need casts
-    const model = getModel(meta.piAiProvider as any, modelId as any);
-    if (!model) {
-      throw new Error(`getModel returned undefined for ${provider}/${modelId}`);
-    }
-    modelCache.set(cacheKey, model);
-    return model;
-  } catch {
-    log.warn(`Model ${modelId} not found for ${provider}, falling back to ${meta.defaultModel}`);
-    const fallbackKey = `${provider}:${meta.defaultModel}`;
-    const fallbackCached = modelCache.get(fallbackKey);
-    if (fallbackCached) return fallbackCached;
-
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- same as above: dynamic strings
-      const model = getModel(meta.piAiProvider as any, meta.defaultModel as any);
-      if (!model) {
-        throw new Error(
-          `Fallback model ${meta.defaultModel} also returned undefined for ${provider}`
-        );
-      }
-      modelCache.set(fallbackKey, model);
-      return model;
-    } catch {
-      throw new Error(
-        `Could not find model ${modelId} or fallback ${meta.defaultModel} for ${provider}`
-      );
-    }
-  }
-}
-
-export function getUtilityModel(provider: SupportedProvider, overrideModel?: string): Model<Api> {
-  const meta = getProviderMetadata(provider);
-  const modelId = overrideModel || meta.utilityModel;
-  return getProviderModel(provider, modelId);
 }
 
 export interface ChatOptions {
@@ -273,29 +75,49 @@ export interface ChatResponse {
   context: Context;
 }
 
+const THINK_RE = /<think>[\s\S]*?<\/think>/g;
+
+/**
+ * Shared post-processing for both complete() and stream() responses: strip
+ * <think> blocks (Mistral, local models, etc.), persist the transcript, extract the
+ * text content, and append the response to the context.
+ */
+function finalizeResponse(
+  response: AssistantMessage,
+  context: Context,
+  options: ChatOptions
+): ChatResponse {
+  for (const block of response.content) {
+    if (block.type === "text" && block.text.includes("<think>")) {
+      block.text = block.text.replace(THINK_RE, "").trim();
+    }
+  }
+
+  if (options.persistTranscript && options.sessionId) {
+    appendToTranscript(options.sessionId, response);
+  }
+
+  const textContent = response.content.find((block) => block.type === "text");
+  const text = textContent?.type === "text" ? textContent.text : "";
+
+  const updatedContext: Context = {
+    ...context,
+    messages: [...context.messages, response],
+  };
+
+  return { message: response, text, context: updatedContext };
+}
+
 export async function chatWithContext(
   config: AgentConfig,
   options: ChatOptions
 ): Promise<ChatResponse> {
   const provider = (config.provider || "anthropic") as SupportedProvider;
   const model = getProviderModel(provider, config.model);
-  const isCocoon = provider === "cocoon";
-
-  let tools =
+  const tools =
     provider === "google" && options.tools ? sanitizeToolsForGemini(options.tools) : options.tools;
 
-  // Cocoon: disable thinking mode + inject tools into system prompt
-  let systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
-  let cocoonAllowedTools: Set<string> | undefined;
-  if (isCocoon) {
-    systemPrompt = "/no_think\n" + systemPrompt;
-    if (tools && tools.length > 0) {
-      cocoonAllowedTools = new Set(tools.map((t) => t.name));
-      const { injectToolsIntoSystemPrompt } = await import("../cocoon/tool-adapter.js");
-      systemPrompt = injectToolsIntoSystemPrompt(systemPrompt, tools);
-      tools = undefined; // Don't send via API
-    }
-  }
+  const systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
 
   const context: Context = {
     ...options.context,
@@ -319,15 +141,11 @@ export async function chatWithContext(
       ? AbortSignal.any([options.signal, requestTimeoutSignal])
       : requestTimeoutSignal,
   };
-  if (isCocoon) {
-    const { stripCocoonPayload } = await import("../cocoon/tool-adapter.js");
-    completeOptions.onPayload = stripCocoonPayload;
-  }
 
   let response = await complete(model, context, completeOptions as ProviderStreamOptions);
 
-  // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials
-  // Use precise patterns to avoid false positives from upstream bodies that happen to contain "401"
+  // Claude Code provider: retry once on 401/Unauthorized by refreshing credentials.
+  // Use precise patterns to avoid false positives from upstream bodies that happen to contain "401".
   if (
     provider === "claude-code" &&
     response.stopReason === "error" &&
@@ -342,49 +160,64 @@ export async function chatWithContext(
     }
   }
 
-  // Cocoon: parse <tool_call> from text response
-  if (isCocoon) {
-    const textBlock = response.content.find((b) => b.type === "text");
-    if (textBlock?.type === "text" && textBlock.text.includes("<tool_call>")) {
-      const { parseToolCallsFromText, extractPlainText } =
-        await import("../cocoon/tool-adapter.js");
-      const syntheticCalls = parseToolCallsFromText(textBlock.text, cocoonAllowedTools);
-      if (syntheticCalls.length > 0) {
-        const plainText = extractPlainText(textBlock.text);
-        response.content = [
-          ...(plainText ? [{ type: "text" as const, text: plainText }] : []),
-          ...syntheticCalls,
-        ];
-        (response as { stopReason: AssistantMessage["stopReason"] }).stopReason = "toolUse";
+  return finalizeResponse(response, context, options);
+}
+
+export interface StreamResult {
+  textStream: AsyncIterable<string>;
+  result: Promise<ChatResponse>;
+}
+
+export function streamWithContext(config: AgentConfig, options: ChatOptions): StreamResult {
+  const provider = (config.provider || "anthropic") as SupportedProvider;
+  const model = getProviderModel(provider, config.model);
+
+  const tools =
+    provider === "google" && options.tools ? sanitizeToolsForGemini(options.tools) : options.tools;
+
+  const systemPrompt = options.systemPrompt || options.context.systemPrompt || "";
+
+  const context: Context = {
+    ...options.context,
+    systemPrompt,
+    tools,
+  };
+
+  const temperature = normalizeProviderTemperature(
+    provider,
+    options.temperature ?? config.temperature
+  );
+
+  const streamOptions: Record<string, unknown> = {
+    apiKey: getEffectiveApiKey(provider, config.api_key),
+    maxTokens: options.maxTokens ?? config.max_tokens,
+    temperature,
+    sessionId: options.sessionId,
+    cacheRetention: provider === "nvidia" ? NVIDIA_CACHE_RETENTION : DEFAULT_CACHE_RETENTION,
+  };
+
+  const eventStream = stream(model, context, streamOptions as ProviderStreamOptions);
+
+  // Transform event stream into a simple text delta async iterable
+  async function* textDeltas(): AsyncIterable<string> {
+    for await (const event of eventStream) {
+      if (event.type === "text_delta" && event.delta) {
+        yield event.delta;
+      }
+      // Stop yielding text when tool calls start — the response needs full processing
+      if (event.type === "toolcall_start") {
+        return;
       }
     }
   }
 
-  // Strip <think> blocks from all providers (Cocoon, Mistral, etc.)
-  const thinkRe = /<think>[\s\S]*?<\/think>/g;
-  for (const block of response.content) {
-    if (block.type === "text" && block.text.includes("<think>")) {
-      block.text = block.text.replace(thinkRe, "").trim();
-    }
-  }
+  // Result promise: wait for the stream to complete and build ChatResponse
+  const resultPromise = (async (): Promise<ChatResponse> => {
+    const response = await eventStream.result();
+    return finalizeResponse(response, context, options);
+  })();
 
-  if (options.persistTranscript && options.sessionId) {
-    appendToTranscript(options.sessionId, response);
-  }
-
-  const textContent = response.content.find((block) => block.type === "text");
-  const text = textContent?.type === "text" ? textContent.text : "";
-
-  const updatedContext: Context = {
-    ...context,
-    messages: [...context.messages, response],
-  };
-
-  return {
-    message: response,
-    text,
-    context: updatedContext,
-  };
+  return { textStream: textDeltas(), result: resultPromise };
 }
 
 export function loadContextFromTranscript(sessionId: string, systemPrompt?: string): Context {

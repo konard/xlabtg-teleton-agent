@@ -98,12 +98,6 @@ export const jettonHoldersExecutor: ToolExecutor<JettonHoldersParams> = async (
       };
     });
 
-    // Calculate concentration (top holder %)
-    const _totalTop = holders.reduce(
-      (sum: number, h: FormattedHolder) => sum + parseFloat(h.balance.replace(/,/g, "")),
-      0
-    );
-
     let message = `Top ${holders.length} holders of ${symbol}:\n\n`;
     holders.forEach((h) => {
       const nameTag = h.name ? ` (${h.name})` : "";

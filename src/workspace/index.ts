@@ -28,8 +28,6 @@ export {
   ensureWorkspace,
   isNewWorkspace,
   loadTemplate,
-  writeFileIfMissing,
-  getWorkspaceStats,
   type Workspace,
   type WorkspaceConfig,
 } from "./manager.js";

@@ -29,6 +29,7 @@ import { Feedback } from "./pages/Feedback";
 import { Security } from "./pages/Security";
 import { SelfImprove } from "./pages/SelfImprove";
 import { Autonomous } from "./pages/Autonomous";
+import { Gocoon } from "./pages/Gocoon";
 import { Setup } from "./pages/Setup";
 import { SetupLayout } from "./components/setup/SetupLayout";
 import { checkAuth, login } from "./lib/api";
@@ -167,6 +168,7 @@ function AuthenticatedApp() {
           <Route path="security" element={<Security />} />
           <Route path="self-improve" element={<SelfImprove />} />
           <Route path="autonomous" element={<Autonomous />} />
+          <Route path="gocoon" element={<Gocoon />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

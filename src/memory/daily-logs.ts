@@ -148,8 +148,3 @@ export function cleanupOldDailyLogs(maxAgeDays = 60): number {
 
   return deleted;
 }
-
-export function writeConversationMilestone(chatId: string, topic: string, details: string): void {
-  const content = `### Conversation Milestone\n\n**Chat**: ${chatId}\n**Topic**: ${topic}\n\n${details}`;
-  appendToDailyLog(content);
-}

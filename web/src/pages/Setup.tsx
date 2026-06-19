@@ -11,7 +11,7 @@ import { setup } from '../lib/api';
 import { useTranslation } from 'react-i18next';
 
 // Re-export types for step components that import from here
-export type { WizardData, StepProps } from '../components/setup/SetupContext';
+export type { StepProps } from '../components/setup/SetupContext';
 
 const STEP_COMPONENTS: Record<StepId, ComponentType<StepProps>> = {
   welcome: WelcomeStep,

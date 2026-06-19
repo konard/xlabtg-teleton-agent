@@ -81,18 +81,4 @@ export class GiftDetector {
       return [];
     }
   }
-
-  /**
-   * Reset cache for a specific user (useful after trades)
-   */
-  resetCache(userId: number): void {
-    this.seenGifts.delete(userId);
-  }
-
-  /**
-   * Clear all caches
-   */
-  clearAll(): void {
-    this.seenGifts.clear();
-  }
 }

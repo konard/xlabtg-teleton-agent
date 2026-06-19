@@ -272,11 +272,11 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     parse: (v) => v === "true",
     defaultValue: "true",
   },
-  "cocoon.port": {
+  "gocoon.port": {
     type: "number",
     category: "Agent",
-    label: "Cocoon Port",
-    description: "Cocoon proxy port (requires restart)",
+    label: "Gocoon Port",
+    description: "gocoon-runner port (requires restart)",
     sensitive: false,
     hotReload: "restart",
     validate: numberInRange(1, 65535),

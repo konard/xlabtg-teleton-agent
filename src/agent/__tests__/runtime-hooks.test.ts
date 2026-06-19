@@ -286,8 +286,8 @@ describe("Runtime Hook Integration", () => {
     expect(mockLogger.error).not.toHaveBeenCalled();
   });
 
-  it("5.9 Cocoon provider path: hooks fire same as standard path", async () => {
-    // Hooks fire before the Cocoon/standard fork — same event for both paths
+  it("5.9 gocoon provider path: hooks fire same as standard path", async () => {
+    // Hooks fire before the gocoon/standard fork — same event for both paths
     const beforeCalls: string[] = [];
     const afterCalls: string[] = [];
 
@@ -310,7 +310,7 @@ describe("Runtime Hook Integration", () => {
 
     const runner = createHookRunner(registry, { logger: mockLogger });
 
-    // Simulate tool call (same event regardless of Cocoon or standard provider)
+    // Simulate tool call (same event regardless of gocoon or standard provider)
     const beforeEvent: BeforeToolCallEvent = {
       toolName: "ton_get_balance",
       params: {},

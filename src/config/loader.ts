@@ -136,6 +136,28 @@ export function loadConfig(configPath: string = DEFAULT_CONFIG_PATH): Config {
     delete (raw as Record<string, unknown>).market;
   }
 
+  // Backward compatibility: the 'cocoon' provider (a proxy to an external
+  // cocoon-cli) was replaced by the native 'gocoon' provider in 0.9.0. Migrate
+  // so existing configs keep loading. gocoon runs its own channel, so the user
+  // must run `teleton gocoon init` and fund it before use.
+  const rawAgent = (raw as { agent?: { provider?: unknown } } | null)?.agent;
+  if (rawAgent && rawAgent.provider === "cocoon") {
+    log.warn(
+      "Provider 'cocoon' was removed in 0.9.0; migrating to the native 'gocoon' provider. " +
+        "Run 'teleton gocoon init' and fund the channel before use."
+    );
+    rawAgent.provider = "gocoon";
+    // Carry a custom port from the old top-level cocoon block (the schema is
+    // non-strict and would otherwise drop it).
+    const rawObj = raw as Record<string, unknown>;
+    const oldCocoon = rawObj.cocoon as { port?: number } | undefined;
+    if (oldCocoon?.port != null) {
+      const gocoon = (rawObj.gocoon as Record<string, unknown> | undefined) ?? {};
+      if (gocoon.port == null) gocoon.port = oldCocoon.port;
+      rawObj.gocoon = gocoon;
+    }
+  }
+
   const result = ConfigSchema.safeParse(raw);
   if (!result.success) {
     throw new Error(formatConfigError(result.error, fullPath));

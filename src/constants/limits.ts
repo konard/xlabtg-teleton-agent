@@ -83,7 +83,6 @@ export const WEB_DOWNLOAD_BINARY_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
 export const TOOL_CONCURRENCY_LIMIT = 3;
 
 // ─── Tool RAG ──────────────────────────────────────────────────
-export const TOOL_RAG_DEFAULT_TOP_K = 35;
 export const TOOL_RAG_MIN_SCORE = 0.1;
 export const TOOL_RAG_VECTOR_WEIGHT = 0.6;
 export const TOOL_RAG_KEYWORD_WEIGHT = 0.4;

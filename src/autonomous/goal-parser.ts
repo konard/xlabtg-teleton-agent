@@ -192,7 +192,7 @@ export async function parseGoalFromNaturalLanguage(
   const model = modelFactory(provider, agentConfig.model);
   const apiKey = getEffectiveApiKey(provider, agentConfig.api_key);
 
-  if (!apiKey && provider !== "local" && provider !== "cocoon") {
+  if (!apiKey && provider !== "local" && provider !== "gocoon") {
     throw new Error(
       `Cannot parse goal: no API key configured for provider "${provider}". Set it in Settings → LLM.`
     );

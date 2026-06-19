@@ -1,4 +1,4 @@
-import type { Message, ToolResultMessage, UserMessage, TextContent } from "@mariozechner/pi-ai";
+import type { Message, ToolResultMessage, TextContent } from "@mariozechner/pi-ai";
 import type { ToolRegistry } from "../agent/tools/registry.js";
 import {
   MASKING_KEEP_RECENT_COUNT,
@@ -25,12 +25,6 @@ export interface MaskingOptions {
   toolRegistry?: ToolRegistry;
   currentIterationStartIndex?: number;
 }
-
-/** Detect Cocoon-style tool results (UserMessage with `<tool_response>` CDATA). */
-const isCocoonToolResult = (msg: Message): boolean =>
-  msg.role === "user" &&
-  Array.isArray(msg.content) &&
-  msg.content.some((c) => c.type === "text" && c.text.includes("<tool_response>"));
 
 /** Check if a tool result should be exempt from masking/truncation. */
 function isExempt(
@@ -82,7 +76,7 @@ export function maskOldToolResults(messages: Message[], options?: MaskingOptions
 
   const toolResults = messages
     .map((msg, index) => ({ msg, index }))
-    .filter(({ msg }) => msg.role === "toolResult" || isCocoonToolResult(msg));
+    .filter(({ msg }) => msg.role === "toolResult");
 
   // Quick exit: nothing to mask or truncate
   const needsMasking = toolResults.length > config.keepRecentCount;
@@ -98,14 +92,6 @@ export function maskOldToolResults(messages: Message[], options?: MaskingOptions
     const toMask = toolResults.slice(0, -config.keepRecentCount);
 
     for (const { msg, index } of toMask) {
-      if (isCocoonToolResult(msg)) {
-        result[index] = {
-          ...msg,
-          content: [{ type: "text" as const, text: "[Tool response masked]" }],
-        } as UserMessage;
-        continue;
-      }
-
       const toolMsg = msg as ToolResultMessage;
       if (isExempt(toolMsg, config, toolRegistry)) continue;
 
@@ -142,24 +128,6 @@ export function maskOldToolResults(messages: Message[], options?: MaskingOptions
       // Never truncate results from the current iteration
       if (index >= iterStart) continue;
 
-      if (isCocoonToolResult(msg)) {
-        const userMsg = msg as UserMessage;
-        if (!Array.isArray(userMsg.content)) continue;
-        const textBlock = userMsg.content.find((c): c is TextContent => c.type === "text");
-        if (textBlock && textBlock.text.length > config.truncationThreshold) {
-          result[index] = {
-            ...userMsg,
-            content: [
-              {
-                type: "text" as const,
-                text: truncateToolResult(textBlock.text, config.truncationKeepChars),
-              },
-            ],
-          } as UserMessage;
-        }
-        continue;
-      }
-
       const toolMsg = msg as ToolResultMessage;
       if (isExempt(toolMsg, config, toolRegistry)) continue;
 
@@ -179,32 +147,4 @@ export function maskOldToolResults(messages: Message[], options?: MaskingOptions
   }
 
   return result;
-}
-
-export function calculateMaskingSavings(
-  originalMessages: Message[],
-  maskedMessages: Message[]
-): { originalChars: number; maskedChars: number; savings: number } {
-  const countChars = (messages: Message[]): number => {
-    let total = 0;
-    for (const msg of messages) {
-      if (msg.role === "toolResult" || isCocoonToolResult(msg)) {
-        for (const block of msg.content) {
-          if (typeof block !== "string" && block.type === "text") {
-            total += block.text.length;
-          }
-        }
-      }
-    }
-    return total;
-  };
-
-  const originalChars = countChars(originalMessages);
-  const maskedChars = countChars(maskedMessages);
-
-  return {
-    originalChars,
-    maskedChars,
-    savings: originalChars - maskedChars,
-  };
 }

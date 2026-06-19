@@ -26,11 +26,11 @@ export function ReviewStep({ data, onChange }: StepProps) {
         <div className="review-list">
           <div><span className="review-label">Provider:</span> {data.provider}</div>
           <div><span className="review-label">Model:</span> {resolvedModel}</div>
-          {data.provider !== 'cocoon' && data.apiKey && (
+          {data.provider !== 'gocoon' && data.apiKey && (
             <div><span className="review-label">API Key:</span> <span className="mono">{maskKey(data.apiKey)}</span></div>
           )}
-          {data.provider === 'cocoon' && (
-            <div><span className="review-label">Port:</span> {data.cocoonPort}</div>
+          {data.provider === 'gocoon' && (
+            <div><span className="review-label">Port:</span> {data.gocoonPort}</div>
           )}
         </div>
       </div>

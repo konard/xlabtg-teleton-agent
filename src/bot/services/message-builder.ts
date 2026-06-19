@@ -215,13 +215,6 @@ ${esc(error || "Unknown error")}`;
 }
 
 /**
- * Wrong user
- */
-export function buildWrongUserMessage(deal: DealContext): string {
-  return `🚫 This deal is for @${esc(String(deal.username || deal.userId))} only.`;
-}
-
-/**
  * Not found
  */
 export function buildNotFoundMessage(dealId: string): string {
