@@ -7,9 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-06-19
+
+### Added
+
+- **Native `gocoon` provider**: an OpenAI-compatible, pure-Go COCOON client ([gocoon](https://github.com/TONresistor/gocoon)). Turnkey lifecycle — auto-install and integrity-verify the runner binary, supervise it, and set up / top-up / withdraw the TON payment channel from the CLI (`teleton gocoon`) or the WebUI Gocoon page. Runner pinned to v0.2.0, default model `Qwen/Qwen3-32B`.
+- **WebUI Gocoon page**: channel status (including the fund address), top-up, withdraw, unstake, and wallet reset.
+- **Codex** in the WebUI provider selector.
+
 ### Changed
 
-- **Replaced the `cocoon` provider with `gocoon`**: a native OpenAI-compatible, pure-Go COCOON client ([gocoon](https://github.com/TONresistor/gocoon)). Tool-calling now uses the model's native `tools`/`tool_calls` instead of the old XML-injection shim, which has been removed (`src/cocoon/` deleted). **Breaking:** set `agent.provider: gocoon` and rename the `cocoon:` config block to `gocoon:` (`gocoon.port`, default `10000`). Turnkey lifecycle: auto-install the gocoon runner, supervise it, and set up/top-up/withdraw the TON channel from the CLI (`teleton gocoon`) or the WebUI Gocoon page.
+- **Replaced the `cocoon` provider with `gocoon`** (**Breaking**). Tool-calling now uses the model's native `tools`/`tool_calls` instead of the old XML-injection shim, which has been removed (`src/cocoon/` deleted). Set `agent.provider: gocoon` and rename the `cocoon:` config block to `gocoon:` (`gocoon.port`, default `10000`); legacy `cocoon` configs are auto-migrated on load.
+- **ToolSearch mode enabled by default.**
+- **Local SSE proxy** fronts the gocoon runner — fixes the pi-ai "empty response / zero tokens" issue and surfaces runner errors to the client.
+- **Auto-start is non-fatal**: an unfunded channel keeps the agent and WebUI running so it can be funded from the Gocoon page (requires ≥2 TON free in the fund wallet).
+- Re-verify the runner binary integrity on every launch, not only on install.
+
+### Fixed
+
+- **Unstake / withdraw**: `withdrawAll` scanned the owner wallet instead of the fund wallet, so the channel close was skipped and the staked TON stayed locked while only the liquid balance was swept. Now scans the fund address and reads channel state.
+- Harden withdraw against transient errors and re-runs (idempotent, re-broadcast-safe).
+- Hold the wallet tx-lock during the agent-wallet sweep to prevent a concurrent send from stealing the seqno.
+- Gate top-up on a running runner; show the fund address in status.
+- CI: lowercase the ghcr.io path in the release-notes Docker step.
+
+### Removed
+
+- The `cocoon` provider and its XML tool-adapter (`src/cocoon/`).
+- Dead code: `events/bus`, `memory/agent/sessions`, `telegram/callbacks/*`, web `SearchInput`, `lib/a11y`, and assorted unused helpers.
 
 ## [0.8.1] - 2026-03-05
 
