@@ -143,29 +143,6 @@ export function Config() {
               handleProviderCancel={config.handleProviderCancel}
             />
           </div>
-
-          {config.getLocal('agent.provider') === 'cocoon' && (
-            <>
-              <div className="config-subhead">Cocoon</div>
-              <div className="card">
-                <EditableField
-                  label="Proxy Port"
-                  description="Cocoon Network proxy port"
-                  configKey="cocoon.port"
-                  type="text"
-                  value={config.getLocal('cocoon.port')}
-                  serverValue={config.getServer('cocoon.port')}
-                  onChange={(v) => config.setLocal('cocoon.port', v)}
-                  onSave={(v) => config.saveConfig('cocoon.port', v)}
-                  onCancel={() => config.cancelLocal('cocoon.port')}
-                  min={1}
-                  max={65535}
-                  placeholder="11434"
-                  hotReload="restart"
-                />
-              </div>
-            </>
-          )}
         </>
       )}
 

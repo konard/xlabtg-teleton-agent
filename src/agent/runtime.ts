@@ -44,6 +44,7 @@ import type {
   ToolCall,
   AssistantMessage,
   Message,
+  ToolResultMessage,
 } from "@mariozechner/pi-ai";
 import { CompactionManager, DEFAULT_COMPACTION_CONFIG } from "../memory/compaction.js";
 import { maskOldToolResults } from "../memory/observation-masking.js";
@@ -1029,13 +1030,14 @@ export class AgentRuntime {
         log.warn(`Tool result too large, truncated to ${resultText.length} chars`);
       }
 
-      const { buildToolResultMessage } = await import("../cocoon/tool-adapter.js");
-      const resultMsg = buildToolResultMessage(
-        sink.provider,
-        block,
-        resultText,
-        !exec.result.success
-      );
+      const resultMsg: ToolResultMessage = {
+        role: "toolResult",
+        toolCallId: block.id,
+        toolName: block.name,
+        content: [{ type: "text", text: resultText }],
+        isError: !exec.result.success,
+        timestamp: Date.now(),
+      };
       resultMessages.push(resultMsg);
       appendToTranscript(sink.sessionId, resultMsg);
     }
@@ -1409,23 +1411,6 @@ export class AgentRuntime {
       .all() as Array<{ chat_id: string }>;
 
     return rows.map((r) => r.chat_id);
-  }
-
-  setSoul(soul: string): void {
-    this.soul = soul;
-  }
-
-  configureCompaction(config: {
-    enabled?: boolean;
-    maxMessages?: number;
-    maxTokens?: number;
-  }): void {
-    this.compactionManager.updateConfig(config);
-    log.info({ config: this.compactionManager.getConfig() }, `Compaction config updated`);
-  }
-
-  getCompactionConfig() {
-    return this.compactionManager.getConfig();
   }
 
   private _memoryStatsCache: {

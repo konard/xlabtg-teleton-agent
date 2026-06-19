@@ -103,7 +103,7 @@ export const visionAnalyzeExecutor: ToolExecutor<VisionAnalyzeParams> = async (
     // Get API key from context
     const currentProvider = context.config?.agent?.provider;
     const apiKey = context.config?.agent?.api_key;
-    if (!apiKey && currentProvider !== "local" && currentProvider !== "cocoon") {
+    if (!apiKey && currentProvider !== "local" && currentProvider !== "gocoon") {
       return {
         success: false,
         error: "No API key configured for vision analysis",

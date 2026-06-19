@@ -12,8 +12,6 @@ import type { ToolScope } from "./types.js";
  */
 export type ToolAccessLevel = "all" | "allowlist" | "admin" | "off";
 
-export const TOOL_ACCESS_LEVELS = ["all", "allowlist", "admin", "off"] as const;
-
 export function isToolAccessLevel(v: unknown): v is ToolAccessLevel {
   return v === "all" || v === "allowlist" || v === "admin" || v === "off";
 }

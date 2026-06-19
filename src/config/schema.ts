@@ -262,7 +262,7 @@ export const McpConfigSchema = _McpObject.default(_McpObject.parse({}));
 const _ToolSearchObject = z.object({
   enabled: z
     .boolean()
-    .default(false)
+    .default(true)
     .describe("Enable ToolSearch mode: core tools + meta-tool replaces RAG pre-selection"),
 });
 export const ToolSearchConfigSchema = _ToolSearchObject.default(_ToolSearchObject.parse({}));
@@ -346,7 +346,7 @@ export const ConfigSchema = z.object({
   logging: LoggingConfigSchema,
   dev: DevConfigSchema,
   tool_rag: ToolRagConfigSchema,
-  tool_search: ToolSearchConfigSchema.optional(),
+  tool_search: ToolSearchConfigSchema,
   capabilities: CapabilitiesConfigSchema,
   api: ApiConfigSchema.optional(),
   ton_proxy: TonProxyConfigSchema,
@@ -356,17 +356,21 @@ export const ConfigSchema = z.object({
     .record(z.string(), z.unknown())
     .default({})
     .describe("Per-plugin config (key = plugin name with underscores)"),
-  cocoon: z
+  gocoon: z
     .object({
       port: z
         .number()
         .min(1)
         .max(65535)
         .default(10000)
-        .describe("HTTP port of the cocoon-cli proxy"),
+        .describe("HTTP port of the gocoon-runner OpenAI-compatible API"),
+      auto_start: z
+        .boolean()
+        .optional()
+        .describe("Auto-install and supervise the gocoon-runner on start (default: true)"),
     })
     .optional()
-    .describe("Cocoon Network — expects external cocoon-cli running on this port"),
+    .describe("Gocoon: pure-Go COCOON client (decentralized LLM on TON)"),
   tonapi_key: z
     .string()
     .optional()
@@ -384,19 +388,11 @@ export const ConfigSchema = z.object({
 export type Config = z.infer<typeof ConfigSchema>;
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 export type TelegramConfig = z.infer<typeof TelegramConfigSchema>;
-export type StorageConfig = z.infer<typeof StorageConfigSchema>;
 export type SessionResetPolicy = z.infer<typeof SessionResetPolicySchema>;
 export type DealsConfig = z.infer<typeof DealsConfigSchema>;
 export type WebUIConfig = z.infer<typeof WebUIConfigSchema>;
-export type EmbeddingConfig = z.infer<typeof EmbeddingConfigSchema>;
-export type LoggingConfig = z.infer<typeof LoggingConfigSchema>;
-export type DevConfig = z.infer<typeof DevConfigSchema>;
 export type McpConfig = z.infer<typeof McpConfigSchema>;
-export type ToolRagConfig = z.infer<typeof ToolRagConfigSchema>;
-export type ToolSearchConfig = z.infer<typeof ToolSearchConfigSchema>;
 export type McpServerConfig = z.infer<typeof McpServerSchema>;
-export type CapabilitiesConfig = z.infer<typeof CapabilitiesConfigSchema>;
 export type TonProxyConfig = z.infer<typeof TonProxyConfigSchema>;
 export type ApiConfig = z.infer<typeof _ApiObject>;
 export type ExecConfig = z.infer<typeof _ExecObject>;
-export type HeartbeatConfig = z.infer<typeof _HeartbeatObject>;

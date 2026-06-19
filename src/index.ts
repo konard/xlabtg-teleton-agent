@@ -7,7 +7,6 @@ import type { TelegramMessage } from "./telegram/bridge.js";
 import type { ITelegramBridge } from "./telegram/bridge-interface.js";
 import { isBotBridge, isUserBridge } from "./telegram/bridge-guards.js";
 import { createBridge } from "./telegram/factory.js";
-import { eventBus } from "./events/bus.js";
 import { MessageHandler } from "./telegram/handlers.js";
 import { AdminHandler } from "./telegram/admin.js";
 import { MessageDebouncer } from "./telegram/debounce.js";
@@ -18,6 +17,8 @@ import { setTonapiKey } from "./constants/api-endpoints.js";
 import { setToncenterApiKey } from "./ton/endpoint.js";
 import { TELETON_ROOT } from "./workspace/paths.js";
 import { join } from "path";
+import { existsSync } from "fs";
+import type { GocoonSupervisor, GocoonSseProxy } from "./gocoon/index.js";
 import { ToolRegistry } from "./agent/tools/registry.js";
 import { registerAllTools } from "./agent/tools/register-all.js";
 import { type PluginModuleWithHooks } from "./agent/tools/plugin-loader.js";
@@ -67,6 +68,8 @@ export class TeletonApp {
   private webuiServer: WebUIServer | null = null;
   private apiServer: ApiServer | null = null;
   private pluginWatcher: PluginWatcher | null = null;
+  private gocoonSupervisor: GocoonSupervisor | null = null;
+  private gocoonProxy: GocoonSseProxy | null = null;
   private mcpConnections: McpConnection[] = [];
   private callbackHandlerRegistered = false;
   private messageHandlersRegistered = false;
@@ -134,7 +137,38 @@ export class TeletonApp {
         rewireHooks: () => this.wirePluginEventHooks(),
       },
       userHookEvaluator: this.userHookEvaluator,
+      gocoonControl: {
+        stopRunner: () => this.stopGocoonRunner(),
+      },
     };
+  }
+
+  /**
+   * Stop the supervised gocoon runner + SSE proxy. A withdraw refuses to run
+   * while the runner is active, so the Gocoon page calls this first. The agent
+   * stays up; gocoon inference is unavailable until the next restart.
+   */
+  stopGocoonRunner(): boolean {
+    let stopped = false;
+    if (this.gocoonProxy) {
+      try {
+        this.gocoonProxy.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon sse-proxy stop failed");
+      }
+      this.gocoonProxy = null;
+      stopped = true;
+    }
+    if (this.gocoonSupervisor) {
+      try {
+        this.gocoonSupervisor.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon supervisor stop failed");
+      }
+      this.gocoonSupervisor = null;
+      stopped = true;
+    }
+    return stopped;
   }
 
   constructor(configPath?: string) {
@@ -429,7 +463,7 @@ ${blue}  ┌──────────────────────�
     // Initialize context builder for RAG search in agent
     this.agent.initializeContextBuilder(this.memory.embedder, getDatabase().isVectorSearchReady());
 
-    // Register provider-specific models (Cocoon / local LLM)
+    // Register provider-specific models (gocoon / local LLM)
     await this.initializeProviders();
 
     // Connect to Telegram
@@ -437,7 +471,6 @@ ${blue}  ┌──────────────────────�
     if (!this.bridge.isAvailable()) {
       throw new Error("Failed to connect to Telegram");
     }
-    eventBus.emit("bridge:connected", { mode: this.config.telegram.mode });
     await this.resolveOwnerInfo();
     const ownUserId = this.bridge.getOwnUserId();
     if (ownUserId) {
@@ -669,24 +702,64 @@ ${blue}  ┌──────────────────────�
   }
 
   /**
-   * Register provider-specific models (Cocoon Network / local LLM).
+   * Register provider-specific models (gocoon / local LLM).
    */
   private async initializeProviders(): Promise<void> {
-    if (this.config.agent.provider === "cocoon") {
+    if (this.config.agent.provider === "gocoon") {
+      const port = this.config.gocoon?.port ?? 10000;
+      const autoStart = this.config.gocoon?.auto_start ?? true;
       try {
-        const { registerCocoonModels } = await import("./agent/client.js");
-        const port = this.config.cocoon?.port ?? 10000;
-        const models = await registerCocoonModels(port);
+        if (autoStart) {
+          const {
+            ensureGocoonBinaries,
+            GocoonSupervisor,
+            runnerBaseUrl,
+            clientConfigPath,
+            walletInfo,
+          } = await import("./gocoon/index.js");
+          if (!existsSync(clientConfigPath())) {
+            throw new Error(
+              "gocoon is not set up yet; run `teleton gocoon init` (or use the Gocoon page) first"
+            );
+          }
+          await ensureGocoonBinaries();
+          // Opening the channel needs free TON on-chain; fail clearly instead of a health timeout.
+          const wallet = await walletInfo();
+          if (wallet.balanceNano < 2_000_000_000n) {
+            throw new Error(
+              `COCOON wallet has ${wallet.balanceTon} TON; gocoon needs at least 2 TON free to open the channel. ` +
+                `Fund ${wallet.fundAddress} (Gocoon page or \`teleton gocoon init\`), then restart.`
+            );
+          }
+          this.gocoonSupervisor = new GocoonSupervisor({
+            configPath: clientConfigPath(),
+            healthUrl: `${runnerBaseUrl(port)}/v1/models`,
+            startGraceMs: 60_000, // first on-chain channel registration can take ~60s
+          });
+          await this.gocoonSupervisor.start();
+          log.info(`Gocoon runner started on port ${port}`);
+        }
+        // pi-ai always streams and only parses SSE; the gocoon runner returns a
+        // single JSON document. Front the runner with a local proxy that frames
+        // its reply as SSE so streaming clients parse it. Keeps gocoon untouched.
+        const { GocoonSseProxy } = await import("./gocoon/index.js");
+        this.gocoonProxy = new GocoonSseProxy({ runnerPort: port });
+        await this.gocoonProxy.start();
+        const { registerGocoonModels } = await import("./agent/client.js");
+        const models = await registerGocoonModels(this.gocoonProxy.port);
         if (models.length === 0) {
           throw new Error(`No models found on port ${port}`);
         }
-        log.info(`Cocoon Network ready — ${models.length} model(s) on port ${port}`);
-      } catch (error: unknown) {
-        log.error(
-          `Cocoon Network unavailable on port ${this.config.cocoon?.port ?? 10000}: ${getErrorMessage(error)}`
+        log.info(
+          `Gocoon ready: ${models.length} model(s) (runner ${port}, sse-proxy ${this.gocoonProxy.port})`
         );
-        log.error("Start the Cocoon client first: cocoon start");
-        throw new Error(`Cocoon Network unavailable: ${getErrorMessage(error)}`);
+      } catch (error: unknown) {
+        // Non-fatal: keep the agent and WebUI alive so gocoon can be installed and
+        // funded from the Gocoon page, then a restart activates it.
+        log.warn(`Gocoon not ready: ${getErrorMessage(error)}`);
+        log.warn(
+          "Agent is up but can't chat until gocoon is funded. Open the Gocoon page (or run `teleton gocoon init`), then restart."
+        );
       }
     }
 
@@ -1089,6 +1162,22 @@ ${blue}  ┌──────────────────────�
         await this.pluginWatcher.stop();
       } catch (error: unknown) {
         log.error({ err: error }, "Plugin watcher stop failed");
+      }
+    }
+
+    // Stop the gocoon SSE proxy and runner (when teleton supervises them)
+    if (this.gocoonProxy) {
+      try {
+        this.gocoonProxy.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon sse-proxy stop failed");
+      }
+    }
+    if (this.gocoonSupervisor) {
+      try {
+        this.gocoonSupervisor.stop();
+      } catch (error: unknown) {
+        log.error({ err: error }, "gocoon supervisor stop failed");
       }
     }
 

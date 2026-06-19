@@ -7,10 +7,10 @@ const log = createLogger("LLM");
 
 const modelCache = new Map<string, Model<Api>>();
 
-const COCOON_MODELS: Record<string, Model<"openai-completions">> = {};
+const GOCOON_MODELS: Record<string, Model<"openai-completions">> = {};
 
-/** Register models discovered from a running Cocoon client */
-export async function registerCocoonModels(httpPort: number): Promise<string[]> {
+/** Register models discovered from a running gocoon-runner (native OpenAI-compatible API). */
+export async function registerGocoonModels(httpPort: number): Promise<string[]> {
   try {
     const res = await fetchWithTimeout(`http://localhost:${httpPort}/v1/models`, {
       timeoutMs: 3000,
@@ -25,11 +25,11 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
     const ids: string[] = [];
     for (const m of models) {
       const id = m.id || m.name || String(m);
-      COCOON_MODELS[id] = {
+      GOCOON_MODELS[id] = {
         id,
         name: id,
         api: "openai-completions",
-        provider: "cocoon",
+        provider: "gocoon",
         baseUrl: `http://localhost:${httpPort}/v1`,
         reasoning: false,
         input: ["text"],
@@ -40,6 +40,8 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
           supportsStore: false,
           supportsDeveloperRole: false,
           supportsReasoningEffort: false,
+          supportsStrictMode: false,
+          maxTokensField: "max_tokens",
         },
       };
       ids.push(id);
@@ -47,7 +49,7 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
     return ids;
   } catch (error) {
     if (error instanceof Error && error.name === "TimeoutError") {
-      log.warn({ port: httpPort }, "Cocoon /v1/models timed out after 3s, returning empty list");
+      log.warn({ port: httpPort }, "gocoon /v1/models timed out after 3s, returning empty list");
     }
     return [];
   }
@@ -116,17 +118,19 @@ export function getProviderModel(provider: SupportedProvider, modelId: string): 
 
   const meta = getProviderMetadata(provider);
 
-  if (meta.piAiProvider === "cocoon") {
-    let model = COCOON_MODELS[modelId];
+  if (meta.piAiProvider === "gocoon") {
+    let model = GOCOON_MODELS[modelId];
     if (!model) {
-      model = Object.values(COCOON_MODELS)[0];
-      if (model) log.warn(`Cocoon model "${modelId}" not found, using "${model.id}"`);
+      // Fall back to the provider default (a served model), not the first registered
+      // one, which may be an unusable model with no workers.
+      model = GOCOON_MODELS[meta.defaultModel] ?? Object.values(GOCOON_MODELS)[0];
+      if (model) log.warn(`gocoon model "${modelId}" not found, using "${model.id}"`);
     }
     if (model) {
       modelCache.set(cacheKey, model);
       return model;
     }
-    throw new Error("No Cocoon models available. Is the cocoon client running?");
+    throw new Error("No gocoon models available. Is the gocoon runner running?");
   }
 
   if (meta.piAiProvider === "local") {

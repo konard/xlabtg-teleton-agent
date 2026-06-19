@@ -81,7 +81,7 @@ export interface SetupConfig {
     bot_token?: string;
     bot_username?: string;
   };
-  cocoon?: { port: number };
+  gocoon?: { port: number };
   deals?: { enabled?: boolean; buy_max_floor_percent?: number; sell_min_floor_percent?: number };
   tonapi_key?: string;
   toncenter_api_key?: string;
@@ -392,6 +392,32 @@ export const api = {
     return fetchAPI<APIResponse<StatusData>>('/status');
   },
 
+  // gocoon: decentralized LLM on TON
+  async gocoonStatus() {
+    return fetchAPI<APIResponse<{ installed: boolean; version: string | null; wallet: { fundAddress: string; ownerAddress: string; balanceTon: string; balanceNano: string; funded: boolean; recommendedFundingTon: string } | null; runner: boolean }>>('/gocoon/status');
+  },
+  async gocoonInstall() {
+    return fetchAPI<APIResponse<{ version: string }>>('/gocoon/install', { method: 'POST' });
+  },
+  async gocoonInit() {
+    return fetchAPI<APIResponse<{ fundAddress: string; recommendedFundingTon: string }>>('/gocoon/init', { method: 'POST' });
+  },
+  async gocoonTopup(amount: string) {
+    return fetchAPI<APIResponse<{ amount: string }>>('/gocoon/topup', { method: 'POST', body: JSON.stringify({ amount }) });
+  },
+  async gocoonWithdrawStart(destination: string) {
+    return fetchAPI<APIResponse<{ started: boolean }>>('/gocoon/withdraw', { method: 'POST', body: JSON.stringify({ destination }) });
+  },
+  async gocoonWithdrawStatus() {
+    return fetchAPI<APIResponse<{ running: boolean; done: boolean; events: { stage: string; status: string; message: string; at: number }[]; error?: string }>>('/gocoon/withdraw');
+  },
+  async gocoonRunnerStop() {
+    return fetchAPI<APIResponse<{ stopped: boolean }>>('/gocoon/runner/stop', { method: 'POST' });
+  },
+  async gocoonReset() {
+    return fetchAPI<APIResponse<{ reset: boolean }>>('/gocoon/reset', { method: 'POST' });
+  },
+
   async getTools() {
     return fetchAPI<APIResponse<ModuleInfo[]>>('/tools');
   },
@@ -443,20 +469,10 @@ export const api = {
     return fetchAPI<APIResponse<PluginManifest[]>>('/plugins');
   },
 
-  async getPluginPriorities() {
-    return fetchAPI<APIResponse<Record<string, number>>>('/plugins/priorities');
-  },
-
   async setPluginPriority(pluginName: string, priority: number) {
     return fetchAPI<APIResponse<{ pluginName: string; priority: number }>>('/plugins/priorities', {
       method: 'POST',
       body: JSON.stringify({ pluginName, priority }),
-    });
-  },
-
-  async resetPluginPriority(pluginName: string) {
-    return fetchAPI<APIResponse<null>>(`/plugins/priorities/${encodeURIComponent(pluginName)}`, {
-      method: 'DELETE',
     });
   },
 
@@ -551,10 +567,6 @@ export const api = {
     return fetchAPI<APIResponse<TaskData[]>>(`/tasks${qs}`);
   },
 
-  async tasksGet(id: string) {
-    return fetchAPI<APIResponse<TaskData>>(`/tasks/${id}`);
-  },
-
   async tasksDelete(_id: string) {
     return fetchAPI<APIResponse<{ message: string }>>(`/tasks/${_id}`, { method: 'DELETE' });
   },
@@ -570,10 +582,6 @@ export const api = {
     });
   },
 
-  async tasksCleanDone() {
-    return fetchAPI<APIResponse<{ deleted: number }>>('/tasks/clean-done', { method: 'POST' });
-  },
-
   async getConfigKeys() {
     return fetchAPI<APIResponse<ConfigKeyData[]>>('/config');
   },
@@ -582,12 +590,6 @@ export const api = {
     return fetchAPI<APIResponse<ConfigKeyData>>(`/config/${key}`, {
       method: 'PUT',
       body: JSON.stringify({ value }),
-    });
-  },
-
-  async unsetConfigKey(key: string) {
-    return fetchAPI<APIResponse<ConfigKeyData>>(`/config/${key}`, {
-      method: 'DELETE',
     });
   },
 

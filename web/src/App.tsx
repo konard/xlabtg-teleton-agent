@@ -20,6 +20,7 @@ const Hooks = React.lazy(() => import('./pages/Hooks').then(m => ({ default: m.H
 const Logs = React.lazy(() => import('./pages/Logs').then(m => ({ default: m.Logs })));
 const Conversations = React.lazy(() => import('./pages/Conversations').then(m => ({ default: m.Conversations })));
 const Wallet = React.lazy(() => import('./pages/Wallet').then(m => ({ default: m.Wallet })));
+const Gocoon = React.lazy(() => import('./pages/Gocoon').then(m => ({ default: m.Gocoon })));
 
 function App() {
   // Setup route bypasses auth entirely
@@ -151,6 +152,7 @@ function RoutedContent() {
             <Route path="memory" element={<Memory />} />
             <Route path="conversations" element={<Conversations />} />
             <Route path="wallet" element={<Wallet />} />
+            <Route path="gocoon" element={<Gocoon />} />
             <Route path="workspace" element={<Workspace />} />
             <Route path="tasks" element={<Tasks />} />
             <Route path="mcp" element={<Mcp />} />

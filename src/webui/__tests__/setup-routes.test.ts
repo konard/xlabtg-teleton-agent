@@ -58,8 +58,8 @@ vi.mock("../../config/providers.js", () => ({
       consoleUrl: "https://console.anthropic.com/",
     },
     {
-      id: "cocoon",
-      displayName: "Cocoon Network",
+      id: "gocoon",
+      displayName: "Gocoon",
       defaultModel: "auto",
       utilityModel: "auto",
       toolLimit: null,
@@ -182,8 +182,8 @@ describe("Setup API Routes", () => {
         consoleUrl: "https://console.anthropic.com/",
       },
       {
-        id: "cocoon",
-        displayName: "Cocoon Network",
+        id: "gocoon",
+        displayName: "Gocoon",
         defaultModel: "auto",
         utilityModel: "auto",
         toolLimit: null,
@@ -289,7 +289,7 @@ describe("Setup API Routes", () => {
       expect(data.data).toHaveLength(2);
       expect(data.data[0].id).toBe("anthropic");
       expect(data.data[0].requiresApiKey).toBe(true);
-      expect(data.data[1].id).toBe("cocoon");
+      expect(data.data[1].id).toBe("gocoon");
       expect(data.data[1].requiresApiKey).toBe(false);
     });
   });
@@ -887,18 +887,18 @@ describe("Setup API Routes", () => {
       expect(ConfigSchema.parse).toHaveBeenCalled();
     });
 
-    it("includes cocoon config when provided", async () => {
+    it("includes gocoon config when provided", async () => {
       const input = {
         ...validInput,
-        cocoon: { endpoint: "https://cocoon.network" },
+        gocoon: { port: 10000 },
       };
 
       const res = await post(app, "/config/save", input);
       expect(res.status).toBe(200);
 
-      // Check that writeFileSync was called with YAML containing cocoon
+      // Check that writeFileSync was called with YAML containing gocoon
       const writeCall = (writeFileSync as Mock).mock.calls[0];
-      expect(writeCall[1]).toContain("cocoon");
+      expect(writeCall[1]).toContain("gocoon");
     });
 
     it("returns 400 on Zod validation failure", async () => {

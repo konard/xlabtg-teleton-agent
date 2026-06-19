@@ -134,10 +134,6 @@ export class MessageDebouncer {
     }
   }
 
-  getBufferDepth(chatId: string): number {
-    return this.buffers.get(chatId)?.messages.length ?? 0;
-  }
-
   async flushAll(): Promise<void> {
     const keys = Array.from(this.buffers.keys());
     for (const key of keys) {

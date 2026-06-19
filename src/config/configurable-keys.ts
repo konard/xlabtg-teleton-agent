@@ -205,11 +205,11 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     mask: identity,
     parse: identity,
   },
-  "cocoon.port": {
+  "gocoon.port": {
     type: "number",
     category: "Agent",
-    label: "Cocoon Port",
-    description: "Cocoon proxy port (requires restart)",
+    label: "Gocoon Port",
+    description: "gocoon-runner port (requires restart)",
     sensitive: false,
     hotReload: "restart",
     validate: numberInRange(1, 65535),
@@ -676,21 +676,6 @@ export const CONFIGURABLE_KEYS: Record<string, ConfigKeyMeta> = {
     parse: (v) => v === "true",
   },
 };
-
-// ── Category order for frontend grouping ───────────────────────────────
-
-export const CATEGORY_ORDER: ConfigCategory[] = [
-  "API Keys",
-  "Agent",
-  "Session",
-  "Telegram",
-  "Embedding",
-  "WebUI",
-  "Deals",
-  "TON Proxy",
-  "Coding Agent",
-  "Developer",
-];
 
 // ── Dot-notation helpers ───────────────────────────────────────────────
 

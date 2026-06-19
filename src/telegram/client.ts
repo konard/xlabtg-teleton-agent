@@ -371,21 +371,6 @@ export class TelegramUserClient {
     }
   }
 
-  async resolveUsername(username: string): Promise<Api.TypeUser | Api.TypeChat | undefined> {
-    const clean = username.replace("@", "");
-    try {
-      // Call ResolveUsername directly — bypasses GramJS's VALID_USERNAME_RE
-      // which rejects collectible usernames shorter than 5 chars.
-      const result = await this.client.invoke(
-        new Api.contacts.ResolveUsername({ username: clean })
-      );
-      return result.users[0] || result.chats[0];
-    } catch (error: unknown) {
-      log.error({ err: error }, `Failed to resolve username ${clean}`);
-      return undefined;
-    }
-  }
-
   async getEntity(entity: string): Promise<Api.TypeUser | Api.TypeChat> {
     return await this.client.getEntity(entity);
   }

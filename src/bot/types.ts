@@ -45,16 +45,6 @@ export type DealStatus =
   | "cancelled"
   | "failed";
 
-export type MessageState =
-  | "proposal" // Accept/Decline buttons
-  | "accepted" // Payment/gift instructions + "I've sent"
-  | "payment_claimed" // Verifying...
-  | "verified" // Sending agent's part...
-  | "completed" // Final recap
-  | "declined" // Declined message
-  | "expired" // Expired message
-  | "failed"; // Error message
-
 export interface CallbackData {
   action: "accept" | "decline" | "sent" | "copy_addr" | "copy_memo" | "refresh";
   dealId: string;
@@ -72,10 +62,6 @@ export function splitPrefix(raw: string): { prefix: string; rest: string } | nul
   const colonIdx = raw.indexOf(":");
   if (colonIdx <= 0) return null;
   return { prefix: raw.slice(0, colonIdx), rest: raw.slice(colonIdx + 1) };
-}
-
-export function encodeCallback(data: CallbackData): string {
-  return `${data.action}:${data.dealId}`;
 }
 
 /**

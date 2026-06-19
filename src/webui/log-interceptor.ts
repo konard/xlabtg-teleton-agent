@@ -6,7 +6,7 @@
  * keeping the same API for routes/logs.ts and the SSE stream.
  */
 import type { LogEntry } from "./types.js";
-import { addLogListener, clearLogListeners } from "../utils/logger.js";
+import { addLogListener } from "../utils/logger.js";
 
 type LogListener = (entry: LogEntry) => void;
 
@@ -39,22 +39,6 @@ class LogInterceptor {
       cleanup();
       this.cleanups.delete(listener);
     };
-  }
-
-  removeListener(listener: LogListener): void {
-    const cleanup = this.cleanups.get(listener);
-    if (cleanup) {
-      cleanup();
-      this.cleanups.delete(listener);
-    }
-  }
-
-  clear(): void {
-    for (const cleanup of this.cleanups.values()) {
-      cleanup();
-    }
-    this.cleanups.clear();
-    clearLogListeners();
   }
 }
 

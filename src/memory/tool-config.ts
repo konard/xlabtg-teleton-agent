@@ -100,10 +100,3 @@ export function initializeToolConfig(
     ).run(toolName, legacyEnabled, legacyScope, level);
   }
 }
-
-/**
- * Delete tool configuration (reverts to defaults)
- */
-export function deleteToolConfig(db: Database.Database, toolName: string): void {
-  db.prepare(`DELETE FROM tool_config WHERE tool_name = ?`).run(toolName);
-}

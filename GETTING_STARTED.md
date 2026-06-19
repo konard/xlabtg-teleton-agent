@@ -113,7 +113,7 @@ Configuration is in `~/.teleton/config.yaml`. The setup wizard generates everyth
 
 ```yaml
 agent:
-  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | cocoon | local
+  provider: "anthropic"              # anthropic | openai | google | xai | groq | openrouter | moonshot | mistral | cerebras | zai | minimax | huggingface | gocoon | local
   model: "claude-opus-4-5-20251101"
   max_tokens: 4096
   temperature: 0.7
@@ -142,7 +142,7 @@ agent:
   model: "gpt-4o"
 ```
 
-Supported: `anthropic`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `cocoon`, `local`
+Supported: `anthropic`, `openai`, `google`, `xai`, `groq`, `openrouter`, `moonshot`, `mistral`, `cerebras`, `zai`, `minimax`, `huggingface`, `gocoon`, `local`
 
 ---
 
