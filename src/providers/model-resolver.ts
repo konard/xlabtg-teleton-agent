@@ -53,6 +53,35 @@ export async function registerCocoonModels(httpPort: number): Promise<string[]> 
   }
 }
 
+const NVIDIA_BASE_URL = "https://integrate.api.nvidia.com/v1";
+const NVIDIA_DISABLE_STREAMING_USAGE_MODELS = new Set(["z-ai/glm-5.1"]);
+
+/** Build a NVIDIA NIM model object on demand (OpenAI-compatible, fixed base URL) */
+function buildNvidiaModel(modelId: string): Model<"openai-completions"> {
+  const disablesStreamingUsage = NVIDIA_DISABLE_STREAMING_USAGE_MODELS.has(modelId.toLowerCase());
+  return {
+    id: modelId,
+    name: modelId,
+    api: "openai-completions",
+    provider: "nvidia",
+    baseUrl: NVIDIA_BASE_URL,
+    reasoning: false,
+    input: ["text"],
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 128000,
+    maxTokens: 4096,
+    compat: {
+      supportsStore: false,
+      supportsDeveloperRole: false,
+      supportsReasoningEffort: false,
+      supportsStrictMode: false,
+      supportsLongCacheRetention: false,
+      maxTokensField: "max_tokens",
+      ...(disablesStreamingUsage ? { supportsUsageInStreaming: false } : {}),
+    },
+  };
+}
+
 const LOCAL_MODELS: Record<string, Model<"openai-completions">> = {};
 
 /** Register models discovered from a local OpenAI-compatible server */
@@ -140,6 +169,12 @@ export function getProviderModel(provider: SupportedProvider, modelId: string): 
       return model;
     }
     throw new Error("No local models available. Is the LLM server running?");
+  }
+
+  if (meta.piAiProvider === "nvidia") {
+    const model = buildNvidiaModel(modelId);
+    modelCache.set(cacheKey, model);
+    return model;
   }
 
   // Moonshot backward-compat: remap old model IDs to kimi-coding IDs

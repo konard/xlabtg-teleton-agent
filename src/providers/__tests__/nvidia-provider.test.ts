@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { getProviderMetadata, validateApiKeyFormat } from "../../config/providers.js";
 import { AgentConfigSchema } from "../../config/schema.js";
 import { getModelsForProvider } from "../../config/model-catalog.js";
-import { getProviderModel } from "../../agent/client.js";
+import { getProviderModel as getAgentProviderModel } from "../../agent/client.js";
+import { getUtilityModel as getSummarizationUtilityModel } from "../model-resolver.js";
 
 describe("NVIDIA provider registration", () => {
   it("is registered in the provider registry", () => {
@@ -12,6 +13,13 @@ describe("NVIDIA provider registration", () => {
     expect(meta.envVar).toBe("NVIDIA_API_KEY");
     expect(meta.keyPrefix).toBe("nvapi-");
     expect(meta.piAiProvider).toBe("nvidia");
+  });
+
+  it("defaults to a currently routed NVIDIA chat model for primary and utility calls", () => {
+    const meta = getProviderMetadata("nvidia");
+
+    expect(meta.defaultModel).toBe("z-ai/glm-5.1");
+    expect(meta.utilityModel).toBe("z-ai/glm-5.1");
   });
 
   it("is accepted by AgentConfigSchema", () => {
@@ -29,7 +37,7 @@ describe("NVIDIA provider registration", () => {
 
 describe("NVIDIA model routing", () => {
   it("uses the /v1 NVIDIA base URL for OpenAI-compatible chat completions", () => {
-    const model = getProviderModel("nvidia", "meta/llama-3.1-8b-instruct");
+    const model = getAgentProviderModel("nvidia", "meta/llama-3.1-8b-instruct");
 
     expect(model.api).toBe("openai-completions");
     expect(model.provider).toBe("nvidia");
@@ -37,7 +45,7 @@ describe("NVIDIA model routing", () => {
   });
 
   it("uses max_tokens compatibility for NVIDIA's OpenAI-compatible endpoint", () => {
-    const model = getProviderModel("nvidia", "meta/llama-3.1-8b-instruct");
+    const model = getAgentProviderModel("nvidia", "meta/llama-3.1-8b-instruct");
 
     expect("compat" in model && model.compat?.maxTokensField).toBe("max_tokens");
     expect("compat" in model && model.compat?.supportsStrictMode).toBe(false);
@@ -45,10 +53,19 @@ describe("NVIDIA model routing", () => {
   });
 
   it("keeps GLM-5.1 on the OpenAI-compatible NVIDIA endpoint", () => {
-    const model = getProviderModel("nvidia", "z-ai/glm-5.1");
+    const model = getAgentProviderModel("nvidia", "z-ai/glm-5.1");
 
     expect(model.api).toBe("openai-completions");
     expect("compat" in model && model.compat?.supportsUsageInStreaming).toBe(false);
+  });
+
+  it("routes the summarization utility model through the NVIDIA OpenAI-compatible endpoint", () => {
+    const model = getSummarizationUtilityModel("nvidia");
+
+    expect(model.id).toBe("z-ai/glm-5.1");
+    expect(model.api).toBe("openai-completions");
+    expect(model.provider).toBe("nvidia");
+    expect("baseUrl" in model && model.baseUrl).toBe("https://integrate.api.nvidia.com/v1");
   });
 });
 
