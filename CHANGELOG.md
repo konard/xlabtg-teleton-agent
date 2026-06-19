@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.49](https://github.com/xlabtg/teleton-agent/compare/v0.8.48...v0.8.49) (2026-06-19)
+
+
+### Bug Fixes
+
+* исправить utility model для NVIDIA ([39837a4](https://github.com/xlabtg/teleton-agent/commit/39837a414baef19929e5db9694d1dd5483723293))
+* исправить utility model для NVIDIA ([07cfa96](https://github.com/xlabtg/teleton-agent/commit/07cfa964a6001cd89e061406dbd268a5f26d4d1b))
+
 ## [0.8.48](https://github.com/xlabtg/teleton-agent/compare/v0.8.47...v0.8.48) (2026-06-18)
 
 
