@@ -105,11 +105,34 @@ export interface EmptyResponseDiagnosticInput {
   outputTokens?: number;
 }
 
-export function getEmptyResponseDiagnostic(input: EmptyResponseDiagnosticInput): string | null {
+function isEmptyResponseWithoutUsage(input: EmptyResponseDiagnosticInput): boolean {
   const hasTokens = (input.inputTokens ?? 0) > 0 || (input.outputTokens ?? 0) > 0;
-  if (input.hasText || hasTokens) return null;
+  return !input.hasText && !hasTokens;
+}
 
-  if (input.provider.toLowerCase() === "nvidia" && input.model.toLowerCase() === "z-ai/glm-5.1") {
+export function isNvidiaGlm51EmptyResponse(input: EmptyResponseDiagnosticInput): boolean {
+  return (
+    isEmptyResponseWithoutUsage(input) &&
+    input.provider.toLowerCase() === "nvidia" &&
+    input.model.toLowerCase() === "z-ai/glm-5.1"
+  );
+}
+
+export function getEmptyResponseRecoveryPrompt(input: EmptyResponseDiagnosticInput): string | null {
+  if (!isNvidiaGlm51EmptyResponse(input)) return null;
+
+  return (
+    "Provider recovery: the previous NVIDIA GLM-5.1 streaming response was empty " +
+    "and reported zero token usage. Continue the same user request with the native tools " +
+    "already available in this request. Return either the next tool call(s) needed to make " +
+    "progress or a concise final answer; do not return an empty message."
+  );
+}
+
+export function getEmptyResponseDiagnostic(input: EmptyResponseDiagnosticInput): string | null {
+  if (!isEmptyResponseWithoutUsage(input)) return null;
+
+  if (isNvidiaGlm51EmptyResponse(input)) {
     return (
       "NVIDIA NIM z-ai/glm-5.1 returned an empty streaming response with zero token usage. " +
       "Teleton sends this model through NVIDIA's OpenAI-compatible Chat Completions endpoint " +

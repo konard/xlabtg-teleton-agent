@@ -86,6 +86,7 @@ import {
   isNetworkError,
   isNetworkErrorMessage,
   getEmptyResponseDiagnostic,
+  getEmptyResponseRecoveryPrompt,
   trimRagContext,
   LoopStallDetector,
   sleepWithAbort,
@@ -796,6 +797,9 @@ export class AgentRuntime {
       let networkErrorRetries = 0;
       let emptyResponseRetries = 0;
       const EMPTY_RESPONSE_MAX_RETRIES = 3;
+      let emptyResponseRecoveryPrompt: string | null = null;
+      let emptyResponseRecoveryAttempts = 0;
+      const EMPTY_RESPONSE_RECOVERY_MAX_ATTEMPTS = 1;
       let finalResponse: ChatResponse | null = null;
       const totalToolCalls: Array<{ name: string; input: Record<string, unknown> }> = [];
       const allToolExecResults: Array<{
@@ -863,6 +867,9 @@ export class AgentRuntime {
           log.debug(
             `🔧 Injecting response reinforcement (${totalToolCalls.length} tool calls so far)`
           );
+        }
+        if (emptyResponseRecoveryPrompt) {
+          effectiveSystemPrompt += `\n\n${emptyResponseRecoveryPrompt}`;
         }
 
         let response: ChatResponse;
@@ -1105,11 +1112,16 @@ export class AgentRuntime {
         }
 
         const toolCalls = response.message.content.filter((block) => block.type === "toolCall");
+        const hasTokens = !!(response.message.usage?.input || response.message.usage?.output);
+        const hasText = !!response.text;
+        if (hasText || hasTokens || toolCalls.length > 0) {
+          emptyResponseRetries = 0;
+          emptyResponseRecoveryAttempts = 0;
+          emptyResponseRecoveryPrompt = null;
+        }
 
         if (toolCalls.length === 0) {
           // Detect empty response with zero tokens — retry the whole loop rather than giving up
-          const hasTokens = !!(response.message.usage?.input || response.message.usage?.output);
-          const hasText = !!response.text;
           if (!hasText && !hasTokens) {
             if (emptyResponseRetries < EMPTY_RESPONSE_MAX_RETRIES) {
               emptyResponseRetries++;
@@ -1122,13 +1134,28 @@ export class AgentRuntime {
               continue;
             }
 
-            const diagnostic = getEmptyResponseDiagnostic({
+            const emptyResponseInput = {
               provider,
               model: this.config.agent.model,
               hasText,
               inputTokens: response.message.usage?.input,
               outputTokens: response.message.usage?.output,
-            });
+            };
+            const recoveryPrompt = getEmptyResponseRecoveryPrompt(emptyResponseInput);
+            if (
+              recoveryPrompt &&
+              emptyResponseRecoveryAttempts < EMPTY_RESPONSE_RECOVERY_MAX_ATTEMPTS
+            ) {
+              emptyResponseRecoveryAttempts++;
+              emptyResponseRecoveryPrompt = recoveryPrompt;
+              log.warn(
+                `⚠️ Empty NVIDIA GLM-5.1 response after ${EMPTY_RESPONSE_MAX_RETRIES} retries - retrying with recovery prompt (attempt ${emptyResponseRecoveryAttempts}/${EMPTY_RESPONSE_RECOVERY_MAX_ATTEMPTS})...`
+              );
+              iteration--;
+              continue;
+            }
+
+            const diagnostic = getEmptyResponseDiagnostic(emptyResponseInput);
             if (diagnostic) {
               log.error(`🚨 ${diagnostic}`);
               throw new Error(diagnostic);
