@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.52](https://github.com/xlabtg/teleton-agent/compare/v0.8.51...v0.8.52) (2026-06-20)
+
+
+### Bug Fixes
+
+* **agent:** восстановить GLM-5.1 после пустого stream ([b10d846](https://github.com/xlabtg/teleton-agent/commit/b10d84695f6006f21f2838f2e66d67f0896ffad3))
+* **agent:** восстановить NVIDIA GLM-5.1 после пустого stream ([b2256c0](https://github.com/xlabtg/teleton-agent/commit/b2256c028d441df9373e02cb89b92e01f84db836))
+
 ## [0.8.51](https://github.com/xlabtg/teleton-agent/compare/v0.8.50...v0.8.51) (2026-06-20)
 
 
