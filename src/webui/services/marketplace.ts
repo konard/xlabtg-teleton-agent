@@ -19,6 +19,7 @@ import type {
   MarketplaceSource,
 } from "../types.js";
 import { createLogger } from "../../utils/logger.js";
+import { getErrorMessage } from "../../utils/errors.js";
 
 const log = createLogger("WebUI");
 
@@ -42,6 +43,7 @@ interface ManifestData {
   version: string;
   description?: string;
   author?: string;
+  tags?: string[];
   tools?: Array<{ name: string; description: string }>;
   secrets?: Record<string, { required: boolean; description: string; env?: string }>;
 }
@@ -103,6 +105,11 @@ function isTrustedGitHubDownloadUrl(rawUrl: string): boolean {
   }
 }
 
+function normalizeTags(tags: unknown): string[] {
+  if (!Array.isArray(tags)) return [];
+  return tags.filter((tag): tag is string => typeof tag === "string" && tag.length > 0);
+}
+
 export class MarketplaceService {
   private deps: ServiceDeps;
   // Per-source cache keyed by registryUrl
@@ -130,7 +137,7 @@ export class MarketplaceService {
 
     const extra = this.deps.config.marketplace?.extra_sources ?? [];
     for (const s of extra) {
-      if (!s.enabled) continue;
+      if (s.enabled === false) continue;
       const { pluginBaseUrl, githubApiBase } = deriveSourceUrls(s.url);
       sources.push({
         registryUrl: s.url,
@@ -178,11 +185,13 @@ export class MarketplaceService {
 
     const merged: RegistryEntry[] = [];
     const seen = new Set<string>();
+    const failures: string[] = [];
 
     for (let i = 0; i < sources.length; i++) {
       const result = allEntries[i];
       const src = sources[i];
       if (result.status === "rejected") {
+        failures.push(`${src.label}: ${getErrorMessage(result.reason)}`);
         log.warn({ err: result.reason }, `Registry fetch failed for ${src.registryUrl}`);
         continue;
       }
@@ -195,6 +204,10 @@ export class MarketplaceService {
           });
         }
       }
+    }
+
+    if (merged.length === 0 && failures.length === sources.length) {
+      throw new Error(`No marketplace registry sources could be loaded: ${failures.join("; ")}`);
     }
 
     return merged;
@@ -239,18 +252,34 @@ export class MarketplaceService {
     const plugins = Array.isArray(data) ? data : data?.plugins;
     if (!Array.isArray(plugins)) throw new Error("Registry has no plugins array");
 
-    // Validate each entry — defense-in-depth against poisoned registries
+    // Validate and normalize each entry — defense-in-depth against poisoned registries
     const VALID_PATH = /^[a-zA-Z0-9][a-zA-Z0-9._\/-]*$/;
-    for (const entry of plugins) {
-      if (!entry.id || !entry.name || !entry.path) {
-        throw new Error(`Invalid registry entry: missing required fields (id=${entry.id ?? "?"})`);
+    return plugins.map((rawEntry: unknown) => {
+      if (!rawEntry || typeof rawEntry !== "object") {
+        throw new Error("Invalid registry entry: expected object");
       }
-      if (!VALID_PATH.test(entry.path) || entry.path.includes("..")) {
-        throw new Error(`Invalid registry path for "${entry.id}": "${entry.path}"`);
-      }
-    }
 
-    return plugins as RegistryEntry[];
+      const entry = rawEntry as Record<string, unknown>;
+      const id = typeof entry.id === "string" ? entry.id : "";
+      const name = typeof entry.name === "string" ? entry.name : "";
+      const path = typeof entry.path === "string" ? entry.path : "";
+
+      if (!id || !name || !path) {
+        throw new Error(`Invalid registry entry: missing required fields (id=${id || "?"})`);
+      }
+      if (!VALID_PATH.test(path) || path.includes("..")) {
+        throw new Error(`Invalid registry path for "${id}": "${path}"`);
+      }
+
+      return {
+        id,
+        name,
+        description: typeof entry.description === "string" ? entry.description : "",
+        author: entry.author === undefined ? "unknown" : normalizeAuthor(entry.author),
+        tags: normalizeTags(entry.tags),
+        path,
+      };
+    });
   }
 
   // ── Remote manifest ─────────────────────────────────────────────────
@@ -274,13 +303,22 @@ export class MarketplaceService {
         version: "0.0.0",
         description: entry.description,
         author: entry.author,
+        tags: entry.tags,
       };
     }
-    const raw = await res.json();
+    const raw = (await res.json()) as Record<string, unknown>;
     // Normalize author: manifest may have { name, url } object or a plain string
     const data: ManifestData = {
-      ...raw,
-      author: normalizeAuthor(raw.author),
+      name: typeof raw.name === "string" ? raw.name : entry.name,
+      version: typeof raw.version === "string" ? raw.version : "0.0.0",
+      description: typeof raw.description === "string" ? raw.description : entry.description,
+      author: raw.author === undefined ? entry.author : normalizeAuthor(raw.author),
+      tags: normalizeTags(raw.tags),
+      tools: Array.isArray(raw.tools) ? (raw.tools as ManifestData["tools"]) : undefined,
+      secrets:
+        raw.secrets && typeof raw.secrets === "object"
+          ? (raw.secrets as ManifestData["secrets"])
+          : undefined,
     };
     this.manifestCache.set(cacheKey, { data, fetchedAt: Date.now() });
     return data;
@@ -298,11 +336,16 @@ export class MarketplaceService {
 
     const results: MarketplacePlugin[] = [];
     const seenIds = new Set<string>();
+    const registryFailures: string[] = [];
 
     for (let si = 0; si < sources.length; si++) {
       const src = sources[si];
       const regResult = registryResults[si];
-      if (regResult.status === "rejected") continue;
+      if (regResult.status === "rejected") {
+        registryFailures.push(`${src.label}: ${getErrorMessage(regResult.reason)}`);
+        log.warn({ err: regResult.reason }, `Registry fetch failed for ${src.registryUrl}`);
+        continue;
+      }
 
       const registry = regResult.value;
 
@@ -327,7 +370,9 @@ export class MarketplaceService {
                 version: "0.0.0",
                 description: entry.description,
                 author: entry.author,
+                tags: entry.tags,
               };
+        const manifestTags = normalizeTags(manifest.tags);
 
         // Cross-reference with loaded modules
         const installed = this.deps.modules.find(
@@ -369,7 +414,7 @@ export class MarketplaceService {
           name: entry.name,
           description: manifest.description || entry.description,
           author: manifest.author || entry.author,
-          tags: entry.tags,
+          tags: manifestTags.length > 0 ? manifestTags : entry.tags,
           remoteVersion,
           installedVersion,
           status,
@@ -380,6 +425,12 @@ export class MarketplaceService {
           sourceLabel: src.label,
         });
       }
+    }
+
+    if (results.length === 0 && registryFailures.length === sources.length) {
+      throw new Error(
+        `No marketplace registry sources could be loaded: ${registryFailures.join("; ")}`
+      );
     }
 
     return results;
