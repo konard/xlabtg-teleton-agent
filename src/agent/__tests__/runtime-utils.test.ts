@@ -7,6 +7,7 @@ import {
   isNetworkError,
   isNetworkErrorMessage,
   getEmptyResponseDiagnostic,
+  getEmptyResponseRecoveryPrompt,
   trimRagContext,
   LoopStallDetector,
 } from "../../agent/runtime-utils.js";
@@ -422,6 +423,46 @@ describe("getEmptyResponseDiagnostic", () => {
   it("does not report NVIDIA GLM-5.1 guidance for unrelated models", () => {
     expect(
       getEmptyResponseDiagnostic({
+        provider: "nvidia",
+        model: "deepseek-ai/deepseek-v3.1",
+        hasText: false,
+        inputTokens: 0,
+        outputTokens: 0,
+      })
+    ).toBeNull();
+  });
+});
+
+describe("getEmptyResponseRecoveryPrompt", () => {
+  it("returns a recovery prompt for NVIDIA GLM-5.1 empty zero-token responses", () => {
+    const result = getEmptyResponseRecoveryPrompt({
+      provider: "nvidia",
+      model: "z-ai/glm-5.1",
+      hasText: false,
+      inputTokens: 0,
+      outputTokens: 0,
+    });
+
+    expect(result).toContain("previous NVIDIA GLM-5.1 streaming response was empty");
+    expect(result).toContain("native tools");
+    expect(result).toContain("do not return an empty message");
+  });
+
+  it("does not return a recovery prompt when the response has text", () => {
+    expect(
+      getEmptyResponseRecoveryPrompt({
+        provider: "nvidia",
+        model: "z-ai/glm-5.1",
+        hasText: true,
+        inputTokens: 0,
+        outputTokens: 0,
+      })
+    ).toBeNull();
+  });
+
+  it("does not return a recovery prompt for unrelated models", () => {
+    expect(
+      getEmptyResponseRecoveryPrompt({
         provider: "nvidia",
         model: "deepseek-ai/deepseek-v3.1",
         hasText: false,

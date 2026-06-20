@@ -120,6 +120,20 @@ function errorResponse(errorMessage: string): ChatResponse {
   };
 }
 
+function emptyZeroTokenResponse(): ChatResponse {
+  return {
+    message: {
+      role: "assistant",
+      content: [],
+      stopReason: "stop",
+      usage: { input: 0, output: 0 },
+      timestamp: Date.now(),
+    },
+    text: "",
+    context: { messages: [] },
+  };
+}
+
 async function flushMicrotasks(turns = 10): Promise<void> {
   for (let i = 0; i < turns; i++) {
     await Promise.resolve();
@@ -240,5 +254,56 @@ describe("AgentRuntime retry backoff", () => {
     });
     expect(chatWithContextMock).toHaveBeenCalledTimes(1);
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("recovers NVIDIA GLM-5.1 empty zero-token streams with one recovery prompt", async () => {
+    vi.useFakeTimers();
+    const config = makeConfig({
+      provider: "nvidia",
+      api_key: "nvapi-test",
+      model: "z-ai/glm-5.1",
+      max_agentic_iterations: 1,
+    });
+    const runtime = await createRuntime(config);
+    chatWithContextMock
+      .mockResolvedValueOnce(emptyZeroTokenResponse())
+      .mockResolvedValueOnce(emptyZeroTokenResponse())
+      .mockResolvedValueOnce(emptyZeroTokenResponse())
+      .mockResolvedValueOnce(emptyZeroTokenResponse())
+      .mockResolvedValueOnce(assistantResponse("ok after empty recovery"));
+
+    const resultPromise = runtime.processMessage({
+      chatId: "1001",
+      userMessage: "hello",
+      userName: "Owner",
+      toolContext: {
+        senderId: 1001,
+        config,
+      },
+    });
+
+    await flushMicrotasks();
+    expect(chatWithContextMock).toHaveBeenCalledTimes(1);
+
+    await vi.advanceTimersByTimeAsync(2000);
+    await flushMicrotasks();
+    expect(chatWithContextMock).toHaveBeenCalledTimes(2);
+
+    await vi.advanceTimersByTimeAsync(4000);
+    await flushMicrotasks();
+    expect(chatWithContextMock).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(6000);
+    await flushMicrotasks();
+    expect(chatWithContextMock).toHaveBeenCalledTimes(5);
+
+    await expect(resultPromise).resolves.toMatchObject({
+      content: "ok after empty recovery",
+      toolCalls: [],
+    });
+    const recoveryOptions = chatWithContextMock.mock.calls[4]?.[1];
+    expect(recoveryOptions).toMatchObject({
+      systemPrompt: expect.stringContaining("previous NVIDIA GLM-5.1 streaming response was empty"),
+    });
   });
 });
