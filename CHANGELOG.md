@@ -12,6 +12,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.51](https://github.com/xlabtg/teleton-agent/compare/v0.8.50...v0.8.51) (2026-06-20)
+
+
+### Bug Fixes
+
+* **ci:** обновить undici для audit ([af1b07f](https://github.com/xlabtg/teleton-agent/commit/af1b07f04cc6bfe9753593b98c8229aa59692f64))
+* **marketplace:** показывать плагины marketplace ([3357e08](https://github.com/xlabtg/teleton-agent/commit/3357e088a0b6c94101af6cfc0dc1daf1a9019205))
+* **marketplace:** показывать плагины marketplace ([48ac30e](https://github.com/xlabtg/teleton-agent/commit/48ac30e8f96d937737c8bcd7020a3aef96bc96c7))
+
 ## [0.8.50](https://github.com/xlabtg/teleton-agent/compare/v0.8.49...v0.8.50) (2026-06-19)
 
 
