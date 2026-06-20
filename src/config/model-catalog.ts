@@ -440,6 +440,12 @@ export const MODEL_OPTIONS: Record<string, ModelOption[]> = {
   zai: [
     { value: "glm-5.1", name: "GLM-5.1", description: "Latest, reasoning, 200K ctx" },
     { value: "glm-5-turbo", name: "GLM-5 Turbo", description: "Fast reasoning, 200K ctx" },
+    { value: "glm-4.7", name: "GLM-4.7", description: "204K ctx, $0.60/$2.20" },
+    { value: "glm-5", name: "GLM-5", description: "Best quality, 204K ctx, $1.00/$3.20" },
+    { value: "glm-4.6", name: "GLM-4.6", description: "204K ctx, $0.60/$2.20" },
+    { value: "glm-4.7-flash", name: "GLM-4.7 Flash", description: "FREE, 200K ctx" },
+    { value: "glm-4.5-flash", name: "GLM-4.5 Flash", description: "FREE, 131K ctx" },
+    { value: "glm-4.5v", name: "GLM-4.5V", description: "Vision, 64K ctx, $0.60/$1.80" },
   ],
   minimax: [
     { value: "MiniMax-M2.7", name: "MiniMax M2.7", description: "204K ctx, $0.30/$1.20" },
