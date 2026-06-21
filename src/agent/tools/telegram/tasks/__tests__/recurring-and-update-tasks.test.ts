@@ -1,8 +1,12 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import Database from "better-sqlite3";
+import { validateToolCall, type Tool as PiAiTool, type ToolCall } from "@mariozechner/pi-ai";
 import { ensureSchema } from "../../../../../memory/schema.js";
 import { getTaskStore } from "../../../../../memory/agent/tasks.js";
-import { telegramCreateScheduledTaskExecutor } from "../create-scheduled-task.js";
+import {
+  telegramCreateScheduledTaskExecutor,
+  telegramCreateScheduledTaskTool,
+} from "../create-scheduled-task.js";
 import { telegramUpdateTaskExecutor } from "../update-task.js";
 import { telegramGetTaskExecutor } from "../get-task.js";
 import { telegramListTasksExecutor } from "../list-tasks.js";
@@ -131,6 +135,32 @@ describe("telegram_create_scheduled_task with recurrence", () => {
     db.close();
   });
 
+  it("validates object payloads through the tool schema", () => {
+    const payload = {
+      type: "tool_call",
+      tool: "journal_query",
+      params: { limit: 5 },
+      condition: "daily report",
+    };
+    const toolCall: ToolCall = {
+      type: "toolCall",
+      id: "call-1",
+      name: "telegram_create_scheduled_task",
+      arguments: {
+        description: "Run journal query",
+        scheduleDate: futureDate(300),
+        payload,
+      },
+    };
+
+    const validated = validateToolCall(
+      [telegramCreateScheduledTaskTool as unknown as PiAiTool],
+      toolCall
+    ) as { payload: unknown };
+
+    expect(validated.payload).toEqual(payload);
+  });
+
   it("creates recurring task with recurrence string", async () => {
     const ctx = makeContext(db);
     const result = await telegramCreateScheduledTaskExecutor(
@@ -156,6 +186,30 @@ describe("telegram_create_scheduled_task with recurrence", () => {
     const store = getTaskStore(db);
     const task = store.getTask(data.taskId);
     expect(task?.recurrenceInterval).toBe(2700);
+  });
+
+  it("accepts payload objects parsed from JSON tool-call arguments", async () => {
+    const ctx = makeContext(db);
+    const payload = {
+      type: "agent_task",
+      instructions: "Review the latest TON price and write a journal note",
+      context: { source: "scheduler" },
+    };
+
+    const result = await telegramCreateScheduledTaskExecutor(
+      {
+        description: "Review TON price",
+        scheduleDate: futureDate(300),
+        payload,
+      },
+      ctx
+    );
+
+    expect(result.success).toBe(true);
+
+    const taskId = (result.data as { taskId: string }).taskId;
+    const task = getTaskStore(db).getTask(taskId);
+    expect(task?.payload).toBe(JSON.stringify(payload));
   });
 
   it("returns undefined recurrenceInterval for non-recurring tasks", async () => {
@@ -287,6 +341,26 @@ describe("telegram_update_task", () => {
     expect(result.success).toBe(true);
     const updated = store.getTask(task.id);
     expect(updated?.payload).toBe(newPayload);
+  });
+
+  it("updates task payload from objects parsed from JSON tool-call arguments", async () => {
+    const store = getTaskStore(db);
+    const task = store.createTask({ description: "task" });
+    const newPayload = {
+      type: "tool_call",
+      tool: "journal_query",
+      params: { limit: 5 },
+      condition: "daily report",
+    };
+
+    const result = await telegramUpdateTaskExecutor(
+      { taskId: task.id, payload: newPayload },
+      makeContext(db)
+    );
+
+    expect(result.success).toBe(true);
+    const updated = store.getTask(task.id);
+    expect(updated?.payload).toBe(JSON.stringify(newPayload));
   });
 
   it("clears payload when empty string provided", async () => {

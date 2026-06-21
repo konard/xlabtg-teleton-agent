@@ -5,6 +5,12 @@ import { randomLong } from "../../../../utils/gramjs-bigint.js";
 import { MAX_DEPENDENTS_PER_TASK } from "../../../../constants/limits.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import {
+  normalizeScheduledTaskPayload,
+  scheduledTaskPayloadSchema,
+  type ScheduledTaskPayloadInput,
+  validateScheduledTaskPayload,
+} from "./payload.js";
 
 const log = createLogger("Tools");
 
@@ -61,7 +67,7 @@ export function parseRecurrenceInterval(recurrence: string): number | null {
 interface CreateScheduledTaskParams {
   description: string;
   scheduleDate?: string;
-  payload?: string;
+  payload?: ScheduledTaskPayloadInput;
   reason?: string;
   priority?: number;
   dependsOn?: string[];
@@ -112,22 +118,7 @@ export const telegramCreateScheduledTaskTool: Tool = {
           "When to execute the task (ISO 8601 format, e.g., '2024-12-25T10:00:00Z' or Unix timestamp). Optional if dependsOn is provided - task will execute when dependencies complete.",
       })
     ),
-    payload: Type.Optional(
-      Type.String({
-        description: `JSON payload defining what to execute automatically. Two types:
-
-1. Simple tool call (auto-executed, result fed to you):
-   {"type":"tool_call","tool":"ton_get_price","params":{},"condition":"price > 5"}
-
-2. Complex agent task — multi-step instructions the agent executes (e.g., trading automation):
-   {"type":"agent_task","instructions":"1. Run trade simulation\\n2. Check journal for results\\n3. Send report via telegram_send_message","context":{"chatId":"123"}}
-
-3. Skip on parent failure (continues even if parent fails):
-   {"type":"agent_task","instructions":"Send daily report","skipOnParentFailure":false}
-
-If omitted, task is a simple reminder.`,
-      })
-    ),
+    payload: Type.Optional(scheduledTaskPayloadSchema),
     reason: Type.Optional(
       Type.String({
         description: "Why you're scheduling this task (helps with context when executing)",
@@ -179,13 +170,22 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
     const {
       description,
       scheduleDate,
-      payload,
+      payload: rawPayload,
       reason,
       priority,
       dependsOn,
       recurrence,
       recurrenceUntil,
     } = params;
+
+    const normalizedPayload = normalizeScheduledTaskPayload(rawPayload);
+    if (!normalizedPayload.success) {
+      return {
+        success: false,
+        error: normalizedPayload.error,
+      };
+    }
+    const payload = normalizedPayload.payload;
 
     // Validate: either scheduleDate OR dependsOn must be provided
     if (!scheduleDate && (!dependsOn || dependsOn.length === 0)) {
@@ -255,58 +255,11 @@ export const telegramCreateScheduledTaskExecutor: ToolExecutor<CreateScheduledTa
 
     // Validate payload if provided
     if (payload) {
-      try {
-        const parsed = JSON.parse(payload);
-        if (!parsed.type || !["tool_call", "agent_task"].includes(parsed.type)) {
-          return {
-            success: false,
-            error: 'Payload must have type "tool_call" or "agent_task"',
-          };
-        }
-
-        // Validate tool_call payload
-        if (parsed.type === "tool_call") {
-          if (!parsed.tool || typeof parsed.tool !== "string") {
-            return {
-              success: false,
-              error: 'tool_call payload requires "tool" field (string)',
-            };
-          }
-          if (parsed.params !== undefined && typeof parsed.params !== "object") {
-            return {
-              success: false,
-              error: 'tool_call payload "params" must be an object',
-            };
-          }
-          // Note: Tool existence is validated at execution time by the executor.
-          // We can't easily validate here as tool registry isn't in ToolContext.
-        }
-
-        // Validate agent_task payload
-        if (parsed.type === "agent_task") {
-          if (!parsed.instructions || typeof parsed.instructions !== "string") {
-            return {
-              success: false,
-              error: 'agent_task payload requires "instructions" field (string)',
-            };
-          }
-          if (parsed.instructions.length < 5) {
-            return {
-              success: false,
-              error: "Instructions too short (min 5 characters)",
-            };
-          }
-          if (parsed.context !== undefined && typeof parsed.context !== "object") {
-            return {
-              success: false,
-              error: 'agent_task payload "context" must be an object',
-            };
-          }
-        }
-      } catch {
+      const error = validateScheduledTaskPayload(payload);
+      if (error) {
         return {
           success: false,
-          error: "Invalid JSON payload",
+          error,
         };
       }
     }

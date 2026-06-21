@@ -4,6 +4,12 @@ import { Api } from "telegram";
 import { randomLong } from "../../../../utils/gramjs-bigint.js";
 import { getErrorMessage } from "../../../../utils/errors.js";
 import { createLogger } from "../../../../utils/logger.js";
+import {
+  normalizeScheduledTaskPayload,
+  scheduledTaskPayloadUpdateSchema,
+  type ScheduledTaskPayloadInput,
+  validateScheduledTaskPayload,
+} from "./payload.js";
 
 const log = createLogger("Tools");
 
@@ -13,7 +19,7 @@ const log = createLogger("Tools");
 interface UpdateTaskParams {
   taskId: string;
   description?: string;
-  payload?: string;
+  payload?: ScheduledTaskPayloadInput;
   reason?: string;
   priority?: number;
   rescheduleDate?: string;
@@ -37,14 +43,7 @@ export const telegramUpdateTaskTool: Tool = {
         description: "New task description",
       })
     ),
-    payload: Type.Optional(
-      Type.String({
-        description: `New JSON payload for task execution. Same format as telegram_create_scheduled_task:
-1. Tool call: {"type":"tool_call","tool":"ton_get_price","params":{},"condition":"price > 5"}
-2. Agent task: {"type":"agent_task","instructions":"Do something","context":{}}
-Set to empty string "" to convert to a simple reminder with no automatic execution.`,
-      })
-    ),
+    payload: Type.Optional(scheduledTaskPayloadUpdateSchema),
     reason: Type.Optional(
       Type.String({
         description: "New reason for the task",
@@ -128,42 +127,21 @@ export const telegramUpdateTaskExecutor: ToolExecutor<UpdateTaskParams> = async 
       };
     }
 
-    // Validate payload if provided
-    if (params.payload !== undefined && params.payload !== "") {
-      try {
-        const parsed = JSON.parse(params.payload);
-        if (!parsed.type || !["tool_call", "agent_task"].includes(parsed.type)) {
-          return {
-            success: false,
-            error: 'Payload must have type "tool_call" or "agent_task"',
-          };
-        }
-        if (parsed.type === "tool_call") {
-          if (!parsed.tool || typeof parsed.tool !== "string") {
-            return {
-              success: false,
-              error: 'tool_call payload requires "tool" field (string)',
-            };
-          }
-        }
-        if (parsed.type === "agent_task") {
-          if (!parsed.instructions || typeof parsed.instructions !== "string") {
-            return {
-              success: false,
-              error: 'agent_task payload requires "instructions" field (string)',
-            };
-          }
-          if (parsed.instructions.length < 5) {
-            return {
-              success: false,
-              error: "Instructions too short (min 5 characters)",
-            };
-          }
-        }
-      } catch {
+    const normalizedPayload = normalizeScheduledTaskPayload(params.payload);
+    if (!normalizedPayload.success) {
+      return {
+        success: false,
+        error: normalizedPayload.error,
+      };
+    }
+
+    // Validate payload if provided. Empty string still means "clear payload".
+    if (normalizedPayload.payload !== undefined && normalizedPayload.payload !== "") {
+      const error = validateScheduledTaskPayload(normalizedPayload.payload);
+      if (error) {
         return {
           success: false,
-          error: "Invalid JSON payload",
+          error,
         };
       }
     }
@@ -243,7 +221,9 @@ export const telegramUpdateTaskExecutor: ToolExecutor<UpdateTaskParams> = async 
 
     if (params.payload !== undefined) {
       extraFields.push("payload = ?");
-      extraValues.push(params.payload === "" ? null : params.payload);
+      extraValues.push(
+        normalizedPayload.payload === "" ? null : (normalizedPayload.payload ?? null)
+      );
     }
     if (params.reason !== undefined) {
       extraFields.push("reason = ?");
