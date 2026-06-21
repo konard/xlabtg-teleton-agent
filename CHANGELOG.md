@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.53](https://github.com/xlabtg/teleton-agent/compare/v0.8.52...v0.8.53) (2026-06-21)
+
+
+### Bug Fixes
+
+* принимать object payload в scheduled tasks ([607bf05](https://github.com/xlabtg/teleton-agent/commit/607bf05ce1d76e74b7f7af8fa68365ad4334deb1))
+* принимать объект payload для scheduled tasks ([de1e20e](https://github.com/xlabtg/teleton-agent/commit/de1e20e2f57a8bc662cf80249661344be3e4e8c2))
+
 ## [0.8.52](https://github.com/xlabtg/teleton-agent/compare/v0.8.51...v0.8.52) (2026-06-20)
 
 
