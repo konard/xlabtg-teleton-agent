@@ -339,13 +339,13 @@ export class AdminHandler {
       const topK = cfg.tool_rag.top_k;
       const toolIndex = this.registry?.getToolIndex();
       const indexed = toolIndex?.isIndexed ? "Yes" : "No";
-      const totalTools = this.registry?.count ?? 0;
+      const totalTools = this.registry?.enabledCount ?? 0;
       return (
         `🔍 **Tool RAG Status**\n\n` +
         `Enabled: ${enabled ? "✅ ON" : "❌ OFF"}\n` +
         `Indexed: ${indexed}\n` +
         `Top-K: ${topK}\n` +
-        `Total tools: ${totalTools}\n` +
+        `Active tools: ${totalTools}\n` +
         `Always include: ${cfg.tool_rag.always_include.length} patterns`
       );
     }

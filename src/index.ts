@@ -327,7 +327,7 @@ export class TeletonApp {
     const modulePermissions = new ModulePermissions(db);
     this.toolRegistry.setPermissions(modulePermissions);
 
-    this.toolCount = this.toolRegistry.count;
+    this.toolCount = this.toolRegistry.enabledCount;
     this.messageHandler = new MessageHandler(
       this.bridge,
       this.config.telegram,
@@ -684,12 +684,18 @@ ${blue}  ┌──────────────────────�
     const provider = (this.config.agent.provider || "anthropic") as SupportedProvider;
     const providerMeta = getProviderMetadata(provider);
     const allNames = [...moduleNames, ...pluginNames, ...mcpServerNames];
+    const registeredToolCount = this.toolRegistry.count;
+    const disabledToolCount = registeredToolCount - this.toolCount;
+    const countSummary =
+      disabledToolCount > 0
+        ? `${this.toolCount}/${registeredToolCount} tools active`
+        : `${this.toolCount} tools loaded`;
     log.info(
-      `🔌 ${this.toolCount} tools loaded (${allNames.join(", ")})${pluginToolCount > 0 ? ` — ${pluginToolCount} from plugins` : ""}`
+      `🔌 ${countSummary} (${allNames.join(", ")})${pluginToolCount > 0 ? ` — ${pluginToolCount} from plugins` : ""}`
     );
     if (providerMeta.toolLimit !== null && this.toolCount > providerMeta.toolLimit) {
       log.warn(
-        `⚠️ Tool count (${this.toolCount}) exceeds ${providerMeta.displayName} limit (${providerMeta.toolLimit})`
+        `⚠️ Active tool count (${this.toolCount}) exceeds ${providerMeta.displayName} limit (${providerMeta.toolLimit})`
       );
     }
 
@@ -772,7 +778,7 @@ ${blue}  ┌──────────────────────�
     const toolIndex = this.toolRegistry.getToolIndex();
     if (toolIndex) {
       const t0 = Date.now();
-      const indexedCount = await toolIndex.indexAll(this.toolRegistry.getAll());
+      const indexedCount = await toolIndex.indexAll(this.toolRegistry.getEnabledTools());
       log.info(`Tool RAG: ${indexedCount} tools indexed (${Date.now() - t0}ms)`);
     }
 

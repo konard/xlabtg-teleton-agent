@@ -2344,7 +2344,7 @@ export class AgentRuntime {
         chatId,
         isAdmin
       );
-      log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.count} tools selected`);
+      log.info(`🔍 Tool RAG: ${tools.length}/${this.toolRegistry.enabledCount} tools selected`);
       return tools;
     }
 
