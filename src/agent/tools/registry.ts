@@ -43,6 +43,7 @@ export class ToolRegistry {
   private tools: Map<string, RegisteredTool> = new Map();
   private permissions: ModulePermissions | null = null;
   private toolArrayCache: PiAiTool[] | null = null;
+  private enabledToolArrayCache: PiAiTool[] | null = null;
   private toolConfigs: Map<string, ToolConfig> = new Map(); // Runtime tool configurations (DB-backed)
   private db: Database.Database | null = null;
   private pluginToolNames: Map<string, string[]> = new Map();
@@ -54,6 +55,11 @@ export class ToolRegistry {
 
   constructor(mode: RuntimeMode = "user") {
     this.mode = mode;
+  }
+
+  private invalidateToolCaches(): void {
+    this.toolArrayCache = null;
+    this.enabledToolArrayCache = null;
   }
 
   /**
@@ -101,7 +107,7 @@ export class ToolRegistry {
       module: tool.name.split("_")[0],
       tags,
     });
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
   }
 
   setPermissions(mp: ModulePermissions): void {
@@ -110,7 +116,7 @@ export class ToolRegistry {
 
   setMode(mode: RuntimeMode): void {
     this.mode = mode;
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
     const count = Array.from(this.tools.values()).filter((rt) => {
       const toolMode = this.tools.get(rt.tool.name)?.mode;
       return !toolMode || toolMode === "both" || toolMode === mode;
@@ -150,6 +156,20 @@ export class ToolRegistry {
       this.toolArrayCache = Array.from(this.tools.values()).map((rt) => rt.tool);
     }
     return this.toolArrayCache;
+  }
+
+  /**
+   * Return registered tools that are globally visible to LLM/tool-index paths.
+   * Context-specific filters (admin/allowlist/module policy) are applied later
+   * by getForContext(); this only removes tools explicitly switched off.
+   */
+  getEnabledTools(): PiAiTool[] {
+    if (!this.enabledToolArrayCache) {
+      this.enabledToolArrayCache = Array.from(this.tools.entries())
+        .filter(([name]) => this.isToolEnabled(name))
+        .map(([, rt]) => rt.tool);
+    }
+    return this.enabledToolArrayCache;
   }
 
   /**
@@ -319,6 +339,10 @@ export class ToolRegistry {
     return this.tools.size;
   }
 
+  get enabledCount(): number {
+    return this.getEnabledTools().length;
+  }
+
   getToolCategory(name: string): "data-bearing" | "action" | undefined {
     const registered = this.tools.get(name);
     return registered?.tool.category;
@@ -351,7 +375,7 @@ export class ToolRegistry {
     // Seed DB with defaults for tools that don't have config yet
     this.seedConfigs(this.tools.keys());
     // Clear cache to force regeneration with new configs
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
   }
 
   /**
@@ -385,11 +409,18 @@ export class ToolRegistry {
   updateToolLevel(toolName: string, level: ToolAccessLevel, updatedBy?: number): boolean {
     if (!this.tools.has(toolName) || !this.db) return false;
 
+    const wasEnabled = this.isToolEnabled(toolName);
     saveToolConfig(this.db, toolName, level, updatedBy);
 
     // Update in-memory cache
     this.toolConfigs = loadAllToolConfigs(this.db);
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
+
+    const isEnabled = this.isToolEnabled(toolName);
+    if (wasEnabled !== isEnabled) {
+      const tool = this.tools.get(toolName)?.tool;
+      this.notifyToolsChanged(isEnabled ? [] : [toolName], isEnabled && tool ? [tool] : []);
+    }
 
     return true;
   }
@@ -456,11 +487,14 @@ export class ToolRegistry {
     // Seed new tools into DB config (if DB is initialized)
     this.seedConfigs(names);
 
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
 
     // Notify Tool RAG about new tools
-    if (names.length > 0) {
-      const addedTools = names.map((n) => this.tools.get(n)?.tool).filter((t): t is Tool => !!t);
+    const addedTools = names
+      .filter((n) => this.isToolEnabled(n))
+      .map((n) => this.tools.get(n)?.tool)
+      .filter((t): t is Tool => !!t);
+    if (addedTools.length > 0) {
       this.notifyToolsChanged([], addedTools);
     }
 
@@ -501,11 +535,14 @@ export class ToolRegistry {
     // Seed new tools into DB config (if DB is initialized)
     this.seedConfigs(names);
 
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
 
     // Notify Tool RAG about replaced tools
     const removedNames = [...previousNames].filter((n) => !names.includes(n));
-    const addedTools = names.map((n) => this.tools.get(n)?.tool).filter((t): t is Tool => !!t);
+    const addedTools = names
+      .filter((n) => this.isToolEnabled(n))
+      .map((n) => this.tools.get(n)?.tool)
+      .filter((t): t is Tool => !!t);
     if (removedNames.length > 0 || addedTools.length > 0) {
       this.notifyToolsChanged(removedNames, addedTools);
     }
@@ -524,7 +561,7 @@ export class ToolRegistry {
       }
       this.pluginToolNames.delete(pluginName);
     }
-    this.toolArrayCache = null;
+    this.invalidateToolCaches();
   }
 
   // ─── Tool RAG ──────────────────────────────────────────────────

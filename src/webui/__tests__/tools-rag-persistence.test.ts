@@ -39,6 +39,7 @@ function createTestApp(config: Record<string, any>) {
       getToolCategory: () => undefined,
       getToolIndex: () => ({ isIndexed: true }),
       count: 50,
+      enabledCount: 50,
       has: () => false,
       isPluginModule: () => false,
     },

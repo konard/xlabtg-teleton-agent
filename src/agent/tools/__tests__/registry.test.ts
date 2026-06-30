@@ -241,6 +241,82 @@ describe("ToolRegistry", () => {
     });
   });
 
+  describe("getEnabledTools()", () => {
+    it("excludes DB-off tools from active lists without hiding them from management APIs", () => {
+      registry.register(createMockTool("enabled_tool"), createMockExecutor());
+      registry.register(createMockTool("disabled_tool"), createMockExecutor());
+
+      db.prepare(
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("disabled_tool", 0, "disabled", "off");
+
+      registry.loadConfigFromDB(db);
+
+      expect(
+        registry
+          .getAll()
+          .map((tool) => tool.name)
+          .sort()
+      ).toEqual(["disabled_tool", "enabled_tool"]);
+      expect(registry.getEnabledTools().map((tool) => tool.name)).toEqual(["enabled_tool"]);
+      expect(registry.enabledCount).toBe(1);
+    });
+
+    it("updates the active tool cache when a tool is disabled at runtime", () => {
+      registry.register(createMockTool("tool1"), createMockExecutor());
+      registry.register(createMockTool("tool2"), createMockExecutor());
+      registry.loadConfigFromDB(db);
+
+      expect(registry.getEnabledTools()).toHaveLength(2);
+
+      registry.setToolEnabled("tool2", false);
+
+      expect(registry.getEnabledTools().map((tool) => tool.name)).toEqual(["tool1"]);
+      expect(registry.enabledCount).toBe(1);
+    });
+
+    it("notifies Tool RAG callbacks when runtime access changes active visibility", () => {
+      const changes: Array<{ removed: string[]; added: string[] }> = [];
+      registry.register(createMockTool("tool1"), createMockExecutor());
+      registry.loadConfigFromDB(db);
+      registry.onToolsChanged((removed, added) => {
+        changes.push({ removed, added: added.map((tool) => tool.name) });
+      });
+
+      registry.setToolEnabled("tool1", false);
+      registry.setToolEnabled("tool1", true);
+
+      expect(changes).toEqual([
+        { removed: ["tool1"], added: [] },
+        { removed: [], added: ["tool1"] },
+      ]);
+    });
+
+    it("does not notify Tool RAG to add plugin tools already disabled in DB", () => {
+      const changes: Array<{ removed: string[]; added: string[] }> = [];
+      db.prepare(
+        `INSERT INTO tool_config (tool_name, enabled, scope, scope_level, updated_at, updated_by)
+         VALUES (?, ?, ?, ?, unixepoch(), NULL)`
+      ).run("plugin_tool", 0, "disabled", "off");
+      registry.loadConfigFromDB(db);
+      registry.onToolsChanged((removed, added) => {
+        changes.push({ removed, added: added.map((tool) => tool.name) });
+      });
+
+      registry.registerPluginTools("plugin", [
+        {
+          tool: createMockTool("plugin_tool"),
+          executor: createMockExecutor(),
+          scope: "always",
+        },
+      ]);
+
+      expect(registry.getEnabledTools()).toEqual([]);
+      expect(changes).toEqual([]);
+    });
+  });
+
   describe("getToolCategory()", () => {
     it("should return correct category for data-bearing tool", () => {
       const tool = createMockTool("test_tool", "data-bearing");

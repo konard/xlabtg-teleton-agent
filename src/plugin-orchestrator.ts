@@ -103,13 +103,19 @@ export class PluginOrchestrator {
     const provider = (this.config.agent.provider || "anthropic") as SupportedProvider;
     const providerMeta = getProviderMetadata(provider);
     const allNames = [...moduleNames, ...pluginNames, ...mcpServerNames];
-    toolCount = this.registry.count;
+    toolCount = this.registry.enabledCount;
+    const registeredToolCount = this.registry.count;
+    const disabledToolCount = registeredToolCount - toolCount;
+    const countSummary =
+      disabledToolCount > 0
+        ? `${toolCount}/${registeredToolCount} tools active`
+        : `${toolCount} tools loaded`;
     log.info(
-      `🔌 ${toolCount} tools loaded (${allNames.join(", ")})${pluginToolCount > 0 ? ` — ${pluginToolCount} from plugins` : ""}`
+      `🔌 ${countSummary} (${allNames.join(", ")})${pluginToolCount > 0 ? ` — ${pluginToolCount} from plugins` : ""}`
     );
     if (providerMeta.toolLimit !== null && toolCount > providerMeta.toolLimit) {
       log.warn(
-        `⚠️ Tool count (${toolCount}) exceeds ${providerMeta.displayName} limit (${providerMeta.toolLimit})`
+        `⚠️ Active tool count (${toolCount}) exceeds ${providerMeta.displayName} limit (${providerMeta.toolLimit})`
       );
     }
 
