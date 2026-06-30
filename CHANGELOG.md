@@ -12,6 +12,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > [CONTRIBUTING.md](CONTRIBUTING.md#commit-conventions)). The entries below this
 > note are preserved as the historical, manually-maintained record.
 
+## [0.8.54](https://github.com/xlabtg/teleton-agent/compare/v0.8.53...v0.8.54) (2026-06-30)
+
+
+### Bug Fixes
+
+* учитывать отключенные tools в лимитах провайдера ([751ff59](https://github.com/xlabtg/teleton-agent/commit/751ff595f7e5fc21268659151ae6285d26770be6))
+* учитывать отключенные tools в лимите провайдера ([f95db6a](https://github.com/xlabtg/teleton-agent/commit/f95db6a5105c76b876c2865e20c07b010150ccfd))
+
 ## [0.8.53](https://github.com/xlabtg/teleton-agent/compare/v0.8.52...v0.8.53) (2026-06-21)
 
 
